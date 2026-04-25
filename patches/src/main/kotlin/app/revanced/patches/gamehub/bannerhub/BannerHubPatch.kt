@@ -1,7 +1,9 @@
 package app.revanced.patches.gamehub.bannerhub
 
+import app.revanced.patcher.extensions.ExternalLabel
 import app.revanced.patcher.extensions.addInstructions
 import app.revanced.patcher.extensions.addInstructionsWithLabels
+import app.revanced.patcher.extensions.instructions
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patcher.patch.resourcePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
@@ -13,6 +15,7 @@ import app.revanced.util.copyResources
 import app.revanced.util.indexOfFirstInstructionOrThrow
 import app.revanced.util.indexOfFirstInstructionReversedOrThrow
 import com.android.tools.smali.dexlib2.Opcode
+import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
@@ -784,6 +787,124 @@ private val bannerHubConfigSharingPatch = bytecodePatch {
     }
 }
 
+// ─── Phase 10: Offline Steam Skip (Feature 11) + BCI Launcher Button (Feature 2) ──
+
+// Feature 11: when auto-Steam-login fails and the device is offline, skip the
+// "show login screen" block and fall through to the direct-launch path instead.
+// Injection: after the unique `if-nez p1, :cond_f` (auto-login result check),
+// add a NetworkUtils.r() check that jumps forward to :goto_5 when offline.
+// At :goto_5, r() returns false again → :cond_13 (direct game launch without login).
+private const val STEAM_STRATEGY_CONT =
+    "Lcom/xj/landscape/launcher/launcher/strategy/SteamGameByPcEmuLaunchStrategy\$execute\$3;"
+private const val NETWORK_UTILS = "Lcom/blankj/utilcode/util/NetworkUtils;"
+
+private val bannerHubOfflineSteamSkipPatch = bytecodePatch {
+    apply {
+        firstMethod {
+            definingClass == STEAM_STRATEGY_CONT && name == "invokeSuspend"
+        }.apply {
+            // Only if-nez with register p1 (index 1) in this method — the auto-login result.
+            val ifNezIndex = indexOfFirstInstructionOrThrow {
+                opcode == Opcode.IF_NEZ &&
+                (this as OneRegisterInstruction).registerA == 1
+            }
+            // The single NetworkUtils.r() call in the original method is at :goto_5.
+            // Jumping there when offline: it re-checks r() → sees false → takes :cond_13.
+            val goto5Index = indexOfFirstInstructionOrThrow {
+                opcode == Opcode.INVOKE_STATIC &&
+                (this as? ReferenceInstruction)?.reference?.let { ref ->
+                    ref is MethodReference &&
+                    ref.definingClass == NETWORK_UTILS &&
+                    ref.name == "r"
+                } == true
+            }
+            addInstructionsWithLabels(
+                ifNezIndex + 1,
+                """
+                    invoke-static {}, $NETWORK_UTILS->r()Z
+                    move-result v11
+                    if-eqz v11, :bh_steam_offline
+                """,
+                ExternalLabel("bh_steam_offline", instructions[goto5Index]),
+            )
+        }
+    }
+}
+
+// Feature 2: add the iv_bci_launcher FrameLayout (download-badge button) to the
+// launcher toolbar. Phase 9's bannerHubDownloadBtnPatch already wires
+// BhDashboardDownloadBtn.attach() when this view is present (via getIdentifier).
+private val bannerHubBciLauncherPatch = resourcePatch {
+    apply {
+        // Register the id
+        document("res/values/ids.xml").use { dom ->
+            val root = dom.documentElement
+            val existing = dom.getElementsByTagName("item").asSequence()
+                .map { it as? Element }
+                .any { it?.getAttribute("name") == "iv_bci_launcher" }
+            if (!existing) {
+                dom.createElement("item").apply {
+                    setAttribute("name", "iv_bci_launcher")
+                    setAttribute("type", "id")
+                    root.appendChild(this)
+                }
+            }
+        }
+
+        // Insert FrameLayout after iv_search inside ll_right_top_status
+        document("res/layout/llauncher_activity_new_launcher_main.xml").use { dom ->
+            val allElements = dom.getElementsByTagName("*")
+            for (i in 0 until allElements.length) {
+                val el = allElements.item(i) as? Element ?: continue
+                if (el.getAttribute("android:id") != "@id/iv_search") continue
+                val parent = el.parentNode ?: continue
+
+                // Outer container FrameLayout
+                val container = dom.createElement("FrameLayout").apply {
+                    setAttribute("android:id", "@id/iv_bci_launcher")
+                    setAttribute("android:layout_width", "@dimen/mw_30dp")
+                    setAttribute("android:layout_height", "@dimen/mw_30dp")
+                    setAttribute("android:layout_marginStart", "@dimen/mw_16dp")
+                }
+
+                // Arrow icon
+                dom.createElement("TextView").apply {
+                    setAttribute("android:text", "⬇")
+                    setAttribute("android:textColor", "#ffffffff")
+                    setAttribute("android:textSize", "18sp")
+                    setAttribute("android:textStyle", "bold")
+                    setAttribute("android:gravity", "center")
+                    setAttribute("android:alpha", "0.8")
+                    setAttribute("android:layout_width", "match_parent")
+                    setAttribute("android:layout_height", "match_parent")
+                    container.appendChild(this)
+                }
+
+                // Download count badge
+                dom.createElement("TextView").apply {
+                    setAttribute("android:tag", "bh_dl_badge")
+                    setAttribute("android:visibility", "gone")
+                    setAttribute("android:text", "")
+                    setAttribute("android:textColor", "#ffffffff")
+                    setAttribute("android:textSize", "9sp")
+                    setAttribute("android:textStyle", "bold")
+                    setAttribute("android:gravity", "center")
+                    setAttribute("android:background", "#FFCC3333")
+                    setAttribute("android:layout_gravity", "top|end")
+                    setAttribute("android:layout_width", "14dp")
+                    setAttribute("android:layout_height", "14dp")
+                    container.appendChild(this)
+                }
+
+                val nextSibling = el.nextSibling
+                if (nextSibling != null) parent.insertBefore(container, nextSibling)
+                else parent.appendChild(container)
+                break
+            }
+        }
+    }
+}
+
 // ─── Main BannerHub patch ──────────────────────────────────────────────────────
 
 @Suppress("unused")
@@ -805,5 +926,7 @@ val bannerHubPatch = bytecodePatch(
         bannerHubTaskManagerPatch,
         bannerHubConfigSharingPatch,
         bannerHubDownloadBtnPatch,
+        bannerHubOfflineSteamSkipPatch,
+        bannerHubBciLauncherPatch,
     )
 }

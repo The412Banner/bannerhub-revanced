@@ -2,6 +2,26 @@
 
 ---
 
+### [bh-phase7] — Wine Task Manager sidebar tab (2026-04-25)
+**Branch:** `bannerhub-revanced`  |  **Commits:** `237cb22`, `99cb8cf`, `6320f66`  |  **CI:** run 24939288310 ✅
+#### What changed
+- **6 new Java extension files** in `extensions/gamehub/src/main/java/com/xj/winemu/sidebar/`:
+  - `BhTaskManagerFragment.java` — Fragment with 3-tab UI (Applications/Processes/Launch); reads `/proc/<pid>/comm` + `/proc/<pid>/environ` (null-byte delimited) for Wine process detection; VRAM info via reflection chain `ctx.u.a`; auto-refreshes every 3s while visible; programmatic UI (no XML layout)
+  - `BhTaskClickHelper.java` — static `setup(View)` wires sidebar button click via `getIdentifier()` + `Proxy.newProxyInstance(Function0)` (avoids kotlin-stdlib compile dep); calls `U("BhTaskManagerFragment")` on click
+  - `BhFolderListener.java`, `BhExeLaunchListener.java` — click listeners for file browser (folder nav + exe launch via `BhWineLaunchHelper.launchExe`)
+  - `BhInitLaunchRunnable.java`, `BhBrowseToRunnable.java` — background/main-thread runnables for WINEPREFIX discovery + file browser navigation
+- **2 new stub files** added to `extensions/gamehub/stub/src/main/java/androidx/fragment/app/`:
+  - `Fragment.java`, `FragmentActivity.java` — minimal stubs so `BhTaskManagerFragment extends Fragment` compiles
+- **1 new drawable** `patches/src/main/resources/bannerhub/res/drawable/bh_sidebar_taskmanager.xml` — vector icon (3-bar task list with dot)
+- **`BannerHubPatch.kt`** changes — added `bannerHubTaskManagerResourcePatch` + `bannerHubTaskManagerPatch`:
+  - Resource patch: copies drawable; adds `bh_sidebar_taskmanager` id to `ids.xml`; inserts `SidebarTitleItemView` button into `winemu_activitiy_settings_layout.xml` after `sidebar_setting`
+  - Bytecode patch on `WineActivityDrawerContent.<init>`: injects `BhTaskClickHelper.setup(p0)` BEFORE first `SGET_OBJECT AppPreferences.INSTANCE`
+  - Bytecode patch on `WineActivityDrawerContent.U(String)`: injects BhTaskManagerFragment factory block BEFORE first `hashCode()` call; puts fragment in `m` map + shows via `ShowHideExtKt.a()`
+  - `bannerHubTaskManagerPatch` added to `bannerHubPatch.dependsOn()`
+- **Feature coverage:** Feature 51 (Wine Task Manager); Feature 12 (RTS) already in repo as standalone `rtsTouchControlsPatch`
+
+---
+
 ### [bh-phase6] — CPU core limit multi-select + VRAM unlock (2026-04-25)
 **Branch:** `bannerhub-revanced`  |  **Commit:** `8002e38`  |  **CI:** run 24938521774 ✅
 #### What changed

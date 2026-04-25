@@ -111,6 +111,36 @@ private val bannerHubManifestPatch = resourcePatch {
             addPermission("android.permission.FOREGROUND_SERVICE")
             addPermission("android.permission.FOREGROUND_SERVICE_DATA_SYNC")
             addPermission("android.permission.POST_NOTIFICATIONS")
+
+            // Feature 56: fix MissingForegroundServiceTypeException on Android 14+
+            // These 12 GameHub services start as foreground but lack the type attribute.
+            val servicesToFix = listOf(
+                "com.xj.landscape.launcher.devicemanagement.DeviceManagementService",
+                "com.xj.apk.update.service.DownloadService",
+                "com.xj.mapping.MappingService",
+                "com.xj.mapping.interaction.KeyboardEditService",
+                "com.xj.mapping.interaction.SSLClientService",
+                "com.xj.mapping.interaction.virtualtouchutil.ipc.service.VTouchIPCService",
+                "com.xj.winemu.download.service.UnzipService",
+                "com.xj.winemu.service.EmuFileService",
+                "com.xj.module.steam.SteamService",
+                "com.streaming.discovery.DiscoveryService",
+                "com.streaming.computers.ComputerManagerService",
+                "com.streaming.binding.input.driver.UsbDriverService",
+            )
+            dom.getElementsByTagName("service").asSequence()
+                .map { it as? Element }
+                .filter { it?.getAttribute("android:name") in servicesToFix }
+                .forEach { it?.setAttribute("android:foregroundServiceType", "specialUse") }
+
+            // Feature 56: exclude GameDetailActivity from Recents to avoid stale task on re-launch
+            dom.getElementsByTagName("activity").asSequence()
+                .map { it as? Element }
+                .firstOrNull {
+                    it?.getAttribute("android:name") ==
+                        "com.xj.landscape.launcher.ui.gamedetail.GameDetailActivity"
+                }
+                ?.setAttribute("android:excludeFromRecents", "true")
         }
     }
 }
@@ -626,6 +656,55 @@ private val bannerHubTaskManagerPatch = bytecodePatch {
     }
 }
 
+// ─── Phase 9: Download Service download-badge wiring (Feature 56) ────────────
+
+private const val LAUNCHER_MAIN =
+    "Lcom/xj/landscape/launcher/ui/main/LandscapeLauncherMainActivity;"
+private const val BASE_VM_ACTIVITY =
+    "Lcom/xj/base/base/activity/BaseVmActivity;"
+private const val VIEW_DATA_BINDING =
+    "Landroidx/databinding/ViewDataBinding;"
+private const val BH_DOWNLOAD_BTN =
+    "Lapp/revanced/extension/gamehub/BhDashboardDownloadBtn;"
+
+// Feature 56: wire BhDashboardDownloadBtn.attach() into LandscapeLauncherMainActivity.initView().
+// Uses getIdentifier() so it gracefully no-ops if iv_bci_launcher isn't in the layout yet
+// (it's added by Phase 10 / Feature 2 BCI Launcher Button).
+private val bannerHubDownloadBtnPatch = bytecodePatch {
+    apply {
+        firstMethod {
+            definingClass == LAUNCHER_MAIN && name == "initView"
+        }.apply {
+            val returnIndex = indexOfFirstInstructionReversedOrThrow(Opcode.RETURN_VOID)
+            addInstructionsWithLabels(
+                returnIndex,
+                """
+                    invoke-virtual {p0}, $BASE_VM_ACTIVITY->getMDataBind()$VIEW_DATA_BINDING
+                    move-result-object v0
+                    if-eqz v0, :bh_no_dl_btn
+                    invoke-virtual {v0}, $VIEW_DATA_BINDING->getRoot()Landroid/view/View;
+                    move-result-object v0
+                    if-eqz v0, :bh_no_dl_btn
+                    const-string v1, "iv_bci_launcher"
+                    const-string v2, "id"
+                    invoke-virtual {p0}, Landroid/content/Context;->getPackageName()Ljava/lang/String;
+                    move-result-object v3
+                    invoke-virtual {p0}, Landroid/content/Context;->getResources()Landroid/content/Resources;
+                    move-result-object v4
+                    invoke-virtual {v4, v1, v2, v3}, Landroid/content/res/Resources;->getIdentifier(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)I
+                    move-result v1
+                    if-eqz v1, :bh_no_dl_btn
+                    invoke-virtual {v0, v1}, Landroid/view/View;->findViewById(I)Landroid/view/View;
+                    move-result-object v0
+                    if-eqz v0, :bh_no_dl_btn
+                    invoke-static {p0, v0}, $BH_DOWNLOAD_BTN->attach(Landroid/content/Context;Landroid/view/View;)V
+                    :bh_no_dl_btn
+                """,
+            )
+        }
+    }
+}
+
 // ─── Phase 8: Config Sharing (Features 52 / 53 / 57) ─────────────────────────
 
 private const val GAME_DETAIL_SETTING_MENU =
@@ -725,5 +804,6 @@ val bannerHubPatch = bytecodePatch(
         bannerHubVramPatch,
         bannerHubTaskManagerPatch,
         bannerHubConfigSharingPatch,
+        bannerHubDownloadBtnPatch,
     )
 }

@@ -152,7 +152,10 @@ private val bannerHubManifestPatch = resourcePatch {
 
 // Feature 3a: extend HomeLeftMenuDialog.o1() packed-switch to route menu IDs
 // 10 (GOG), 11 (Amazon), 12 (Epic), 13 (BhGameConfigs) to their store activities.
-// At the packed-switch point: p0=menuId, p2=FragmentActivity (context), v0=0, v1=free.
+// Method is static: p0=menuId(int), p1=0(int), p2=FragmentActivity.
+// Uses p0/p1 only (matching BannerHub's smali approach) to avoid dex verifier
+// type=Conflict that occurs when v0/v1 are shared between int and reference types.
+// p1 is restored to 0 before the packed-switch so existing cases 0-9 are unaffected.
 private val bannerHubMenuPatch = bytecodePatch {
     apply {
         firstMethod {
@@ -160,46 +163,53 @@ private val bannerHubMenuPatch = bytecodePatch {
                 name == "o1"
         }.apply {
             val packedSwitchIndex = indexOfFirstInstructionOrThrow(Opcode.PACKED_SWITCH)
+            // :goto_1 = sget-object p0, Unit.a — the shared return path for all cases.
+            val goto1Index = indexOfFirstInstructionReversedOrThrow {
+                opcode == Opcode.SGET_OBJECT &&
+                    (this as? ReferenceInstruction)?.reference?.let {
+                        it is FieldReference &&
+                            it.definingClass == "Lkotlin/Unit;" &&
+                            it.name == "a"
+                    } == true
+            }
             addInstructionsWithLabels(
                 packedSwitchIndex,
                 """
-                    const/16 v1, 0xa
-                    if-ne p0, v1, :no_gog
-                    new-instance v1, Landroid/content/Intent;
-                    const-class v0, Lapp/revanced/extension/gamehub/GogMainActivity;
-                    invoke-direct {v1, p2, v0}, Landroid/content/Intent;-><init>(Landroid/content/Context;Ljava/lang/Class;)V
-                    invoke-virtual {p2, v1}, Landroid/content/Context;->startActivity(Landroid/content/Intent;)V
-                    sget-object v1, Lkotlin/Unit;->a:Lkotlin/Unit;
-                    return-object v1
-                    :no_gog
-                    const/16 v1, 0xb
-                    if-ne p0, v1, :no_amazon
-                    new-instance v1, Landroid/content/Intent;
-                    const-class v0, Lapp/revanced/extension/gamehub/AmazonMainActivity;
-                    invoke-direct {v1, p2, v0}, Landroid/content/Intent;-><init>(Landroid/content/Context;Ljava/lang/Class;)V
-                    invoke-virtual {p2, v1}, Landroid/content/Context;->startActivity(Landroid/content/Intent;)V
-                    sget-object v1, Lkotlin/Unit;->a:Lkotlin/Unit;
-                    return-object v1
-                    :no_amazon
-                    const/16 v1, 0xc
-                    if-ne p0, v1, :no_epic
-                    new-instance v1, Landroid/content/Intent;
-                    const-class v0, Lapp/revanced/extension/gamehub/EpicMainActivity;
-                    invoke-direct {v1, p2, v0}, Landroid/content/Intent;-><init>(Landroid/content/Context;Ljava/lang/Class;)V
-                    invoke-virtual {p2, v1}, Landroid/content/Context;->startActivity(Landroid/content/Intent;)V
-                    sget-object v1, Lkotlin/Unit;->a:Lkotlin/Unit;
-                    return-object v1
-                    :no_epic
-                    const/16 v1, 0xd
-                    if-ne p0, v1, :no_bhconfigs
-                    new-instance v1, Landroid/content/Intent;
-                    const-class v0, Lapp/revanced/extension/gamehub/BhGameConfigsActivity;
-                    invoke-direct {v1, p2, v0}, Landroid/content/Intent;-><init>(Landroid/content/Context;Ljava/lang/Class;)V
-                    invoke-virtual {p2, v1}, Landroid/content/Context;->startActivity(Landroid/content/Intent;)V
-                    sget-object v1, Lkotlin/Unit;->a:Lkotlin/Unit;
-                    return-object v1
-                    :no_bhconfigs
+                    const/16 p1, 0xa
+                    if-ne p0, p1, :bh_not_gog
+                    new-instance p0, Landroid/content/Intent;
+                    const-class p1, Lapp/revanced/extension/gamehub/GogMainActivity;
+                    invoke-direct {p0, p2, p1}, Landroid/content/Intent;-><init>(Landroid/content/Context;Ljava/lang/Class;)V
+                    invoke-virtual {p2, p0}, Landroid/content/Context;->startActivity(Landroid/content/Intent;)V
+                    goto :bh_goto_1
+                    :bh_not_gog
+                    const/16 p1, 0xb
+                    if-ne p0, p1, :bh_not_amazon
+                    new-instance p0, Landroid/content/Intent;
+                    const-class p1, Lapp/revanced/extension/gamehub/AmazonMainActivity;
+                    invoke-direct {p0, p2, p1}, Landroid/content/Intent;-><init>(Landroid/content/Context;Ljava/lang/Class;)V
+                    invoke-virtual {p2, p0}, Landroid/content/Context;->startActivity(Landroid/content/Intent;)V
+                    goto :bh_goto_1
+                    :bh_not_amazon
+                    const/16 p1, 0xc
+                    if-ne p0, p1, :bh_not_epic
+                    new-instance p0, Landroid/content/Intent;
+                    const-class p1, Lapp/revanced/extension/gamehub/EpicMainActivity;
+                    invoke-direct {p0, p2, p1}, Landroid/content/Intent;-><init>(Landroid/content/Context;Ljava/lang/Class;)V
+                    invoke-virtual {p2, p0}, Landroid/content/Context;->startActivity(Landroid/content/Intent;)V
+                    goto :bh_goto_1
+                    :bh_not_epic
+                    const/16 p1, 0xd
+                    if-ne p0, p1, :bh_not_bhconfigs
+                    new-instance p0, Landroid/content/Intent;
+                    const-class p1, Lapp/revanced/extension/gamehub/BhGameConfigsActivity;
+                    invoke-direct {p0, p2, p1}, Landroid/content/Intent;-><init>(Landroid/content/Context;Ljava/lang/Class;)V
+                    invoke-virtual {p2, p0}, Landroid/content/Context;->startActivity(Landroid/content/Intent;)V
+                    goto :bh_goto_1
+                    :bh_not_bhconfigs
+                    const/4 p1, 0x0
                 """,
+                ExternalLabel("bh_goto_1", instructions[goto1Index]),
             )
         }
     }

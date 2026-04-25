@@ -2,6 +2,54 @@
 
 ---
 
+### [bh-fix-menu-crash] — Fix bannerHubMenuPatch dex verifier VerifyError (2026-04-25)
+**Branch:** `bannerhub-revanced`  |  **Commit:** pending  |  **CI:** pending
+#### What changed
+- **`BannerHubPatch.kt`** — rewrote `bannerHubMenuPatch` to use `p0`/`p1` parameter registers instead of `v0`/`v1` locals, matching BannerHub's smali exactly
+#### Root cause
+The previous if-ne chain used `v1` for both `const/16 v1, 0xa` (int) and `new-instance v1, Intent` (ref) on different paths converging at merge labels. The dex verifier reported `v1 (type=Conflict)` at `invoke-direct {v1, p2, v0}` in the BhConfigs block (offset `[0x44]`), causing a `VerifyError` that crashed the app when opening the side menu.
+#### Fix
+- Each BH case handler now uses: `new-instance p0, Intent; const-class p1, Activity; invoke-direct {p0, p2, p1}; invoke-virtual {p2, p0}; goto :bh_goto_1`
+- `ExternalLabel("bh_goto_1", instructions[goto1Index])` points to `sget-object p0, Unit.a` (the existing `:goto_1` return path)
+- `const/4 p1, 0x0` is appended before the packed-switch fallthrough to restore `p1=0` so existing cases 0-9 (including `pswitch_7` which passes `p1` as Object) remain unaffected
+- p0 and p1 are both int at every merge point, eliminating the type conflict
+
+---
+
+### [v1.0.0-bh1 release] — First full BannerHub ReVanced release (2026-04-25)
+**Tag:** `v1.0.0-bh1`  |  **Branch:** `bannerhub-revanced`  |  **CI:** run 24940583371 ✅
+#### Assets
+- `bannerhub.apk` (~136 MB) — fully patched GameHub 5.3.5, all 10 phases applied, ready to sideload
+- `patches-1.0.0.rvp` (1.8 MB) — patches bundle for use with ReVanced CLI/Manager
+- `patches-1.0.0-sources.rvp` (104 KB) — sources jar
+
+---
+
+### [bh-phase10] — Offline Steam Skip + BCI Launcher Button (2026-04-25)
+**Branch:** `bannerhub-revanced`  |  **Commit:** `be230b3`  |  **CI:** run 24940402140 ✅
+#### What changed
+- **`BannerHubPatch.kt`** — 2 new private sub-patches + 2 new imports added:
+  - `import app.revanced.patcher.extensions.ExternalLabel`
+  - `import app.revanced.patcher.extensions.instructions`
+  - `import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction`
+- **`bannerHubOfflineSteamSkipPatch`** (Feature 11 — Offline Steam Skip):
+  - Targets `SteamGameByPcEmuLaunchStrategy$execute$3.invokeSuspend()`
+  - Finds the unique `if-nez p1` (register 1, auto-login result) in the method
+  - Finds the single existing `invoke-static NetworkUtils;->r()Z` at `:goto_5` as the ExternalLabel target
+  - Injects 3 instructions after the `if-nez`: `NetworkUtils.r()` + `if-eqz → :bh_steam_offline`
+  - When offline (r()=false/0), jumps to `:goto_5` which re-checks → takes `:cond_13` (direct launch)
+  - When online, falls through to original TheRouter → show-login-screen block
+- **`bannerHubBciLauncherPatch`** (Feature 2 — BCI Launcher Button):
+  - Adds `iv_bci_launcher` id item to `res/values/ids.xml`
+  - Inserts `FrameLayout @id/iv_bci_launcher` (30×30dp, marginStart 16dp) AFTER `@id/iv_search` in `llauncher_activity_new_launcher_main.xml` inside `ll_right_top_status`
+  - Contains: "⬇" TextView icon + `bh_dl_badge` TextView badge (14×14dp, red #CC3333, top|end gravity, gone by default)
+  - Phase 9's `bannerHubDownloadBtnPatch` now activates `BhDashboardDownloadBtn.attach()` since `getIdentifier("iv_bci_launcher")` will now resolve the id
+- **Feature 61** (Controller navigation): already complete from Phase 2 — no new work needed
+- **No new Java/stubs**: all needed classes existed from earlier phases
+- Both patches added to `bannerHubPatch.dependsOn()`
+
+---
+
 ### [bh-phase9] — Download Service manifest fixes + badge wiring (2026-04-25)
 **Branch:** `bannerhub-revanced`  |  **Commit:** `0cc9d7e`  |  **CI:** run 24939848451 ✅
 #### What changed

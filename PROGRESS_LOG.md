@@ -1,5 +1,22 @@
 # BannerHub ReVanced Progress Log
 
+---
+
+### [bh-phase5] — Component Manager + GameSettingViewModel coroutine hook (2026-04-25)
+**Branch:** `bannerhub-revanced`  |  **Commit:** pending  |  **CI:** pending
+#### What changed
+- **3 Java extension files** added to `extensions/gamehub/src/main/java/app/revanced/extension/gamehub/`:
+  - `ComponentInjectorHelper.java` — reflection-based WCP/ZIP extraction + EmuComponents registration; `appendLocalComponents(List, int)` injected into GameSettingViewModel (Feature 4/8)
+  - `ComponentManagerActivity.java` — full Component Manager UI: list installed components, add (file picker), backup, remove, remove-all, search (Features 3/5/7)
+  - `ComponentDownloadActivity.java` — download components from repos (Arihany WCPHub, Kimchi/StevenMXZ/MTR/Whitebelyash GPU drivers, BH Nightlies); calls `injectFromCachedFile` after download (Feature 6/9)
+- **`BannerHubPatch.kt`** changes:
+  - `bannerHubManifestPatch`: added `ComponentManagerActivity` + `ComponentDownloadActivity` registrations
+  - `bannerHubComponentManagerPatch`: new `bytecodePatch`; hooks `GameSettingViewModel$fetchList$1.invokeSuspend()` — after `CommResultEntity.setData(v7)` injects `ComponentInjectorHelper.appendLocalComponents(v7, $contentType)` so locally-installed BH components appear in game-settings component pickers (Feature 8)
+  - New constants: `BH_COMPONENT_INJECTOR`, `FETCH_LIST_LAMBDA`, `CT_FIELD` (dollar-sign escaping for Kotlin string templates)
+  - `bannerHubPatch.dependsOn()`: added `bannerHubComponentManagerPatch`
+- All reflection; no stubs or build dependency changes needed
+
+
 Tracks every branch, patch, fix, and release on The412Banner/bannerhub-revanced.
 Goal: reproduce BannerHub as true ReVanced patches on top of playday's GameHub 5.3.5 base.
 

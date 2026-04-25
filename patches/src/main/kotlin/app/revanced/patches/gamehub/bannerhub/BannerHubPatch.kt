@@ -93,6 +93,8 @@ private val bannerHubManifestPatch = resourcePatch {
                 mapOf("android:windowSoftInputMode" to "adjustResize"),
             )
             addActivity("BhDownloadsActivity")
+            addActivity("ComponentManagerActivity")
+            addActivity("ComponentDownloadActivity")
 
             // Download service
             dom.createElement("service").apply {
@@ -291,6 +293,39 @@ private val bannerHubHudPatch = bytecodePatch {
     }
 }
 
+// ─── Phase 5: Component Manager ───────────────────────────────────────────────
+
+// Feature 8: inject into GameSettingViewModel$fetchList$1.invokeSuspend() after
+// CommResultEntity.setData(v7) to append locally-registered BannerHub components
+// to the list before it is delivered to the UI callback.
+// Registers: v5 = lambda this, v7 = the assembled List.
+private const val BH_COMPONENT_INJECTOR = "Lapp/revanced/extension/gamehub/ComponentInjectorHelper;"
+private const val FETCH_LIST_LAMBDA = "Lcom/xj/winemu/settings/GameSettingViewModel\$fetchList\$1;"
+private const val CT_FIELD = "\$contentType"
+
+private val bannerHubComponentManagerPatch = bytecodePatch {
+    apply {
+        firstMethod {
+            definingClass == FETCH_LIST_LAMBDA && name == "invokeSuspend"
+        }.apply {
+            val setDataIndex = indexOfFirstInstructionOrThrow {
+                opcode == Opcode.INVOKE_VIRTUAL &&
+                    (this as? ReferenceInstruction)?.reference?.let {
+                        it is MethodReference && it.name == "setData" &&
+                            it.definingClass == "Lcom/xj/common/data/model/CommResultEntity;"
+                    } == true
+            }
+            addInstructions(
+                setDataIndex + 1,
+                """
+                    iget v0, v5, $FETCH_LIST_LAMBDA->$CT_FIELD:I
+                    invoke-static {v7, v0}, $BH_COMPONENT_INJECTOR->appendLocalComponents(Ljava/util/List;I)V
+                """,
+            )
+        }
+    }
+}
+
 // ─── Main BannerHub patch ──────────────────────────────────────────────────────
 
 @Suppress("unused")
@@ -306,5 +341,6 @@ val bannerHubPatch = bytecodePatch(
         bannerHubMenuPatch,
         bannerHubPendingLaunchPatch,
         bannerHubHudPatch,
+        bannerHubComponentManagerPatch,
     )
 }

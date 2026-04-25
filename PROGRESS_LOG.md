@@ -5,6 +5,17 @@ Goal: reproduce BannerHub as true ReVanced patches on top of playday's GameHub 5
 
 ---
 
+### [bh-phase1] — BannerHub monolithic patch created; Phase 1 features (2026-04-25)
+**Branch:** `bannerhub-revanced`  |  **Commit:** pending  |  **CI:** pending
+#### What changed
+- `patches/src/main/kotlin/app/revanced/patches/gamehub/bannerhub/BannerHubPatch.kt` — new monolithic patch; Phase 1 features added
+  - **Feature 1**: "My Games" string rename via `bannerHubResourcesPatch` (modifies `llauncher_main_page_title_my`)
+  - **Feature 10**: EmuReady API default off (GameHubPrefs.isExternalAPI default: `true` → `false`)
+- `patches/api/patches.api` — added `BannerHubPatchKt` entry
+- `extensions/gamehub/src/main/java/app/revanced/extension/gamehub/prefs/GameHubPrefs.java` — changed `isExternalAPI()` default from `true` to `false`
+
+---
+
 ### [docs] — PORTING_REPORT.md added to repo; progress log caught up (2026-04-25)
 **Branch:** `bannerhub-revanced`  |  **Commit:** pending
 #### What changed

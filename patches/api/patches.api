@@ -26,6 +26,10 @@ public final class app/revanced/patches/com/example/app/ExamplePatchKt {
 	public static final fun getExamplePatch ()Lapp/revanced/patcher/patch/Patch;
 }
 
+public final class app/revanced/patches/gamehub/bannerhub/BannerHubPatchKt {
+	public static final fun getBannerHubPatch ()Lapp/revanced/patcher/patch/Patch;
+}
+
 public final class app/revanced/patches/gamehub/filemanager/FileManagerAccessPatchKt {
 	public static final fun getFileManagerAccessPatch ()Lapp/revanced/patcher/patch/Patch;
 }

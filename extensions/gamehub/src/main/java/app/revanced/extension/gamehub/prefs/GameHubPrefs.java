@@ -36,7 +36,7 @@ public class GameHubPrefs {
     }
 
     public static boolean isExternalAPI() {
-        return getPrefs().getBoolean(KEY_EXTERNAL_API, true);
+        return getPrefs().getBoolean(KEY_EXTERNAL_API, false);
     }
 
     /**

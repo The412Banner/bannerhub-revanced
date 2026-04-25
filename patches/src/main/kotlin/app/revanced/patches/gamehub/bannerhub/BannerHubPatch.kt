@@ -7,7 +7,9 @@ import app.revanced.patcher.patch.resourcePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
 import app.revanced.patches.gamehub.GAMEHUB_VERSION
 import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
+import app.revanced.util.ResourceGroup
 import app.revanced.util.asSequence
+import app.revanced.util.copyResources
 import app.revanced.util.indexOfFirstInstructionOrThrow
 import app.revanced.util.indexOfFirstInstructionReversedOrThrow
 import com.android.tools.smali.dexlib2.Opcode
@@ -504,6 +506,126 @@ private val bannerHubVramPatch = bytecodePatch {
     }
 }
 
+// ─── Phase 7: Wine Task Manager (Feature 51) ──────────────────────────────────
+
+private const val WINE_DRAWER = "Lcom/xj/winemu/sidebar/WineActivityDrawerContent;"
+private const val BH_TASK_CLICK_HELPER = "Lcom/xj/winemu/sidebar/BhTaskClickHelper;"
+private const val BH_TASK_FRAG = "Lcom/xj/winemu/sidebar/BhTaskManagerFragment;"
+private const val SHOW_HIDE_EXT = "Lcom/xj/base/ext/ShowHideExtKt;"
+private const val APP_PREFERENCES = "Lcom/xj/common/data/preferences/AppPreferences;"
+private const val R_ID = "Lcom/xj/winemu/R\$id;"
+
+// Resource sub-patch: add Task Manager button to the sidebar layout.
+private val bannerHubTaskManagerResourcePatch = resourcePatch {
+    apply {
+        // Copy Task Manager icon drawable
+        copyResources(
+            "bannerhub",
+            ResourceGroup("drawable", "bh_sidebar_taskmanager.xml"),
+        )
+
+        // Add bh_sidebar_taskmanager ID to ids.xml
+        document("res/values/ids.xml").use { dom ->
+            val root = dom.documentElement
+            val existing = dom.getElementsByTagName("item").asSequence()
+                .map { it as? Element }
+                .any { it?.getAttribute("name") == "bh_sidebar_taskmanager" }
+            if (!existing) {
+                dom.createElement("item").apply {
+                    setAttribute("name", "bh_sidebar_taskmanager")
+                    setAttribute("type", "id")
+                    root.appendChild(this)
+                }
+            }
+        }
+
+        // Insert SidebarTitleItemView for Task Manager after sidebar_setting and before spacer
+        document("res/layout/winemu_activitiy_settings_layout.xml").use { dom ->
+            val allElements = dom.getElementsByTagName("*")
+            for (i in 0 until allElements.length) {
+                val el = allElements.item(i) as? Element ?: continue
+                if (el.getAttribute("android:id") == "@id/sidebar_setting") {
+                    val parent = el.parentNode ?: continue
+                    dom.createElement("com.xj.winemu.view.SidebarTitleItemView").apply {
+                        setAttribute("android:layout_gravity", "center_horizontal")
+                        setAttribute("android:id", "@id/bh_sidebar_taskmanager")
+                        setAttribute("android:layout_width", "@dimen/dp_48")
+                        setAttribute("android:layout_height", "@dimen/dp_48")
+                        setAttribute("android:layout_marginTop", "@dimen/dp_24")
+                        setAttribute("app:sidebar_icon", "@drawable/bh_sidebar_taskmanager")
+                        val nextSibling = el.nextSibling
+                        if (nextSibling != null) parent.insertBefore(this, nextSibling)
+                        else parent.appendChild(this)
+                    }
+                    break
+                }
+            }
+        }
+    }
+}
+
+// Bytecode sub-patch: wire BhTaskClickHelper + BhTaskManagerFragment into
+// WineActivityDrawerContent constructor and U(String) fragment factory.
+private val bannerHubTaskManagerPatch = bytecodePatch {
+    dependsOn(bannerHubTaskManagerResourcePatch)
+
+    apply {
+        // Constructor: inject BhTaskClickHelper.setup(this) before the AppPreferences check,
+        // which immediately follows the last setClickListener call in <init>(Context,AttributeSet,int).
+        firstMethod {
+            definingClass == WINE_DRAWER &&
+                name == "<init>" &&
+                parameterTypes == listOf(
+                    "Landroid/content/Context;", "Landroid/util/AttributeSet;", "I",
+                )
+        }.apply {
+            val appPrefsIndex = indexOfFirstInstructionOrThrow {
+                opcode == Opcode.SGET_OBJECT &&
+                    (this as? ReferenceInstruction)?.reference?.let {
+                        it is FieldReference && it.definingClass == APP_PREFERENCES &&
+                            it.name == "INSTANCE"
+                    } == true
+            }
+            addInstructions(
+                appPrefsIndex,
+                "invoke-static {p0}, $BH_TASK_CLICK_HELPER->setup(Landroid/view/View;)V",
+            )
+        }
+
+        // U(String): inject before hashCode() switch to intercept "BhTaskManagerFragment".
+        // At this point: p0=this, p1=key, v0=null (map miss), v1/v2 free.
+        firstMethod {
+            definingClass == WINE_DRAWER && name == "U"
+        }.apply {
+            val hashCodeIndex = indexOfFirstInstructionOrThrow {
+                opcode == Opcode.INVOKE_VIRTUAL &&
+                    (this as? ReferenceInstruction)?.reference?.let {
+                        it is MethodReference && it.name == "hashCode" &&
+                            it.definingClass == "Ljava/lang/String;"
+                    } == true
+            }
+            addInstructionsWithLabels(
+                hashCodeIndex,
+                """
+                    const-string v0, "BhTaskManagerFragment"
+                    invoke-virtual {p1, v0}, Ljava/lang/String;->equals(Ljava/lang/Object;)Z
+                    move-result v0
+                    if-eqz v0, :bh_not_task_frag
+                    new-instance v2, $BH_TASK_FRAG
+                    invoke-direct {v2}, $BH_TASK_FRAG-><init>()V
+                    iget-object v0, p0, $WINE_DRAWER->m:Ljava/util/Map;
+                    invoke-interface {v0, p1, v2}, Ljava/util/Map;->put(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
+                    sget v0, $R_ID->layout_container:I
+                    iget-object v1, p0, $WINE_DRAWER->l:Landroidx/fragment/app/FragmentManager;
+                    invoke-static {v0, v1, v2}, $SHOW_HIDE_EXT->a(ILandroidx/fragment/app/FragmentManager;Landroidx/fragment/app/Fragment;)V
+                    return-void
+                    :bh_not_task_frag
+                """,
+            )
+        }
+    }
+}
+
 // ─── Main BannerHub patch ──────────────────────────────────────────────────────
 
 @Suppress("unused")
@@ -522,5 +644,6 @@ val bannerHubPatch = bytecodePatch(
         bannerHubComponentManagerPatch,
         bannerHubCpuPatch,
         bannerHubVramPatch,
+        bannerHubTaskManagerPatch,
     )
 }

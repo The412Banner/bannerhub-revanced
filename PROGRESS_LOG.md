@@ -6,7 +6,7 @@ Goal: reproduce BannerHub as true ReVanced patches on top of playday's GameHub 5
 ---
 
 ### [bh-phase3] — Bytecode hooks: menu routing + pending-launch (2026-04-25)
-**Branch:** `bannerhub-revanced`  |  **Commit:** pending  |  **CI:** pending
+**Branch:** `bannerhub-revanced`  |  **Commit:** `0d56766`  |  **CI:** run 24936864656 ✅
 #### What changed
 - **`BannerHubPatch.kt`** — added two private `bytecodePatch` sub-patches:
   - **`bannerHubMenuPatch`**: injects an if-chain BEFORE the `packed-switch` in `HomeLeftMenuDialog.o1()` to intercept menu item IDs 10 (GOG), 11 (Amazon), 12 (Epic), 13 (BhGameConfigs) and start their respective Activities via `p2` (FragmentActivity as Context). Uses existing registers v0/v1 (method has `.locals 2`).

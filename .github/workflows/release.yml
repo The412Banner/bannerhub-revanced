@@ -64,6 +64,7 @@ jobs:
         run: |
           java -jar revanced-cli.jar patch GameHub_5.3.5.apk \
             --patches patches/build/libs/patches.rvp \
+            --bypass-verification \
             --out bannerhub.apk \
             --keystore bannerhub.jks \
             --keystore-entry-alias bannerhub \

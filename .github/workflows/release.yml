@@ -58,12 +58,21 @@ jobs:
         run: |
           echo "$KEYSTORE_BASE64" | base64 -d > bannerhub.jks
 
+      - name: Locate built artifacts
+        run: |
+          echo "=== patches/build/libs ==="
+          find patches/build/libs -type f | sort
+          echo "=== extensions/extension/build/libs ==="
+          find extensions/extension/build/libs -type f | sort
+
       - name: Apply patches & produce APK
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
+          PATCHES_FILE=$(find patches/build/libs -name "*.rvp" | head -1)
+          echo "Using patches file: $PATCHES_FILE"
           java -jar revanced-cli.jar patch GameHub_5.3.5.apk \
-            --patches patches/build/libs/patches.rvp \
+            --patches "$PATCHES_FILE" \
             --bypass-verification \
             --out bannerhub.apk \
             --keystore bannerhub.jks \
@@ -87,5 +96,5 @@ jobs:
           generate_release_notes: true
           files: |
             bannerhub.apk
-            patches/build/libs/patches.rvp
-            extensions/extension/build/libs/extensions/extension.rve
+            patches/build/libs/*.rvp
+            extensions/extension/build/libs/**/*.rve

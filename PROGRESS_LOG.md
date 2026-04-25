@@ -6,7 +6,7 @@ Goal: reproduce BannerHub as true ReVanced patches on top of playday's GameHub 5
 ---
 
 ### [bh-phase2] — Extension Java files + manifest registration (2026-04-25)
-**Branch:** `bannerhub-revanced`  |  **Commit:** pending  |  **CI:** pending
+**Branch:** `bannerhub-revanced`  |  **Commit:** `b5f72c5` + lint fixes `df228ad`/`78b5eab`  |  **CI:** run 24936539339 ✅
 #### What changed
 - **41 Java extension classes** copied from BannerHub v3.4.0 into `extensions/gamehub/src/main/java/app/revanced/extension/gamehub/`
   - GOG: GogMainActivity, GogLoginActivity, GogGamesActivity, GogGameDetailActivity, GogGame, GogApiClient, GogAuthClient, GogCredentialStore, GogTokenRefresh, GogInstallPath, GogLaunchHelper, GogCloudSaveManager, GogDownloadManager (13 files)

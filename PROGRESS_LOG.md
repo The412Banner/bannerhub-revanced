@@ -6,7 +6,7 @@ Goal: reproduce BannerHub as true ReVanced patches on top of playday's GameHub 5
 ---
 
 ### [bh-phase4] — HUD overlay + WineActivity performance hooks (2026-04-25)
-**Branch:** `bannerhub-revanced`  |  **Commit:** pending  |  **CI:** pending
+**Branch:** `bannerhub-revanced`  |  **Commit:** `bebf2d6`  |  **CI:** run 24937127127 ✅
 #### What changed
 - **4 Java files** added to `extensions/gamehub/src/main/java/com/xj/winemu/sidebar/`:
   - `BhFrameRating.java` — compact Winlator-style HUD bar (Feature 48)

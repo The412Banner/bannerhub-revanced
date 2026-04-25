@@ -3,7 +3,7 @@
 ---
 
 ### [bh-phase6] — CPU core limit multi-select + VRAM unlock (2026-04-25)
-**Branch:** `bannerhub-revanced`  |  **Commit:** `8002e38`  |  **CI:** run 24938521774 ⏳
+**Branch:** `bannerhub-revanced`  |  **Commit:** `8002e38`  |  **CI:** run 24938521774 ✅
 #### What changed
 - **`CpuMultiSelectHelper.java`** added to `extensions/gamehub/src/main/java/app/revanced/extension/gamehub/`:
   - Reflection-based 8-core bitmask checkbox dialog; reads current mask via `PcGameSettingOperations.H()`, writes via `SPUtils.m(key, mask)`; fires `Function1` callback with `DialogSettingListItemEntity` built via Kotlin defaults constructor (Feature 17a)

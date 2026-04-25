@@ -2,6 +2,27 @@
 
 ---
 
+### [bh-phase8] — Config Sharing: Export/Import/Frontend Export (2026-04-25)
+**Branch:** `bannerhub-revanced`  |  **Commit:** `6a08f67`  |  **CI:** run 24939580424 ✅
+#### What changed
+- **3 new stubs** added to `extensions/gamehub/stub/`:
+  - `kotlin/jvm/functions/Function1.java` — minimal interface for lambda compilation
+  - `com/xj/common/service/bean/GameDetailEntity.java` — `getId()I`, `getLocalGameId()String`, `getName()String`, `getSteamAppId()String`
+  - `com/xj/landscape/launcher/ui/gamedetail/GameDetailSettingMenu.java` — `z()FragmentActivity` (context accessor)
+- **3 new lambda extension files** in `com/xj/landscape/launcher/ui/gamedetail/`:
+  - `BhExportLambda.java` — implements Function1; resolves gameId (getId>0→String.valueOf else getLocalGameId); calls `BhSettingsExporter.showExportDialog(ctx, gameId, gameName)` (Feature 52)
+  - `BhImportLambda.java` — same pattern; calls `BhSettingsExporter.showImportDialog(...)` (Feature 53)
+  - `BhFrontendExportLambda.java` — resolves gameId via localGameId → steamAppId; calls `BhSettingsExporter.showFrontendExportDialog(...)` (Feature 57)
+- **`BannerHubPatch.kt`** changes — new `bannerHubConfigSharingPatch`:
+  - Fingerprints `GameDetailSettingMenu.W()` (getPcGamesOptions Kotlin coroutine) by `definingClass + name == "W"`
+  - Finds last `RETURN_OBJECT` via `indexOfFirstInstructionReversedOrThrow`
+  - Injects 3 Option blocks BEFORE return: `move-object/from16 v4, p0` (p0=this at reg 19) + `iget-object v3, v5, L$0` (GameDetailEntity from continuation) + `new-instance Option; invoke-direct/range {v9..v17} Option.<init>; List.add` ×3
+  - `bannerHubConfigSharingPatch` added to `bannerHubPatch.dependsOn()`
+- **Feature coverage:** Feature 52 (Export Config), Feature 53 (Import Config), Feature 57 (Frontend Export)
+- **Not in Phase 8:** Feature 54/55 (Community Config Browser) — fully wired from Phase 2 (Java, manifest, menu) + Phase 3 (HomeLeftMenuDialog ID=13 routing); no new patch hooks needed
+
+---
+
 ### [bh-phase7] — Wine Task Manager sidebar tab (2026-04-25)
 **Branch:** `bannerhub-revanced`  |  **Commits:** `237cb22`, `99cb8cf`, `6320f66`  |  **CI:** run 24939288310 ✅
 #### What changed

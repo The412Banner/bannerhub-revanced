@@ -2,6 +2,15 @@
 
 ---
 
+### [v1.0.0-bh2 release] — Menu crash bugfix release (2026-04-25)
+**Tag:** `v1.0.0-bh2`  |  **Branch:** `bannerhub-revanced`  |  **CI:** run 24941673942 ✅
+#### Assets
+- `bannerhub.apk` (~136 MB) — fully patched GameHub 5.3.5, menu crash fixed
+- `patches-1.0.0.rvp` — patches bundle
+- `patches-1.0.0-sources.rvp` — sources jar
+
+---
+
 ### [bh-fix-menu-crash] — Fix bannerHubMenuPatch dex verifier VerifyError (2026-04-25)
 **Branch:** `bannerhub-revanced`  |  **Commit:** `e0caa2f`  |  **CI:** run 24941343227 ✅
 #### What changed

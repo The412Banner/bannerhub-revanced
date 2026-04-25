@@ -626,6 +626,85 @@ private val bannerHubTaskManagerPatch = bytecodePatch {
     }
 }
 
+// ─── Phase 8: Config Sharing (Features 52 / 53 / 57) ─────────────────────────
+
+private const val GAME_DETAIL_SETTING_MENU =
+    "Lcom/xj/landscape/launcher/ui/gamedetail/GameDetailSettingMenu;"
+private const val PC_GAMES_OPTS_CONT =
+    "Lcom/xj/landscape/launcher/ui/gamedetail/GameDetailSettingMenu\$getPcGamesOptions\$1;"
+private const val GAME_DETAIL_ENTITY = "Lcom/xj/common/service/bean/GameDetailEntity;"
+private const val OPTION = "Lcom/xj/common/view/popup/Option;"
+private const val BH_EXPORT_LAMBDA =
+    "Lcom/xj/landscape/launcher/ui/gamedetail/BhExportLambda;"
+private const val BH_IMPORT_LAMBDA =
+    "Lcom/xj/landscape/launcher/ui/gamedetail/BhImportLambda;"
+private const val BH_FRONTEND_LAMBDA =
+    "Lcom/xj/landscape/launcher/ui/gamedetail/BhFrontendExportLambda;"
+private const val OPTION_CTOR =
+    "$OPTION-><init>(Ljava/lang/String;ZIIILkotlin/jvm/functions/Function1;ILkotlin/jvm/internal/DefaultConstructorMarker;)V"
+
+// Feature 52 (Export Config) + 53 (Import Config) + 57 (Frontend Export):
+// Inject three new Option entries into GameDetailSettingMenu.W() (getPcGamesOptions coroutine)
+// immediately before the final return-object that returns the options list.
+//
+// At injection point: v1 = options List; v5 = getPcGamesOptions$1 continuation
+// p0 (this, GameDetailSettingMenu) is at register 19 (locals 19 + 5 params) —
+// use move-object/from16 v4, p0 to copy into range-accessible v4.
+// L$0 in the continuation is always GameDetailEntity across all resume paths.
+private val bannerHubConfigSharingPatch = bytecodePatch {
+    apply {
+        firstMethod {
+            definingClass == GAME_DETAIL_SETTING_MENU && name == "W"
+        }.apply {
+            val returnIndex = indexOfFirstInstructionReversedOrThrow(Opcode.RETURN_OBJECT)
+            addInstructions(
+                returnIndex,
+                """
+                    move-object/from16 v4, p0
+                    iget-object v3, v5, $PC_GAMES_OPTS_CONT->L${'$'}0:Ljava/lang/Object;
+                    check-cast v3, $GAME_DETAIL_ENTITY
+                    new-instance v9, $OPTION
+                    const-string v10, "Export Config"
+                    const/4 v11, 0x0
+                    const/4 v12, 0x0
+                    const/4 v13, 0x0
+                    const/4 v14, 0x0
+                    new-instance v15, $BH_EXPORT_LAMBDA
+                    invoke-direct {v15, v4, v3}, $BH_EXPORT_LAMBDA-><init>($GAME_DETAIL_SETTING_MENU$GAME_DETAIL_ENTITY)V
+                    const/16 v16, 0x1e
+                    const/16 v17, 0x0
+                    invoke-direct/range {v9 .. v17}, $OPTION_CTOR
+                    invoke-interface {v1, v9}, Ljava/util/List;->add(Ljava/lang/Object;)Z
+                    new-instance v9, $OPTION
+                    const-string v10, "Import Config"
+                    const/4 v11, 0x0
+                    const/4 v12, 0x0
+                    const/4 v13, 0x0
+                    const/4 v14, 0x0
+                    new-instance v15, $BH_IMPORT_LAMBDA
+                    invoke-direct {v15, v4, v3}, $BH_IMPORT_LAMBDA-><init>($GAME_DETAIL_SETTING_MENU$GAME_DETAIL_ENTITY)V
+                    const/16 v16, 0x1e
+                    const/16 v17, 0x0
+                    invoke-direct/range {v9 .. v17}, $OPTION_CTOR
+                    invoke-interface {v1, v9}, Ljava/util/List;->add(Ljava/lang/Object;)Z
+                    new-instance v9, $OPTION
+                    const-string v10, "Frontend Export"
+                    const/4 v11, 0x0
+                    const/4 v12, 0x0
+                    const/4 v13, 0x0
+                    const/4 v14, 0x0
+                    new-instance v15, $BH_FRONTEND_LAMBDA
+                    invoke-direct {v15, v4, v3}, $BH_FRONTEND_LAMBDA-><init>($GAME_DETAIL_SETTING_MENU$GAME_DETAIL_ENTITY)V
+                    const/16 v16, 0x1e
+                    const/16 v17, 0x0
+                    invoke-direct/range {v9 .. v17}, $OPTION_CTOR
+                    invoke-interface {v1, v9}, Ljava/util/List;->add(Ljava/lang/Object;)Z
+                """,
+            )
+        }
+    }
+}
+
 // ─── Main BannerHub patch ──────────────────────────────────────────────────────
 
 @Suppress("unused")
@@ -645,5 +724,6 @@ val bannerHubPatch = bytecodePatch(
         bannerHubCpuPatch,
         bannerHubVramPatch,
         bannerHubTaskManagerPatch,
+        bannerHubConfigSharingPatch,
     )
 }

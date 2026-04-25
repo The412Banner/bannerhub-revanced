@@ -52,33 +52,14 @@ jobs:
             --repo ${{ github.repository }} \
             --output GameHub_5.3.5.apk
 
-      - name: Decode keystore
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-        run: |
-          echo "$KEYSTORE_BASE64" | base64 -d > bannerhub.jks
-
-      - name: Locate built artifacts
-        run: |
-          echo "=== patches/build/libs ==="
-          find patches/build/libs -type f | sort
-          echo "=== extensions/extension/build/libs ==="
-          find extensions/extension/build/libs -type f | sort
-
       - name: Apply patches & produce APK
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
-          PATCHES_FILE=$(find patches/build/libs -name "*.rvp" | head -1)
+          PATCHES_FILE=$(find patches/build/libs -name "*.rvp" ! -name "*-javadoc*" ! -name "*-sources*" | head -1)
           echo "Using patches file: $PATCHES_FILE"
           java -jar revanced-cli.jar patch GameHub_5.3.5.apk \
             --patches "$PATCHES_FILE" \
             --bypass-verification \
-            --out bannerhub.apk \
-            --keystore bannerhub.jks \
-            --keystore-entry-alias bannerhub \
-            --keystore-entry-password "$KEYSTORE_PASSWORD" \
-            --keystore-password "$KEYSTORE_PASSWORD"
+            --out bannerhub.apk
 
       - name: Get tag name
         id: tag

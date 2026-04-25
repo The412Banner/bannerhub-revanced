@@ -3,7 +3,7 @@
 ---
 
 ### [bh-fix-menu-crash] — Fix bannerHubMenuPatch dex verifier VerifyError (2026-04-25)
-**Branch:** `bannerhub-revanced`  |  **Commit:** pending  |  **CI:** pending
+**Branch:** `bannerhub-revanced`  |  **Commit:** `e0caa2f`  |  **CI:** run 24941343227 ✅
 #### What changed
 - **`BannerHubPatch.kt`** — rewrote `bannerHubMenuPatch` to use `p0`/`p1` parameter registers instead of `v0`/`v1` locals, matching BannerHub's smali exactly
 #### Root cause

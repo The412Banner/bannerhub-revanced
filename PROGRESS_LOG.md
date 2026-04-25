@@ -5,6 +5,14 @@ Goal: reproduce BannerHub as true ReVanced patches on top of playday's GameHub 5
 
 ---
 
+### [docs] — PORTING_REPORT.md added to repo; progress log caught up (2026-04-25)
+**Branch:** `bannerhub-revanced`  |  **Commit:** pending
+#### What changed
+- `PORTING_REPORT.md` — full 61-feature inventory with injection types, dependencies, complexity ratings, and 10-phase porting order; baseline is BannerHub v3.4.0
+- `PROGRESS_LOG.md` — backfilled all actions since branch creation
+
+---
+
 ### [setup] — baseline CI green on bannerhub-revanced branch (2026-04-25)
 **Branch:** `bannerhub-revanced` (forked from `playday-build`)  |  **CI:** run 24934888738 ✅
 #### State

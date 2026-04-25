@@ -5,6 +5,20 @@ Goal: reproduce BannerHub as true ReVanced patches on top of playday's GameHub 5
 
 ---
 
+### [bh-phase2] — Extension Java files + manifest registration (2026-04-25)
+**Branch:** `bannerhub-revanced`  |  **Commit:** pending  |  **CI:** pending
+#### What changed
+- **41 Java extension classes** copied from BannerHub v3.4.0 into `extensions/gamehub/src/main/java/app/revanced/extension/gamehub/`
+  - GOG: GogMainActivity, GogLoginActivity, GogGamesActivity, GogGameDetailActivity, GogGame, GogApiClient, GogAuthClient, GogCredentialStore, GogTokenRefresh, GogInstallPath, GogLaunchHelper, GogCloudSaveManager, GogDownloadManager (13 files)
+  - Epic: EpicMainActivity, EpicLoginActivity, EpicGamesActivity, EpicGameDetailActivity, EpicGame, EpicApiClient, EpicAuthClient, EpicCredentialStore, EpicDownloadManager, EpicFreeGamesActivity, EpicCloudSaveManager (11 files)
+  - Amazon: AmazonMainActivity, AmazonLoginActivity, AmazonGamesActivity, AmazonGameDetailActivity, AmazonGame, AmazonApiClient, AmazonAuthClient, AmazonCredentialStore, AmazonDownloadManager, AmazonManifest, AmazonPKCEGenerator, AmazonSdkManager, AmazonLaunchHelper (13 files)
+  - BH utilities: FolderPickerActivity, BhGameConfigsActivity, BhSettingsExporter, BhWineLaunchHelper, BhDownloadService, BhDownloadsActivity, BhDashboardDownloadBtn (7 files — Feature 47 FolderPickerActivity is Phase 2)
+  - Skipped (Phase 4): BhDetailedHud.java, BhFrameRating.java, BhKonkrHud.java (use `com.xj.winemu.sidebar` package — need special treatment)
+- **`BannerHubPatch.kt`** — added `bannerHubManifestPatch` registering all 16 new Activities + BhDownloadService + permissions (FOREGROUND_SERVICE, FOREGROUND_SERVICE_DATA_SYNC, POST_NOTIFICATIONS)
+- Activities not reachable yet (HomeLeftMenuDialog + LandscapeLauncherMainActivity bytecode hooks come in Phase 3)
+
+---
+
 ### [bh-phase1] — BannerHub monolithic patch created; Phase 1 features (2026-04-25)
 **Branch:** `bannerhub-revanced`  |  **Commit:** `b50d84a`  |  **CI:** run 24936106576 ✅
 #### What changed

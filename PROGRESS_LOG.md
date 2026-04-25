@@ -2,6 +2,21 @@
 
 ---
 
+### [bh-phase9] — Download Service manifest fixes + badge wiring (2026-04-25)
+**Branch:** `bannerhub-revanced`  |  **Commit:** `0cc9d7e`  |  **CI:** run 24939848451 ✅
+#### What changed
+- **`BannerHubPatch.kt`** — `bannerHubManifestPatch` extended with Phase 9 manifest fixes:
+  - `foregroundServiceType="specialUse"` added to 12 existing GameHub services that lack it (fixes `MissingForegroundServiceTypeException` on Android 14+): `DeviceManagementService`, `apk.update.DownloadService`, `MappingService`, `KeyboardEditService`, `SSLClientService`, `VTouchIPCService`, `UnzipService`, `EmuFileService`, `SteamService`, `DiscoveryService`, `ComputerManagerService`, `UsbDriverService`
+  - `android:excludeFromRecents="true"` added to `GameDetailActivity` (prevents stale task on re-launch after game exit)
+- **`bannerHubDownloadBtnPatch`** (new bytecode sub-patch):
+  - Hooks `LandscapeLauncherMainActivity.initView()` before final `return-void`
+  - Calls `BhDashboardDownloadBtn.attach(ctx, rootView.findViewById(id))` where id is resolved at runtime via `Resources.getIdentifier("iv_bci_launcher", "id", pkg)` — gracefully no-ops (returns 0) until Phase 10 adds the `iv_bci_launcher` view
+  - `bannerHubDownloadBtnPatch` added to `bannerHubPatch.dependsOn()`
+- **No new Java/stubs**: `BhDownloadService`, `BhDownloadsActivity`, and `BhDashboardDownloadBtn` all existed from Phase 2; no new extension files needed
+- **Feature coverage:** Feature 56 (BhDownloadService + foreground service type fixes)
+
+---
+
 ### [bh-phase8] — Config Sharing: Export/Import/Frontend Export (2026-04-25)
 **Branch:** `bannerhub-revanced`  |  **Commit:** `6a08f67`  |  **CI:** run 24939580424 ✅
 #### What changed

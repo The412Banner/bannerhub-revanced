@@ -1,0 +1,13 @@
+group = "com.github.the412banner"
+
+patches {
+    about {
+        name = "BannerHub for ReVanced"
+        description = "BannerHub patches for GameHub — community configs, frontend export, download manager, and more."
+        source = "https://github.com/The412Banner/bannerhub-revanced"
+        author = "The412Banner"
+        contact = "https://github.com/The412Banner"
+        website = "https://github.com/The412Banner/bannerhub-revanced"
+        license = "GNU General Public License v3.0"
+    }
+}

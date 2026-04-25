@@ -1,0 +1,90 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v1.0.0)"
+        required: true
+
+jobs:
+  release:
+    name: Build & Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Cache Gradle
+        uses: burrunan/gradle-cache-action@v2
+
+      - name: Build patches bundle
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./gradlew build --no-daemon
+
+      - name: Download ReVanced CLI
+        run: |
+          curl -L https://github.com/ReVanced/revanced-cli/releases/download/v6.0.0/revanced-cli-6.0.0-all.jar \
+            -o revanced-cli.jar
+
+      - name: Download base GameHub APK
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download base-apk \
+            --pattern "GameHub_5.3.5.apk" \
+            --repo ${{ github.repository }} \
+            --output GameHub_5.3.5.apk
+
+      - name: Decode keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > bannerhub.jks
+
+      - name: Apply patches & produce APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          java -jar revanced-cli.jar patch GameHub_5.3.5.apk \
+            --patches patches/build/libs/patches.rvp \
+            --out bannerhub.apk \
+            --keystore bannerhub.jks \
+            --keystore-entry-alias bannerhub \
+            --keystore-entry-password "$KEYSTORE_PASSWORD" \
+            --keystore-password "$KEYSTORE_PASSWORD"
+
+      - name: Get tag name
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            bannerhub.apk
+            patches/build/libs/patches.rvp
+            extensions/extension/build/libs/extensions/extension.rve

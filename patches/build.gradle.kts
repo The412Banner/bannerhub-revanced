@@ -11,3 +11,24 @@ patches {
         license = "GNU General Public License v3.0"
     }
 }
+
+kotlin {
+    compilerOptions {
+        freeCompilerArgs.addAll(
+            "-Xexplicit-backing-fields",
+            "-Xcontext-parameters",
+        )
+    }
+}
+
+afterEvaluate {
+    val extConfig = configurations.findByName("extensionConfiguration") ?: return@afterEvaluate
+
+    sourceSets.named("main") {
+        resources.setSrcDirs(listOf("src/main/resources"))
+    }
+
+    tasks.named<Copy>("processResources") {
+        from(extConfig)
+    }
+}

@@ -32,4 +32,4 @@ jobs:
       - name: Build patches
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./gradlew build --no-daemon
+        run: ./gradlew apiDump build --no-daemon

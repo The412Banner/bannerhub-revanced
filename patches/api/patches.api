@@ -1,4 +1,0 @@
-public final class app/revanced/patches/gamehub/PlaceholderPatchKt {
-	public static final fun getPlaceholderPatch ()Lapp/revanced/patcher/patch/BytecodePatch;
-}
-

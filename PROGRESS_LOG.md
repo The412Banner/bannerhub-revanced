@@ -6,7 +6,7 @@ Goal: reproduce BannerHub as true ReVanced patches on top of playday's GameHub 5
 ---
 
 ### [bh-phase1] — BannerHub monolithic patch created; Phase 1 features (2026-04-25)
-**Branch:** `bannerhub-revanced`  |  **Commit:** pending  |  **CI:** pending
+**Branch:** `bannerhub-revanced`  |  **Commit:** `b50d84a`  |  **CI:** run 24936106576 ✅
 #### What changed
 - `patches/src/main/kotlin/app/revanced/patches/gamehub/bannerhub/BannerHubPatch.kt` — new monolithic patch; Phase 1 features added
   - **Feature 1**: "My Games" string rename via `bannerHubResourcesPatch` (modifies `llauncher_main_page_title_my`)

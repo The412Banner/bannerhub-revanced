@@ -5,6 +5,22 @@ Goal: reproduce BannerHub as true ReVanced patches on top of playday's GameHub 5
 
 ---
 
+### [bh-phase4] — HUD overlay + WineActivity performance hooks (2026-04-25)
+**Branch:** `bannerhub-revanced`  |  **Commit:** pending  |  **CI:** pending
+#### What changed
+- **4 Java files** added to `extensions/gamehub/src/main/java/com/xj/winemu/sidebar/`:
+  - `BhFrameRating.java` — compact Winlator-style HUD bar (Feature 48)
+  - `BhDetailedHud.java` — 2-row detailed HUD (Feature 49)
+  - `BhKonkrHud.java` — Konkr-style vertical HUD (Feature 50)
+  - `BhHudInjector.java` — new file (translated from BannerHub smali); `injectOrUpdate(Activity)` selects and shows/hides the correct HUD overlay on the DecorView; `onWineCreate(Activity)` applies sustained performance mode + max Adreno clocks
+- **`BannerHubPatch.kt`** — added `bannerHubHudPatch`:
+  - `WineActivity.onResume()`: injects `BhHudInjector.injectOrUpdate(p0)` before `PcInGameDelegateManager.a.onResume()` (sget-object fingerprint)
+  - `WineActivity.onCreate()`: injects `BhHudInjector.onWineCreate(v1)` before `WineActivity.R2()` call (v1 = this alias)
+- **New imports**: `addInstructions`, `FieldReference`
+- HUD files use `package com.xj.winemu.sidebar` — placed under `extensions/gamehub/src/main/java/com/xj/winemu/sidebar/`; no GameHub stub dependencies (all reflection)
+
+---
+
 ### [bh-phase3] — Bytecode hooks: menu routing + pending-launch (2026-04-25)
 **Branch:** `bannerhub-revanced`  |  **Commit:** `0d56766`  |  **CI:** run 24936864656 ✅
 #### What changed

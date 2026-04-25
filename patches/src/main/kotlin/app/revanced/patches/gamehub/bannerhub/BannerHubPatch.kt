@@ -1,5 +1,6 @@
 package app.revanced.patches.gamehub.bannerhub
 
+import app.revanced.patcher.extensions.addInstructions
 import app.revanced.patcher.extensions.addInstructionsWithLabels
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patcher.patch.resourcePatch
@@ -10,6 +11,7 @@ import app.revanced.util.asSequence
 import app.revanced.util.indexOfFirstInstructionOrThrow
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
+import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 import org.w3c.dom.Element
 import app.revanced.patcher.firstMethod
@@ -242,6 +244,53 @@ private val bannerHubPendingLaunchPatch = bytecodePatch {
     }
 }
 
+// ─── Phase 4: HUD overlay + WineActivity performance hooks ────────────────────
+
+// Features 13/14/48/49/50: hook WineActivity.onCreate() for sustained-performance
+// mode + max Adreno clocks, and WineActivity.onResume() to inject the correct
+// HUD overlay (BhFrameRating / BhDetailedHud / BhKonkrHud) via BhHudInjector.
+private const val BH_HUD_INJECTOR = "Lcom/xj/winemu/sidebar/BhHudInjector;"
+
+private val bannerHubHudPatch = bytecodePatch {
+    apply {
+        // onResume: inject BhHudInjector.injectOrUpdate(this) before PcInGameDelegateManager.onResume()
+        firstMethod {
+            definingClass == "Lcom/xj/winemu/WineActivity;" && name == "onResume"
+        }.apply {
+            val pcResumeIndex = indexOfFirstInstructionOrThrow {
+                opcode == Opcode.SGET_OBJECT &&
+                    (this as? ReferenceInstruction)?.reference?.let {
+                        it is FieldReference &&
+                            it.definingClass == "Lcom/xj/winemu/external/PcInGameDelegateManager;" &&
+                            it.name == "a"
+                    } == true
+            }
+            addInstructions(
+                pcResumeIndex,
+                "invoke-static {p0}, $BH_HUD_INJECTOR->injectOrUpdate(Landroid/app/Activity;)V",
+            )
+        }
+
+        // onCreate: inject BhHudInjector.onWineCreate(this) before WineActivity.R2()
+        // v1 is `this` (aliased from p0 via move-object/from16 at the start of onCreate)
+        firstMethod {
+            definingClass == "Lcom/xj/winemu/WineActivity;" && name == "onCreate"
+        }.apply {
+            val r2Index = indexOfFirstInstructionOrThrow {
+                opcode == Opcode.INVOKE_VIRTUAL &&
+                    (this as? ReferenceInstruction)?.reference?.let {
+                        it is MethodReference && it.name == "R2" &&
+                            it.definingClass == "Lcom/xj/winemu/WineActivity;"
+                    } == true
+            }
+            addInstructions(
+                r2Index,
+                "invoke-static {v1}, $BH_HUD_INJECTOR->onWineCreate(Landroid/app/Activity;)V",
+            )
+        }
+    }
+}
+
 // ─── Main BannerHub patch ──────────────────────────────────────────────────────
 
 @Suppress("unused")
@@ -256,5 +305,6 @@ val bannerHubPatch = bytecodePatch(
         bannerHubManifestPatch,
         bannerHubMenuPatch,
         bannerHubPendingLaunchPatch,
+        bannerHubHudPatch,
     )
 }

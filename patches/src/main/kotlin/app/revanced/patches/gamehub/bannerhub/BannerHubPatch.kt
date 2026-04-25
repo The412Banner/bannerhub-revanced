@@ -9,6 +9,7 @@ import app.revanced.patches.gamehub.GAMEHUB_VERSION
 import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 import app.revanced.util.asSequence
 import app.revanced.util.indexOfFirstInstructionOrThrow
+import app.revanced.util.indexOfFirstInstructionReversedOrThrow
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.reference.FieldReference
@@ -326,6 +327,183 @@ private val bannerHubComponentManagerPatch = bytecodePatch {
     }
 }
 
+// ─── Phase 6: CPU core limit + VRAM unlock ────────────────────────────────────
+
+// Descriptors used across both Phase 6 sub-patches.
+private const val ENV_CONTROLLER = "Lcom/winemu/core/controller/EnvironmentController;"
+private const val CONFIG_CLASS = "Lcom/winemu/openapi/Config;"
+private const val SELECT_DIALOG_COMPANION =
+    "Lcom/xj/winemu/settings/SelectAndSingleInputDialog\$Companion;"
+private const val PC_GAME_SETTING_OPS = "Lcom/xj/winemu/settings/PcGameSettingOperations;"
+private const val CPU_MULTI_SELECT_HELPER =
+    "Lapp/revanced/extension/gamehub/CpuMultiSelectHelper;"
+private const val DIALOG_LIST_ITEM =
+    "Lcom/xj/winemu/bean/DialogSettingListItemEntity;"
+private const val PC_SETTING_ENTITY = "Lcom/xj/winemu/bean/PcSettingItemEntity;"
+private const val PC_SETTING_ENTITY_COMPANION =
+    "Lcom/xj/winemu/bean/PcSettingItemEntity\$Companion;"
+// Full parameter descriptor for DialogSettingListItemEntity's Kotlin defaults constructor.
+private const val DIALOG_LIST_CTOR_PARAMS =
+    "IIZLjava/lang/String;Ljava/lang/String;IILjava/lang/String;ILjava/lang/String;" +
+    "JLjava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;II" +
+    "Lcom/xj/winemu/api/bean/EnvLayerEntity;ZILjava/lang/String;" +
+    "ILkotlin/jvm/internal/DefaultConstructorMarker;"
+
+// Feature 17a: intercept SelectAndSingleInputDialog$Companion.d() for CONTENT_TYPE_CORE_LIMIT
+//   and show CpuMultiSelectHelper dialog instead of the single-select picker.
+// Feature 17b: override the CPU affinity bitmask formula in EnvironmentController.d() with
+//   the raw bitmask stored by CpuMultiSelectHelper (which Config.w() now returns directly).
+private val bannerHubCpuPatch = bytecodePatch {
+    apply {
+        // Feature 17a — SelectAndSingleInputDialog$Companion.d()
+        // Inject before the b(int, String) list-retrieval call so we can short-circuit
+        // with our multi-select dialog when contentType == CONTENT_TYPE_CORE_LIMIT.
+        firstMethod {
+            definingClass == SELECT_DIALOG_COMPANION && name == "d"
+        }.apply {
+            val bCallIndex = indexOfFirstInstructionOrThrow {
+                opcode == Opcode.INVOKE_VIRTUAL &&
+                    (this as? ReferenceInstruction)?.reference?.let {
+                        it is MethodReference && it.name == "b" &&
+                            it.definingClass == SELECT_DIALOG_COMPANION
+                    } == true
+            }
+            addInstructionsWithLabels(
+                bCallIndex,
+                """
+                    sget-object v0, $PC_SETTING_ENTITY->Companion:$PC_SETTING_ENTITY_COMPANION
+                    invoke-virtual {v0}, $PC_SETTING_ENTITY_COMPANION->getCONTENT_TYPE_CORE_LIMIT()I
+                    move-result v0
+                    if-ne p3, v0, :bh_not_core_limit
+                    invoke-static {p1, p2, p3, p4}, $CPU_MULTI_SELECT_HELPER->show(Landroid/view/View;Ljava/lang/String;ILkotlin/jvm/functions/Function1;)V
+                    return-void
+                    :bh_not_core_limit
+                """,
+            )
+        }
+
+        // Feature 17b — EnvironmentController.d(): override the (1<<count)-1 formula result
+        // with the raw bitmask that Config.w() now stores (set by CpuMultiSelectHelper).
+        // The formula path: shl-int → sub-int/2addr → [inject here] → :goto_0.
+        // Other paths jump directly to :goto_0 and are unaffected.
+        firstMethod {
+            definingClass == ENV_CONTROLLER && name == "d"
+        }.apply {
+            val shlIndex = indexOfFirstInstructionOrThrow(Opcode.SHL_INT)
+            addInstructions(
+                shlIndex + 2,
+                """
+                    iget-object v2, p0, $ENV_CONTROLLER->b:$CONFIG_CLASS
+                    invoke-virtual {v2}, $CONFIG_CLASS->w()I
+                    move-result v0
+                """,
+            )
+        }
+    }
+}
+
+// Feature 18: extend PcGameSettingOperations to expose 6/8/12/16 GB VRAM options.
+//   F0() — display-name method: add string cases before the "No Limit" fallback.
+//   l0() — list-building method: add 4 new DialogSettingListItemEntity entries before return.
+private val bannerHubVramPatch = bytecodePatch {
+    apply {
+        // Feature 18 — PcGameSettingOperations.F0() display strings
+        firstMethod {
+            definingClass == PC_GAME_SETTING_OPS && name == "F0"
+        }.apply {
+            val noLimitIndex = indexOfFirstInstructionOrThrow {
+                opcode == Opcode.SGET &&
+                    (this as? ReferenceInstruction)?.reference?.let {
+                        it is FieldReference && it.name == "pc_cc_cpu_core_no_limit"
+                    } == true
+            }
+            addInstructionsWithLabels(
+                noLimitIndex,
+                """
+                    const/16 v0, 0x1800
+                    if-ne p0, v0, :bh_f0_not6
+                    const-string p0, "6 GB"
+                    return-object p0
+                    :bh_f0_not6
+                    const/16 v0, 0x2000
+                    if-ne p0, v0, :bh_f0_not8
+                    const-string p0, "8 GB"
+                    return-object p0
+                    :bh_f0_not8
+                    const/16 v0, 0x3000
+                    if-ne p0, v0, :bh_f0_not12
+                    const-string p0, "12 GB"
+                    return-object p0
+                    :bh_f0_not12
+                    const/16 v0, 0x4000
+                    if-ne p0, v0, :bh_f0_not16
+                    const-string p0, "16 GB"
+                    return-object p0
+                    :bh_f0_not16
+                """,
+            )
+        }
+
+        // Feature 18 — PcGameSettingOperations.l0() list entries
+        // Inject before return-object v1 (the list). v54/v55 (defaults mask / DCM) and
+        // v32/v35-v53 (all-zero fields) are still live from the 4 GB entry setup.
+        // Only v31 (VRAM MB), v33 (isSelected), v34 (name) are set per entry.
+        // G0() re-reads the current selection so isSelected highlights correctly.
+        firstMethod {
+            definingClass == PC_GAME_SETTING_OPS && name == "l0"
+        }.apply {
+            val returnIndex = indexOfFirstInstructionReversedOrThrow(Opcode.RETURN_OBJECT)
+            addInstructionsWithLabels(
+                returnIndex,
+                """
+                    invoke-virtual/range {p0 .. p0}, $PC_GAME_SETTING_OPS->G0()I
+                    move-result v3
+                    const/16 v31, 0x1800
+                    const/4 v33, 0x0
+                    if-ne v3, v31, :bh_l0_6ns
+                    const/4 v33, 0x1
+                    :bh_l0_6ns
+                    new-instance v30, $DIALOG_LIST_ITEM
+                    const-string v34, "6 GB"
+                    invoke-direct/range {v30 .. v55}, $DIALOG_LIST_ITEM-><init>($DIALOG_LIST_CTOR_PARAMS)V
+                    move-object/from16 v0, v30
+                    invoke-interface {v1, v0}, Ljava/util/List;->add(Ljava/lang/Object;)Z
+                    const/16 v31, 0x2000
+                    const/4 v33, 0x0
+                    if-ne v3, v31, :bh_l0_8ns
+                    const/4 v33, 0x1
+                    :bh_l0_8ns
+                    new-instance v30, $DIALOG_LIST_ITEM
+                    const-string v34, "8 GB"
+                    invoke-direct/range {v30 .. v55}, $DIALOG_LIST_ITEM-><init>($DIALOG_LIST_CTOR_PARAMS)V
+                    move-object/from16 v0, v30
+                    invoke-interface {v1, v0}, Ljava/util/List;->add(Ljava/lang/Object;)Z
+                    const/16 v31, 0x3000
+                    const/4 v33, 0x0
+                    if-ne v3, v31, :bh_l0_12ns
+                    const/4 v33, 0x1
+                    :bh_l0_12ns
+                    new-instance v30, $DIALOG_LIST_ITEM
+                    const-string v34, "12 GB"
+                    invoke-direct/range {v30 .. v55}, $DIALOG_LIST_ITEM-><init>($DIALOG_LIST_CTOR_PARAMS)V
+                    move-object/from16 v0, v30
+                    invoke-interface {v1, v0}, Ljava/util/List;->add(Ljava/lang/Object;)Z
+                    const/16 v31, 0x4000
+                    const/4 v33, 0x0
+                    if-ne v3, v31, :bh_l0_16ns
+                    const/4 v33, 0x1
+                    :bh_l0_16ns
+                    new-instance v30, $DIALOG_LIST_ITEM
+                    const-string v34, "16 GB"
+                    invoke-direct/range {v30 .. v55}, $DIALOG_LIST_ITEM-><init>($DIALOG_LIST_CTOR_PARAMS)V
+                    move-object/from16 v0, v30
+                    invoke-interface {v1, v0}, Ljava/util/List;->add(Ljava/lang/Object;)Z
+                """,
+            )
+        }
+    }
+}
+
 // ─── Main BannerHub patch ──────────────────────────────────────────────────────
 
 @Suppress("unused")
@@ -342,5 +520,7 @@ val bannerHubPatch = bytecodePatch(
         bannerHubPendingLaunchPatch,
         bannerHubHudPatch,
         bannerHubComponentManagerPatch,
+        bannerHubCpuPatch,
+        bannerHubVramPatch,
     )
 }

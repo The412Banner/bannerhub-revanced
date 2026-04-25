@@ -2,8 +2,26 @@
 
 ---
 
-### [bh-phase5] — Component Manager + GameSettingViewModel coroutine hook (2026-04-25)
+### [bh-phase6] — CPU core limit multi-select + VRAM unlock (2026-04-25)
 **Branch:** `bannerhub-revanced`  |  **Commit:** pending  |  **CI:** pending
+#### What changed
+- **`CpuMultiSelectHelper.java`** added to `extensions/gamehub/src/main/java/app/revanced/extension/gamehub/`:
+  - Reflection-based 8-core bitmask checkbox dialog; reads current mask via `PcGameSettingOperations.H()`, writes via `SPUtils.m(key, mask)`; fires `Function1` callback with `DialogSettingListItemEntity` built via Kotlin defaults constructor (Feature 17a)
+- **`BannerHubPatch.kt`** changes — added `bannerHubCpuPatch` and `bannerHubVramPatch`:
+  - **`bannerHubCpuPatch`**:
+    - Feature 17a: intercepts `SelectAndSingleInputDialog$Companion.d()` before the `b(int,String)` list call; if `contentType == CONTENT_TYPE_CORE_LIMIT` calls `CpuMultiSelectHelper.show()` and returns, bypassing the single-select picker
+    - Feature 17b: in `EnvironmentController.d()`, after the `(1<<count)-1` formula (`shl-int` + `sub-int/2addr`), overrides `v0` with `Config.w()` (the raw bitmask stored by CpuMultiSelectHelper) so affinity is applied correctly
+  - **`bannerHubVramPatch`**:
+    - Feature 18 F0(): injects 4 string-return cases (0x1800=6 GB, 0x2000=8 GB, 0x3000=12 GB, 0x4000=16 GB) before the `pc_cc_cpu_core_no_limit` fallback in `PcGameSettingOperations.F0()`
+    - Feature 18 l0(): injects 4 `DialogSettingListItemEntity` list entries via `invoke-direct/range {v30..v55}` (Kotlin defaults constructor) before `return-object v1` in `PcGameSettingOperations.l0()`; uses `G0()` result in v3 to set `isSelected` per entry
+  - Both sub-patches added to `bannerHubPatch.dependsOn()`
+  - New constants: `ENV_CONTROLLER`, `CONFIG_CLASS`, `SELECT_DIALOG_COMPANION`, `PC_GAME_SETTING_OPS`, `CPU_MULTI_SELECT_HELPER`, `DIALOG_LIST_ITEM`, `PC_SETTING_ENTITY`, `PC_SETTING_ENTITY_COMPANION`, `DIALOG_LIST_CTOR_PARAMS`
+  - New import: `indexOfFirstInstructionReversedOrThrow`
+
+---
+
+### [bh-phase5] — Component Manager + GameSettingViewModel coroutine hook (2026-04-25)
+**Branch:** `bannerhub-revanced`  |  **Commit:** `31775f6`  |  **CI:** run 24937636482 ✅
 #### What changed
 - **3 Java extension files** added to `extensions/gamehub/src/main/java/app/revanced/extension/gamehub/`:
   - `ComponentInjectorHelper.java` — reflection-based WCP/ZIP extraction + EmuComponents registration; `appendLocalComponents(List, int)` injected into GameSettingViewModel (Feature 4/8)

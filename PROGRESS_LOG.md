@@ -5,6 +5,17 @@ Goal: reproduce BannerHub as true ReVanced patches on top of playday's GameHub 5
 
 ---
 
+### [bh-phase3] — Bytecode hooks: menu routing + pending-launch (2026-04-25)
+**Branch:** `bannerhub-revanced`  |  **Commit:** pending  |  **CI:** pending
+#### What changed
+- **`BannerHubPatch.kt`** — added two private `bytecodePatch` sub-patches:
+  - **`bannerHubMenuPatch`**: injects an if-chain BEFORE the `packed-switch` in `HomeLeftMenuDialog.o1()` to intercept menu item IDs 10 (GOG), 11 (Amazon), 12 (Epic), 13 (BhGameConfigs) and start their respective Activities via `p2` (FragmentActivity as Context). Uses existing registers v0/v1 (method has `.locals 2`).
+  - **`bannerHubPendingLaunchPatch`**: injects AFTER `invoke-super onResume()` in `LandscapeLauncherMainActivity.onResume()` to read `pending_gog_exe` / `pending_amazon_exe` / `pending_epic_exe` from SharedPreferences (`bh_gog_prefs` / `bh_amazon_prefs` / `bh_epic_prefs`), clear the pref on hit, then call `this.B3(exePath)`. Uses existing registers v0/v1/v2 (method has `.locals 3`).
+- Both sub-patches added to `bannerHubPatch.dependsOn()`
+- New imports: `addInstructionsWithLabels`, `indexOfFirstInstructionOrThrow`, `Opcode`, `ReferenceInstruction`, `MethodReference`, `firstMethod`
+
+---
+
 ### [bh-phase2] — Extension Java files + manifest registration (2026-04-25)
 **Branch:** `bannerhub-revanced`  |  **Commit:** `b5f72c5` + lint fixes `df228ad`/`78b5eab`  |  **CI:** run 24936539339 ✅
 #### What changed

@@ -126,3 +126,69 @@ Patch `is0.f()` (the interface default method in `is0.smali`) to return a non-nu
 - Adds patch to `Lis0;->f()Ll4m;` — removes its 6 original instructions (`invoke-interface d()` → `getValue()` → `check-cast Ll4m;` → `return-object`) and replaces with `invoke-static FakeAuthToken.get()` → `check-cast Ll4m;` → `return-object`
 - Keeps existing `xm7.f()`="99999" patch as redundant safety net (and so xm7's local cache logic stays consistent)
 - Keeps the `g8e.i/r` navigator bypass and `os0.h()`=TRUE
+
+---
+
+## 2026-05-01 evening — Save-button silent-failure investigation
+
+### Symptom
+Bypass-login works (no Login screen), but **clicking Import → fill game form → Save** does not add the game to the library. Repeated tests show no rows ever appear in the library UI.
+
+### Test 1 — v0.0.9-600-test (commit `59ab364`)
+Existing patches: xm7.u ENTRY/CATCH probes, odb.e Throwable hook. DebugTrace writes to file at `/storage/emulated/0/Android/data/com.xiaoji.egggame/files/gh600-debug.log` AND Log.e.
+
+Reproduction with `getlog -n 15000 com.xiaoji.egggame` after Save:
+- 10251 lines captured, **0 GH600-DEBUG entries, 0 E-level lines from the app** (66 D, 10146 I, 38 W).
+
+Hypothesis: this device (or kernel build) filters app-tagged Log.e for non-system uids. File output unreachable from PRoot due to scoped storage.
+
+### Test 2 — v0.1.0-600-test (commit `ac86a5f`, CI 25237506742 ✅)
+Changes:
+- DebugTrace switches from `Log.e` to `Log.i` (Log.i lines ARE reaching logcat per the test-1 capture).
+- DebugTrace adds zero-arg markers `markY4iUpsert()`, `markFakeAuth()` for probes inserted into methods with `.locals 0`.
+- New probe at `y4i.b` ENTRY (RetroGameDao upsert wrapper).
+- `FakeAuthToken.get()` now logs on every call, not only on first construction.
+
+Reproduction:
+- `xm7.u ENTRY` fires **once** at 19:33:23.935 ✓
+- `xm7.u CATCH` fires **0** times — transaction did not throw
+- `FakeAuthToken.get() called` fires **45×** — bypass-login pathway is alive
+- `y4i.b ENTRY` fires **0** — RetroGameDao not touched
+- `y2d.e caught` fires **0**
+
+### Conclusion of Test 2
+xm7.u runs successfully end-to-end without exception, yet nothing lands in the library. `y4i.b` was a red herring — `RetroGameDao` is for retro emulators only. Re-tracing xm7.u smali (`smali_classes4/xm7.smali` line 13663) shows the actual write path:
+
+```
+xm7.u
+  ├─ early bail: if xm7.f() returns null → return Boolean.FALSE     [line 13822]
+  └─ withTransaction(GameLibraryDatabase, fl7) → fl7.invokeSuspend
+       └─ withTransaction body: el7.invokeSuspend (.locals 69)
+            ├─ build GameLaunchMethodTable, setLinkedGameId
+            ├─ GameLaunchMethodDao.insert(table, cont)               ← line 609 in el7.smali
+            ├─ build GameLibraryBaseTable via oh7.c(GameInfo)
+            └─ GameLibraryBaseDao.insert(table, cont)                ← line 922 in el7.smali
+```
+
+The actual main-library writes are inside `el7.invokeSuspend` against `GameLibraryDatabase` — separate database from `RetroGameDatabase`.
+
+### Test 3 — v0.1.1-600-test (commit `0892555`, CI 25237940015)
+Added probes:
+- `el7.invokeSuspend` ENTRY → confirms transaction body started
+- `GameLaunchMethodDao.insert` PRE → marker right before INVOKE_INTERFACE
+- `GameLibraryBaseDao.insert` PRE → marker right before INVOKE_INTERFACE
+
+Implementation: `addInstructions` walked from highest target index to lowest so earlier insertions don't shift later targets. All three markers route through `DebugTrace.markEl7Entry()` / `markLaunchInsert()` / `markLibraryInsert()` (no-arg statics) since el7.invokeSuspend doesn't have free local registers everywhere.
+
+**Branching logic for next reproduction:**
+- el7 ENTRY missing → xm7.u took the early `Boolean.FALSE` branch (xm7.f() patch silently shadowed somehow)
+- el7 ENTRY hit, no insert markers → withTransaction body bailed before reaching inserts
+- both insert markers hit, library still empty → bug is **library-read-side**: UI either filters by a userId mismatch or fetches from a remote endpoint that 401s with our empty-bearer fake token
+
+### Parallel infrastructure: logcat-bridge v1.1.0
+The bridge can't read scoped external storage from PRoot, but the daemon runs as root. v1.1.0 (zip ready at `/data/data/com.termux/files/home/logcat-bridge-magisk.zip`, awaiting flash) adds `cat <path>`, `ls <path>`, and `sql <dbpath> <query>` verbs to the handler with allowlisted prefixes (`/data/data/`, `/data/local/tmp/`, `/data/tombstones/`, `/data/adb/modules/`, `/storage/emulated/0/Android/`, `/sdcard/Android/`) and `..` traversal blocked. `sqlite3` invoked with `-readonly -header`. Client side: `getlog --cat <path>`, `getlog --ls <path>`, `getlog --sql <dbpath> "SELECT ..."`. Once flashed + rebooted, this lets us inspect `GameLibraryDatabase` rows directly to confirm whether writes actually persist — covering the case where probes show inserts firing but UI still shows empty.
+
+### Status awaiting user
+- Flash logcat-bridge v1.1.0 zip + reboot.
+- Install v0.1.1-600-test APK, reproduce Save, capture logs.
+- Then I pull `getlog -n 20000 com.xiaoji.egggame` for probe markers AND `getlog --sql /data/data/com.xiaoji.egggame/databases/<gameLibraryDbName> "SELECT count(*) FROM game_library_base"` for the conclusive write-vs-read answer.

@@ -9,6 +9,7 @@ import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
 import app.revanced.patches.gamehub.GAMEHUB_VERSION
 import app.revanced.util.getReference
 import app.revanced.util.indexOfFirstInstructionOrThrow
+import app.revanced.util.returnEarly
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.reference.FieldReference
@@ -48,6 +49,16 @@ val bypassLoginPatch = bytecodePatch(
                 """,
             )
         }
+
+        // xm7 is GameLibraryRepository. xm7.f() reads is0.f() (the current
+        // auth token's wrapped user-id string) and returns null when no auth
+        // token is in the Room DB. The game-import use case q1d.a() calls
+        // xm7.u(GameInfo, LaunchMethod, …), which fail-fasts to Boolean.FALSE
+        // the moment xm7.f() is null — surfacing as the "Save failed" toast.
+        // Hardcode a non-null fake UID so the save proceeds to the DB write.
+        firstMethod {
+            definingClass == "Lxm7;" && name == "f"
+        }.returnEarly("99999")
 
         // Defence in depth: g8e.i(rh0) and g8e.r(rh0) both guard Login
         // navigation with the pattern:

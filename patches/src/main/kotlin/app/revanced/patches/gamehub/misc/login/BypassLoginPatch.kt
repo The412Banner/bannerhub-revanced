@@ -1,14 +1,11 @@
 package app.revanced.patches.gamehub.misc.login
 
-import app.revanced.patcher.extensions.addInstructions
 import app.revanced.patcher.extensions.removeInstruction
 import app.revanced.patcher.firstMethod
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patcher.patch.stringOption
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
 import app.revanced.patches.gamehub.GAMEHUB_VERSION
-import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
-import app.revanced.patches.gamehub.misc.token.TOKEN_PROVIDER_CLASS
 import app.revanced.util.getReference
 import app.revanced.util.indexOfFirstInstructionOrThrow
 import app.revanced.util.indexOfFirstInstructionReversedOrThrow
@@ -26,8 +23,6 @@ val bypassLoginPatch = bytecodePatch(
     description = "Bypasses the login requirement by spoofing user credentials.",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
-
-    dependsOn(sharedGamehubExtensionPatch)
 
     val username by stringOption(
         name = "username",
@@ -114,22 +109,6 @@ val bypassLoginPatch = bytecodePatch(
             for (i in startActivityIndex downTo newInstanceIndex) {
                 removeInstruction(i)
             }
-        }
-
-        // Set TokenProvider.loginBypassed = true so the token resolution extension
-        // knows to fetch from the token-refresh service instead of using the original token.
-        firstMethod {
-            definingClass == "Lapp/revanced/extension/gamehub/token/TokenProvider;" &&
-                name == "<clinit>"
-        }.apply {
-            val returnVoidIndex = indexOfFirstInstructionOrThrow { opcode == Opcode.RETURN_VOID }
-            addInstructions(
-                returnVoidIndex,
-                """
-                    const/4 v0, 0x1
-                    sput-boolean v0, $TOKEN_PROVIDER_CLASS->loginBypassed:Z
-                """,
-            )
         }
 
     }

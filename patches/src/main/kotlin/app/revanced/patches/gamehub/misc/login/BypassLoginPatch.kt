@@ -24,15 +24,42 @@ val bypassLoginPatch = bytecodePatch(
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
 
     apply {
-        // g8e.i(rh0) and g8e.r(rh0) both guard Login navigation with the pattern:
+        // os0 is the real DB-backed is0 (auth session) implementation. Its h()
+        // returns the StateFlow<Boolean> for "is logged in", initially FALSE
+        // and updated by combining UserDao + AuthTokenDao flows. Every collector
+        // (Compose NavHost in z5o, ah7 listener, xv0 analytics) sees that FALSE
+        // and the navigator picks Login as the initial route.
+        //
+        // Replace h() to return a fresh MutableStateFlow(Boolean.TRUE) — same
+        // pattern ah.<init> uses for its bypass field. f3k implements d3k so the
+        // return type matches.
+        firstMethod {
+            definingClass == "Los0;" && name == "h"
+        }.apply {
+            removeInstruction(0) // iget-object p0, p0, Los0;->c:Likh;
+            removeInstruction(0) // return-object p0
+            addInstructions(
+                0,
+                """
+                    sget-object p0, Ljava/lang/Boolean;->TRUE:Ljava/lang/Boolean;
+                    invoke-static {p0}, Lr8o;->r(Ljava/lang/Object;)Lf3k;
+                    move-result-object p0
+                    return-object p0
+                """,
+            )
+        }
+
+        // Defence in depth: g8e.i(rh0) and g8e.r(rh0) both guard Login
+        // navigation with the pattern:
         //   iget-object vN, p0, Lg8e;->b:Lis0;
         //   invoke-interface {vN}, Lis0;->a()Z   ← isLoggedIn check
         //   move-result vN
         //   if-nez vN, :skipLogin                ← only skips if logged in
         //   new-instance Lga0;                   ← builds Login navigation intent
         //
-        // Replace invoke-interface + move-result with const/4 vN, 0x1 so the branch
-        // always skips to :skipLogin.
+        // Replace invoke-interface + move-result with const/4 vN, 0x1 so the
+        // branch always skips. With h() patched above this is redundant for
+        // os0, but covers any other is0 impl that bypasses h().
         for (methodName in listOf("i", "r")) {
             firstMethod {
                 definingClass == G8E_CLASS && name == methodName

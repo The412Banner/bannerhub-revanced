@@ -1,8 +1,6 @@
 package app.revanced.patches.gamehub.misc.analytics
 
-import app.revanced.patcher.extensions.ExternalLabel
-import app.revanced.patcher.extensions.addInstructionsWithLabels
-import app.revanced.patcher.extensions.getInstruction
+import app.revanced.patcher.extensions.removeInstruction
 import app.revanced.patcher.firstMethod
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
@@ -21,9 +19,9 @@ val disableCrashlyticsPatch = bytecodePatch(
     apply {
         // BaseAndroidApp.onCreate() calls FirebaseCrashlytics.getInstance() which throws NPE
         // because the Crashlytics component registrar is stripped by ReVanced's extension merge.
-        // Insert a goto to skip over the getInstance+setCrashlyticsCollectionEnabled block.
-        // We use goto (not removeInstruction) to preserve the original type flow — removing
-        // instructions shifts the const/4 that lives between them, breaking register v2's type.
+        // Remove getInstance, move-result-object, and setCrashlyticsCollectionEnabled in reverse
+        // index order so that the const/4 between them stays in place — it redefines v2 from
+        // String to Boolean, and code after this block relies on that typing.
         firstMethod {
             definingClass == "Lcom/xiaoji/egggame/BaseAndroidApp;" && name == "onCreate"
         }.apply {
@@ -37,13 +35,10 @@ val disableCrashlyticsPatch = bytecodePatch(
                     (this as ReferenceInstruction).reference.toString()
                         .contains("setCrashlyticsCollectionEnabled")
             }
-            // Capture the instruction AFTER setCrashlyticsCollectionEnabled before inserting.
-            val afterCrashlytics = getInstruction(setCrashlyticsIdx + 1)
-            addInstructionsWithLabels(
-                getInstanceIdx,
-                "goto :after_crashlytics",
-                ExternalLabel("after_crashlytics", afterCrashlytics),
-            )
+            // Remove in reverse order so earlier indices remain valid.
+            removeInstruction(setCrashlyticsIdx)
+            removeInstruction(getInstanceIdx + 1) // move-result-object
+            removeInstruction(getInstanceIdx)     // invoke-static getInstance
         }
     }
 }

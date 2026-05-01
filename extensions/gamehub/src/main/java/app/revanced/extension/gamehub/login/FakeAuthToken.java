@@ -24,6 +24,7 @@ public final class FakeAuthToken {
     private static volatile Object cached;
 
     public static Object get() {
+        DebugTrace.write("FakeAuthToken.get() called");
         Object t = cached;
         if (t != null) return t;
         synchronized (FakeAuthToken.class) {

@@ -36,6 +36,15 @@ public final class DebugTrace {
         write(message, null);
     }
 
+    /**
+     * Zero-argument marker so smali probes can be inserted into methods with
+     * `.locals 0` without needing to materialize a string register. Routes to
+     * write() with the caller-derived tag so the trace file still reads
+     * naturally.
+     */
+    public static void markY4iUpsert() { write("y4i.b ENTRY (retro upsert)"); }
+    public static void markFakeAuth()  { write("FakeAuthToken.get() called"); }
+
     public static void write(String message, Throwable t) {
         try {
             File f = ensureFile();
@@ -51,10 +60,12 @@ public final class DebugTrace {
             Log.e(TAG, "DebugTrace.write failed: " + message, e);
             return;
         }
+        // Use Log.i — this device's logcat filter strips app-tagged Log.e
+        // for non-system uids, so .e silently disappears from `getlog`.
         if (t != null) {
-            Log.e(TAG, message, t);
+            Log.i(TAG, message, t);
         } else {
-            Log.e(TAG, message);
+            Log.i(TAG, message);
         }
     }
 

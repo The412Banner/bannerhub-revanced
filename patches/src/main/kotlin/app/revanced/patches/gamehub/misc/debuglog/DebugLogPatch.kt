@@ -28,10 +28,11 @@ private const val DEBUG_TRACE = "Lapp/revanced/extension/gamehub/debug/DebugTrac
 val debugLogPatch = bytecodePatch(
     name = "Debug logging",
     description = "Marks the APK debuggable and routes diagnostic probes through " +
-        "DebugTrace, an extension helper that appends to a file on external storage " +
-        "(/storage/emulated/0/Android/data/com.xiaoji.egggame/files/gh600-debug.log). " +
-        "Logcat readers on this device filter out app-tagged Log.e calls; file output " +
-        "is the only reliable channel.",
+        "DebugTrace. Writes to logcat with tag GH600-DEBUG at Log.i level (the device " +
+        "filter strips app-tagged Log.e but lets Log.i through) and also appends to a " +
+        "file on external storage at " +
+        "/storage/emulated/0/Android/data/com.xiaoji.egggame/files/gh600-debug.log " +
+        "as a backup channel.",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
 
@@ -85,5 +86,20 @@ val debugLogPatch = bytecodePatch(
                 """,
             )
         }
+
+        // y4i.b(RetroGameEntity, Continuation) is the thin repo wrapper around
+        // RetroGameDao.upsert. Every retro-game DB write goes through here.
+        // If this probe fires after Save → write happened, bug is library-read-side.
+        // If it does NOT fire → write was never attempted, bug is upstream.
+        // y4i.b has .locals 0, so we use a no-arg marker that needs no register.
+        firstMethod {
+            definingClass == "Ly4i;" && name == "b"
+        }.apply {
+            addInstructions(
+                0,
+                "invoke-static {}, $DEBUG_TRACE->markY4iUpsert()V",
+            )
+        }
+
     }
 }

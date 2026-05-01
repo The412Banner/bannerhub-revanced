@@ -2,6 +2,8 @@ package app.revanced.extension.gamehub.login;
 
 import android.util.Log;
 
+import app.revanced.extension.gamehub.debug.DebugTrace;
+
 import java.lang.reflect.Constructor;
 
 /**
@@ -37,10 +39,10 @@ public final class FakeAuthToken {
                 cached = ctor.newInstance(
                         FAKE_USER_ID, "", null, null, null, null,
                         0L, false, 0L, 0L);
-                Log.i(TAG, "FakeAuthToken: built synthetic l4m a=" + FAKE_USER_ID);
+                DebugTrace.write("FakeAuthToken: built synthetic l4m a=" + FAKE_USER_ID);
                 return cached;
             } catch (Throwable e) {
-                Log.e(TAG, "FakeAuthToken: construction failed", e);
+                DebugTrace.write("FakeAuthToken: construction failed", e);
                 return null;
             }
         }

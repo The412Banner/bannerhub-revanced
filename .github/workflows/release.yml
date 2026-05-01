@@ -49,16 +49,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release download base-apk \
-            --pattern "GameHub_5.3.5.apk" \
+          gh release download base-apk-600 \
+            --pattern "GameHub_beta_6.0.0_global.apk" \
             --repo ${{ github.repository }} \
-            --output GameHub_5.3.5.apk
+            --output GameHub_6.0.0.apk
 
       - name: Apply patches & produce APK
         run: |
           PATCHES_FILE=$(find patches/build/libs -name "*.rvp" ! -name "*-javadoc*" ! -name "*-sources*" | head -1)
           echo "Using patches file: $PATCHES_FILE"
-          java -jar revanced-cli.jar patch GameHub_5.3.5.apk \
+          java -jar revanced-cli.jar patch GameHub_6.0.0.apk \
             --patches "$PATCHES_FILE" \
             --bypass-verification \
             --out bannerhub.apk

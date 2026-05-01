@@ -2,7 +2,7 @@ package app.revanced.patches.gamehub
 
 // App metadata
 internal const val GAMEHUB_PACKAGE = "com.xiaoji.egggame"
-internal const val GAMEHUB_VERSION = "5.3.5"
+internal const val GAMEHUB_VERSION = "6.0.0"
 
 // Extension class descriptors (smali format)
 internal const val EXTENSION_PREFS = "Lapp/revanced/extension/gamehub/prefs/GameHubPrefs;"

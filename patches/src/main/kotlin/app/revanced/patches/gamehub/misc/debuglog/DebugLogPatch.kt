@@ -101,5 +101,51 @@ val debugLogPatch = bytecodePatch(
             )
         }
 
+        // el7.invokeSuspend is the Room transaction body for game-library import.
+        // It does two inserts:
+        //   1. GameLaunchMethodDao.insert(GameLaunchMethodTable, Continuation)
+        //   2. GameLibraryBaseDao.insert(GameLibraryBaseTable, Continuation)
+        // Probe entry plus right before each insert. If both insert markers fire
+        // → write side is fine, bug is library-read-side. If neither → transaction
+        // body bailed before reaching the inserts.
+        firstMethod {
+            definingClass == "Lel7;" && name == "invokeSuspend"
+        }.apply {
+            // Walk instructions backwards so we can insert without index drift.
+            val launchInsertIdx = indexOfFirstInstructionOrThrow {
+                opcode == Opcode.INVOKE_INTERFACE &&
+                    getReference<MethodReference>()?.let {
+                        it.definingClass ==
+                            "Lcom/xiaoji/egggame/game/database/dao/GameLaunchMethodDao;" &&
+                            it.name == "insert"
+                    } == true
+            }
+            val libraryInsertIdx = indexOfFirstInstructionOrThrow {
+                opcode == Opcode.INVOKE_INTERFACE &&
+                    getReference<MethodReference>()?.let {
+                        it.definingClass ==
+                            "Lcom/xiaoji/egggame/game/database/dao/GameLibraryBaseDao;" &&
+                            it.name == "insert"
+                    } == true
+            }
+            // Insert from highest index to lowest so earlier insertions don't
+            // shift later target indices.
+            val higherIdx = maxOf(launchInsertIdx, libraryInsertIdx)
+            val lowerIdx  = minOf(launchInsertIdx, libraryInsertIdx)
+            val higherMarker = if (higherIdx == libraryInsertIdx) "markLibraryInsert" else "markLaunchInsert"
+            val lowerMarker  = if (lowerIdx  == libraryInsertIdx) "markLibraryInsert" else "markLaunchInsert"
+            addInstructions(
+                higherIdx,
+                "invoke-static {}, $DEBUG_TRACE->$higherMarker()V",
+            )
+            addInstructions(
+                lowerIdx,
+                "invoke-static {}, $DEBUG_TRACE->$lowerMarker()V",
+            )
+            addInstructions(
+                0,
+                "invoke-static {}, $DEBUG_TRACE->markEl7Entry()V",
+            )
+        }
     }
 }

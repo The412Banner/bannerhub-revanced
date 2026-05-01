@@ -44,6 +44,9 @@ public final class DebugTrace {
      */
     public static void markY4iUpsert() { write("y4i.b ENTRY (retro upsert)"); }
     public static void markFakeAuth()  { write("FakeAuthToken.get() called"); }
+    public static void markEl7Entry()       { write("el7.invokeSuspend ENTRY"); }
+    public static void markLaunchInsert()   { write("GameLaunchMethodDao.insert PRE"); }
+    public static void markLibraryInsert()  { write("GameLibraryBaseDao.insert PRE"); }
 
     public static void write(String message, Throwable t) {
         try {

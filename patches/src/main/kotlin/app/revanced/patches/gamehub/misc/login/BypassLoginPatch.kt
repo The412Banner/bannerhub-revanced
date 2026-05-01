@@ -60,6 +60,36 @@ val bypassLoginPatch = bytecodePatch(
             definingClass == "Lxm7;" && name == "f"
         }.returnEarly("99999")
 
+        // is0.f() is the interface default method that returns the current
+        // auth token wrapper (Ll4m;). It reads from the StateFlow built off
+        // AuthTokenDao.observeCurrent() — which emits null when the table is
+        // empty. xm7.f() is one consumer (covered above) but several others
+        // call is0.f() directly (lvd reads l4m.b, aae uses it as a lambda
+        // arg, fh2/dt0/sak/w79/kpl/dlk/npl/fh2 likewise). Some library list
+        // refresh signals key off the same Flow — until is0.f() returns
+        // something non-null AND consistent with xm7.f()="99999", the UI
+        // can read stale/empty state even though the DB row was inserted.
+        //
+        // Replace is0.f() body with a call to FakeAuthToken.get() — which
+        // reflectively constructs a single l4m{a="99999", b=""} and caches
+        // it. Now every is0.f() consumer sees the same synthetic identity.
+        firstMethod {
+            definingClass == "Lis0;" && name == "f"
+        }.apply {
+            // Original body: 6 instructions (invoke-interface d(), move-result-object,
+            // invoke-interface getValue(), move-result-object, check-cast, return-object).
+            repeat(6) { removeInstruction(0) }
+            addInstructions(
+                0,
+                """
+                    invoke-static {}, Lapp/revanced/extension/gamehub/login/FakeAuthToken;->get()Ljava/lang/Object;
+                    move-result-object p0
+                    check-cast p0, Ll4m;
+                    return-object p0
+                """,
+            )
+        }
+
         // Defence in depth: g8e.i(rh0) and g8e.r(rh0) both guard Login
         // navigation with the pattern:
         //   iget-object vN, p0, Lg8e;->b:Lis0;

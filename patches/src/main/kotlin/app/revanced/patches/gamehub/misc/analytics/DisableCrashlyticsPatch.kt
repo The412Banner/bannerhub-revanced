@@ -9,7 +9,6 @@ import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
 import app.revanced.patches.gamehub.GAMEHUB_VERSION
 import app.revanced.util.indexOfFirstInstructionOrThrow
 import com.android.tools.smali.dexlib2.Opcode
-import com.android.tools.smali.dexlib2.iface.Instruction
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 
 @Suppress("unused")
@@ -39,7 +38,7 @@ val disableCrashlyticsPatch = bytecodePatch(
                         .contains("setCrashlyticsCollectionEnabled")
             }
             // Capture the instruction AFTER setCrashlyticsCollectionEnabled before inserting.
-            val afterCrashlytics = getInstruction<Instruction>(setCrashlyticsIdx + 1)
+            val afterCrashlytics = getInstruction(setCrashlyticsIdx + 1)
             addInstructionsWithLabels(
                 getInstanceIdx,
                 "goto :after_crashlytics",

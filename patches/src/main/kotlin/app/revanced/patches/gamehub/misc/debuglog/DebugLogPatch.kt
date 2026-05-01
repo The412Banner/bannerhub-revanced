@@ -1,0 +1,52 @@
+package app.revanced.patches.gamehub.misc.debuglog
+
+import app.revanced.patcher.extensions.addInstructions
+import app.revanced.patcher.firstMethod
+import app.revanced.patcher.patch.bytecodePatch
+import app.revanced.patcher.patch.resourcePatch
+import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
+import app.revanced.patches.gamehub.GAMEHUB_VERSION
+import app.revanced.util.getNode
+import org.w3c.dom.Element
+
+private val debuggableManifestPatch = resourcePatch {
+    apply {
+        document("AndroidManifest.xml").use { dom ->
+            val app = dom.getNode("application") as Element
+            app.setAttribute("android:debuggable", "true")
+        }
+    }
+}
+
+@Suppress("unused")
+val debugLogPatch = bytecodePatch(
+    name = "Debug logging",
+    description = "Marks the APK debuggable so logcat readers (and ADB run-as) can see app " +
+        "output, and pipes every Throwable handed to the app's catch-handler reporter " +
+        "(odb.e, the y2d implementation that Firebase Crashlytics — now disabled — " +
+        "originally consumed) through Log.e so silently-swallowed exceptions surface in logcat.",
+) {
+    compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
+
+    dependsOn(debuggableManifestPatch)
+
+    apply {
+        // y2d is the in-app error reporter interface (e/i emit Throwables, others emit
+        // breadcrumbs). odb is the real impl that every release-build catch handler routes
+        // its caught Throwable into. Disabling Firebase Crashlytics turned its downstream
+        // sink into a no-op, so caught exceptions vanish silently. Prepend a Log.e call to
+        // odb.e so the Throwable hits logcat before reaching the (now stub) sink.
+        firstMethod {
+            definingClass == "Lodb;" && name == "e"
+        }.apply {
+            addInstructions(
+                0,
+                """
+                    const-string v0, "GH600-DEBUG"
+                    const-string v1, "y2d.e caught"
+                    invoke-static {v0, v1, p1}, Landroid/util/Log;->e(Ljava/lang/String;Ljava/lang/String;Ljava/lang/Throwable;)I
+                """,
+            )
+        }
+    }
+}

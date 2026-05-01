@@ -1,18 +1,14 @@
 package app.revanced.patches.gamehub.misc.login
 
 import app.revanced.patcher.extensions.addInstructions
-import app.revanced.patcher.extensions.getInstruction
 import app.revanced.patcher.extensions.removeInstruction
 import app.revanced.patcher.firstMethod
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patcher.patch.stringOption
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
 import app.revanced.patches.gamehub.GAMEHUB_VERSION
-import app.revanced.patches.gamehub.misc.credits.addCredit
-import app.revanced.patches.gamehub.misc.credits.creditsPatch
+import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 import app.revanced.patches.gamehub.misc.token.TOKEN_PROVIDER_CLASS
-import app.revanced.patches.gamehub.misc.token.tokenResolutionPatch
-import app.revanced.patches.gamehub.misc.tokenexpiry.bypassTokenExpiryPatch
 import app.revanced.util.getReference
 import app.revanced.util.indexOfFirstInstructionOrThrow
 import app.revanced.util.indexOfFirstInstructionReversedOrThrow
@@ -31,7 +27,7 @@ val bypassLoginPatch = bytecodePatch(
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
 
-    dependsOn(bypassTokenExpiryPatch, tokenResolutionPatch, creditsPatch)
+    dependsOn(sharedGamehubExtensionPatch)
 
     val username by stringOption(
         name = "username",
@@ -136,10 +132,5 @@ val bypassLoginPatch = bytecodePatch(
             )
         }
 
-        addCredit(
-            "Bypass login",
-            "PlayDay" to "https://github.com/playday3008",
-            "Producdevity" to "https://github.com/Producdevity/gamehub-lite",
-        )
     }
 }

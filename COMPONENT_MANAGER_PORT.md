@@ -324,6 +324,26 @@ The injector's signature changes from the original plan (passing `int type`) to 
 
 **Job 2 status: complete.**
 
+### Job 3 — Component state literals
+
+**Enum class:** `Lcom/xiaoji/egggame/common/winemu/bean/State;` — `final enum` with **5 members** (not the 2-3 we initially assumed from live data):
+
+| Enum member | Meaning | Filesystem invariant |
+| --- | --- | --- |
+| **`None`** | Never downloaded | No file in `xj_downloads/component/<name>/`, no dir in `usr/home/components/<name>/` |
+| **`Downloaded`** | Archive cached, not yet extracted | File exists in `xj_downloads/component/<name>/<filename>`; no dir in `usr/home/components/<name>/` |
+| **`Extracted`** | Fully extracted, ready for use | Dir populated in `usr/home/components/<name>/` |
+| **`NeedUpdate`** | Local version is stale relative to API | Either `Extracted` or `Downloaded` content present, but version mismatch with registry's `entry.versionCode` |
+| **`INSTALLED`** | Terminal "fully installed + validated" state | (all-caps suggests legacy / parallel-track usage; semantics overlap with `Extracted` — likely used by the dependency-tracking pref keys `component_dependence_installed_*`) |
+
+Each enum value carries a `type: I` instance field (numeric ordinal for JSON serialization). The JSON serialization keeps the **member name** as the string value (matches what we observed in `sp_winemu_unified_resources.xml`: `"state":"None"`, `"state":"Downloaded"`).
+
+**Implication for the Component Manager UI:** five status badges to render — "Not downloaded", "Downloaded (cached)", "Extracted (ready)", "Update available", "Installed". The first three cover the bulk of the lifecycle; `NeedUpdate` is shown when `entry.versionCode` mismatches local; `INSTALLED` is conservative — render as "Installed" with the same iconography as `Extracted` unless device testing reveals semantic differences.
+
+**`isInstalled()` predicate for sidecar entries:** any of `Downloaded` / `Extracted` / `INSTALLED` counts as "show in dropdowns" for the per-game settings UI. The host code likely has the same predicate; we mirror it in `ComponentInjector` so injected entries follow the same visibility rules.
+
+**Job 3 status: complete.**
+
 ---
 
 ## 7. Implementation plan — discrete jobs

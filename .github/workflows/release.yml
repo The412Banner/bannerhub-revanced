@@ -183,9 +183,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
-          name: GameHub 6.0 No Login
+          name: Gamehub 6.0 - Bannerhub API - No Login - Muted UI
           body: |
-            ## GameHub 6.0 No Login
+            ## Gamehub 6.0 - Bannerhub API - No Login - Muted UI
 
             A patched build of XiaoJi GameHub 6.0.0 (`com.xiaoji.egggame`) that removes the login requirement so games can be imported and used without an account.
 

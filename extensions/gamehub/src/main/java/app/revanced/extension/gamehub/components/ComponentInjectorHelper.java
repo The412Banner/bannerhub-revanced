@@ -1,9 +1,14 @@
 package app.revanced.extension.gamehub.components;
 
+import android.app.AlarmManager;
+import android.app.PendingIntent;
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.OpenableColumns;
 import android.widget.Toast;
 
@@ -189,6 +194,36 @@ public final class ComponentInjectorHelper {
     private static final int CAT_BOX64 = 0x5e;
     private static final int CAT_FEXCORE = 0x5f;
 
+    /** Force a process restart on a 1.5s delay so the user sees the toast,
+     * then the host re-hydrates its in-memory registry cache from disk on
+     * next start and the new entry appears in pickers. */
+    private static void scheduleProcessRestart(Context ctx, int delayMillis) {
+        final Context appCtx = ctx.getApplicationContext();
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            try {
+                Intent launch = appCtx.getPackageManager()
+                        .getLaunchIntentForPackage(appCtx.getPackageName());
+                if (launch != null) {
+                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                            | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+                    PendingIntent pi = PendingIntent.getActivity(
+                            appCtx, 0, launch,
+                            PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_CANCEL_CURRENT);
+                    AlarmManager am = (AlarmManager) appCtx.getSystemService(
+                            Context.ALARM_SERVICE);
+                    if (am != null) {
+                        am.set(AlarmManager.RTC,
+                                System.currentTimeMillis() + 200, pi);
+                    }
+                }
+                android.os.Process.killProcess(android.os.Process.myPid());
+            } catch (Throwable ignored) {
+                // Best-effort restart — if it fails, the user can manually
+                // restart and still see their new entry on next launch.
+            }
+        }, delayMillis);
+    }
+
     /** Prefix the user's component name with the category prefix the host's
      * picker filter expects. Skip if already prefixed. GPU intentionally not
      * prefixed — server uses mixed Adreno_/turnip_/qcom- prefixes. */
@@ -344,7 +379,16 @@ public final class ComponentInjectorHelper {
             String registryName = prefixedName(name, categoryTag);
             registerComponent(ctx, registryName, version, desc, contentType, uri.toString());
 
-            Toast.makeText(ctx, "Added to GameHub: " + registryName, Toast.LENGTH_LONG).show();
+            Toast.makeText(ctx,
+                    "Added: " + registryName + " — reloading GameHub…",
+                    Toast.LENGTH_LONG).show();
+            // The host's in-memory registry cache (l9o.c ConcurrentHashMap)
+            // is hydrated from sp_winemu_unified_resources.xml ONLY at app
+            // start. Our SharedPreferences.commit() above guarantees the
+            // write hits disk; a process restart picks it up so the picker
+            // sees the new entry without requiring the user to manually kill
+            // and reopen the app.
+            scheduleProcessRestart(ctx, 1500);
         } catch (Exception e) {
             String msg = e.getMessage();
             if (msg == null) msg = "Injection failed";

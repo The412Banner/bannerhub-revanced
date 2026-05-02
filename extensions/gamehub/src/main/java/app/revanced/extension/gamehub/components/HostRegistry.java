@@ -57,7 +57,7 @@ public final class HostRegistry {
             // host XML gets a shape identical to a server-supplied entry.
             JSONObject hostShape = stripBhMarkers(entry);
             SharedPreferences sp = ctx.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
-            sp.edit().putString(CATEGORY_PREFIX + name, hostShape.toString()).apply();
+            sp.edit().putString(CATEGORY_PREFIX + name, hostShape.toString()).commit();
         } catch (Throwable t) {
             DebugTrace.write("HostRegistry.put failed for " + name, t);
         }
@@ -119,7 +119,7 @@ public final class HostRegistry {
         if (ctx == null || name == null || name.isEmpty()) return;
         try {
             SharedPreferences sp = ctx.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
-            sp.edit().remove(CATEGORY_PREFIX + name).apply();
+            sp.edit().remove(CATEGORY_PREFIX + name).commit();
         } catch (Throwable t) {
             DebugTrace.write("HostRegistry.remove failed for " + name, t);
         }
@@ -144,7 +144,7 @@ public final class HostRegistry {
                 editor.putString(CATEGORY_PREFIX + e.getKey(), hostShape.toString());
                 n++;
             }
-            editor.apply();
+            editor.commit();
             DebugTrace.write("HostRegistry.rehydrateFromSidecar: re-wrote " + n + " entries");
         } catch (Throwable t) {
             DebugTrace.write("HostRegistry.rehydrateFromSidecar failed", t);

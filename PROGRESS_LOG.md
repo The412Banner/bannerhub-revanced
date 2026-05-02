@@ -1,5 +1,26 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-05-02 — `v0.4.1-cm-restart` — sync write + process restart so host re-hydrates its cache
+
+### Symptom (v0.4.0 device test)
+Sidecar `sp_bh_components.xml` has the new `Fex_2604` entry. **Host XML `sp_winemu_unified_resources.xml` does NOT** — `Fex_2604` missing despite `HostRegistry.put` calling `apply()` immediately after sidecar write. App reinstalled (uid changed `u0_a480 → u0_a481`); 346 server entries present, ours absent. Picker still empty.
+
+### Root cause — two compounding problems
+1. **`apply()` is asynchronous** — schedules a background disk flush, returns immediately. If the app process is suspended, killed, or quickly transitions through activities (or even on a context switch), the queued write may not land before the kernel reclaims pages. We see exactly this: sidecar (a different pref file, slightly different write timing) made it; host pref didn't.
+2. **The host's in-memory registry cache `Ll9o;->c:Ljava/util/concurrent/ConcurrentHashMap;` is hydrated from `sp_winemu_unified_resources.xml` ONLY at app start.** Even when our write lands on disk, the picker reads from this in-memory cache — never re-querying the XML during a session. So a successful disk write is invisible to the picker until the next process launch.
+
+### Fix
+- `HostRegistry.put` and `rehydrateFromSidecar` switch from `apply()` to `commit()` — synchronous, blocks until disk-flushed, returns success/failure.
+- After successful inject, `ComponentInjectorHelper.scheduleProcessRestart(ctx, 1500ms)` — toast first ("Added: Fex_2604 — reloading GameHub…"), then `AlarmManager.set(RTC, now+200, launchPendingIntent)` + `Process.killProcess(myPid())`. The process dies, the alarm fires 200ms later and re-launches the host activity stack, the new app start hydrates `l9o.c` from disk and our entry is in the cache.
+- The 1.5s delay lets the user read the toast before the restart.
+
+### UX caveat
+Each inject restarts the host. Cumbersome if a user is adding many components in a row. Acceptable as v1; future v0.4.x can add a "batch mode" that delays restart until the user closes Component Manager, or use reflection to invalidate `l9o.c` directly without a process restart.
+
+### Build
+- Tag: `v0.4.1-cm-restart`
+- Trigger: `gh workflow run release.yml --ref gamehub-600-build -f tag=v0.4.1-cm-restart`
+
 ## 2026-05-02 — `v0.4.0-cm-shape-parity` — match server entry shape bit-for-bit
 
 ### Symptom (v0.3.9 device test)

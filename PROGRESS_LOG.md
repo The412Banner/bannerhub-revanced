@@ -1,5 +1,38 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-05-02 — `v0.3.3-cm-m13hook` — repoint hook to the actual dropdown feeder
+
+### Symptom
+v0.3.2-cm-entryfix logcat had **zero** `ComponentInjector.append` traces — the hook on `Lgxh;->a(RepoCategory, Continuation)` is never called when the per-game settings dropdowns load. Sidecar XML write side confirmed working (`sp_bh_components.xml` had `COMPONENT:2604` with `entry.type=6`); manager UI rendered the row; the in-game dropdown didn't.
+
+### Root cause (smali analysis + live registry inspection via root bridge)
+`Lgxh;` is image-fs / container processing — **not** the COMPONENT dropdown feed. The actual feed:
+```
+fzh.a(RepoCategory) → Lx0a;     (per-category factory map)
+   └─ m13           — RepoCategory.COMPONENT
+        └─ m13.b(Lexh;) → coroutine via Ll13;
+              └─ l13.invokeSuspend
+                    ├─ HTTP simulator/v2/getAllComponentList
+                    ├─ iterate List<EnvLayerEntity>, EnvLayerEntity.setFileType(4)
+                    ├─ wrap as WinEmuRepo(... entity ..., RepoCategory.COMPONENT, isBase=type==6, ...)
+                    └─ return ArrayList<WinEmuRepo>
+```
+`sp_winemu_unified_resources.xml` is a cache, not the source. Per-dropdown filter is downstream by `EnvLayerEntity.type` (Integer, **boxed not primitive int** — confirmed by `getType()Ljava/lang/Integer;` at `l13.smali:1615`). Live `entity.type` map: FEX=1, Box64=1, DXVK=3, VKD3D=4, GPU=2, settings=5, runtime-dep=6 (where `isBase=true`).
+
+Bonus bug: `toSidecarType(CAT_FEXCORE)` was returning 6 (runtime dep / isBase). Should be 1.
+
+### Fixes
+1. **Repoint `ComponentInjectionPatch`** from `Lgxh;->a(RepoCategory, Continuation)` to `Lm13;->b(Lexh;)Ljava/lang/Object;`. New extension entry point `appendComponents(Object) → Object` — no category check (m13 is COMPONENT-only by class).
+2. **`ComponentDownloadActivity.toSidecarType`** — FEXCore→1, Box64→1.
+3. **`ComponentInjector.buildEntity`** — also populate `name` and `version` on the synthesized `EnvLayerEntity` (downstream code reads `entity.getName()` / `getVersion()` for display + name-prefix discrimination between FEX and Box64 inside `type==1`).
+
+### Master map updated
+Added "Component Dropdown Dispatch" subsection to `gamehub_reports/GAMEHUB_600_MASTER_MAP.md` (under WinEmu Repo / Component Beans → Interfaces) covering fzh→m13→l13 chain, entity.type → category map, and hook target.
+
+### Build
+- Tag: `v0.3.3-cm-m13hook`
+- Trigger: `gh workflow run release.yml --ref gamehub-600-build -f tag=v0.3.3-cm-m13hook`
+
 ## 2026-05-02 — `v0.3.2-cm-entryfix` — sidecar EnvLayerEntity synthesis
 
 ### Symptom

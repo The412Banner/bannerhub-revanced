@@ -364,7 +364,9 @@ public final class ComponentDownloadActivity extends Activity
 
     /**
      * Convert internal category tag to GameHub 6.0 EnvLayerEntity.type for the sidecar.
-     * Box64 / FEXCore have no native 6.0 type — both fall back to runtime dep (6).
+     * Confirmed against installed registry: FEX + Box64 share type=1 (translator —
+     * disambiguated downstream by name prefix), GPU=2, DXVK=3, VKD3D=4. type=6 is
+     * the runtime-dep / isBase bucket and does NOT belong on translator/driver entries.
      */
     private static int toSidecarType(int categoryTag) {
         switch (categoryTag) {
@@ -373,6 +375,7 @@ public final class ComponentDownloadActivity extends Activity
             case CAT_VKD3D: return 4;
             case CAT_BOX64:
             case CAT_FEXCORE:
+                return 1;
             default: return 6;
         }
     }

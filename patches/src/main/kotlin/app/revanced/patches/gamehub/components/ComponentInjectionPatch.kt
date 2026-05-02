@@ -9,19 +9,21 @@ import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 import app.revanced.util.findInstructionIndicesReversedOrThrow
 import com.android.tools.smali.dexlib2.Opcode
 
-// Lgxh;->a(RepoCategory, Continuation): Serializable is the canonical "give me
-// every component of this category" entry point. It's a Kotlin suspend function
-// compiled to a coroutine state machine — multiple return-object exits exist;
-// most return COROUTINE_SUSPENDED at suspension boundaries, only the final
-// (last-in-source-order) one returns the assembled ArrayList<WinEmuRepo>.
-// findInstructionIndicesReversedOrThrow(RETURN_OBJECT).first() picks that one.
+// Lm13;->b(Lexh;)Ljava/lang/Object; is the x0a implementation for
+// RepoCategory.COMPONENT (m13's ctor binds it to that category). Its body is a
+// short non-suspending dispatcher that awaits a coroutine result and returns
+// the assembled ArrayList<WinEmuRepo>. Per-game settings dropdowns
+// (FEXCore / Box64 / DXVK / VKD3D / GPU pickers) consume this list and filter
+// downstream by EnvLayerEntity.type + name prefix.
 //
-// p1 = the RepoCategory enum instance (caller supplied)
-// v0 = the ArrayList that the suspend function is about to return (assembled by
-//      the time we reach the final return-object — after the last suspension
-//      resume completes)
-private const val GXH_CLASS = "Lgxh;"
-private const val REPO_CATEGORY_CLASS = "Lcom/xiaoji/egggame/common/winemu/bean/RepoCategory;"
+// The previous hook on Lgxh;->a(RepoCategory, Continuation) was on the wrong
+// path — that's image-fs / container processing, not the component-list feed.
+//
+// At the single return-object, p0 holds the awaited list (after move-result-object).
+// We pass it to ComponentInjector.appendComponents and replace it with the merged
+// result. No category check is needed in the extension because m13 is COMPONENT-only.
+private const val M13_CLASS = "Lm13;"
+private const val EXH_CLASS = "Lexh;"
 private const val INJECTOR_DESCRIPTOR =
     "Lapp/revanced/extension/gamehub/components/ComponentInjector;"
 
@@ -29,29 +31,21 @@ private const val INJECTOR_DESCRIPTOR =
 val componentInjectionPatch = bytecodePatch(
     name = "Component injection",
     description = "Merges sidecar-registered (BannerHub Component Manager-injected) " +
-        "components into the host app's per-category component list at the " +
-        "Lgxh;->a(RepoCategory, Continuation) boundary, so manager-added entries " +
-        "appear alongside server-supplied ones in per-game-settings dropdowns.",
+        "components into the host's per-category component list at the " +
+        "Lm13;->b(Lexh;) boundary, so manager-added entries appear alongside " +
+        "API-supplied ones in per-game-settings dropdowns.",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
     dependsOn(sharedGamehubExtensionPatch)
 
     apply {
         firstMethod {
-            definingClass == GXH_CLASS &&
-                name == "a" &&
-                parameterTypes.size == 2 &&
-                parameterTypes[0] == REPO_CATEGORY_CLASS
+            definingClass == M13_CLASS &&
+                name == "b" &&
+                parameterTypes.size == 1 &&
+                parameterTypes[0] == EXH_CLASS
         }.apply {
-            // Suspend functions have multiple return-object exits — the LAST
-            // one (in source order) is the success path returning the assembled
-            // list. findInstructionIndicesReversedOrThrow returns highest-first;
-            // the highest index IS the last return-object in source order.
-            //
-            // We hook only that one, not the intermediate suspension returns,
-            // because ComponentInjector.append should run exactly once per
-            // dropdown load — when the assembled list is ready — not on every
-            // resume of the state machine.
+            // m13.b has exactly one return-object — the awaited list. Hook there.
             val finalReturnIdx = findInstructionIndicesReversedOrThrow(
                 Opcode.RETURN_OBJECT,
             ).first()
@@ -59,8 +53,8 @@ val componentInjectionPatch = bytecodePatch(
             addInstructions(
                 finalReturnIdx,
                 """
-                    invoke-static {p1, v0}, $INJECTOR_DESCRIPTOR->append(Ljava/lang/Object;Ljava/util/List;)Ljava/util/List;
-                    move-result-object v0
+                    invoke-static {p0}, $INJECTOR_DESCRIPTOR->appendComponents(Ljava/lang/Object;)Ljava/lang/Object;
+                    move-result-object p0
                 """,
             )
         }

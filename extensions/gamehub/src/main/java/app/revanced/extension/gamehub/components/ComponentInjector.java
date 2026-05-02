@@ -57,32 +57,43 @@ public final class ComponentInjector {
     }
 
     /**
-     * Append sidecar entries to the host app's category-filtered component list.
+     * Append sidecar entries to the host's component list at the
+     * {@code Lm13;->b(Lexh;)} boundary. {@code m13} is the {@code x0a}
+     * implementation hardcoded to {@code RepoCategory.COMPONENT}, so no category
+     * check is needed — every call to this method gets the merge.
      *
-     * @param category the {@code RepoCategory} enum instance (in {@code p1} of
-     *                 the patched method). Type-erased to {@code Object} so the
-     *                 patch doesn't need to import the host class.
-     * @param serverList the list the host method was about to return (typically
-     *                   {@code ArrayList<WinEmuRepo>}). Type-erased; we operate
-     *                   on it as {@code List<Object>}.
-     * @return a new list containing every server entry plus matching sidecar
-     *         entries, in that order. Never null. On any failure we log to
-     *         {@code GH600-DEBUG} and return the {@code serverList} unchanged
-     *         so the patched method's behaviour is at-worst a no-op.
+     * @param serverListObj the awaited result from the m13 coroutine — typed
+     *                      as {@code Object} because the smali hook hands us
+     *                      whatever was in {@code p0} after {@code move-result-object}.
+     *                      In practice this is {@code ArrayList<WinEmuRepo>}.
+     * @return a new list containing every server entry plus our sidecar entries.
+     *         Returned as {@code Object} so the smali patch's
+     *         {@code move-result-object p0} can flow it straight back into the
+     *         original {@code return-object p0}. On any failure we return
+     *         {@code serverListObj} unchanged so the patched method is a no-op.
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
-    public static List<Object> append(Object category, List serverList) {
+    public static Object appendComponents(Object serverListObj) {
+        if (!(serverListObj instanceof List)) {
+            // Coroutine returned a Throwable wrapper or COROUTINE_SUSPENDED on
+            // some pathological code paths — hand it straight back, don't touch.
+            return serverListObj;
+        }
+        List serverList = (List) serverListObj;
         try {
-            // Defensive copy first so the caller never sees a partially-mutated list.
+            return doMerge(serverList);
+        } catch (Throwable t) {
+            DebugTrace.write("ComponentInjector.appendComponents: top-level failure", t);
+            return serverList;
+        }
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static List<Object> doMerge(List serverList) {
+        try {
             List<Object> merged = serverList == null
                     ? new ArrayList<>()
                     : new ArrayList<>(serverList);
-
-            if (!isComponentCategory(category)) {
-                // Settings dropdowns pull from RepoCategory.COMPONENT only;
-                // CONTAINER and IMAGE_FS lookups skip the merge entirely.
-                return merged;
-            }
 
             Context ctx = appContext();
             if (ctx == null) {
@@ -308,11 +319,14 @@ public final class ComponentInjector {
     }
 
     /**
-     * Build an {@code EnvLayerEntity} for a sidecar row. We construct via the
+     * Build an {@code EnvLayerEntity} for a sidecar row. Construct via the
      * longest ctor with primitive zeros / null refs / empty strings, then
-     * overwrite the {@code type} field from the sidecar JSON. Settings dropdowns
-     * filter on this {@code type} int — getting it right is what makes the row
-     * actually appear in the FEXCore / Box64 / DXVK / VKD3D / GPU pickers.
+     * overwrite {@code type} (Integer in the host class — see
+     * {@code l13.smali:1615}'s {@code getType()Ljava/lang/Integer;}), {@code name}
+     * and {@code version} from the sidecar JSON. Downstream filtering reads
+     * {@code entity.getType()} for the per-dropdown bucket and {@code getName()}
+     * / {@code getVersion()} for display + name-prefix discrimination
+     * (translator type=1 splits FEX vs Box64 by name).
      */
     private static Object buildEntity(Class<?> entryClass, Constructor<?> entryCtor, JSONObject json) {
         if (entryCtor == null || entryClass == null) {
@@ -328,10 +342,25 @@ public final class ComponentInjector {
             Object instance = entryCtor.newInstance(args);
             int typeInt = readSidecarType(json);
             writeTypeField(entryClass, instance, typeInt);
+            writeStringField(entryClass, instance, "name", json.optString("name", ""));
+            writeStringField(entryClass, instance, "version", json.optString("version", ""));
             return instance;
         } catch (Throwable t) {
             DebugTrace.write("ComponentInjector.buildEntity: ctor invocation failed", t);
             return null;
+        }
+    }
+
+    /** Write a String field on the entity by name; silent no-op if absent. */
+    private static void writeStringField(Class<?> entryClass, Object instance, String fieldName, String value) {
+        try {
+            Field f = entryClass.getDeclaredField(fieldName);
+            f.setAccessible(true);
+            if (f.getType() == String.class) f.set(instance, value);
+        } catch (NoSuchFieldException ignore) {
+            // R8 may rename — best effort. Settings UI degrades gracefully.
+        } catch (Throwable t) {
+            DebugTrace.write("ComponentInjector.writeStringField(" + fieldName + ") failed", t);
         }
     }
 

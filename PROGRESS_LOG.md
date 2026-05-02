@@ -260,3 +260,44 @@ firstMethod { definingClass == "Los0;" && name == "e" }.apply {
 ```
 
 Debug probes intentionally **kept in place** (xm7.u ENTRY/CATCH, el7 ENTRY, both insert PRE markers, FakeAuthToken.get, DebugLogPatch) so the next device test can confirm `FakeUserAccount.get() called` fires before the UI populates and that the import flow is otherwise unchanged. Probes will be removed in a cleanup pass after the import flow is confirmed end-to-end.
+
+---
+
+## 2026-05-02 — Component Manager port: redo Jobs 7-8 against BannerHub 3.5.0 spec
+
+The first cut at Jobs 7-8 (a23723a / 67677a8 / 58d3c53) shipped a stub
+file-picker / URL-paste UI. That was wrong — the Component Manager being
+ported is BannerHub 3.5.0's existing 3-mode ListView + multi-repo browser,
+which extracts WCP/XZ/ZIP archives via a real `WcpExtractor` + injects via
+`ComponentInjectorHelper`. The earlier two activity files were deleted from
+the working tree at the start of this session and have now been replaced
+with proper ports of the 3.5.0 smali.
+
+### Source
+
+- `bannerhub/component-manager-patch/patches/smali_classes16/com/xj/landscape/launcher/ui/menu/`
+  - `WcpExtractor.smali` (327 lines)
+  - `ComponentInjectorHelper.smali` (35 KB, includes `appendLocalComponents` for 5.x — not ported, replaced by sidecar reader)
+  - `ComponentManagerActivity.smali` + 2 inner classes (655 + 4246 + 2494 bytes)
+  - `ComponentDownloadActivity.smali` + 9 inner classes (583 lines + ~50 KB inners)
+
+### What landed (this session)
+
+| File | Purpose | Notes |
+| --- | --- | --- |
+| `extensions/gamehub/.../components/WcpExtractor.java` | Format-detected (.zip / zstd / xz) → flat or path-preserving extraction. FEXCore detection via profile.json. | Uses stub-jar API, no reflection — the gamehub stub now exposes Apache-Commons-Compress, Zstd-JNI, and XZ minimal facades. |
+| `extensions/gamehub/.../components/ComponentInjectorHelper.java` | Format detect + extract + sidecar register. Replaces 3.5.0's `EmuComponents.D()` registration call with `SidecarRegistry.put()`. | Type ints converted to 6.0's `EnvLayerEntity.type` mapping (2/3/4/5/6). Box64+FEXCore both fall back to type 6 (no native 6.0 type). |
+| `extensions/gamehub/.../components/ComponentManagerActivity.java` | 3-mode `ListView` (component list / options / type-selection). Extends `android.app.Activity` (not AppCompat — extension module has no androidx.appcompat dep). | `removeComponent` calls `SidecarRegistry.remove()` instead of `EmuComponents.HashMap.remove`. Backup writes to `Downloads/BannerHub/<name>/` unchanged. |
+| `extensions/gamehub/.../components/ComponentDownloadActivity.java` | Multi-repo browser (3-mode: repos / categories / assets). All 6 repos: Arihany WCPHub, Kimchi/StevenMXZ/MTR/Whitebelyash GPU drivers, The412Banner Nightlies. | Internal category ints kept as 5.x tags (10/12/13/94/95) for `detectType` consistency; converted to 6.0 sidecar type ints right before `injectComponent()`. |
+| `extensions/gamehub/stub/.../ZstdInputStreamNoFinalizer.java` | compileOnly facade | Real impl shipped in GameHub APK via `com.github.luben.zstd-jni`. |
+| `extensions/gamehub/stub/.../XZInputStream.java` | compileOnly facade | Real impl shipped in GameHub APK via `org.tukaani.xz`. |
+| `extensions/gamehub/stub/.../TarArchiveInputStream.java` + `TarArchiveEntry.java` | compileOnly facades | Real impls in `org.apache.commons.compress.archivers.tar`. `getNextEntry()` (not `getNextTarEntry()`) is the kept bridge method; `isDirectory()` is obfuscated → detect via `name.endsWith("/")`. |
+
+### Patch-side fixes
+
+- `ComponentManagerPatch.kt`: theme switched from `@style/Theme.AppCompat.NoActionBar` to `@android:style/Theme.DeviceDefault.NoActionBar`. 6.0 is a Compose/KMP app — AppCompat resources are not guaranteed to be present in the base APK.
+- `ComponentInjectionPatch.kt`: added `dependsOn(sharedGamehubExtensionPatch)`. Without it the `ComponentInjector` extension dex never lands in the APK and the patch's `invoke-static` would NoClassDefFound at runtime.
+
+### Carried forward
+
+- `SidecarRegistry.java` and `ComponentInjector.java` from earlier in the session — unchanged. The new `ComponentInjectorHelper.registerComponent()` writes JSON in the exact shape `ComponentInjector.append()` expects to read.

@@ -5,6 +5,7 @@ import app.revanced.patcher.firstMethod
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
 import app.revanced.patches.gamehub.GAMEHUB_VERSION
+import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 import app.revanced.util.findInstructionIndicesReversedOrThrow
 import com.android.tools.smali.dexlib2.Opcode
 
@@ -33,6 +34,7 @@ val componentInjectionPatch = bytecodePatch(
         "appear alongside server-supplied ones in per-game-settings dropdowns.",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
+    dependsOn(sharedGamehubExtensionPatch)
 
     apply {
         firstMethod {

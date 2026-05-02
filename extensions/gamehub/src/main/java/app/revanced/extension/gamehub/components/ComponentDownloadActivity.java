@@ -1,507 +1,396 @@
 package app.revanced.extension.gamehub.components;
 
 import android.app.Activity;
-import android.app.AlertDialog;
-import android.content.ContentResolver;
-import android.content.Intent;
-import android.graphics.Color;
-import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
+import android.content.Context;
 import android.net.Uri;
-import android.os.AsyncTask;
 import android.os.Bundle;
-import android.text.Editable;
-import android.text.InputType;
-import android.text.TextWatcher;
-import android.util.TypedValue;
-import android.view.Gravity;
+import android.view.View;
 import android.view.ViewGroup;
-import android.view.WindowManager;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
-import android.widget.Button;
-import android.widget.EditText;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
-import android.widget.Spinner;
+import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import app.revanced.extension.gamehub.debug.DebugTrace;
-
+import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.util.Locale;
+import java.util.ArrayList;
 
 /**
- * "Add custom component" UI launched from {@link ComponentManagerActivity}.
+ * BannerHub Component Manager — multi-repo download browser.
  *
- * <p>Two input modes:</p>
- * <ul>
- *   <li><b>File picker</b> — {@code Intent.ACTION_OPEN_DOCUMENT} for {@code .tzst}/{@code .yml}.
- *       Copies the picked file into {@code xj_downloads/component/<derived-name>/} and writes
- *       a sidecar entry with {@code state="Downloaded"}.</li>
- *   <li><b>URL paste</b> — fetch via HTTP, validate it's a tzst/yml by extension, move
- *       into the same downloads dir, write sidecar entry.</li>
- * </ul>
+ * Three-mode ListView:
+ *   mode 0 — pick a source repo (6 supported repos + Back)
+ *   mode 1 — pick a component type (DXVK / VKD3D / Box64 / FEXCore / GPU + Back)
+ *   mode 2 — pick an asset, which downloads + injects via {@link ComponentInjectorHelper}.
  *
- * <p>Type detection uses a filename heuristic with a fallback dropdown:</p>
- * <table>
- *   <tr><th>Filename matches</th><th>Inferred type</th></tr>
- *   <tr><td>turnip*, qcom*, *Elite*</td><td>2 — GPU driver</td></tr>
- *   <tr><td>dxvk*</td><td>3 — DXVK</td></tr>
- *   <tr><td>vkd3d*</td><td>4 — VKD3D</td></tr>
- *   <tr><td>*_Settings*</td><td>5 — Settings pack</td></tr>
- *   <tr><td>vcredist*, mono, VulkanRT, quicktime*</td><td>6 — Runtime dep</td></tr>
- *   <tr><td>(otherwise)</td><td>user picks from dropdown before save</td></tr>
- * </table>
+ * <p>Internal type ints are 5.x's category tags (10/12/13/94/95) used only as opaque
+ * filter keys — converted to 6.0 sidecar type ints just before calling
+ * {@code ComponentInjectorHelper.injectComponent()}.</p>
  */
-public final class ComponentDownloadActivity extends Activity {
+public final class ComponentDownloadActivity extends Activity
+        implements AdapterView.OnItemClickListener {
 
-    private static final int REQ_OPEN_DOCUMENT = 9101;
+    // Internal category-filter tags (mirror BannerHub 3.5.0 smali).
+    // Not sent to GameHub — only used for matching detectType() output to category clicks.
+    private static final int CAT_DXVK = 0xc;
+    private static final int CAT_VKD3D = 0xd;
+    private static final int CAT_BOX64 = 0x5e;
+    private static final int CAT_FEXCORE = 0x5f;
+    private static final int CAT_GPU = 0xa;
 
-    private LinearLayout root;
-    private EditText nameField;
-    private EditText versionField;
-    private EditText urlField;
-    private Spinner typeSpinner;
+    // Repo URLs (verbatim from 3.5.0).
+    private static final String URL_ARIHANY =
+            "https://raw.githubusercontent.com/Arihany/WinlatorWCPHub/refs/heads/main/pack.json";
+    private static final String URL_KIMCHI =
+            "https://raw.githubusercontent.com/The412Banner/Nightlies/refs/heads/main/kimchi_drivers.json";
+    private static final String URL_STEVENMXZ =
+            "https://raw.githubusercontent.com/The412Banner/Nightlies/refs/heads/main/stevenmxz_drivers.json";
+    private static final String URL_MTR =
+            "https://raw.githubusercontent.com/The412Banner/Nightlies/refs/heads/main/mtr_drivers.json";
+    private static final String URL_WHITE =
+            "https://raw.githubusercontent.com/The412Banner/Nightlies/refs/heads/main/white_drivers.json";
+    private static final String URL_NIGHTLIES =
+            "https://raw.githubusercontent.com/The412Banner/Nightlies/refs/heads/main/nightlies_components.json";
 
-    /** The picked Uri (file or content://); null until ACTION_OPEN_DOCUMENT returns. */
-    private Uri pickedUri;
-    /** True when the user supplied a URL; the saver fetches it instead of copying picked. */
-    private boolean useUrl;
+    private int mode;
+    private ListView listView;
+    private TextView statusText;
+
+    private final ArrayList<String> allNames = new ArrayList<>();
+    private final ArrayList<String> allUrls = new ArrayList<>();
+    private final ArrayList<String> currentNames = new ArrayList<>();
+    private final ArrayList<String> currentUrls = new ArrayList<>();
+
+    private String downloadUrl;
+    private String downloadFilename;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getWindow().setFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
 
-        ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(Color.parseColor("#0E0F12"));
-
-        root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(20), dp(24), dp(20), dp(24));
-        scroll.addView(root, new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        setContentView(scroll);
-
-        buildUi();
-    }
-
-    private void buildUi() {
         TextView title = new TextView(this);
-        title.setText("Add custom component");
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setPadding(0, 0, 0, dp(20));
-        root.addView(title);
+        title.setText("Download from Online Repos");
+        title.setTextSize(18f);
+        title.setTextColor(0xFFFFFFFF);
+        title.setPadding(48, 24, 48, 24);
 
-        // Source — file vs URL
-        root.addView(label("Source"));
-        Button pickFile = primaryButton("Pick .tzst / .yml from storage…");
-        pickFile.setOnClickListener(v -> launchFilePicker());
-        LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(48));
-        plp.bottomMargin = dp(12);
-        root.addView(pickFile, plp);
+        statusText = new TextView(this);
+        statusText.setText("Select a source");
+        statusText.setTextSize(8.5f);
+        statusText.setTextColor(0xFAFFFFFF);
+        statusText.setPadding(48, 24, 48, 24);
 
-        TextView orLabel = new TextView(this);
-        orLabel.setText("— or —");
-        orLabel.setTextColor(Color.parseColor("#7C8590"));
-        orLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        orLabel.setGravity(Gravity.CENTER);
-        orLabel.setPadding(0, 0, 0, dp(12));
-        root.addView(orLabel);
+        listView = new ListView(this);
+        listView.setOnItemClickListener(this);
+        listView.setClipToPadding(false);
 
-        urlField = textField("https://example.com/component.tzst", InputType.TYPE_TEXT_VARIATION_URI);
-        urlField.addTextChangedListener(new TextWatcher() {
-            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
-            @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
-            @Override public void afterTextChanged(Editable s) {
-                useUrl = s.length() > 0;
-                if (useUrl) {
-                    autofillFromName(deriveNameFromUrl(s.toString()));
-                }
-            }
-        });
-        root.addView(urlField);
-        root.addView(spacer(dp(20)));
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setFitsSystemWindows(true);
 
-        // Name + version
-        root.addView(label("Name"));
-        nameField = textField("e.g. dxvk-2.5-async-arm64", InputType.TYPE_CLASS_TEXT);
-        root.addView(nameField);
-        root.addView(spacer(dp(14)));
+        LinearLayout.LayoutParams wrapLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        root.addView(title, wrapLp);
+        root.addView(statusText, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        root.addView(listView, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        root.addView(label("Version"));
-        versionField = textField("1.0.0", InputType.TYPE_CLASS_TEXT);
-        root.addView(versionField);
-        root.addView(spacer(dp(14)));
-
-        // Type
-        root.addView(label("Type"));
-        typeSpinner = new Spinner(this);
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(this,
-                android.R.layout.simple_spinner_dropdown_item, new String[] {
-                        "Auto-detect from filename",
-                        "GPU driver (type 2)",
-                        "DXVK (type 3)",
-                        "VKD3D (type 4)",
-                        "Settings pack (type 5)",
-                        "Runtime dep (type 6)",
-                });
-        typeSpinner.setAdapter(adapter);
-        typeSpinner.setBackground(roundedRect(Color.parseColor("#1B1D22"), dp(8)));
-        typeSpinner.setPadding(dp(12), dp(8), dp(12), dp(8));
-        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(48));
-        sp.bottomMargin = dp(20);
-        root.addView(typeSpinner, sp);
-
-        // Save / cancel
-        Button save = primaryButton("Add to library");
-        save.setOnClickListener(v -> doSave());
-        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(50));
-        slp.topMargin = dp(8);
-        root.addView(save, slp);
-
-        Button cancel = secondaryButton("Cancel");
-        cancel.setOnClickListener(v -> finish());
-        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(44));
-        clp.topMargin = dp(8);
-        root.addView(cancel, clp);
+        setContentView(root);
+        showRepos();
     }
 
-    // ---- file picker -----------------------------------------------------
+    public void showRepos() {
+        mode = 0;
+        statusText.setText("Select a source");
+        String[] items = {
+                "Arihany WCPHub",
+                "Kimchi GPU Drivers",
+                "StevenMXZ GPU Drivers",
+                "MTR GPU Drivers",
+                "Whitebelyash GPU Drivers",
+                "The412Banner Nightlies",
+                "← Back"
+        };
+        listView.setAdapter(new ArrayAdapter<>(
+                this, android.R.layout.simple_list_item_1, items));
+    }
 
-    private void launchFilePicker() {
-        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        i.addCategory(Intent.CATEGORY_OPENABLE);
-        i.setType("*/*");
-        i.putExtra(Intent.EXTRA_MIME_TYPES, new String[] {
-                "application/zstd",
-                "application/x-zstd",
-                "application/octet-stream",
-                "text/yaml",
-                "application/x-yaml",
-                "*/*",
-        });
-        try {
-            startActivityForResult(i, REQ_OPEN_DOCUMENT);
-        } catch (Throwable t) {
-            Toast.makeText(this, "No file picker available: " + t.getMessage(),
-                    Toast.LENGTH_LONG).show();
+    public void showCategories() {
+        mode = 1;
+        statusText.setText("Select a component type");
+        String[] items = {
+                "DXVK", "VKD3D-Proton", "Box64", "FEXCore", "GPU Driver / Turnip", "← Back"
+        };
+        listView.setAdapter(new ArrayAdapter<>(
+                this, android.R.layout.simple_list_item_1, items));
+    }
+
+    public void showAssets(int categoryTag) {
+        currentNames.clear();
+        currentUrls.clear();
+
+        for (int i = 0; i < allNames.size(); i++) {
+            if (detectType(allNames.get(i)) == categoryTag) {
+                currentNames.add(allNames.get(i));
+                currentUrls.add(allUrls.get(i));
+            }
         }
+
+        if (currentNames.isEmpty()) {
+            Toast.makeText(this, "No components of this type in latest nightly",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        mode = 2;
+        statusText.setText("Tap a component to download and inject");
+        listView.setAdapter(new ArrayAdapter<>(
+                this, android.R.layout.simple_list_item_1,
+                currentNames.toArray(new String[0])));
     }
 
     @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != REQ_OPEN_DOCUMENT || resultCode != RESULT_OK || data == null) return;
-        pickedUri = data.getData();
-        if (pickedUri == null) return;
-        useUrl = false;
-        urlField.setText("");
-
-        String displayName = queryDisplayName(pickedUri);
-        if (displayName != null) {
-            autofillFromName(stripExt(displayName));
+    public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+        switch (mode) {
+            case 0:
+                onRepoClick(position);
+                return;
+            case 1:
+                onCategoryClick(position);
+                return;
+            case 2:
+                onAssetClick(position);
+                return;
+            default:
+                // ignore
         }
-        Toast.makeText(this, "Selected: " + (displayName != null ? displayName : pickedUri),
-                Toast.LENGTH_SHORT).show();
     }
 
-    private String queryDisplayName(Uri uri) {
-        try (android.database.Cursor c = getContentResolver().query(uri,
-                new String[] { android.provider.OpenableColumns.DISPLAY_NAME },
-                null, null, null)) {
-            if (c != null && c.moveToFirst()) {
-                int idx = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME);
-                if (idx >= 0) return c.getString(idx);
+    private void onRepoClick(int position) {
+        switch (position) {
+            case 0:
+                clearAll();
+                statusText.setText("Fetching Arihany WCPHub...");
+                startFetchPackJson(URL_ARIHANY);
+                return;
+            case 1:
+                clearAll();
+                statusText.setText("Fetching Kimchi GPU Drivers...");
+                startFetchGpuDrivers(URL_KIMCHI);
+                return;
+            case 2:
+                clearAll();
+                statusText.setText("Fetching StevenMXZ GPU Drivers...");
+                startFetchGpuDrivers(URL_STEVENMXZ);
+                return;
+            case 3:
+                clearAll();
+                statusText.setText("Fetching MTR GPU Drivers...");
+                startFetchGpuDrivers(URL_MTR);
+                return;
+            case 4:
+                clearAll();
+                statusText.setText("Fetching Whitebelyash GPU Drivers...");
+                startFetchGpuDrivers(URL_WHITE);
+                return;
+            case 5:
+                clearAll();
+                statusText.setText("Fetching The412Banner Nightlies...");
+                startFetchPackJson(URL_NIGHTLIES);
+                return;
+            default:
+                finish();
+        }
+    }
+
+    private void onCategoryClick(int position) {
+        switch (position) {
+            case 0: showAssets(CAT_DXVK); return;
+            case 1: showAssets(CAT_VKD3D); return;
+            case 2: showAssets(CAT_BOX64); return;
+            case 3: showAssets(CAT_FEXCORE); return;
+            case 4: showAssets(CAT_GPU); return;
+            default: showRepos();
+        }
+    }
+
+    private void onAssetClick(int position) {
+        downloadFilename = currentNames.get(position);
+        downloadUrl = currentUrls.get(position);
+
+        // Append URL extension to display name so the later stripExt() in the helper
+        // doesn't cut at a dot inside a version number (e.g. "v2.0.0-b" → "v2.0").
+        String last = Uri.parse(downloadUrl).getLastPathSegment();
+        if (last != null) {
+            int dot = last.lastIndexOf('.');
+            if (dot > 0) {
+                downloadFilename = downloadFilename + last.substring(dot);
             }
-        } catch (Throwable t) {
-            DebugTrace.write("ComponentDownload.queryDisplayName failure", t);
         }
-        return null;
+
+        listView.setAdapter(null);
+        statusText.setText("Downloading...");
+        startDownload();
     }
 
-    // ---- save ------------------------------------------------------------
+    private void clearAll() {
+        allNames.clear();
+        allUrls.clear();
+    }
 
-    private void doSave() {
-        final String name = trim(nameField);
-        final String version = trim(versionField);
-        if (name.isEmpty()) {
-            Toast.makeText(this, "Name is required", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        if (!useUrl && pickedUri == null) {
-            Toast.makeText(this, "Pick a file or paste a URL", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        final int type = resolveType(name);
-        if (type < 2) {
-            Toast.makeText(this, "Type required — pick from the dropdown", Toast.LENGTH_LONG).show();
-            return;
-        }
+    public void startFetchPackJson(String url) {
+        new Thread(() -> {
+            try {
+                String body = httpGet(url);
+                JSONArray arr = new JSONArray(body);
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject obj = arr.getJSONObject(i);
+                    String type = obj.getString("type");
+                    if ("Wine".equals(type) || "Proton".equals(type)) continue;
 
-        final boolean fromUrl = useUrl;
-        final String url = trim(urlField);
-        final Uri local = pickedUri;
+                    String remoteUrl = obj.getString("remoteUrl");
+                    int slash = remoteUrl.lastIndexOf('/');
+                    String filename = remoteUrl.substring(slash + 1);
 
-        new AsyncTask<Void, Void, String>() {
-            @Override protected String doInBackground(Void... params) {
-                try {
-                    File targetDir = new File(getFilesDir(),
-                            "xj_winemu/xj_downloads/component/" + name);
-                    if (!targetDir.exists() && !targetDir.mkdirs()) {
-                        return "Failed to create download dir: " + targetDir;
-                    }
-                    String filename = fromUrl
-                            ? deriveFilenameFromUrl(url, name)
-                            : preferredFilename(local, name);
-                    File outFile = new File(targetDir, filename);
-
-                    if (fromUrl) {
-                        downloadTo(url, outFile);
-                    } else {
-                        copyTo(local, outFile);
-                    }
-
-                    JSONObject entry = buildSidecarEntry(name, version, type,
-                            fromUrl ? url : local.toString(),
-                            filename, outFile.length());
-                    SidecarRegistry.put(ComponentDownloadActivity.this, name, entry);
-                    return null;
-                } catch (Throwable t) {
-                    DebugTrace.write("ComponentDownload.doSave failure", t);
-                    return t.getClass().getSimpleName() + ": " + t.getMessage();
+                    allNames.add(filename);
+                    allUrls.add(remoteUrl);
                 }
+                runOnUiThread(this::showCategories);
+            } catch (Exception e) {
+                fetchFailed(e);
             }
+        }).start();
+    }
 
-            @Override protected void onPostExecute(String error) {
-                if (error == null) {
-                    Toast.makeText(ComponentDownloadActivity.this,
-                            "Added " + name, Toast.LENGTH_SHORT).show();
+    public void startFetchGpuDrivers(String url) {
+        new Thread(() -> {
+            try {
+                String body = httpGet(url);
+                JSONArray arr = new JSONArray(body);
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject obj = arr.getJSONObject(i);
+                    String type = obj.getString("type");
+                    if ("Wine".equals(type) || "Proton".equals(type)) continue;
+
+                    String verName = obj.getString("verName");
+                    String remoteUrl = obj.getString("remoteUrl");
+
+                    allNames.add(verName);
+                    allUrls.add(remoteUrl);
+                }
+                runOnUiThread(this::showCategories);
+            } catch (Exception e) {
+                fetchFailed(e);
+            }
+        }).start();
+    }
+
+    public void startDownload() {
+        new Thread(() -> {
+            try {
+                File dest = new File(getCacheDir(), downloadFilename);
+                URL u = new URL(downloadUrl);
+                HttpURLConnection conn = (HttpURLConnection) u.openConnection();
+                conn.setConnectTimeout(0x7530);
+                conn.setReadTimeout(0x7530);
+
+                try (InputStream in = conn.getInputStream();
+                     FileOutputStream out = new FileOutputStream(dest)) {
+                    byte[] buf = new byte[0x2000];
+                    int n;
+                    while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                }
+
+                Uri fileUri = Uri.fromFile(dest);
+                int categoryTag = detectType(downloadFilename);
+                int sidecarType = toSidecarType(categoryTag);
+
+                runOnUiThread(() -> {
+                    ComponentInjectorHelper.injectComponent(
+                            ComponentDownloadActivity.this, fileUri, sidecarType);
                     finish();
-                } else {
-                    new AlertDialog.Builder(ComponentDownloadActivity.this)
-                            .setTitle("Add failed")
-                            .setMessage(error)
-                            .setPositiveButton("OK", null)
-                            .show();
-                }
+                });
+            } catch (Exception e) {
+                fetchFailed(e);
             }
-        }.execute();
+        }).start();
     }
 
-    private JSONObject buildSidecarEntry(String name, String version, int type,
-                                         String sourceUri, String filename, long fileSize)
-            throws Exception {
-        JSONObject inner = new JSONObject();
-        inner.put("base", JSONObject.NULL);
-        inner.put("blurb", "");
-        inner.put("displayName", "");
-        inner.put("downloadUrl", sourceUri);
-        inner.put("fileMd5", "");
-        inner.put("fileName", filename);
-        inner.put("fileSize", fileSize);
-        inner.put("fileType", 4);
-        inner.put("framework", "");
-        inner.put("frameworkType", "");
-        inner.put("id", -1);
-        inner.put("isSteam", 0);
-        inner.put("logo", "");
-        inner.put("name", name);
-        inner.put("state", "Downloaded");
-        inner.put("status", 1);
-        inner.put("subData", JSONObject.NULL);
-        inner.put("type", type);
-        inner.put("upgradeMsg", "");
-        inner.put("version", version);
-        inner.put("versionCode", 1);
-        inner.put(SidecarRegistry.FIELD_BH_INJECTED, true);
-        inner.put(SidecarRegistry.FIELD_BH_SKIP_MD5, true);
-        inner.put(SidecarRegistry.FIELD_BH_SOURCE_URI, sourceUri);
-
-        JSONObject root = new JSONObject();
-        root.put("category", "COMPONENT");
-        root.put("depInfo", JSONObject.NULL);
-        root.put("entry", inner);
-        root.put("isBase", false);
-        root.put("isDep", false);
-        root.put("name", name);
-        root.put("state", "Downloaded");
-        root.put("version", version);
-        return root;
+    private void fetchFailed(Exception e) {
+        String msg = e.getMessage();
+        if (msg == null) msg = "Unknown error";
+        String text = "Fetch failed: " + msg;
+        runOnUiThread(() -> {
+            statusText.setText(text);
+            Toast.makeText(this, text, Toast.LENGTH_LONG).show();
+        });
     }
 
-    private void downloadTo(String url, File out) throws Exception {
-        HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
-        conn.setConnectTimeout(15_000);
-        conn.setReadTimeout(60_000);
-        conn.setRequestProperty("User-Agent", "BannerHub-ComponentManager/1.0");
-        try (InputStream in = conn.getInputStream();
-             OutputStream o = new FileOutputStream(out)) {
-            byte[] buf = new byte[8192];
-            int n;
-            while ((n = in.read(buf)) > 0) o.write(buf, 0, n);
-        } finally {
-            conn.disconnect();
+    @Override
+    public void onBackPressed() {
+        switch (mode) {
+            case 2: showCategories(); return;
+            case 1: showRepos(); return;
+            default: super.onBackPressed();
         }
     }
 
-    private void copyTo(Uri uri, File out) throws Exception {
-        ContentResolver cr = getContentResolver();
-        try (InputStream in = cr.openInputStream(uri);
-             OutputStream o = new FileOutputStream(out)) {
-            if (in == null) throw new Exception("Cannot open source URI");
-            byte[] buf = new byte[8192];
-            int n;
-            while ((n = in.read(buf)) > 0) o.write(buf, 0, n);
+    /**
+     * Filename keyword detection — mirrors 3.5.0 smali. Returns one of the internal
+     * category tags (CAT_*), used to filter assets by category. Defaults to DXVK.
+     */
+    public static int detectType(String filename) {
+        String s = filename.toLowerCase();
+        if (s.contains("box64")) return CAT_BOX64;
+        if (s.contains("fex")) return CAT_FEXCORE;
+        if (s.contains("vkd3d")) return CAT_VKD3D;
+        if (s.contains("turnip")) return CAT_GPU;
+        if (s.contains("adreno")) return CAT_GPU;
+        if (s.contains("driver")) return CAT_GPU;
+        if (s.contains("qualcomm")) return CAT_GPU;
+        return CAT_DXVK;
+    }
+
+    /**
+     * Convert internal category tag to GameHub 6.0 EnvLayerEntity.type for the sidecar.
+     * Box64 / FEXCore have no native 6.0 type — both fall back to runtime dep (6).
+     */
+    private static int toSidecarType(int categoryTag) {
+        switch (categoryTag) {
+            case CAT_GPU: return 2;
+            case CAT_DXVK: return 3;
+            case CAT_VKD3D: return 4;
+            case CAT_BOX64:
+            case CAT_FEXCORE:
+            default: return 6;
         }
     }
 
-    // ---- type detection --------------------------------------------------
+    private static String httpGet(String url) throws Exception {
+        URL u = new URL(url);
+        HttpURLConnection conn = (HttpURLConnection) u.openConnection();
+        conn.setRequestMethod("GET");
+        conn.setConnectTimeout(0x3a98);
+        conn.setReadTimeout(0x3a98);
+        conn.setRequestProperty("User-Agent", "BannerHub/1.0");
 
-    private int resolveType(String name) {
-        int spinnerSel = typeSpinner.getSelectedItemPosition();
-        if (spinnerSel > 0) {
-            // Mapping: index 1→2, 2→3, 3→4, 4→5, 5→6
-            return spinnerSel + 1;
+        StringBuilder sb = new StringBuilder();
+        try (BufferedReader br = new BufferedReader(
+                new InputStreamReader(conn.getInputStream()))) {
+            String line;
+            while ((line = br.readLine()) != null) sb.append(line);
         }
-        return inferType(name);
-    }
-
-    /** Infer component type from a name/filename. Returns -1 on no match. */
-    static int inferType(String name) {
-        String lc = name.toLowerCase(Locale.US);
-        if (lc.startsWith("turnip") || lc.startsWith("qcom") || lc.contains("elite-")) return 2;
-        if (lc.startsWith("dxvk")) return 3;
-        if (lc.startsWith("vkd3d")) return 4;
-        if (lc.endsWith("_settings") || lc.endsWith("_settings.tzst")) return 5;
-        if (lc.startsWith("vcredist") || lc.equals("mono") || lc.equals("vulkanrt")
-                || lc.startsWith("quicktime")) return 6;
-        return -1;
-    }
-
-    private void autofillFromName(String derivedName) {
-        if (derivedName == null) return;
-        if (nameField.getText().length() == 0) {
-            nameField.setText(derivedName);
-        }
-        int t = inferType(derivedName);
-        if (t >= 2 && t <= 6 && typeSpinner.getSelectedItemPosition() == 0) {
-            typeSpinner.setSelection(t - 1);
-        }
-    }
-
-    private static String stripExt(String filename) {
-        int dot = filename.lastIndexOf('.');
-        if (dot < 0) return filename;
-        // Common compressed-tar suffixes: foo.tar.zst, foo.tzst, foo.yml
-        String s = filename.substring(0, dot);
-        if (s.endsWith(".tar")) s = s.substring(0, s.length() - 4);
-        return s;
-    }
-
-    private static String deriveNameFromUrl(String url) {
-        if (url == null || url.isEmpty()) return "";
-        int q = url.indexOf('?');
-        if (q > 0) url = url.substring(0, q);
-        int slash = url.lastIndexOf('/');
-        if (slash < 0) return "";
-        return stripExt(url.substring(slash + 1));
-    }
-
-    private static String deriveFilenameFromUrl(String url, String fallbackName) {
-        int q = url.indexOf('?');
-        if (q > 0) url = url.substring(0, q);
-        int slash = url.lastIndexOf('/');
-        if (slash >= 0 && slash < url.length() - 1) return url.substring(slash + 1);
-        return fallbackName + ".tzst";
-    }
-
-    private String preferredFilename(Uri uri, String fallbackName) {
-        String displayName = queryDisplayName(uri);
-        return displayName != null && !displayName.isEmpty() ? displayName : fallbackName + ".tzst";
-    }
-
-    // ---- view helpers ----------------------------------------------------
-
-    private TextView label(String text) {
-        TextView t = new TextView(this);
-        t.setText(text);
-        t.setTextColor(Color.parseColor("#9AA0A6"));
-        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        t.setAllCaps(true);
-        t.setLetterSpacing(0.06f);
-        t.setPadding(0, 0, 0, dp(6));
-        return t;
-    }
-
-    private EditText textField(String hint, int inputType) {
-        EditText e = new EditText(this);
-        e.setHint(hint);
-        e.setHintTextColor(Color.parseColor("#5C636B"));
-        e.setTextColor(Color.WHITE);
-        e.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        e.setBackground(roundedRect(Color.parseColor("#1B1D22"), dp(8)));
-        e.setPadding(dp(12), dp(10), dp(12), dp(10));
-        e.setInputType(inputType);
-        return e;
-    }
-
-    private LinearLayout spacer(int height) {
-        LinearLayout l = new LinearLayout(this);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, height);
-        l.setLayoutParams(lp);
-        return l;
-    }
-
-    private Button primaryButton(String label) {
-        Button b = new Button(this);
-        b.setText(label);
-        b.setAllCaps(false);
-        b.setTextColor(Color.parseColor("#0E0F12"));
-        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        b.setTypeface(Typeface.DEFAULT_BOLD);
-        b.setBackground(roundedRect(Color.parseColor("#7DD3FC"), dp(8)));
-        return b;
-    }
-
-    private Button secondaryButton(String label) {
-        Button b = new Button(this);
-        b.setText(label);
-        b.setAllCaps(false);
-        b.setTextColor(Color.WHITE);
-        b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        b.setBackground(roundedRect(Color.parseColor("#2D3037"), dp(8)));
-        return b;
-    }
-
-    private GradientDrawable roundedRect(int color, int radiusPx) {
-        GradientDrawable d = new GradientDrawable();
-        d.setColor(color);
-        d.setCornerRadius(radiusPx);
-        return d;
-    }
-
-    private int dp(int v) {
-        return (int) (v * getResources().getDisplayMetrics().density);
-    }
-
-    private static String trim(EditText e) {
-        return e.getText() == null ? "" : e.getText().toString().trim();
+        return sb.toString();
     }
 }

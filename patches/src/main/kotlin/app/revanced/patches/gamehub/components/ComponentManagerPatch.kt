@@ -48,7 +48,7 @@ val componentManagerPatch = resourcePatch(
                         "android:configChanges",
                         "keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize",
                     )
-                    setAttribute("android:theme", "@style/Theme.AppCompat.NoActionBar")
+                    setAttribute("android:theme", "@android:style/Theme.DeviceDefault.NoActionBar")
                 }.let(applicationNode::appendChild)
 
             // Register ComponentDownloadActivity (launched from the manager's
@@ -63,7 +63,7 @@ val componentManagerPatch = resourcePatch(
                         "android:configChanges",
                         "keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize",
                     )
-                    setAttribute("android:theme", "@style/Theme.AppCompat.NoActionBar")
+                    setAttribute("android:theme", "@android:style/Theme.DeviceDefault.NoActionBar")
                 }.let(applicationNode::appendChild)
 
             // Launcher icon — activity-alias with MAIN/LAUNCHER intent filter so

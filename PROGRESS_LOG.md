@@ -1,5 +1,43 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-05-02 — `v0.3.4-cm-l9o-z` — hook the actual dropdown reader (third time's the charm)
+
+### Symptom
+v0.3.3 logcat: again zero `appendComponents` traces, even though `WinEmuModule queryReadyState` fired 16× for FEX entries at the dropdown open. Hooks on `Lgxh;->a` (v0.3.2) and `Lm13;->b` (v0.3.3) both miss the dropdown-render code path.
+
+Bonus: trying to add a DXVK component crashes the app — `IllegalStateException: activity is null, bind function was never called` from moko-permissions (`sze.y` → `o3g.a` → `f3g.invokeSuspend`). Separate issue, deferred.
+
+### Root cause (deeper smali analysis)
+The dropdown does **not** call `m13.b(getAllComponentList API)` per render — it consumes an in-memory cache. The actual reader is `Ll9o;->z(RepoCategory)Ljava/util/ArrayList;` (`l9o.smali:4388`):
+
+```
+public z(RepoCategory cat) {
+    ConcurrentHashMap<String, WinEmuRepo> cache = (ConcurrentHashMap) l9o.c;
+    ArrayList<WinEmuRepo> out = new ArrayList<>();
+    for (WinEmuRepo r : cache.values())
+        if (r.getCategory() == cat) out.add(r);
+    return out;
+}
+```
+
+`l9o.c` is the central registry cache, hydrated from API + `sp_winemu_unified_resources.xml`. Single non-suspending body, single `return-object v0`, with `p1=category` and `v0=ArrayList` both live at the return point.
+
+User's overwrite concern was correct for the WRITE side (`y99.b` → host XML clobbered by API). The READ-side hook on `l9o.z` sidesteps it entirely — sidecar lives in our own `sp_bh_components.xml`, host XML stays pristine, merge happens at read time per dropdown open.
+
+### Fix
+1. **Repoint `ComponentInjectionPatch`** to `Ll9o;->z(Lcom/xiaoji/egggame/common/winemu/bean/RepoCategory;)Ljava/util/ArrayList;`. Inject `appendByCategory(p1, v0)` then `move-result-object v0` before the existing `return-object v0`.
+2. **`ComponentInjector.appendByCategory(Object, List) → ArrayList`** — checks category is `COMPONENT`, then runs the existing merge (resolveRepoCtor / resolveEntryClass / buildRepo / buildEntity). Returns ArrayList so smali type-flow stays valid. CONTAINER and IMAGE_FS categories skip the merge.
+
+### Master map updated
+`Component Dropdown Dispatch` section in `gamehub_reports/GAMEHUB_600_MASTER_MAP.md` now documents `l9o.z` as the read-side feeder, the registry cache mechanics, and the why-not for `gxh.a` / `m13.b` / `t76.invoke`.
+
+### DXVK moko-permissions crash — deferred follow-up
+`ComponentDownloadActivity extends android.app.Activity` (not `androidx.activity.ComponentActivity`). When DXVK install triggers a host coroutine that asks for a permission via `permissionsController`, no Activity is bound and it throws on a worker thread. Fix options: (A) extend ComponentActivity + bind controller; or (B) skip host downloader since file is already local. Address after dropdown rendering is verified working.
+
+### Build
+- Tag: `v0.3.4-cm-l9o-z`
+- Trigger: `gh workflow run release.yml --ref gamehub-600-build -f tag=v0.3.4-cm-l9o-z`
+
 ## 2026-05-02 — `v0.3.3-cm-m13hook` — repoint hook to the actual dropdown feeder
 
 ### Symptom

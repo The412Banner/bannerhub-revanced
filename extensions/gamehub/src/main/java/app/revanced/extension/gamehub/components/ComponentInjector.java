@@ -88,6 +88,38 @@ public final class ComponentInjector {
         }
     }
 
+    /**
+     * Read-side hook for {@code Ll9o;->z(RepoCategory)Ljava/util/ArrayList;}.
+     * Merges sidecar entries into the returned ArrayList only when the requested
+     * category is {@code COMPONENT}; for {@code CONTAINER} / {@code IMAGE_FS}
+     * we hand the list back unchanged.
+     *
+     * <p>Returns {@code ArrayList} (not just {@code List}) so the smali patch can
+     * flow the result back into {@code v0} and the original
+     * {@code return-object v0} keeps its declared return type.</p>
+     *
+     * @param category the {@code RepoCategory} (in {@code p1} of {@code l9o.z}).
+     *                 Type-erased to {@code Object}.
+     * @param serverList the ArrayList l9o.z assembled by filtering its in-memory
+     *                   registry cache. Type-erased to {@code List}.
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public static ArrayList appendByCategory(Object category, List serverList) {
+        ArrayList<Object> passthrough = serverList instanceof ArrayList
+                ? (ArrayList<Object>) serverList
+                : (serverList == null ? new ArrayList<>() : new ArrayList<>(serverList));
+        try {
+            if (!isComponentCategory(category)) return passthrough;
+            List<Object> merged = doMerge(passthrough);
+            return merged instanceof ArrayList
+                    ? (ArrayList<Object>) merged
+                    : new ArrayList<>(merged);
+        } catch (Throwable t) {
+            DebugTrace.write("ComponentInjector.appendByCategory: top-level failure", t);
+            return passthrough;
+        }
+    }
+
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static List<Object> doMerge(List serverList) {
         try {

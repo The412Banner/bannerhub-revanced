@@ -9,21 +9,22 @@ import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 import app.revanced.util.findInstructionIndicesReversedOrThrow
 import com.android.tools.smali.dexlib2.Opcode
 
-// Lm13;->b(Lexh;)Ljava/lang/Object; is the x0a implementation for
-// RepoCategory.COMPONENT (m13's ctor binds it to that category). Its body is a
-// short non-suspending dispatcher that awaits a coroutine result and returns
-// the assembled ArrayList<WinEmuRepo>. Per-game settings dropdowns
-// (FEXCore / Box64 / DXVK / VKD3D / GPU pickers) consume this list and filter
-// downstream by EnvLayerEntity.type + name prefix.
+// Ll9o;->z(RepoCategory)ArrayList<WinEmuRepo> is the read-side accessor that
+// per-game settings dropdowns consume. It iterates the in-memory ConcurrentHashMap
+// at l9o.c (the registry cache hydrated from API + sp_winemu_unified_resources.xml),
+// filters by category, and returns an ArrayList. Single non-suspending body, one
+// return-object — clean hook for read-time injection.
 //
-// The previous hook on Lgxh;->a(RepoCategory, Continuation) was on the wrong
-// path — that's image-fs / container processing, not the component-list feed.
+// Hooking the READ side (rather than the registry XML write side) keeps sidecar
+// entries safe from API-driven overwrites: we never touch sp_winemu_unified_resources;
+// our entries live in sp_bh_components.xml and get unioned into the returned
+// ArrayList every time the dropdown opens.
 //
-// At the single return-object, p0 holds the awaited list (after move-result-object).
-// We pass it to ComponentInjector.appendComponents and replace it with the merged
-// result. No category check is needed in the extension because m13 is COMPONENT-only.
-private const val M13_CLASS = "Lm13;"
-private const val EXH_CLASS = "Lexh;"
+// Previous attempts (Lgxh;->a, Lm13;->b) targeted code paths that don't run on
+// dropdown open in this build.
+private const val L9O_CLASS = "Ll9o;"
+private const val REPO_CATEGORY_CLASS =
+    "Lcom/xiaoji/egggame/common/winemu/bean/RepoCategory;"
 private const val INJECTOR_DESCRIPTOR =
     "Lapp/revanced/extension/gamehub/components/ComponentInjector;"
 
@@ -31,21 +32,22 @@ private const val INJECTOR_DESCRIPTOR =
 val componentInjectionPatch = bytecodePatch(
     name = "Component injection",
     description = "Merges sidecar-registered (BannerHub Component Manager-injected) " +
-        "components into the host's per-category component list at the " +
-        "Lm13;->b(Lexh;) boundary, so manager-added entries appear alongside " +
-        "API-supplied ones in per-game-settings dropdowns.",
+        "components into the host's in-memory registry list at the " +
+        "Ll9o;->z(RepoCategory) read-side boundary, so manager-added entries " +
+        "appear alongside server/cache-supplied ones in per-game-settings dropdowns " +
+        "every time the dropdown opens.",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
     dependsOn(sharedGamehubExtensionPatch)
 
     apply {
         firstMethod {
-            definingClass == M13_CLASS &&
-                name == "b" &&
+            definingClass == L9O_CLASS &&
+                name == "z" &&
                 parameterTypes.size == 1 &&
-                parameterTypes[0] == EXH_CLASS
+                parameterTypes[0] == REPO_CATEGORY_CLASS
         }.apply {
-            // m13.b has exactly one return-object — the awaited list. Hook there.
+            // Single return-object at end of method. p1=RepoCategory, v0=ArrayList result.
             val finalReturnIdx = findInstructionIndicesReversedOrThrow(
                 Opcode.RETURN_OBJECT,
             ).first()
@@ -53,8 +55,8 @@ val componentInjectionPatch = bytecodePatch(
             addInstructions(
                 finalReturnIdx,
                 """
-                    invoke-static {p0}, $INJECTOR_DESCRIPTOR->appendComponents(Ljava/lang/Object;)Ljava/lang/Object;
-                    move-result-object p0
+                    invoke-static {p1, v0}, $INJECTOR_DESCRIPTOR->appendByCategory(Ljava/lang/Object;Ljava/util/List;)Ljava/util/ArrayList;
+                    move-result-object v0
                 """,
             )
         }

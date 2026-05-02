@@ -58,6 +58,11 @@ public final class ComponentManagerActivity extends Activity
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        // Self-heal insurance: re-write every sidecar entry into the host registry
+        // on every Component Manager open. Cheap, idempotent, defends against any
+        // hypothetical future API refresh that prunes unknown keys.
+        HostRegistry.rehydrateFromSidecar(this);
+
         listView = new ListView(this);
         listView.setOnItemClickListener(this);
         listView.setClipToPadding(false);

@@ -187,6 +187,7 @@ public final class ComponentInjectorHelper {
                                           String desc, int contentType, String sourceUri) {
         try {
             JSONObject inner = new JSONObject();
+            inner.put("base", JSONObject.NULL);
             inner.put("category", "COMPONENT");
             inner.put("blurb", desc == null ? "" : desc);
             inner.put("displayName", name);
@@ -203,6 +204,7 @@ public final class ComponentInjectorHelper {
             inner.put("name", name);
             inner.put("state", "Extracted");
             inner.put("status", 0);
+            inner.put("subData", JSONObject.NULL);
             inner.put("type", contentType);
             inner.put("upgradeMsg", "");
             inner.put("version", version == null ? "" : version);
@@ -225,6 +227,12 @@ public final class ComponentInjectorHelper {
             entry.put("version", version == null ? "" : version);
 
             SidecarRegistry.put(ctx, name, entry);
+            // Dual-write into the host registry — this is what actually makes the
+            // component appear in per-game settings dropdowns. Bytecode read-side
+            // hooks (gxh.a, m13.b, l9o.z) all silently no-op'd; direct registry
+            // write mirrors 5.3.5's working approach. Host API writes are per-key
+            // additive, so a unique COMPONENT:<userName> survives refreshes.
+            HostRegistry.put(ctx, name, entry);
         } catch (Exception ignored) {
         }
     }

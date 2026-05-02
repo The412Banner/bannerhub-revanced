@@ -10,6 +10,7 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -134,6 +135,28 @@ public final class SidecarRegistry {
             if (k.startsWith(KEY_PREFIX)) {
                 out.add(k.substring(KEY_PREFIX.length()));
             }
+        }
+        return out;
+    }
+
+    /**
+     * Returns every sidecar entry as {@code name → JSONObject}. Used by
+     * {@link HostRegistry#rehydrateFromSidecar(Context)} to re-write all
+     * manager-injected components into the host registry on every Component
+     * Manager open as self-heal insurance.
+     */
+    public static Map<String, JSONObject> getAllEntries(Context ctx) {
+        Map<String, ?> all = prefs(ctx).getAll();
+        if (all.isEmpty()) return Collections.emptyMap();
+        Map<String, JSONObject> out = new HashMap<>(all.size());
+        for (Map.Entry<String, ?> e : all.entrySet()) {
+            String k = e.getKey();
+            if (!k.startsWith(KEY_PREFIX)) continue;
+            Object v = e.getValue();
+            if (!(v instanceof String)) continue;
+            JSONObject entry = parseSilently((String) v);
+            if (entry == null) continue;
+            out.put(k.substring(KEY_PREFIX.length()), entry);
         }
         return out;
     }

@@ -1,5 +1,45 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-05-02 — `v0.3.7-cm-dualwrite` — direct host registry write (5.3.5 model)
+
+### Why
+Empirical conclusion from v0.3.5/v0.3.6 diagnostic builds: every read-side bytecode hook attempt produces no observable effect on the per-game settings dropdown. Diagnostic logcat (CPU translator + 2 other pickers) showed:
+
+| Tag | Count | Verdict |
+|---|---|---|
+| `iv6.invoke a=24` | 25 | Compose lazy layout machinery (`pswitch_4` builds `androidx.compose.foundation.lazy.layout.c`) — not data |
+| `gxh.a` | 8 | On the data path BUT v0.3.2 hook on its final `return-object` failed (Kotlin suspend state machine — most exits return `COROUTINE_SUSPENDED`, success exit isn't the highest-index one) |
+| `m13.b` | 2 | On the data path BUT outer return is `COROUTINE_SUSPENDED` from `nt3.E0(...)` awaiter — the actual list resolves later on a worker thread |
+| `o61.r` | 7 | Composable wrapper — fires per recompose |
+| `v86.b` | 3 | The picker Composable — takes context+lambdas, no list parameter |
+| `nhn.f` | 2 | Reads `dh7.a:List` |
+| `j23.invoke` | 2 | v86.b caller |
+| `ehn.invoke` | 1 | API failure-log builder |
+| `dh7.<init>`, `jg2.invoke`, `b54.b`, `hv6.e`, `q6f.c/d`, `l9o.z`, `l61.invoke`, `xn7.invoke` | 0 | Did not fire |
+
+`l9o.z` not firing at all confirms it's not the dropdown source despite the right shape. Four bytecode hooks in a row (gxh.a → m13.b → l9o.z → m13.b again, all silently no-op). Time to stop hunting for the right read-side hook.
+
+### Pivot — direct write to host registry, mirroring 5.3.5 BannerHub
+1. **New `HostRegistry.java`** — writes to `sp_winemu_unified_resources.xml` at key `COMPONENT:<name>` with the host's exact JSON shape.
+2. **Dual-write in `ComponentInjectorHelper.registerComponent`** — after `SidecarRegistry.put`, also call `HostRegistry.put(ctx, name, entry)`. Sidecar stays as our own bookkeeping for uninstall/badging.
+3. **Self-heal on Component Manager open** — `ComponentManagerActivity.onCreate` calls `HostRegistry.rehydrateFromSidecar(ctx)` to re-write every sidecar entry into the host registry. Cheap, idempotent, defends against any hypothetical future API refresh that prunes unknown keys.
+4. **JSON shape parity** — added `base:null` and `subData:null` to the inner entry JSON so it matches the host's exact field set (the JSON now matches Fex_20250910's structure verbatim except for our `_bh_*` markers).
+5. **Drop `ComponentDiagnosticPatch` + `ComponentDiag.java`** — recon done, would spam prod logcat.
+6. **Keep `ComponentInjectionPatch` (l9o.z hook)** — harmless safety net; if any code path ever does call `l9o.z`, our merge fires; otherwise it's a no-op.
+
+### Why this works (and why server overwrites aren't a problem)
+- Host registry has 1000+ accumulated entries (XML is 426KB) — API writes are clearly per-key additive, not bulk-replace.
+- `Ly99;->b()` (host's own writer) does `putString(key, json)` — touches one key at a time. The `remove()` on the line after only cleans an old un-namespaced version of that same key.
+- A custom key like `COMPONENT:2604` won't appear in the API response unless the server happens to emit a component literally named "2604" — vanishingly unlikely.
+- Even if it did, the self-heal on Component Manager open re-writes our entry.
+
+### Master map updated
+`gamehub_reports/GAMEHUB_600_MASTER_MAP.md` Component Dropdown Dispatch section rewritten with the empirical findings, iv6 polymorphic switch decoded, and the recommended write strategy documented.
+
+### Build
+- Tag: `v0.3.7-cm-dualwrite`
+- Trigger: `gh workflow run release.yml --ref gamehub-600-build -f tag=v0.3.7-cm-dualwrite`
+
 ## 2026-05-02 — `v0.3.5-cm-diag` — diagnostic instrumentation build (recon)
 
 ### Why

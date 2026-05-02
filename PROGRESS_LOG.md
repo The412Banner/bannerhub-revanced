@@ -1,5 +1,23 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-05-02 — `v0.3.2-cm-entryfix` — sidecar EnvLayerEntity synthesis
+
+### Symptom
+`v0.3.1-cm-tarfix` device test: FEXCore 2604 installed via Component Manager landed in the components folder and showed up in the manager UI, but the in-game settings dropdown ("Select component") did not list it. On 5.3.5 the same flow worked.
+
+### Root cause
+`ComponentInjector.buildRepo` was passing `null` for the `EnvLayerEntity entry` slot of the synthesized `WinEmuRepo`. The Component Manager UI only reads top-level fields (`name`/`version`/`category`/`isBase`/`isDep`) so the row rendered there. The per-game settings dropdown filters by inner `entry.type` (int — FEXCore=6); a null entry silently fails that filter and the row is dropped.
+
+### Fix
+- Resolve `EnvLayerEntity` class+ctor by anchoring on a server `WinEmuRepo`'s `getEntry()` so we capture the R8-mangled runtime class (fall back to `Class.forName`).
+- Synthesize the entity via the longest ctor with primitive zero/null defaults, then write the `type` int directly via `Field` reflection. R8-rename fallback: scan declared fields for the first `int` field whose name contains `type`.
+- `buildRepo` now plumbs `entryClass`/`entryCtor` through to `defaultForParam`; when a ctor slot's type is assignable from `entryClass`, build the entity instead of returning null.
+- `d54` (depInfo) stays null — sidecar entries don't participate in dependency resolution.
+
+### Build
+- Tag: `v0.3.2-cm-entryfix`
+- Trigger: `gh workflow run release.yml --ref gamehub-600-build -f tag=v0.3.2-cm-entryfix`
+
 ## 2026-05-01 — GameHub 6.0 port session
 
 ### Goal

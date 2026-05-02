@@ -46,6 +46,12 @@ public final class ComponentInjector {
     /** Cache of the {@code WinEmuRepo} reflective constructor (resolved once). */
     private static volatile Constructor<?> repoCtorCache;
 
+    /** Cache of the {@code EnvLayerEntity} class (R8-mangled at runtime). */
+    private static volatile Class<?> entryClassCache;
+
+    /** Cache of the {@code EnvLayerEntity} reflective constructor. */
+    private static volatile Constructor<?> entryCtorCache;
+
     private ComponentInjector() {
         // utility class
     }
@@ -99,11 +105,17 @@ public final class ComponentInjector {
                 return merged;
             }
 
+            // Resolve EnvLayerEntity class+ctor by anchoring on a server entry's
+            // getEntry()/entry field — survives R8 renaming. May be null if every
+            // server entry has a null inner entry; we fall back to Class.forName.
+            Class<?> entryClass = resolveEntryClass(merged);
+            Constructor<?> entryCtor = resolveEntryCtor(entryClass);
+
             int appended = 0;
             for (JSONObject json : sidecar) {
                 String name = json.optString("name", null);
                 if (name == null || serverNames.contains(name)) continue;
-                Object repo = buildRepo(ctor, json);
+                Object repo = buildRepo(ctor, json, entryClass, entryCtor);
                 if (repo == null) continue;
                 merged.add(repo);
                 appended++;
@@ -182,21 +194,22 @@ public final class ComponentInjector {
      * report:
      *   <pre>(name: String, version: String, state: State, entry: EnvLayerEntity,
      *         category: RepoCategory, isBase: boolean, isDep: boolean, depInfo: d54)</pre>
-     * For unknown / non-trivially-instantiable parameters ({@code EnvLayerEntity},
-     * {@code d54}) we pass {@code null} — the Component Manager UI only reads the
-     * top-level fields ({@code name}, {@code version}, {@code state}, {@code category},
-     * {@code isBase}, {@code isDep}) for rendering, and per-game settings dropdowns
-     * read the same plus the inner entry which we leave null on first cut. If a
-     * sidecar entry needs the inner {@code EnvLayerEntity} populated for downstream
-     * filtering (for instance the per-{@code entry.type} settings dropdowns), Job 12
-     * will revisit and synthesize it via the same reflection pattern.
+     *
+     * <p>Per-game settings dropdowns filter by inner {@code entry.type} (int), so
+     * the {@code EnvLayerEntity} slot must be populated — passing null silently
+     * drops the row from the type-filtered dropdown (manager-side rendering still
+     * works because that reads top-level fields). We synthesize the entity via
+     * the resolved {@code entryCtor}, then write the {@code type} field directly
+     * from the sidecar JSON. {@code d54} (depInfo) stays null — it's only consulted
+     * for dependency resolution, which sidecar entries don't participate in.</p>
      */
-    private static Object buildRepo(Constructor<?> ctor, JSONObject json) {
+    private static Object buildRepo(Constructor<?> ctor, JSONObject json,
+                                    Class<?> entryClass, Constructor<?> entryCtor) {
         try {
             Class<?>[] paramTypes = ctor.getParameterTypes();
             Object[] args = new Object[paramTypes.length];
             for (int i = 0; i < paramTypes.length; i++) {
-                args[i] = defaultForParam(paramTypes[i], json, i);
+                args[i] = defaultForParam(paramTypes[i], json, i, entryClass, entryCtor);
             }
             return ctor.newInstance(args);
         } catch (Throwable t) {
@@ -206,7 +219,8 @@ public final class ComponentInjector {
     }
 
     /** Map a parameter slot to a sensible default extracted from the sidecar JSON. */
-    private static Object defaultForParam(Class<?> paramType, JSONObject json, int idx) {
+    private static Object defaultForParam(Class<?> paramType, JSONObject json, int idx,
+                                          Class<?> entryClass, Constructor<?> entryCtor) {
         String typeName = paramType.getName();
         if (paramType == String.class) {
             // The first two String params of the primary ctor are name + version.
@@ -236,12 +250,154 @@ public final class ComponentInjector {
             }
             return null;
         }
-        // Reference types we don't know how to construct (EnvLayerEntity, d54): null.
-        // Kotlin's null-asserts in the WinEmuRepo ctor are TBD — if the host class
-        // throws on null entry, we'll need to synthesize an EnvLayerEntity here in
-        // a follow-up. For v1 we assume null is acceptable for these slots and
-        // accept the risk that a sidecar-only flow may NPE on first dropdown render
-        // (will be caught + logged, falling back to a skip).
+        // EnvLayerEntity slot: synthesize so per-game settings dropdowns can
+        // filter our row by entry.type. Other reference types (d54/depInfo): null.
+        if (entryClass != null && entryClass.isAssignableFrom(paramType)) {
+            return buildEntity(entryClass, entryCtor, json);
+        }
+        return null;
+    }
+
+    /**
+     * Resolve the {@code EnvLayerEntity} class. Preferred path: pull a sample from
+     * a server {@code WinEmuRepo}'s {@code getEntry()} (or {@code entry} field) so
+     * we capture the R8-mangled runtime class. Fallback: {@code Class.forName} on
+     * the design-time FQN. Returns null if neither works — callers must tolerate.
+     */
+    private static Class<?> resolveEntryClass(List<?> serverList) {
+        Class<?> cached = entryClassCache;
+        if (cached != null) return cached;
+        synchronized (ComponentInjector.class) {
+            if (entryClassCache != null) return entryClassCache;
+            Class<?> found = null;
+            if (serverList != null) {
+                for (Object o : serverList) {
+                    if (o == null) continue;
+                    Object e = readEntry(o);
+                    if (e != null) { found = e.getClass(); break; }
+                }
+            }
+            if (found == null) {
+                try { found = Class.forName(ENTRY_CLASS); }
+                catch (Throwable t) {
+                    DebugTrace.write("ComponentInjector.resolveEntryClass: Class.forName failed", t);
+                }
+            }
+            entryClassCache = found;
+            return found;
+        }
+    }
+
+    /** Pick the longest constructor for the resolved EnvLayerEntity class. */
+    private static Constructor<?> resolveEntryCtor(Class<?> entryClass) {
+        if (entryClass == null) return null;
+        Constructor<?> cached = entryCtorCache;
+        if (cached != null) return cached;
+        synchronized (ComponentInjector.class) {
+            if (entryCtorCache != null) return entryCtorCache;
+            Constructor<?> best = null;
+            for (Constructor<?> c : entryClass.getDeclaredConstructors()) {
+                if (best == null || c.getParameterCount() > best.getParameterCount()) {
+                    best = c;
+                }
+            }
+            if (best != null) best.setAccessible(true);
+            entryCtorCache = best;
+            return entryCtorCache;
+        }
+    }
+
+    /**
+     * Build an {@code EnvLayerEntity} for a sidecar row. We construct via the
+     * longest ctor with primitive zeros / null refs / empty strings, then
+     * overwrite the {@code type} field from the sidecar JSON. Settings dropdowns
+     * filter on this {@code type} int — getting it right is what makes the row
+     * actually appear in the FEXCore / Box64 / DXVK / VKD3D / GPU pickers.
+     */
+    private static Object buildEntity(Class<?> entryClass, Constructor<?> entryCtor, JSONObject json) {
+        if (entryCtor == null || entryClass == null) {
+            DebugTrace.write("ComponentInjector.buildEntity: no entry class/ctor, returning null entry");
+            return null;
+        }
+        try {
+            Class<?>[] paramTypes = entryCtor.getParameterTypes();
+            Object[] args = new Object[paramTypes.length];
+            for (int i = 0; i < paramTypes.length; i++) {
+                args[i] = primitiveOrNullDefault(paramTypes[i]);
+            }
+            Object instance = entryCtor.newInstance(args);
+            int typeInt = readSidecarType(json);
+            writeTypeField(entryClass, instance, typeInt);
+            return instance;
+        } catch (Throwable t) {
+            DebugTrace.write("ComponentInjector.buildEntity: ctor invocation failed", t);
+            return null;
+        }
+    }
+
+    /** Read inner {@code entry.type}; fall back to top-level {@code type}; default 6 (runtime dep). */
+    private static int readSidecarType(JSONObject json) {
+        JSONObject inner = json.optJSONObject("entry");
+        if (inner != null && inner.has("type")) return inner.optInt("type", 6);
+        return json.optInt("type", 6);
+    }
+
+    /**
+     * Write the {@code type} int onto the entity. Kotlin data classes expose
+     * primary-ctor properties as same-named fields; if R8 renamed it we walk
+     * declared fields and pick the first int field whose name contains "type".
+     */
+    private static void writeTypeField(Class<?> entryClass, Object instance, int typeInt) {
+        try {
+            Field tf = entryClass.getDeclaredField("type");
+            tf.setAccessible(true);
+            if (tf.getType() == int.class) { tf.setInt(instance, typeInt); return; }
+            if (tf.getType() == Integer.class) { tf.set(instance, Integer.valueOf(typeInt)); return; }
+        } catch (NoSuchFieldException ignore) { /* fall through to scan */ }
+        catch (Throwable t) {
+            DebugTrace.write("ComponentInjector.writeTypeField: direct set failed", t);
+        }
+        // R8-renamed fallback: first int field whose name contains "type".
+        try {
+            for (Field f : entryClass.getDeclaredFields()) {
+                if (f.getType() == int.class && f.getName().toLowerCase().contains("type")) {
+                    f.setAccessible(true);
+                    f.setInt(instance, typeInt);
+                    return;
+                }
+            }
+            DebugTrace.write("ComponentInjector.writeTypeField: no int 'type' field on " + entryClass.getName());
+        } catch (Throwable t) {
+            DebugTrace.write("ComponentInjector.writeTypeField: scan failed", t);
+        }
+    }
+
+    /** Read entry from a WinEmuRepo via getEntry() / entry field; null if absent. */
+    private static Object readEntry(Object repo) {
+        try {
+            try {
+                Method m = repo.getClass().getMethod("getEntry");
+                Object v = m.invoke(repo);
+                if (v != null) return v;
+            } catch (NoSuchMethodException ignore) { /* try field */ }
+            Field f = repo.getClass().getField("entry");
+            return f.get(repo);
+        } catch (Throwable ignore) {
+            return null;
+        }
+    }
+
+    /** Zero / null / empty default by Class — for filling unknown ctor slots. */
+    private static Object primitiveOrNullDefault(Class<?> t) {
+        if (t == String.class) return "";
+        if (t == boolean.class || t == Boolean.class) return false;
+        if (t == int.class || t == Integer.class) return 0;
+        if (t == long.class || t == Long.class) return 0L;
+        if (t == float.class || t == Float.class) return 0f;
+        if (t == double.class || t == Double.class) return 0d;
+        if (t == byte.class || t == Byte.class) return (byte) 0;
+        if (t == short.class || t == Short.class) return (short) 0;
+        if (t == char.class || t == Character.class) return (char) 0;
         return null;
     }
 

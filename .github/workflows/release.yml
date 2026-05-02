@@ -224,6 +224,11 @@ jobs:
             | **Change package name** *(per variant)* | Rewrites the APK's package name to the variant's value listed above. The `Original` variant keeps `com.xiaoji.egggame`. |
             | **Change app name** *(per variant)* | Rewrites the launcher label to the variant's value listed above. |
 
+            ### ⚠ Known limitations — please read
+
+            - **Steam game launches via the standard Steam client are likely broken.** Redirecting the catalog API to the BannerHub Worker changes which Steam client component the host resolves at launch. If your Steam games stop launching after upgrading, switch to the **Lightweight Steam client** in the picker — it's the variant that pairs cleanly with the BannerHub catalog. The standard Steam client may still work for some titles, but Lightweight should be your default on this build.
+            - **Imported games have no cover art by default.** When you add a game via Import, no banner / cover / hero artwork is fetched automatically. Open the imported game's edit screen and set the artwork manually (cover, banner, hero, logo as applicable). The game itself is fully importable and launchable without artwork — this is purely cosmetic.
+
             ### Notes
 
             - The base APK is unmodified XiaoJi GameHub 6.0.0; only the bytecode/resources required by the patches above are touched.

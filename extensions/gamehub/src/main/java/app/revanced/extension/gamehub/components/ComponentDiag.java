@@ -19,4 +19,10 @@ public final class ComponentDiag {
     public static void log(String label) {
         Log.i(TAG, label);
     }
+
+    /** Log a label plus an int discriminator (used to disambiguate polymorphic
+     * synthetic lambda classes like {@code Liv6;} that switch on a field). */
+    public static void log(String label, int disc) {
+        Log.i(TAG, label + disc);
+    }
 }

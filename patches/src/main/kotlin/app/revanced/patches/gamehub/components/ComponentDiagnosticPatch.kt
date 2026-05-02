@@ -8,14 +8,14 @@ import app.revanced.patches.gamehub.GAMEHUB_VERSION
 import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 
 // Diagnostic instrumentation: log a unique tag at method entry of every
-// candidate dropdown-feeder method. User opens the FEXCore picker once,
-// pulls logcat, greps "GH600-DIAG" — whichever tags fired narrow down where
-// the per-game dropdown actually pulls its options from in 6.0.
-//
-// Pattern matches 5.3.5's discovery method: instrument first, hook second.
-// The ComponentInjectionPatch hook on Ll9o;->z and previous attempts on
-// Lgxh;->a / Lm13;->b never produced logs in the field, so we don't yet
-// know the actual feed.
+// candidate dropdown-feeder method. v0.3.5 narrowed the universe to iv6.invoke
+// firing 3x — but iv6 is a polymorphic synthetic lambda with a packed-switch
+// on field a:I across 28+ cases (most are debug-log formatters). v0.3.6 adds:
+//   - iv6.invoke entry now logs the discriminator value (which case fired)
+//   - v86.b callers (the Composable-picker invokers)
+//   - dh7 synthetic deserialization ctor (in case kotlinx.serialization path
+//     constructs the parcel instead of the primary ctor)
+//   - more dh7.a / dh7.b consumers
 private const val DIAG_DESCRIPTOR =
     "Lapp/revanced/extension/gamehub/components/ComponentDiag;"
 
@@ -24,12 +24,14 @@ private data class Target(
     val methodName: String,
     val parameterTypes: List<String>,
     val tag: String,
+    val isIv6Invoke: Boolean = false,
 )
 
 private val TARGETS = listOf(
-    // --- Game config response data class — primary ctor builds the parcel
-    //     that flows into per-game pickers. dh7.a / dh7.b are the two
-    //     pre-fetched List<EnvLayerEntity> fields the dropdown likely reads.
+    // --- iv6.invoke with discriminator logging (special case: log a:I value)
+    Target("Liv6;", "invoke", emptyList(), "iv6.invoke a=", isIv6Invoke = true),
+
+    // --- Game config response data class — both ctors (primary + synthetic deserialization)
     Target(
         "Ldh7;", "<init>",
         listOf(
@@ -42,15 +44,30 @@ private val TARGETS = listOf(
             "I", "Ljava/lang/String;", "I", "Ljava/lang/String;",
             "I", "I", "I", "Ljava/lang/String;", "I",
         ),
-        "dh7.<init>",
+        "dh7.<init>(primary)",
     ),
-    // --- API caller for getGameConfigByScript (logs visible in WinEmuModule)
+    Target(
+        "Ldh7;", "<init>",
+        listOf(
+            "I",
+            "Ljava/util/List;",
+            "Ljava/util/List;",
+            "Lcom/xiaoji/egggame/common/winemu/bean/EnvLayerEntity;",
+            "Lcom/xiaoji/egggame/common/winemu/bean/EnvLayerEntity;",
+            "Lcom/xiaoji/egggame/common/winemu/bean/TranslatorConfigs;",
+            "Lcom/xiaoji/egggame/common/winemu/bean/PcEmuControllerEntity;",
+            "I", "Ljava/lang/String;", "I", "Ljava/lang/String;",
+            "I", "I", "I", "Ljava/lang/String;", "I", "Ljava/lang/String;", "J",
+        ),
+        "dh7.<init>(synthetic)",
+    ),
+
+    // --- API caller for getGameConfigByScript
     Target("Ljg2;", "invoke", emptyList(), "jg2.invoke"),
     Target("Lehn;", "invoke", emptyList(), "ehn.invoke"),
 
-    // --- Per-game-settings handlers that read dh7.a / dh7.b
+    // --- Per-game-settings handlers reading dh7.a / dh7.b
     Target("Lb54;", "b", listOf("Lr91;", "Lfe3;"), "b54.b"),
-    Target("Liv6;", "invoke", emptyList(), "iv6.invoke"),
     Target("Lhv6;", "e", listOf("Lor6;", "Lfe3;"), "hv6.e"),
     Target("Lq6f;", "c", listOf("Ldh7;", "Lfe3;"), "q6f.c"),
     Target("Lq6f;", "d", listOf("Ldh7;", "Lfe3;"), "q6f.d"),
@@ -67,7 +84,29 @@ private val TARGETS = listOf(
         "v86.b",
     ),
 
-    // --- Sanity checks: previous hook targets — confirm whether they fire
+    // --- v86.b callers — these methods host the picker Composable invocation
+    Target(
+        "Ll61;", "invoke",
+        listOf("Ljava/lang/Object;", "Ljava/lang/Object;"),
+        "l61.invoke",
+    ),
+    Target(
+        "Lo61;", "r",
+        listOf("Ljava/lang/Object;", "Ljava/lang/Object;", "Ljava/lang/Object;"),
+        "o61.r",
+    ),
+    Target(
+        "Lxn7;", "invoke",
+        listOf("Ljava/lang/Object;", "Ljava/lang/Object;"),
+        "xn7.invoke",
+    ),
+    Target(
+        "Lj23;", "invoke",
+        listOf("Ljava/lang/Object;", "Ljava/lang/Object;", "Ljava/lang/Object;"),
+        "j23.invoke",
+    ),
+
+    // --- Sanity checks: previous miss-targets
     Target(
         "Ll9o;", "z",
         listOf("Lcom/xiaoji/egggame/common/winemu/bean/RepoCategory;"),
@@ -99,17 +138,28 @@ val componentDiagnosticPatch = bytecodePatch(
                         parameterTypes.size == t.parameterTypes.size &&
                         parameterTypes.toList() == t.parameterTypes
                 }.apply {
-                    addInstructions(
-                        0,
-                        """
-                            const-string v0, "${t.tag}"
-                            invoke-static {v0}, $DIAG_DESCRIPTOR->log(Ljava/lang/String;)V
-                        """,
-                    )
+                    if (t.isIv6Invoke) {
+                        // iv6 is polymorphic — log the discriminator field a:I
+                        // alongside the tag so we can identify which case fired.
+                        addInstructions(
+                            0,
+                            """
+                                iget v0, p0, Liv6;->a:I
+                                const-string v1, "${t.tag}"
+                                invoke-static {v1, v0}, $DIAG_DESCRIPTOR->log(Ljava/lang/String;I)V
+                            """,
+                        )
+                    } else {
+                        addInstructions(
+                            0,
+                            """
+                                const-string v0, "${t.tag}"
+                                invoke-static {v0}, $DIAG_DESCRIPTOR->log(Ljava/lang/String;)V
+                            """,
+                        )
+                    }
                 }
             } catch (e: Throwable) {
-                // Method not found / signature mismatch — log and continue with the
-                // remaining targets so a single missing class doesn't kill the build.
                 System.err.println("componentDiagnosticPatch: skipped ${t.className}->${t.methodName}: ${e.message}")
             }
         }

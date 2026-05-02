@@ -216,30 +216,278 @@ The Activities only need `Context.getSharedPreferences` and standard file I/O wi
 
 ---
 
-## 7. Open questions / next steps
+## 7. Implementation plan — discrete jobs
 
-1. **Map `ComponentStrategy` API**: identify the singleton class (likely in `com.winemu.openapi/a..f`), confirm method signatures for `downloadComponentOnDemand`, `extractComponent`, `alignDepComponentsWithRepo`, `fetchRemoteList`. Required before the manager can trigger any of these flows. Effort: ~1 hour of `apktool d` + grep + reading.
+Twelve numbered jobs in dependency order. Each is independently doable, has explicit inputs / outputs / acceptance criteria, and tells the next agent exactly what "done" looks like. Open archaeology questions from prior drafts are folded in — the job that resolves each is annotated.
 
-2. **Identify the dropdown-population method**: this is the one bytecode patch surface for the merge. Grep for usages of `sp_winemu_unified_resources` string + `getSharedPreferences` callers + classes that reach those candidates listed in §4. Effort: ~2 hours.
+### Phase A — Smali archaeology (no code, just findings)
 
-3. **Pick the launcher path**: separate launcher icon (trivial, `MAIN`/`LAUNCHER` activity-alias in the manifest patch) or Compose-injected button next to the profile icon (hard, bytecode injection into the home-screen composable). Recommend separate launcher icon for v1.
+#### Job 1 — Map the `ComponentStrategy` API ⏱ ~1h
 
-4. **Decide custom-component download mechanism**: file picker (user chooses a local `.tzst`)? URL paste? Both? Probably both, since the 5.x manager supported URL-driven downloads.
+**Resolves:** what method to call to download / extract / align components.
 
-5. **Verify the extracted-state name**: we observe `"None"` and `"Downloaded"` in the data; need to confirm what the post-extraction state literal is by extracting a component and re-reading the XML, or by grepping the smali for `"state"` writes. Affects how we render "fully ready" vs "downloaded but not extracted" in the UI.
+**Inputs:**
+- Decompiled APK at `/data/data/com.termux/files/home/gamehub-6.0-decompile/` (rebuild via `java -jar ~/apktool.jar d ~/GameHub_beta_6.0.0_global.apk -o /tmp/gh600_smali -f --no-res` if stale)
 
-6. **Decide UI launching path**: separate launcher icon (cheap, ship in v1) vs Compose-injected button next to profile icon (expensive, defer to v2 if at all).
+**Steps:**
+1. `grep -rln "ComponentStrategy(" smali_classes*/` — find the class that builds the `ComponentStrategy(...)` log lines from §3
+2. Inspect the class's methods — look for `downloadComponentOnDemand`, `extractComponent`, `alignDepComponentsWithRepo`, `fetchRemoteList`. Names may be R8-renamed; use the literal log-string method as an anchor (the method that prints `"alignDepComponentsWithRepo updated count="` IS that method).
+3. Find the singleton accessor — Koin DI pattern almost certainly (`Lorg/koin/core/component/KoinComponent;->getKoin()`). Document the static getter or the Koin scope key.
+4. Read each method's signature including parameter classes (the entity class that represents a Component is what `ComponentInjector` will need to instantiate via reflection).
+
+**Output:** Append to this report a table of `Method | Smali class | Signature | Returns | Notes` covering at minimum: `downloadComponentOnDemand`, `extractComponent`, `alignDepComponentsWithRepo`, `fetchRemoteList`, plus the canonical Component-entity class (the type held by `entry` in the JSON schema in §2).
+
+**Acceptance:** for any given component name string, we know exactly which static method to call (with what arg shape) to trigger a download. No "TBD" left in the report's call-shape notes.
 
 ---
 
-## 8. Effort estimate
+#### Job 2 — Identify the dropdown-population method ⏱ ~2h
 
-- Smali archaeology (open questions 1, 2, 5): **half a day**
-- ComponentInjector + SidecarRegistry extensions: **half a day** (reflection patterns are well-trodden — same shape as `FakeAuthToken` / `FakeUserAccount`)
-- ComponentInjectionPatch (the merge patch): **2-3 hours** once the target method is found
-- Port of ComponentManagerActivity from 5.x with EmuComponents replaced by the merged-registry reads: **1 day** (5.x has 1270 LOC main activity + ~28 inner classes; most of it is UI plumbing that doesn't need to change)
-- ComponentDownloadActivity port + URL/file-picker: **half a day**
-- ComponentManagerPatch (manifest registration + optional launcher alias): **1 hour**
-- Device testing + iteration: **half a day**
+**Resolves:** the single bytecode patch surface for `ComponentInjectionPatch`.
 
-**Total: ~3 working days for v1.** Compose-injected launcher button (open question 6) would add ~1 more day if scoped in.
+**Inputs:** Job 1's findings; the smali decompile.
+
+**Steps:**
+1. Grep for class members reading `sp_winemu_unified_resources`: `grep -rln "sp_winemu_unified_resources" smali_classes*/`
+2. From those classes, trace methods that return a list / map of components filtered by `type`. The candidates from §4 are starting points: `b1.smali`, `b23.smali`, `b55.smali`, `e9k.smali`, `ic3.smali`, `j13.smali`, `k13.smali`, `ou2.smali`, `x45.smali`, `zhn.smali`.
+3. Cross-reference: which of these methods are called from per-game-settings Composables? Grep for `pc_g_setting` and trace upward to find the call site that requests a component list.
+4. Confirm the return type (`Ljava/util/List;` or a Kotlin Flow/StateFlow), and the parameter shape (does the caller pass `type: Int`, or are there separate per-type methods?).
+
+**Output:** append to report: full smali signature of the target method, plus any siblings (e.g., one method per type number 2/3/4/5/6 vs one generic method taking `type` as arg). Decide whether the merge is one-method-patch or multi-method-patch.
+
+**Acceptance:** report names the exact method(s) to patch with full descriptor (`Lcls;->name(arg)RetType`). Anyone can write the bytecode patch from this entry alone.
+
+---
+
+#### Job 3 — Confirm the component state literals ⏱ ~30min
+
+**Resolves:** complete state machine for `entry.state` so the UI can render correct status badges.
+
+**Inputs:** smali decompile + the live Genshin install at `/data/data/com.mihoyo.genshinimpact/`.
+
+**Steps:**
+1. Grep all string literals fed into the field write for `entry.state`: `grep -rh "\"state\"" smali_classes*/ | grep -E "const-string|put"` — narrow to the relevant component classes from Jobs 1-2.
+2. Check the live install: `getlog --cat .../sp_winemu_unified_resources.xml | grep -oE '"state":"[^"]*"' | sort -u` — gives empirical state values.
+3. Cross-reference smali with empirical values. Settle the canonical extracted state name (likely `"Extracted"` or `"Ready"` or `"Installed"`).
+
+**Output:** append to report: complete enumeration of states with semantic meaning of each. Update the §2 state-machine line.
+
+**Acceptance:** every state observed in either smali or live data is documented with its meaning.
+
+---
+
+### Phase B — Extension classes (Java, no patcher integration yet)
+
+#### Job 4 — Build `SidecarRegistry` extension ⏱ ~2h
+
+**Resolves:** the read/write surface for `sp_bh_components.xml`.
+
+**Path:** `extensions/gamehub/src/main/java/app/revanced/extension/gamehub/components/SidecarRegistry.java`
+
+**Required public API:**
+```java
+public final class SidecarRegistry {
+    public static List<JSONObject> getAllByType(Context ctx, int type);
+    public static JSONObject get(Context ctx, String name);
+    public static void put(Context ctx, String name, JSONObject entry);
+    public static void remove(Context ctx, String name);
+    public static Set<String> allNames(Context ctx);
+}
+```
+
+**Steps:**
+1. SharedPreferences-backed: `ctx.getSharedPreferences("sp_bh_components", Context.MODE_PRIVATE)`.
+2. Each entry is a JSON string under key `COMPONENT:<name>`. Use `org.json.JSONObject` (always available on Android).
+3. Add `_bh_injected`, `_bh_skip_md5`, `_bh_source_uri` namespaced fields per the §3 schema.
+4. Unit-testable via plain Robolectric, but for our purposes a manual install-and-poke is fine.
+
+**Acceptance:** can write a test entry from a one-shot helper (e.g., a static `seedTest()` method we can call from `ComponentManagerActivity.onCreate` for first-pass verification), then read it back via `getAllByType`. No dependence on Job 1 findings yet.
+
+---
+
+#### Job 5 — Build `ComponentInjector` extension ⏱ ~2h
+
+**Resolves:** how the injected entries get reshaped into the same Component-entity class the host app's UI expects.
+
+**Path:** `extensions/gamehub/src/main/java/app/revanced/extension/gamehub/components/ComponentInjector.java`
+
+**Required public API:**
+```java
+public final class ComponentInjector {
+    public static List<Object> append(Context ctx, List<Object> serverList, int type);
+}
+```
+
+**Steps:**
+1. Determine the Component-entity class via `serverList.isEmpty() ? null : serverList.get(0).getClass()` (avoids hard-coding R8-renamed names).
+2. For each sidecar JSONObject of matching `type`, build a same-class instance via reflection. Pattern: `Class.forName("...")::getDeclaredConstructor(...)::newInstance(...)`. Same as `FakeUserAccount.java`.
+3. Return `new ArrayList<>(serverList)` with sidecar matches appended.
+4. Guard against the empty-server-list case (we can't infer the class). For v1 if `serverList` is empty, return a copy of `serverList` and log a warning to `GH600-DEBUG` — no sidecar merge possible without a class anchor. Document this as a known limitation; can be fixed in a follow-up by hard-coding the class once Job 1 names it.
+
+**Output:** working extension class.
+
+**Acceptance:** depends on Job 1 (need the entity class to instantiate). Verifiable in the device test (Job 11) — check that injected entries actually appear in the dropdown.
+
+---
+
+### Phase C — Bytecode patch (the integration point)
+
+#### Job 6 — Build `ComponentInjectionPatch` ⏱ ~2-3h
+
+**Resolves:** wires the sidecar into the live dropdown UI.
+
+**Path:** `patches/src/main/kotlin/app/revanced/patches/gamehub/components/ComponentInjectionPatch.kt`
+
+**Steps:**
+1. From Job 2, target the dropdown-population method.
+2. Find the existing `return-object v0` (the unified-list result) at method end via `findInstructionIndicesReversedOrThrow(Opcode.RETURN_OBJECT)`.
+3. Insert before each return:
+   ```smali
+   invoke-static {<ctx-reg>, v0, <type-reg>}, Lapp/revanced/extension/gamehub/components/ComponentInjector;->append(Landroid/content/Context;Ljava/util/List;I)Ljava/util/List;
+   move-result-object v0
+   ```
+   The `<ctx-reg>` source depends on Job 2's findings (might need to grab Application context via static accessor). The `<type-reg>` likewise depends on the method signature.
+4. Add the patch to the source tree but do NOT enable in the matrix `-e` list (it's enabled by default since `use=true`).
+
+**Acceptance:** patch applies cleanly in CI (`INFO: "Component injection" succeeded`). Smoke test: install build, open per-game settings on any imported game, dropdowns are non-empty (if anything, dropdowns show all the same content as before this patch — sidecar is empty, so merge is a no-op until Job 4/7/8 land entries into the sidecar).
+
+---
+
+### Phase D — UI port
+
+#### Job 7 — Port `ComponentManagerActivity` ⏱ ~1 day
+
+**Resolves:** the main user-facing UI surface.
+
+**Path:** `extensions/gamehub/src/main/java/app/revanced/extension/gamehub/components/ComponentManagerActivity.java` (and inner classes — port from BannerHub 5.x's smali but rewrite as Java for maintainability).
+
+**Steps:**
+1. From the BannerHub 5.x smali (`/data/data/com.termux/files/home/bannerhub/patches/smali_classes16/com/xj/landscape/launcher/ui/menu/ComponentManagerActivity*.smali`), reverse-engineer the activity's behavior into Java. ~1270 LOC of smali maps to roughly ~600 LOC of Java.
+2. Replace every reference to `Lcom/xj/winemu/EmuComponents;` (the 5.x singleton + HashMap) with calls to:
+   - `ComponentStrategy.<getter>` (Job 1) for the live unified list
+   - `SidecarRegistry.getAllByType(ctx, type)` for the injected list
+   - Combined and de-duped before display (sidecar entry with same name as a server entry: prefer server entry, hide sidecar; or show both if names differ).
+3. Operations:
+   - **Add (official)**: invoke `ComponentStrategy.downloadComponentOnDemand(name)` (Job 1)
+   - **Add (custom)**: launch `ComponentDownloadActivity` (Job 8)
+   - **Remove**: write state to "None" if server-side, delete from sidecar XML if injected. Plus delete from `xj_downloads/component/<name>/` and `usr/home/components/<name>/`.
+   - **Force extract**: invoke `ComponentStrategy.extractComponent(name)` (Job 1)
+4. Resources: drop the `bh_game_card_focus_bg.xml` drawable into `extensions/gamehub/src/main/res/drawable/`.
+
+**Acceptance:** activity launches via `am start -n com.xiaoji.egggame/app.revanced.extension.gamehub.components.ComponentManagerActivity` (or via the launcher icon from Job 9). Lists are populated correctly. Add/remove/extract operations succeed.
+
+---
+
+#### Job 8 — Port `ComponentDownloadActivity` ⏱ ~4h
+
+**Resolves:** the file-picker / URL-paste UI for adding custom components.
+
+**Path:** `extensions/gamehub/src/main/java/app/revanced/extension/gamehub/components/ComponentDownloadActivity.java`
+
+**Steps:**
+1. Port the 5.x download activity to Java (~400 LOC of smali → ~200 Java).
+2. Two input modes:
+   - **File picker**: `Intent(Intent.ACTION_OPEN_DOCUMENT)` for `.tzst` and `.yml`. Copy the picked file into `xj_downloads/component/<derived-name>/`. Write a sidecar entry with `state="Downloaded"`.
+   - **URL paste**: download to a temp file, validate it's a tzst/yml, move to `xj_downloads/component/<name>/`. Write a sidecar entry.
+3. Component name derivation: filename minus extension, sanitized.
+4. Persist the source URI in `_bh_source_uri` so the manager can show "imported from <path>" in the UI.
+
+**Acceptance:** can pick a `.tzst` from external storage; new entry appears in `sp_bh_components.xml` and in the manager's dropdown for the matching `type`. (Type detection from the filename is heuristic — see open question Q1 below.)
+
+---
+
+### Phase E — Patch glue + ship
+
+#### Job 9 — Build `ComponentManagerPatch` ⏱ ~1h
+
+**Resolves:** AndroidManifest registration + launcher icon path.
+
+**Path:** `patches/src/main/kotlin/app/revanced/patches/gamehub/components/ComponentManagerPatch.kt` (resourcePatch, since it modifies the manifest XML)
+
+**Steps:**
+1. Inject `<activity>` entries for `ComponentManagerActivity` and `ComponentDownloadActivity` into the AndroidManifest (same pattern as `FileManagerAccessPatch`).
+2. Add an `<activity-alias>` with `MAIN`/`LAUNCHER` intent filter and a distinct icon so the manager appears as its own launcher entry.
+3. Decision pending (Q2 below): whether to also do Compose-injection of a button next to the profile icon. Defer to v2.
+
+**Acceptance:** patch applies, AndroidManifest contains the new entries, launcher icon appears on the home screen after install.
+
+---
+
+#### Job 10 — v1 prerelease build ⏱ ~30min
+
+**Resolves:** end-to-end CI integration.
+
+**Steps:**
+1. Tag `v0.3.0-component-manager-test` (artifact-only per the prerelease policy).
+2. Verify all 7 patches succeed in the apply-patches log:
+   - Bypass login
+   - Disable Firebase Crashlytics
+   - Debug logging
+   - File manager access
+   - **Component injection** (new)
+   - **Component manager** (new — manifest patch)
+   - Per-variant Change package name + Change app name
+3. Download Original variant to `/storage/emulated/0/Download/bannerhub-v0.3.0-cm-Original.apk`.
+
+**Acceptance:** CI green, no SEVEREs, APK downloads.
+
+---
+
+#### Job 11 — Device test ⏱ ~2h
+
+**Resolves:** end-to-end functional verification.
+
+**Test plan:**
+1. Install on top of existing `Original` install.
+2. Verify launcher icon appears.
+3. Open Component Manager.
+   - List populated from `sp_winemu_unified_resources.xml`: ✓ each component visible.
+   - Component states (None/Downloaded/Extracted) render correctly.
+4. Tap "Add" → ComponentDownloadActivity → file picker → pick a known-good `.tzst` from Downloads.
+   - Verify entry appears in `sp_bh_components.xml` (pull via `getlog --cat`).
+   - Verify entry shows in the manager's list.
+5. Open the imported Genshin (or any other) game's PC settings.
+   - Open the GPU driver / DXVK / VKD3D dropdown matching the injected component's `type`.
+   - Verify the injected component appears alongside official entries. ← this is the integration point that proves Jobs 4-6 work end-to-end.
+6. Pick the injected component for the game; save settings.
+7. Launch the game. Confirm the chosen component is actually used (winemu logs should reference it).
+8. Remove the injected component via the manager. Verify it disappears from the sidecar XML and the dropdowns.
+9. Add an official component (one that's currently `state=None`). Verify the download flow runs and `state` flips to `Downloaded`.
+
+**Acceptance:** every step passes on a clean install. Logcat captured to `/data/data/com.termux/files/home/component-manager-v1-test.log` for any anomalies.
+
+---
+
+#### Job 12 — Iterate / polish ⏱ variable
+
+Bug fixes from Job 11; UX polish; optional enhancements:
+- Compose-inject the launcher button next to the profile icon (Q2)
+- Cloud-backup of the sidecar XML (Q3)
+- Type auto-detection in `ComponentDownloadActivity` (Q1)
+
+---
+
+## 8. Open questions (after the plan)
+
+These are questions the plan does NOT pre-resolve and that need empirical answers during execution:
+
+- **Q1: Component type auto-detection in `ComponentDownloadActivity`**: when the user picks a `.tzst`, how do we infer its `type` (GPU driver vs DXVK vs settings pack)? Options: filename heuristic (`turnip*` → 2, `dxvk*` → 3, `vkd3d*` → 4, `*_Settings*` → 5), tzst-content scan (extract & inspect), or just ask the user. Recommend filename heuristic with a fallback dropdown.
+
+- **Q2: Launcher placement v2**: Compose-inject a button next to the profile icon vs. stick with the separate launcher alias from Job 9. Defer until Job 11 device test confirms separate-launcher feels acceptable.
+
+- **Q3: Sidecar XML backup/restore**: factory reset wipes `sp_bh_components.xml`. Worth shipping cloud-backup support (write to `/sdcard/Android/data/com.xiaoji.egggame/files/banner-components/` for adb-pull preservation)? Not blocking v1.
+
+---
+
+## 9. Effort estimate (sum of jobs)
+
+| Phase | Jobs | Effort |
+| --- | --- | --- |
+| A — Smali archaeology | 1, 2, 3 | ~3.5h |
+| B — Extension classes | 4, 5 | ~4h |
+| C — Bytecode patch | 6 | ~2-3h |
+| D — UI port | 7, 8 | ~1.5d |
+| E — Glue + ship | 9, 10, 11 | ~3.5h |
+| (12 — iterate, optional/variable) | | ~half day |
+
+**Total: ~3 working days for v1 (Jobs 1–11).** Compose-injected launcher button (Q2) would add ~1 more day if scoped in.

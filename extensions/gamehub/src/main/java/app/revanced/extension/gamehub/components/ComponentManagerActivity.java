@@ -1,5 +1,6 @@
 package app.revanced.extension.gamehub.components;
 
+import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
@@ -18,8 +19,6 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
-
-import androidx.appcompat.app.AppCompatActivity;
 
 import app.revanced.extension.gamehub.debug.DebugTrace;
 
@@ -59,7 +58,7 @@ import java.util.Map;
  * one Java file and doesn't require resource registration. Visually intentionally
  * minimal — this is a power-user / sideload tool, not a marketing surface.</p>
  */
-public final class ComponentManagerActivity extends AppCompatActivity {
+public final class ComponentManagerActivity extends Activity {
 
     private static final String UNIFIED_PREFS = "sp_winemu_unified_resources";
     private static final String COMPONENT_KEY_PREFIX = "COMPONENT:";

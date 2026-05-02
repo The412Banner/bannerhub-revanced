@@ -1,5 +1,6 @@
 package app.revanced.extension.gamehub.components;
 
+import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ContentResolver;
 import android.content.Intent;
@@ -24,8 +25,6 @@ import android.widget.ScrollView;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
-
-import androidx.appcompat.app.AppCompatActivity;
 
 import app.revanced.extension.gamehub.debug.DebugTrace;
 
@@ -62,7 +61,7 @@ import java.util.Locale;
  *   <tr><td>(otherwise)</td><td>user picks from dropdown before save</td></tr>
  * </table>
  */
-public final class ComponentDownloadActivity extends AppCompatActivity {
+public final class ComponentDownloadActivity extends Activity {
 
     private static final int REQ_OPEN_DOCUMENT = 9101;
 

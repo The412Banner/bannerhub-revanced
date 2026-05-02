@@ -69,10 +69,11 @@ public final class ComponentManagerActivity extends Activity
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Self-heal insurance: re-write every sidecar entry into the host registry
-        // on every Component Manager open. Cheap, idempotent, defends against any
-        // hypothetical future API refresh that prunes unknown keys.
-        HostRegistry.rehydrateFromSidecar(this);
+        // Self-heal insurance: re-poke every sidecar entry into the host's
+        // live registry (l9o.G — both in-memory cache and disk) on every
+        // Component Manager open. Cheap, idempotent, defends against the
+        // host's API-refresh path clobbering our entries from the host XML.
+        HostCache.rehydrateFromSidecar(this);
 
         listView = new ListView(this);
         listView.setOnItemClickListener(this);

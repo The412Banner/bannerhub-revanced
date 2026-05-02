@@ -188,6 +188,54 @@ public final class ComponentInjector {
     }
 
     /**
+     * Public entry point: build a {@code WinEmuRepo} instance from a JSON
+     * entry shaped like a host registry record (top-level
+     * {@code {category, depInfo, entry, isBase, isDep, name, state, version}}).
+     * Used by {@link HostCache} to construct the object passed to
+     * {@code Ll9o;->G(WinEmuRepo)V} — the host's atomic in-memory + disk
+     * write-through.
+     *
+     * @return a newly-built {@code WinEmuRepo} instance, or {@code null}
+     *         if reflection failed at any step (cause is logged).
+     */
+    public static Object buildRepoForJson(JSONObject entry) {
+        try {
+            Class<?> repoClass = Class.forName(REPO_CLASS);
+            Constructor<?> ctor = pickLongestCtor(repoClass);
+            if (ctor == null) {
+                DebugTrace.write("buildRepoForJson: no WinEmuRepo ctor");
+                return null;
+            }
+            Class<?> entryClass = pickEntryClassFromCtor(ctor);
+            Constructor<?> entryCtor = entryClass != null ? pickLongestCtor(entryClass) : null;
+            return buildRepo(ctor, entry, entryClass, entryCtor);
+        } catch (Throwable t) {
+            DebugTrace.write("buildRepoForJson failed", t);
+            return null;
+        }
+    }
+
+    /** Pick a class's longest constructor (Kotlin data class primary). */
+    private static Constructor<?> pickLongestCtor(Class<?> cls) {
+        if (cls == null) return null;
+        Constructor<?> best = null;
+        for (Constructor<?> c : cls.getDeclaredConstructors()) {
+            if (best == null || c.getParameterCount() > best.getParameterCount()) best = c;
+        }
+        if (best != null) best.setAccessible(true);
+        return best;
+    }
+
+    /** Find the {@code EnvLayerEntity} slot among a ctor's parameter types. */
+    private static Class<?> pickEntryClassFromCtor(Constructor<?> ctor) {
+        for (Class<?> p : ctor.getParameterTypes()) {
+            String n = p.getName();
+            if (ENTRY_CLASS.equals(n) || n.endsWith(".EnvLayerEntity")) return p;
+        }
+        return null;
+    }
+
+    /**
      * Resolves and caches the {@code WinEmuRepo} canonical constructor. Tries:
      * 1. Anchor on {@code serverList.get(0).getClass()} (most reliable — survives R8 mangling).
      * 2. Fall back to {@code Class.forName(REPO_CLASS)}.

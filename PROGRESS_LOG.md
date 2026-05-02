@@ -1,5 +1,32 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-05-02 — `v0.4.2-cm-l9oG` — atomic write-through via host's own l9o.G
+
+### Symptom (v0.4.1 device test)
+Process restart after inject worked (Component Manager closed cleanly), but on relaunch the host's per-game settings still didn't show `Fex_2604`. Sidecar XML had it; host XML did not. The API refresh on app start clobbered the host registry XML, wiping our entry from disk before the picker ever rendered.
+
+### Root cause — finally
+The picker reads from the host's in-memory `l9o.c` ConcurrentHashMap, hydrated from the disk XML only at app start. We were writing to disk via our own SharedPreferences path; even with `commit()` the write would be:
+1. clobbered by the API refresh on the very next app start, OR
+2. ignored entirely because `l9o.c` doesn't re-read from disk during a session.
+
+Re-reading `l9o.smali:1517–1584` revealed `Ll9o;->G(WinEmuRepo)V` — the host's own write-through method. It does **both** in one call:
+- `l9o.c.put(key, repo)` at line 1566 → updates the live cache the picker reads
+- `y99.b(repo)` at line 1579 → writes to `sp_winemu_unified_resources.xml`
+
+The host uses this same `l9o.G` for its own server-supplied entries. If we call it via reflection, our entries are indistinguishable.
+
+### Fix
+- New `HostCache.injectViaL9oG(ctx, entry)` — reflectively calls `Ll9o;->G(WinEmuRepo)V`. Resolves the singleton via `Ll9o;->o()Ll9o;` (or static field `d:Ll9o;` fallback), discovers the R8-mangled `WinEmuRepo` class by sampling an existing entry from `l9o.c`, then builds our `WinEmuRepo` via `ComponentInjector.buildRepoForJson` (new public entry point that wraps the existing reflection ctor logic), and invokes `l9o.G`.
+- `HostCache.toHostShape(entry)` produces the canonical server-shape JSON (no `_bh_*` markers, no inner `entry.category`, `state:"None"`).
+- `ComponentInjectorHelper.registerComponent` now calls `HostCache.injectViaL9oG` instead of `HostRegistry.put`. Sidecar still gets the full markered JSON (private bookkeeping).
+- `ComponentManagerActivity.onCreate` self-heal switches to `HostCache.rehydrateFromSidecar` — same atomic write-through, applied across all sidecar entries.
+- **Process restart removed** (`scheduleProcessRestart` deleted) — no longer needed since `l9o.G` updates the live cache directly. Picker shows the new entry on next dropdown open without any restart.
+
+### Build
+- Tag: `v0.4.2-cm-l9oG`
+- Trigger: `gh workflow run release.yml --ref gamehub-600-build -f tag=v0.4.2-cm-l9oG`
+
 ## 2026-05-02 — `v0.4.1-cm-restart` — sync write + process restart so host re-hydrates its cache
 
 ### Symptom (v0.4.0 device test)

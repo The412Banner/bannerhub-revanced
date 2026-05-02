@@ -1,5 +1,39 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-05-02 — `v0.4.0-cm-shape-parity` — match server entry shape bit-for-bit
+
+### Symptom (v0.3.9 device test)
+`COMPONENT:Fex_2604` writes correctly to `sp_winemu_unified_resources.xml` (verified via direct XML inspection). Sidecar has `Fex_2604`. Picker still doesn't show it.
+
+### Root cause — multiple shape diffs vs server entries
+Side-by-side of server's `Fex_20260428` JSON vs our `Fex_2604` (user-supplied):
+
+| Field | Server (`Fex_20260428`) | Ours (`Fex_2604`) | Verdict |
+|---|---|---|---|
+| top-level `state` | `"None"` | `"Extracted"` | **filter target** — 714/714 server entries are `"None"` |
+| inner `entry.category` | absent | `"COMPONENT"` | **stray duplicate** — server's inner has no category field |
+| inner `entry.state` | `"None"` | `"Extracted"` | same as top-level filter |
+| inner `entry.id` | `429` | `-1` | **likely picker filter on `id > 0`** |
+| inner `entry.versionCode` | `2` | `1` | minor; server uses 2 |
+| inner `entry.fileSize` / `fileMd5` / `downloadUrl` / `logo` | populated | empty | cosmetic — not filtered |
+
+The host tracks "is this extracted?" dynamically via `dxh.queryReadyState` (filesystem check), so the registry's `state` field must mimic server's `"None"` regardless of actual extraction status — otherwise the picker hides the row.
+
+### Fix
+`HostRegistry.stripBhMarkers` (the per-write reshape) now also:
+- Removes inner `entry.category` (the stray duplicate).
+- Forces `state: "None"` on both top-level and inner.
+- Coerces `id` to a stable positive int via `syntheticId(name)` — range 90000–179999, well above server's observed 1–500 range so no collision.
+- Bumps `versionCode` to `2` matching server format.
+
+`ComponentInjectorHelper.registerComponent` no longer writes inner `entry.category` at the source either.
+
+Sidecar JSON still keeps `state: "Extracted"` and the rest of our private markers — sidecar is our truth, host registry is server-mimicry.
+
+### Build
+- Tag: `v0.4.0-cm-shape-parity`
+- Trigger: `gh workflow run release.yml --ref gamehub-600-build -f tag=v0.4.0-cm-shape-parity`
+
 ## 2026-05-02 — `v0.3.9-cm-prefix` — namespace component name with category prefix
 
 ### Symptom (v0.3.8 device test)

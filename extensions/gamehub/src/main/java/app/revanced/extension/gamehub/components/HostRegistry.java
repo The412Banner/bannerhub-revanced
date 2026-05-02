@@ -63,15 +63,45 @@ public final class HostRegistry {
         }
     }
 
-    /** Deep clone {@code src} and remove every {@code _bh_*} key from both
-     * the top level and the inner {@code entry} object, so the result matches
-     * the host's own JSON shape exactly. */
+    /** Deep clone {@code src} and reshape into the host's exact JSON form:
+     * (1) remove every {@code _bh_*} marker key, (2) drop the duplicate inner
+     * {@code entry.category} field (server entries only carry {@code category}
+     * at the top level), (3) force {@code state} to {@code "None"} (server
+     * registry always uses {@code "None"}; the host tracks extraction
+     * dynamically via {@code dxh.queryReadyState} filesystem check, so the
+     * pref-level state must mimic server's), (4) coerce {@code id} to a
+     * stable positive int so any {@code id > 0} filter passes, (5) bump
+     * {@code versionCode} to {@code 2} matching server format.
+     *
+     * <p>Diff vs server's {@code Fex_20260428} entry confirmed via direct XML
+     * inspection — these are every functional difference. Cosmetic deltas
+     * ({@code blurb}, {@code displayName}, empty {@code downloadUrl}/
+     * {@code fileMd5}/{@code logo}, {@code fileSize:0}) are left alone since
+     * the picker isn't filtering on those.</p> */
     private static JSONObject stripBhMarkers(JSONObject src) throws Exception {
         JSONObject clone = new JSONObject(src.toString());
         removeBhKeys(clone);
+        clone.put("state", "None");
         JSONObject inner = clone.optJSONObject("entry");
-        if (inner != null) removeBhKeys(inner);
+        if (inner != null) {
+            removeBhKeys(inner);
+            inner.remove("category");
+            inner.put("state", "None");
+            inner.put("versionCode", 2);
+            if (inner.optInt("id", -1) <= 0) {
+                inner.put("id", syntheticId(inner.optString("name", "")));
+            }
+        }
         return clone;
+    }
+
+    /** Stable positive int derived from the component name. Range is well
+     * above the server's observed id range (server uses 1–500ish), so we
+     * never collide. Same name always gets the same id across rehydrates. */
+    private static int syntheticId(String name) {
+        int h = name == null ? 0 : name.hashCode();
+        if (h == Integer.MIN_VALUE) h = 0;
+        return 90000 + (Math.abs(h) % 90000);
     }
 
     private static void removeBhKeys(JSONObject obj) {

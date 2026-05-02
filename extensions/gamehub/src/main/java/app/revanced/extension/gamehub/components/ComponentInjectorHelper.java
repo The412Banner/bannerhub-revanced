@@ -224,7 +224,9 @@ public final class ComponentInjectorHelper {
         try {
             JSONObject inner = new JSONObject();
             inner.put("base", JSONObject.NULL);
-            inner.put("category", "COMPONENT");
+            // No inner "category" field — server entries only carry category at
+            // the top-level wrapper; an inner duplicate is an unknown key the
+            // host's strict deserializer would reject.
             inner.put("blurb", desc == null ? "" : desc);
             inner.put("displayName", name);
             inner.put("downloadUrl", "");

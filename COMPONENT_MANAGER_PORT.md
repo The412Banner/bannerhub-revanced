@@ -216,6 +216,70 @@ The Activities only need `Context.getSharedPreferences` and standard file I/O wi
 
 ---
 
+## 6.5. Smali archaeology findings
+
+Findings from Phase A jobs. Each subsection corresponds to one of Jobs 1-3.
+
+### Job 1 — `ComponentStrategy` API map
+
+**Component-entity class (the type held by `entry` in the JSON registry):**
+- **`Lcom/xiaoji/egggame/common/winemu/bean/WinEmuRepo;`** — non-renamed Kotlin data class. This is what `ComponentInjector.append` (Job 5) must instantiate via reflection.
+- Constructor: `<init>(Ljava/lang/String;Ljava/lang/String;Lcom/xiaoji/egggame/common/winemu/bean/State;Lcom/xiaoji/egggame/common/winemu/bean/EnvLayerEntity;Lcom/xiaoji/egggame/common/winemu/bean/RepoCategory;ZZLd54;)V`
+- Constructor params (Java-visible): `(name: String, version: String, state: State, entry: EnvLayerEntity, category: RepoCategory, isBase: boolean, isDep: boolean, depInfo: d54)`
+- Useful instance methods for the Component Manager UI:
+  - `getName(): String`, `getVersion(): String`, `getState(): State`, `getEntry(): EnvLayerEntity`, `getCategory(): RepoCategory`, `isBase(): boolean`, `isDep(): boolean`, `getDepInfo(): d54`
+  - `getComponentDir(name: String): File` — returns `usr/home/components/<name>/`
+  - `getComponentDownloadFile(): File` — returns `xj_downloads/component/<name>/<filename>`
+  - `getComponentFile(): File` — extracted location
+  - `getComponentPath(): String`
+  - `toComponentRepo(): ComponentRepo`, `toEnvRepo(): EnvRepo` — convert to peer types
+- Setters: `setState`, `setVersion`, `setEntry`, `setCategory`, `setBase`, `setDep`, `setDepInfo`
+
+**Strategy abstract base class** (one strategy per component type):
+- **`Lt91;`** — `public abstract` class
+- Fields: `a: String` (component name), `b: F` (probably progress)
+- Methods:
+  - `<init>(Ljava/lang/String;F)V`
+  - `a(): V` — concrete lifecycle entry (likely "perform" — kicks off the install pipeline)
+  - **`b(Lr91;Lfe3;): Object`** — abstract suspend function (the actual install body — `r91` is config/context, `fe3` is `kotlin.coroutines.Continuation`)
+  - `c(I, String, ccl, or6, fe3): Object` — concrete suspend function (public entry, takes type-int, name, callback?, callback?, continuation)
+- 6 concrete subclasses implementing the strategy:
+  - `Lac3;`, `Lb23;`, `Lb54;`, `Lddj;`, `Lhv6;`, `Lw2a;` — likely one per `type` int (2/3/4/5/6) plus a base type. Mapping not yet pinned (would require reading each subclass's logged identity string). Not blocking — for the manager's purpose we go through the higher-level `ekn` orchestrator, not directly through individual strategies.
+
+**Orchestrator (the singleton-ish service that the UI calls):**
+- **`Lekn;`** — `final` class, implements `Lcom/xiaoji/egggame/common/winemu/bean/IWinEmuService;`. This IS the `WinEmuServiceImpl` referenced in the `t76.smali` log string `"WinEmuServiceImpl initByMainProcess "`.
+- Resolved via Koin DI — pattern: `getKoin().get<IWinEmuService>()` from any class implementing `KoinComponent`. Our extension can use `KoinJavaComponent.get(IWinEmuService.class)` (the Java helper provided by Koin) which is the cleanest cross-language path.
+- Public methods relevant to the Component Manager:
+  - `installDependencyByCheckContainer(name: String, ?: String, force: boolean, ?: String, cont: Continuation): Object` — **the install/download entry point**. This is what the manager's "Add" button calls.
+  - `isRuntimeReady(name: String): boolean` — UI status helper
+  - `addPreLaunchWineCoreAction(action)` — pre-launch hook
+  - `getContainer(name): IEmuContainer` — container introspection
+- The orchestrator's instance fields include `d: ConcurrentHashMap` and `e: CopyOnWriteArrayList` — these are likely the in-memory caches of registered components / pre-launch hooks. Not directly accessed by the manager (we read the `sp_winemu_unified_resources.xml` SharedPreferences file directly for the list).
+
+**The list of known components** is **NOT exposed** as a method on `IWinEmuService`. The unified-registry XML is read directly via SharedPreferences from any class that needs it. So our Component Manager UI does the same:
+```java
+SharedPreferences prefs = ctx.getSharedPreferences("sp_winemu_unified_resources", Context.MODE_PRIVATE);
+Map<String, ?> all = prefs.getAll();
+for (Map.Entry<String, ?> e : all.entrySet()) {
+    if (e.getKey().startsWith("COMPONENT:")) {
+        JSONObject json = new JSONObject((String) e.getValue());
+        // construct WinEmuRepo via reflection
+    }
+}
+```
+
+**The `category` enum (`RepoCategory`)** — likely maps 1:1 to the `type` int seen in JSON (`type=2` GPU driver, `type=3` DXVK, etc.). Pinning the exact enum member names is not required for v1 — we filter by `entry.type` int directly from the JSON, which is what the host app does too.
+
+**Acceptance — Job 1 done?** The Component Manager has everything it needs to:
+- ✅ Read the list (via SharedPreferences directly, deserialize into `WinEmuRepo` via reflection)
+- ✅ Trigger install/download (via `IWinEmuService.installDependencyByCheckContainer`)
+- ✅ Check filesystem state (via `WinEmuRepo.getComponentDir/getComponentDownloadFile/getComponentFile`)
+- ⚠️ Trigger explicit extract: NOT directly exposed on `IWinEmuService`. Likely happens implicitly during `installDependencyByCheckContainer`. If we need standalone "extract already-downloaded archive" (for sidecar-injected components), we'll add a Job 5b to extract from `xj_downloads/component/<name>/` to `usr/home/components/<name>/` ourselves using stdlib `tarfile` equivalents (zstd-tar — Java `org.apache.commons.compress` shipped via apksigner libs? TBD).
+
+Job 1 status: **complete enough for v1**. Open follow-up: confirm that `installDependencyByCheckContainer(name, "", false, "", cont)` is the canonical call for "install the component named `name`" — verify by reading the method body or by device-testing.
+
+---
+
 ## 7. Implementation plan — discrete jobs
 
 Twelve numbered jobs in dependency order. Each is independently doable, has explicit inputs / outputs / acceptance criteria, and tells the next agent exactly what "done" looks like. Open archaeology questions from prior drafts are folded in — the job that resolves each is annotated.

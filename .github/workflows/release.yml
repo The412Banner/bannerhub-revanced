@@ -54,14 +54,41 @@ jobs:
             --repo ${{ github.repository }} \
             --output GameHub_6.0.0.apk
 
-      - name: Apply patches & produce APK
+      - name: Apply patches & produce variant APKs
         run: |
+          set -e
           PATCHES_FILE=$(find patches/build/libs -name "*.rvp" ! -name "*-javadoc*" ! -name "*-sources*" | head -1)
           echo "Using patches file: $PATCHES_FILE"
-          java -jar revanced-cli.jar patch GameHub_6.0.0.apk \
-            --patches "$PATCHES_FILE" \
-            --bypass-verification \
-            --out bannerhub.apk
+
+          # Variant table: <out_filename>|<package_name>|<app_label>
+          # Keep the Original entry — it preserves com.xiaoji.egggame so it
+          # replaces an installed GameHub. Other variants install side-by-side.
+          variants=(
+            "GameHub-6.0-Patched-Normal.apk|banner.hub|GameHub"
+            "GameHub-6.0-Patched-Normal(GHL).apk|gamehub.lite|GameHub"
+            "GameHub-6.0-Patched-PuBG.apk|com.tencent.ig|GameHub PuBG"
+            "GameHub-6.0-Patched-AnTuTu.apk|com.antutu.ABenchMark|GameHub AnTuTu"
+            "GameHub-6.0-Patched-alt-AnTuTu.apk|com.antutu.benchmark.full|GameHub AnTuTu"
+            "GameHub-6.0-Patched-PuBG-CrossFire.apk|com.tencent.tmgp.cf|GameHub PuBG CrossFire"
+            "GameHub-6.0-Patched-Ludashi.apk|com.ludashi.aibench|GameHub Ludashi"
+            "GameHub-6.0-Patched-Genshin.apk|com.miHoYo.GenshinImpact|GameHub Genshin"
+            "GameHub-6.0-Patched-Original.apk|com.xiaoji.egggame|GameHub"
+          )
+
+          mkdir -p out
+          for entry in "${variants[@]}"; do
+            IFS='|' read -r out_name pkg label <<< "$entry"
+            echo
+            echo "=== Building $out_name (pkg=$pkg, label=$label) ==="
+            java -jar revanced-cli.jar patch GameHub_6.0.0.apk \
+              --patches "$PATCHES_FILE" \
+              --bypass-verification \
+              -e "Change package name" -O "packageName=$pkg" \
+              -e "Change app name" -O "appName=$label" \
+              --out "out/$out_name"
+          done
+
+          ls -la out/
 
       - name: Get tag name
         id: tag
@@ -78,6 +105,6 @@ jobs:
           tag_name: ${{ steps.tag.outputs.tag }}
           generate_release_notes: true
           files: |
-            bannerhub.apk
+            out/GameHub-6.0-Patched-*.apk
             patches/build/libs/*.rvp
             extensions/extension/build/libs/**/*.rve

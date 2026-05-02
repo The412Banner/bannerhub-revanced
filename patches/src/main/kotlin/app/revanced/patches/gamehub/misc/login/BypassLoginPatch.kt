@@ -50,6 +50,36 @@ val bypassLoginPatch = bytecodePatch(
             )
         }
 
+        // os0.e() returns the StateFlow<f4m?> for the current user-account.
+        // Underlying value is built off UserDao.observeCurrent() which emits
+        // null when t_user_account is empty. The library-list reader pipeline
+        // `is0.e().flatMapLatest { f4m? -> if(null) empty else dao.subjectAllByUserId(f4m.a) }`
+        // (see wl7.invokeSuspend, called from erc.smali:340 and hnf.smali:344)
+        // takes the empty branch under our login bypass, so the imported row
+        // in t_game_library_base never reaches the UI even though xm7.u()
+        // wrote it with user_id="99999".
+        //
+        // Mirror the os0.h() patch: replace e() body with a fresh
+        // MutableStateFlow over a synthetic f4m{a="99999"} built reflectively
+        // by FakeUserAccount.get(). Now flatMapLatest emits the userId-filtered
+        // query and the imported game appears.
+        firstMethod {
+            definingClass == "Los0;" && name == "e"
+        }.apply {
+            removeInstruction(0) // iget-object p0, p0, Los0;->a:Likh;
+            removeInstruction(0) // return-object p0
+            addInstructions(
+                0,
+                """
+                    invoke-static {}, Lapp/revanced/extension/gamehub/login/FakeUserAccount;->get()Ljava/lang/Object;
+                    move-result-object p0
+                    invoke-static {p0}, Lr8o;->r(Ljava/lang/Object;)Lf3k;
+                    move-result-object p0
+                    return-object p0
+                """,
+            )
+        }
+
         // xm7 is GameLibraryRepository. xm7.f() reads is0.f() (the current
         // auth token's wrapped user-id string) and returns null when no auth
         // token is in the Room DB. The game-import use case q1d.a() calls

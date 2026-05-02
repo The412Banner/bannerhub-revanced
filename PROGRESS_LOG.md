@@ -192,3 +192,71 @@ The bridge can't read scoped external storage from PRoot, but the daemon runs as
 - Flash logcat-bridge v1.1.0 zip + reboot.
 - Install v0.1.1-600-test APK, reproduce Save, capture logs.
 - Then I pull `getlog -n 20000 com.xiaoji.egggame` for probe markers AND `getlog --sql /data/data/com.xiaoji.egggame/databases/<gameLibraryDbName> "SELECT count(*) FROM game_library_base"` for the conclusive write-vs-read answer.
+
+### Test 3 device-test result (2026-05-01, v0.1.1-600-test, run 25237940015)
+
+All four probes fired in order, transaction body completed without CATCH:
+
+```
+19:59:41.063  GH600-DEBUG: xm7.u ENTRY
+19:59:41.065  GH600-DEBUG: el7.invokeSuspend ENTRY
+19:59:41.065  GH600-DEBUG: GameLaunchMethodDao.insert PRE
+19:59:41.069  GH600-DEBUG: GameLibraryBaseDao.insert PRE
+19:59:41.090  W App_Lifecycle: DISPOSE overlay=ye0      ← dialog dismisses
+```
+
+DB inspection (post-test) via `getlog --cat` + Python `sqlite3`:
+
+- `egggame.db` — auth/UI DB (NOT GameLibraryDatabase). All tables empty as expected — login bypass means no auth_token / user_account row.
+- **`db_game_library.db`** — actual GameLibraryDatabase, found via `et2.smali:584 const-string "db_game_library.db"`. Earlier listing missed it because the file is created lazily on first write.
+  - `t_game_library_base` count = **1** (the imported row landed)
+  - `t_game_launch_method` count = **1**
+  - `t_game_install_state` count = 0
+  - Imported row: `user_id='99999'`, `game_name='God of War'`, `id='local_DaebwST-TEyzp1KJX2xRzQ'`, `extension_data={"filePath":"/storage/emulated/0/Winlator/Games/GodOfWar/GoW.exe","steamAppid":"1593500"}`, `launch_method_id=1`. Write side **fully working**.
+
+### Root cause of empty library UI (read-side, not write-side)
+
+Library-list reader pipeline (smali trace, `wl7.smali` → `erc.smali:340`):
+
+```
+is0.e()                              ← StateFlow<f4m?> for current user account
+  ↓
+flatMapLatest { f4m ->
+    if (f4m == null) emptyFlow()    ← TAKEN under our bypass
+    else dao.subjectAllByUserId(f4m.a)
+}
+```
+
+`is0` interface (smali_classes4/is0.smali):
+- `d()Ld3k;` → Flow<l4m?> (auth token)
+- `e()Ld3k;` → Flow<f4m?> (user account)        **← library reader uses this**
+- `h()Ld3k;` → Flow<Boolean?> (is logged in)    **← we patched in v0.0.6**
+- `f()Ll4m;` → `d().getValue()`                 **← we patched in v0.0.9**
+- `b()Lf4m;` → `e().getValue()`
+
+We patched `is0.f()` (l4m getter) and `os0.h()` (Boolean flow), but NOT `os0.e()` (f4m flow). With `t_user_account` empty (login bypassed), `os0.a` field's underlying StateFlow emits null, flatMapLatest drops to the empty branch, library list shows zero entries despite the row being in `t_game_library_base`.
+
+### Fix planned for v0.1.2-600-test
+
+**New extension** `extensions/gamehub/.../FakeUserAccount.java`:
+- Reflectively constructs `Lf4m;` via `Class.forName("f4m").getDeclaredConstructor(...)` with sig
+  `(String,String,String,String,String,String,I,I,Z,String,I,I,I,I,I,J,String,String,I,I,String,J,I,String,String,J,J)V`.
+- Sets `a="99999"`, all other String fields `""`, all numerics zero.
+- Caches in volatile static, logs to `GH600-DEBUG`. f4m's ctor null-checks `a` (p1) and `q` (p18); both pass.
+
+**`BypassLoginPatch.kt` addition** (mirrors v0.0.6 `os0.h()` block):
+```kotlin
+firstMethod { definingClass == "Los0;" && name == "e" }.apply {
+    removeInstruction(0) // iget-object p0, Los0;->a:Likh;
+    removeInstruction(0) // return-object p0
+    addInstructions(0, """
+        invoke-static {}, Lapp/revanced/extension/gamehub/login/FakeUserAccount;->get()Ljava/lang/Object;
+        move-result-object p0
+        invoke-static {p0}, Lr8o;->r(Ljava/lang/Object;)Lf3k;
+        move-result-object p0
+        return-object p0
+    """)
+}
+```
+
+Debug probes intentionally **kept in place** (xm7.u ENTRY/CATCH, el7 ENTRY, both insert PRE markers, FakeAuthToken.get, DebugLogPatch) so the next device test can confirm `FakeUserAccount.get() called` fires before the UI populates and that the import flow is otherwise unchanged. Probes will be removed in a cleanup pass after the import flow is confirmed end-to-end.

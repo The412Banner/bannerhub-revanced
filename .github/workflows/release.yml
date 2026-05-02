@@ -4,20 +4,20 @@ on:
   push:
     tags:
       - "v*"
+      - "GameHub-*"
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to release (e.g. v1.0.0)"
+        description: "Tag to release (e.g. v1.0.0 or GameHub-6.0)"
         required: true
 
 jobs:
-  release:
-    name: Build & Release
+  build:
+    name: Build patches bundle
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
       packages: read
-
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -54,41 +54,92 @@ jobs:
             --repo ${{ github.repository }} \
             --output GameHub_6.0.0.apk
 
-      - name: Apply patches & produce variant APKs
+      - name: Stage shared artifacts
+        run: |
+          mkdir -p shared
+          cp revanced-cli.jar shared/
+          cp GameHub_6.0.0.apk shared/
+          cp $(find patches/build/libs -name "*.rvp" ! -name "*-javadoc*" ! -name "*-sources*" | head -1) shared/patches.rvp
+          # Side-channel artefacts that ship in the final release
+          cp patches/build/libs/*.rvp shared/ 2>/dev/null || true
+          mkdir -p shared/rve
+          find extensions/extension/build/libs -name "*.rve" -exec cp {} shared/rve/ \; 2>/dev/null || true
+
+      - name: Upload shared artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: shared
+          path: shared/
+          retention-days: 1
+
+  patch:
+    name: Patch ${{ matrix.variant.name }}
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        variant:
+          - { name: Normal,         file: "GameHub-6.0-Patched-Normal.apk",          pkg: "banner.hub",                 label: "GameHub" }
+          - { name: Normal-GHL,     file: "GameHub-6.0-Patched-Normal(GHL).apk",     pkg: "gamehub.lite",               label: "GameHub" }
+          - { name: PuBG,           file: "GameHub-6.0-Patched-PuBG.apk",            pkg: "com.tencent.ig",             label: "GameHub PuBG" }
+          - { name: AnTuTu,         file: "GameHub-6.0-Patched-AnTuTu.apk",          pkg: "com.antutu.ABenchMark",      label: "GameHub AnTuTu" }
+          - { name: alt-AnTuTu,     file: "GameHub-6.0-Patched-alt-AnTuTu.apk",      pkg: "com.antutu.benchmark.full",  label: "GameHub AnTuTu" }
+          - { name: PuBG-CrossFire, file: "GameHub-6.0-Patched-PuBG-CrossFire.apk",  pkg: "com.tencent.tmgp.cf",        label: "GameHub PuBG CrossFire" }
+          - { name: Ludashi,        file: "GameHub-6.0-Patched-Ludashi.apk",         pkg: "com.ludashi.aibench",        label: "GameHub Ludashi" }
+          - { name: Genshin,        file: "GameHub-6.0-Patched-Genshin.apk",         pkg: "com.miHoYo.GenshinImpact",   label: "GameHub Genshin" }
+          - { name: Original,       file: "GameHub-6.0-Patched-Original.apk",        pkg: "com.xiaoji.egggame",         label: "GameHub" }
+    steps:
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Download shared artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: shared
+          path: shared/
+
+      - name: Apply patches
         run: |
           set -e
-          PATCHES_FILE=$(find patches/build/libs -name "*.rvp" ! -name "*-javadoc*" ! -name "*-sources*" | head -1)
-          echo "Using patches file: $PATCHES_FILE"
-
-          # Variant table: <out_filename>|<package_name>|<app_label>
-          # Keep the Original entry — it preserves com.xiaoji.egggame so it
-          # replaces an installed GameHub. Other variants install side-by-side.
-          variants=(
-            "GameHub-6.0-Patched-Normal.apk|banner.hub|GameHub"
-            "GameHub-6.0-Patched-Normal(GHL).apk|gamehub.lite|GameHub"
-            "GameHub-6.0-Patched-PuBG.apk|com.tencent.ig|GameHub PuBG"
-            "GameHub-6.0-Patched-AnTuTu.apk|com.antutu.ABenchMark|GameHub AnTuTu"
-            "GameHub-6.0-Patched-alt-AnTuTu.apk|com.antutu.benchmark.full|GameHub AnTuTu"
-            "GameHub-6.0-Patched-PuBG-CrossFire.apk|com.tencent.tmgp.cf|GameHub PuBG CrossFire"
-            "GameHub-6.0-Patched-Ludashi.apk|com.ludashi.aibench|GameHub Ludashi"
-            "GameHub-6.0-Patched-Genshin.apk|com.miHoYo.GenshinImpact|GameHub Genshin"
-            "GameHub-6.0-Patched-Original.apk|com.xiaoji.egggame|GameHub"
-          )
-
           mkdir -p out
-          for entry in "${variants[@]}"; do
-            IFS='|' read -r out_name pkg label <<< "$entry"
-            echo
-            echo "=== Building $out_name (pkg=$pkg, label=$label) ==="
-            java -jar revanced-cli.jar patch GameHub_6.0.0.apk \
-              --patches "$PATCHES_FILE" \
-              --bypass-verification \
-              -e "Change package name" -O "packageName=$pkg" \
-              -e "Change app name" -O "appName=$label" \
-              --out "out/$out_name"
-          done
+          java -jar shared/revanced-cli.jar patch shared/GameHub_6.0.0.apk \
+            --patches shared/patches.rvp \
+            --bypass-verification \
+            -e "Change package name" -O "packageName=${{ matrix.variant.pkg }}" \
+            -e "Change app name" -O "appName=${{ matrix.variant.label }}" \
+            --out "out/${{ matrix.variant.file }}"
+          ls -la "out/${{ matrix.variant.file }}"
 
-          ls -la out/
+      - name: Upload variant APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-${{ matrix.variant.name }}
+          path: out/${{ matrix.variant.file }}
+          retention-days: 1
+
+  release:
+    name: Create GitHub Release
+    needs: patch
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download shared artifacts (rvp + rve)
+        uses: actions/download-artifact@v4
+        with:
+          name: shared
+          path: shared/
+
+      - name: Download all variant APKs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: apk-*
+          path: apks/
+          merge-multiple: true
 
       - name: Get tag name
         id: tag
@@ -99,12 +150,63 @@ jobs:
             echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
           fi
 
+      - name: List release files
+        run: |
+          echo "=== APKs ==="
+          ls -la apks/
+          echo "=== rvp ==="
+          ls -la shared/*.rvp 2>/dev/null || true
+          echo "=== rve ==="
+          ls -la shared/rve/ 2>/dev/null || true
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
-          generate_release_notes: true
+          name: GameHub 6.0 No Login
+          body: |
+            ## GameHub 6.0 No Login
+
+            A patched build of XiaoJi GameHub 6.0.0 (`com.xiaoji.egggame`) that removes the login requirement so games can be imported and used without an account.
+
+            ### Source
+            - **Base APK**: `GameHub_beta_6.0.0_global.apk` — the official 6.0.0 global build
+            - **Patcher**: ReVanced CLI 6.0.0 + this repo's patch bundle, branch `gamehub-600-build`
+            - **Repo**: https://github.com/${{ github.repository }}
+
+            ### Variants
+
+            Nine APKs are produced from the same patch bundle, each with a different package name + launcher label so they install side-by-side. The `Original` variant **replaces** an installed GameHub; the rest install **alongside** the original.
+
+            | Variant | APK | Package | Launcher label |
+            | --- | --- | --- | --- |
+            | Normal | `GameHub-6.0-Patched-Normal.apk` | `banner.hub` | GameHub |
+            | Normal (GHL) | `GameHub-6.0-Patched-Normal(GHL).apk` | `gamehub.lite` | GameHub |
+            | PuBG | `GameHub-6.0-Patched-PuBG.apk` | `com.tencent.ig` | GameHub PuBG |
+            | AnTuTu | `GameHub-6.0-Patched-AnTuTu.apk` | `com.antutu.ABenchMark` | GameHub AnTuTu |
+            | alt-AnTuTu | `GameHub-6.0-Patched-alt-AnTuTu.apk` | `com.antutu.benchmark.full` | GameHub AnTuTu |
+            | PuBG-CrossFire | `GameHub-6.0-Patched-PuBG-CrossFire.apk` | `com.tencent.tmgp.cf` | GameHub PuBG CrossFire |
+            | Ludashi | `GameHub-6.0-Patched-Ludashi.apk` | `com.ludashi.aibench` | GameHub Ludashi |
+            | Genshin | `GameHub-6.0-Patched-Genshin.apk` | `com.miHoYo.GenshinImpact` | GameHub Genshin |
+            | Original | `GameHub-6.0-Patched-Original.apk` | `com.xiaoji.egggame` | GameHub |
+
+            ### Patches applied
+
+            | Patch | What it does |
+            | --- | --- |
+            | **Bypass login** | Skips the login screen entirely. Patches the `g8e` navigator so the Login route is never selected, replaces `os0.h()`'s isLoggedIn StateFlow to emit `TRUE`, replaces `os0.e()`'s user-account StateFlow to emit a synthetic `f4m{user_id="99999"}` so library queries return rows, and replaces `xm7.f()` and `is0.f()` to keep the user-id consistent across the read and write code paths. Result: launches straight into the home screen; game-import saves persist to `db_game_library.db`; imported games appear in the library list. |
+            | **Disable Firebase Crashlytics** | Removes the Crashlytics initialisation block in reverse instruction order so the ART verifier accepts the resulting bytecode. Without this, GameHub 6.0 crashes on launch with `VerifyError`. |
+            | **Debug logging** | Sets `android:debuggable="true"` and inserts `Log.i("GH600-DEBUG", ...)` markers along the import code path (`xm7.u`, `el7.invokeSuspend`, both Room DAO inserts) plus a `Throwable` hook on the `odb.e()` global swallower. Used to triage the import flow during development; will be removed in a follow-up build once the import flow is confirmed stable. |
+            | **File manager access** | Adds an exposed `MTDataFiles` content provider so external file managers can browse GameHub's data directory. |
+            | **Change package name** *(per variant)* | Rewrites the APK's package name to the variant's value listed above. The `Original` variant keeps `com.xiaoji.egggame`. |
+            | **Change app name** *(per variant)* | Rewrites the launcher label to the variant's value listed above. |
+
+            ### Notes
+
+            - The base APK is unmodified XiaoJi GameHub 6.0.0; only the bytecode/resources required by the patches above are touched.
+            - All APKs are signed with the ReVanced default debug keystore. To upgrade in place between releases, install the same variant.
+            - The `.rvp` patch bundle and `.rve` extension files are also attached for use with `revanced-cli` directly.
           files: |
-            out/GameHub-6.0-Patched-*.apk
-            patches/build/libs/*.rvp
-            extensions/extension/build/libs/**/*.rve
+            apks/GameHub-6.0-Patched-*.apk
+            shared/*.rvp
+            shared/rve/*.rve

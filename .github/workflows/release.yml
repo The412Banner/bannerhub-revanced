@@ -227,7 +227,7 @@ jobs:
             ### Notes
 
             - The base APK is unmodified XiaoJi GameHub 6.0.0; only the bytecode/resources required by the patches above are touched.
-            - All APKs are signed with the ReVanced default debug keystore. To upgrade in place between releases, install the same variant.
+            - **A fresh install is required if a previous release is still installed.** Each release run generates a new debug keystore, so the signing certificate differs between releases and Android refuses the upgrade with `INSTALL_FAILED_UPDATE_INCOMPATIBLE` (signature mismatch). Uninstall the previous version of the same variant first, then install the new one. Within a single release, all 9 variants are signed with the same cert.
             - The `.rvp` patch bundle and `.rve` extension files are also attached for use with `revanced-cli` directly.
           files: |
             apks/GameHub-6.0-Patched-*.apk

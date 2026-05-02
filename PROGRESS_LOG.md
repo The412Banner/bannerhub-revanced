@@ -1,5 +1,30 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-05-02 — `v0.3.5-cm-diag` — diagnostic instrumentation build (recon)
+
+### Why
+v0.3.4-cm-l9o-z device test: still no `appendByCategory` traces, FEX 2604 still missing from CPU translator picker. Three hook targets in a row missed the dropdown's real feed (`Lgxh;->a`, `Lm13;->b`, `Ll9o;->z`). Reading 5.3.5's source confirmed they patched `GameSettingViewModel$fetchList$1.smali` (the per-dropdown ViewModel coroutine) — that exact class name doesn't exist in 6.0 KMP under that path; R8 mangled it. Time to find the 6.0 equivalent empirically instead of guessing.
+
+### Approach
+New `ComponentDiagnosticPatch` adds `Log.i("GH600-DIAG", "<class>.<method>")` at method entry to ~13 candidate functions:
+- **Game-config parcel:** `Ldh7;-><init>(...)V` (16-arg primary ctor — fires when the per-game GameConfigByScript response is parsed; `dh7.a` and `dh7.b` are the public final `List` fields the dropdown likely consumes)
+- **API callers:** `Ljg2;->invoke()`, `Lehn;->invoke()` (getGameConfigByScript wrappers)
+- **Per-game settings handlers reading `dh7.a` / `dh7.b`:** `Lb54;->b`, `Liv6;->invoke`, `Lhv6;->e`, `Lq6f;->c`, `Lq6f;->d`, `Lnhn;->f`
+- **Composable row builder:** `Lv86;->b(...)` (constructs `DialogSettingListItemEntity` instances — class survives unchanged from 5.3.5)
+- **Sanity checks (previous miss-targets):** `Ll9o;->z`, `Lm13;->b`, `Lgxh;->a`
+
+Each target is wrapped in try/catch in the patch loop so a single missing class doesn't kill the build.
+
+### Workflow
+1. CI builds `v0.3.5-cm-diag`.
+2. Install over v0.3.4. Open per-game settings → CPU translator picker once.
+3. Run `getlog com.xiaoji.egggame | grep GH600-DIAG`.
+4. The set of tags that fire == the call chain for the dropdown. Whichever method is closest to the list assembly is our v0.3.6 hook target.
+
+### Build
+- Tag: `v0.3.5-cm-diag`
+- Trigger: `gh workflow run release.yml --ref gamehub-600-build -f tag=v0.3.5-cm-diag`
+
 ## 2026-05-02 — `v0.3.4-cm-l9o-z` — hook the actual dropdown reader (third time's the charm)
 
 ### Symptom

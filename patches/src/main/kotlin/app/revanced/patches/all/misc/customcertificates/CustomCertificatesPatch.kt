@@ -4,7 +4,6 @@ import app.revanced.patcher.patch.PatchException
 import app.revanced.patcher.patch.booleanOption
 import app.revanced.patcher.patch.resourcePatch
 import app.revanced.patcher.patch.stringsOption
-import app.revanced.patches.gamehub.steam.connection.forceSteamTcpPatch
 import app.revanced.util.Utils.trimIndentMultiline
 import app.revanced.util.getNode
 import org.w3c.dom.Element
@@ -15,8 +14,6 @@ val customNetworkSecurityPatch = resourcePatch(
     description = "Allows trusting custom certificate authorities for a specific domain.",
     use = false,
 ) {
-    dependsOn(forceSteamTcpPatch)
-
     val targetDomains by stringsOption(
         name = "targetDomains",
         description = "List of domains to which the custom trust configuration will be applied (one domain per entry).",

@@ -7,7 +7,10 @@ import app.revanced.extension.gamehub.debug.DebugTrace;
 
 import org.json.JSONObject;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -46,11 +49,39 @@ public final class HostRegistry {
     public static void put(Context ctx, String name, JSONObject entry) {
         if (ctx == null || name == null || name.isEmpty() || entry == null) return;
         try {
+            // Host's EnvLayerEntity deserializer is kotlinx.serialization with
+            // ignoreUnknownKeys=false (default). Any field outside its declared
+            // schema throws SerializationException and aborts the whole COMPONENT
+            // cache hydration — so we strip our _bh_* sidecar markers before
+            // writing into the host registry. Sidecar keeps the markers; the
+            // host XML gets a shape identical to a server-supplied entry.
+            JSONObject hostShape = stripBhMarkers(entry);
             SharedPreferences sp = ctx.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
-            sp.edit().putString(CATEGORY_PREFIX + name, entry.toString()).apply();
+            sp.edit().putString(CATEGORY_PREFIX + name, hostShape.toString()).apply();
         } catch (Throwable t) {
             DebugTrace.write("HostRegistry.put failed for " + name, t);
         }
+    }
+
+    /** Deep clone {@code src} and remove every {@code _bh_*} key from both
+     * the top level and the inner {@code entry} object, so the result matches
+     * the host's own JSON shape exactly. */
+    private static JSONObject stripBhMarkers(JSONObject src) throws Exception {
+        JSONObject clone = new JSONObject(src.toString());
+        removeBhKeys(clone);
+        JSONObject inner = clone.optJSONObject("entry");
+        if (inner != null) removeBhKeys(inner);
+        return clone;
+    }
+
+    private static void removeBhKeys(JSONObject obj) {
+        List<String> kill = new ArrayList<>();
+        Iterator<String> it = obj.keys();
+        while (it.hasNext()) {
+            String k = it.next();
+            if (k.startsWith("_bh_")) kill.add(k);
+        }
+        for (String k : kill) obj.remove(k);
     }
 
     /** Remove a component entry from the host registry by name. */
@@ -79,7 +110,8 @@ public final class HostRegistry {
             SharedPreferences.Editor editor = sp.edit();
             int n = 0;
             for (Map.Entry<String, JSONObject> e : sidecarEntries.entrySet()) {
-                editor.putString(CATEGORY_PREFIX + e.getKey(), e.getValue().toString());
+                JSONObject hostShape = stripBhMarkers(e.getValue());
+                editor.putString(CATEGORY_PREFIX + e.getKey(), hostShape.toString());
                 n++;
             }
             editor.apply();

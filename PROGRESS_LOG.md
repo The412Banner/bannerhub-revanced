@@ -1,5 +1,25 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-05-02 — `v0.3.8-cm-cleanjson` — strip _bh_ markers before host write
+
+### Symptom
+v0.3.7 device test: every per-game settings dropdown shows infinite loading spinner. Whole COMPONENT cache fails to load.
+
+### Root cause
+Our dual-write into `sp_winemu_unified_resources.xml` included our private sidecar markers (`_bh_injected`, `_bh_skip_md5`, `_bh_source_uri`, `_bh_added_at`). The host's `EnvLayerEntity` deserializer is kotlinx.serialization with `ignoreUnknownKeys=false` (Kotlin's default). One unknown field throws `SerializationException` and aborts the entire COMPONENT cache hydration when `l9o.c` is rebuilt — so every dropdown waits forever on a list that never resolves.
+
+### Fix
+- `HostRegistry.put` now deep-clones the entry and strips every `_bh_*` key from both the top level and the inner `entry` object before writing.
+- `HostRegistry.rehydrateFromSidecar` does the same per-entry strip during the batch self-heal.
+- Sidecar pref keeps the markers untouched (they're our private bookkeeping).
+
+### Recovery
+After installing v0.3.8, opening Component Manager once triggers `rehydrateFromSidecar` which **overwrites** the bad `COMPONENT:2604` key in the host registry with clean JSON. From that point on the dropdowns parse and render normally.
+
+### Build
+- Tag: `v0.3.8-cm-cleanjson`
+- Trigger: `gh workflow run release.yml --ref gamehub-600-build -f tag=v0.3.8-cm-cleanjson`
+
 ## 2026-05-02 — `v0.3.7-cm-dualwrite` — direct host registry write (5.3.5 model)
 
 ### Why

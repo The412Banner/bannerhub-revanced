@@ -301,3 +301,21 @@ with proper ports of the 3.5.0 smali.
 ### Carried forward
 
 - `SidecarRegistry.java` and `ComponentInjector.java` from earlier in the session — unchanged. The new `ComponentInjectorHelper.registerComponent()` writes JSON in the exact shape `ComponentInjector.append()` expects to read.
+
+### CI result — v0.3.0-component-manager-test (run 25249141081, commit cebbb88)
+
+✅ All 9 patch variants succeeded. Apply-patches log for Original confirms
+all 9 patches landed: Bypass login, Component injection, Component manager,
+Debug logging, Disable Firebase Crashlytics, File manager access, Mute UI
+sounds, Change package name, Change app name. APK size 108.9 MB. Per
+prerelease policy this is artifact-only — release step skipped.
+
+Awaiting device install + functional test (Job 11):
+- Verify launcher icon "BH Components" appears.
+- Open Component Manager → component list populates from `files/usr/home/components/`.
+- Tap "+ Add New Component" → type-selection menu → pick a type → file picker.
+- Pick a `.wcp`/`.tzst`/`.zip` → injection succeeds, sidecar entry written
+  to `sp_bh_components.xml`, toast confirms.
+- Inside any imported game's PC settings, open the matching dropdown
+  (GPU/DXVK/VKD3D) → injected component appears alongside official entries.
+- "Download from Online Repos" → all 6 repos fetch and list assets.

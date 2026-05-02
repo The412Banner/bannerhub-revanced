@@ -278,6 +278,52 @@ for (Map.Entry<String, ?> e : all.entrySet()) {
 
 Job 1 status: **complete enough for v1**. Open follow-up: confirm that `installDependencyByCheckContainer(name, "", false, "", cont)` is the canonical call for "install the component named `name`" — verify by reading the method body or by device-testing.
 
+### Job 2 — Dropdown-population method
+
+**Target patch surface:** `Lgxh;->a(Lcom/xiaoji/egggame/common/winemu/bean/RepoCategory;Lfe3;)Ljava/io/Serializable;`
+
+A single suspend method on the `gxh` repo class — takes a `RepoCategory` enum arg + a `kotlin.coroutines.Continuation`, returns a `Serializable` (`ArrayList<WinEmuRepo>` in practice). This is the canonical "give me all components of this category" entry point used by both the per-game-settings UI and other consumers (e.g., `gxh.b(Continuation)` is a thin wrapper that calls `gxh.a(RepoCategory.IMAGE_FS, cont)` for the base-images list).
+
+**Enum values:** `RepoCategory` only has **three** members:
+- `IMAGE_FS` — base filesystem images
+- `CONTAINER` — wine container repos
+- `COMPONENT` — everything else (GPU drivers, DXVK, VKD3D, settings packs, deps)
+
+The fine-grained `type` int (2/3/4/5/6 from §2) lives on the **inner** `EnvLayerEntity.type` field (`entry.type` in JSON), NOT on `RepoCategory`. So the dropdown returns all `WinEmuRepo` rows of a given category, and the UI further filters by `entry.type` to populate specific per-type pickers.
+
+**Patch implementation (Job 6) outline:**
+
+```kotlin
+firstMethod {
+    definingClass == "Lgxh;" &&
+    name == "a" &&
+    parameterTypes.size == 2 &&
+    parameterTypes[0] == "Lcom/xiaoji/egggame/common/winemu/bean/RepoCategory;"
+}.apply {
+    // gxh.a is a suspend function compiled to a coroutine state machine —
+    // multiple return-object exits exist (intermediate COROUTINE_SUSPENDED returns
+    // and the final list return). Find the LAST one (the post-state-machine
+    // success path) and inject our merge call immediately before it.
+    val returns = findInstructionIndicesReversedOrThrow(Opcode.RETURN_OBJECT)
+    val finalReturn = returns.first()  // first in reverse = last in source order
+    addInstructions(
+        finalReturn,
+        """
+            invoke-static {p1, v0}, Lapp/revanced/extension/gamehub/components/ComponentInjector;->append(Lcom/xiaoji/egggame/common/winemu/bean/RepoCategory;Ljava/util/List;)Ljava/util/List;
+            move-result-object v0
+        """,
+    )
+}
+```
+
+The injector's signature changes from the original plan (passing `int type`) to `(RepoCategory category, List serverList)` since the patched method already has the category in `p1`. Our `ComponentInjector` filters its sidecar entries by `category == COMPONENT` (or matches whatever was requested) and appends. The downstream UI's per-`entry.type` filtering then takes care of routing to specific dropdowns.
+
+**Caveat about coroutine state machines:** `gxh.a` is a suspend function. Its bytecode has multiple `return-object` exits — most return `kotlin.coroutines.intrinsics.IntrinsicsKt.COROUTINE_SUSPENDED` at suspension boundaries, only the final one returns the assembled list. `findInstructionIndicesReversedOrThrow(RETURN_OBJECT).first()` (the latest-in-source-order return) is the assembled-list path. Smoke-test by sticking a probe before the return and confirming our `ComponentInjector` is called once-per-dropdown-load, not once-per-suspension-resume.
+
+**Validation that `gxh.a` reads `y99` (the unified-resources prefs):** confirmed via the smali — `gxh.a` calls `Ly99;->a()` (the SharedPreferences getter) at three points (lines 1155, 1175, 1199), reads `WinEmuRepo.getCategory()` for filtering (line 978), and consults `Ll9o;->x(category, name)` for individual lookups (line 668). So the source of truth is exactly the registry we already documented in §2.
+
+**Job 2 status: complete.**
+
 ---
 
 ## 7. Implementation plan — discrete jobs

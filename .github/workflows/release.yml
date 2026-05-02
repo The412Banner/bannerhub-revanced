@@ -1,5 +1,10 @@
 name: Release
 
+# Default mode is "prerelease" — every tag push (or workflow_dispatch run)
+# produces the 9 variant APKs as Actions artifacts only. To cut a stable
+# GitHub Release, run the workflow manually via Actions → Run workflow with
+# the `stable` checkbox ticked. Tag-push triggers always run in prerelease
+# (artifacts-only) mode.
 on:
   push:
     tags:
@@ -8,8 +13,12 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to release (e.g. v1.0.0 or GameHub-6.0)"
-        required: true
+        description: "Tag to release (e.g. v1.0.0 or GameHub-6.0). Required when stable=true."
+        required: false
+      stable:
+        description: "Cut a stable GitHub Release (default: artifact-only prerelease)"
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -125,11 +134,16 @@ jobs:
         with:
           name: apk-${{ matrix.variant.name }}
           path: out/${{ matrix.variant.file }}
-          retention-days: 1
+          # 14 days so prerelease APKs are downloadable for testing
+          retention-days: 14
 
   release:
     name: Create GitHub Release
     needs: patch
+    # Only runs when explicitly opted in via workflow_dispatch with stable=true.
+    # Every other trigger (tag push, workflow_dispatch with stable=false) ends
+    # at the patch matrix and leaves the APKs as Actions artifacts.
+    if: github.event_name == 'workflow_dispatch' && inputs.stable == true
     runs-on: ubuntu-latest
     permissions:
       contents: write

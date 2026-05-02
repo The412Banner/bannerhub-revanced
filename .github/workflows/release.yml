@@ -54,11 +54,45 @@ jobs:
             --repo ${{ github.repository }} \
             --output GameHub_6.0.0.apk
 
+      - name: Build AOSP testkey JKS
+        run: |
+          set -e
+          mkdir -p keys
+          # Fetch the public AOSP testkey directly from the official mirror.
+          # This is a publicly-checked-in test key with no security guarantees;
+          # we use it so all releases are signed with the same well-known
+          # identity, making upgrades work across builds.
+          curl -L -o keys/testkey.x509.pem \
+            https://android.googlesource.com/platform/build/+/refs/heads/main/target/product/security/testkey.x509.pem?format=TEXT
+          curl -L -o keys/testkey.pk8.b64 \
+            https://android.googlesource.com/platform/build/+/refs/heads/main/target/product/security/testkey.pk8?format=TEXT
+          base64 -d keys/testkey.x509.pem > keys/testkey.x509.pem.bin
+          mv keys/testkey.x509.pem.bin keys/testkey.x509.pem
+          base64 -d keys/testkey.pk8.b64 > keys/testkey.pk8
+          rm keys/testkey.pk8.b64
+
+          # Convert PK8 (DER, PKCS8 unencrypted) → PEM RSA private key
+          openssl pkcs8 -in keys/testkey.pk8 -inform DER -out keys/testkey.key.pem -nocrypt
+          # Combine cert + key into PKCS12, then import into JKS for revanced-cli
+          openssl pkcs12 -export \
+            -in keys/testkey.x509.pem \
+            -inkey keys/testkey.key.pem \
+            -name androiddebugkey \
+            -passout pass:android \
+            -out keys/testkey.p12
+          keytool -importkeystore -noprompt \
+            -srckeystore keys/testkey.p12 -srcstoretype PKCS12 -srcstorepass android \
+            -destkeystore keys/testkey.jks -deststoretype JKS -deststorepass android
+
+          echo "=== Testkey cert ==="
+          keytool -printcert -file keys/testkey.x509.pem | head -10
+
       - name: Stage shared artifacts
         run: |
           mkdir -p shared
           cp revanced-cli.jar shared/
           cp GameHub_6.0.0.apk shared/
+          cp keys/testkey.jks shared/
           cp $(find patches/build/libs -name "*.rvp" ! -name "*-javadoc*" ! -name "*-sources*" | head -1) shared/patches.rvp
           # Side-channel artefacts that ship in the final release
           cp patches/build/libs/*.rvp shared/ 2>/dev/null || true
@@ -115,6 +149,10 @@ jobs:
           java -jar shared/revanced-cli.jar patch shared/GameHub_6.0.0.apk \
             --patches shared/patches.rvp \
             --bypass-verification \
+            --keystore shared/testkey.jks \
+            --keystore-password android \
+            --keystore-entry-alias androiddebugkey \
+            --keystore-entry-password android \
             -e "Change package name" -O 'packageName="${{ matrix.variant.pkg }}"' \
             -e "Change app name" -O 'appName="${{ matrix.variant.label }}"' \
             --out "out/${{ matrix.variant.file }}"
@@ -207,10 +245,17 @@ jobs:
             | **Change package name** *(per variant)* | Rewrites the APK's package name to the variant's value listed above. The `Original` variant keeps `com.xiaoji.egggame`. |
             | **Change app name** *(per variant)* | Rewrites the launcher label to the variant's value listed above. |
 
+            ### Signing
+
+            All APKs are signed with the **AOSP `testkey`** (V1, V2, and V3 signature schemes via `apksigner`). The testkey private key is publicly checked into the [Android Open Source Project](https://android.googlesource.com/platform/build/+/refs/heads/main/target/product/security/) and intentionally has **no security guarantees** — it exists so test/personal builds can be signed reproducibly. Implications:
+
+            - **Upgrade-compatible across releases**: every build uses the same key, so future releases of the same variant install on top of older ones without `INSTALL_FAILED_UPDATE_INCOMPATIBLE`.
+            - **Not a supply-chain claim**: anyone can produce APKs that match this signature. Suitable for personal sideload use, not for trust claims.
+            - **One-time migration**: anyone who installed the previous `GameHub-6.0` build (signed with revanced-cli's auto-generated cert) will need to uninstall + reinstall once to switch to the testkey-signed build. After that, all future releases upgrade in place.
+
             ### Notes
 
             - The base APK is unmodified XiaoJi GameHub 6.0.0; only the bytecode/resources required by the patches above are touched.
-            - All APKs are signed with the ReVanced default debug keystore. To upgrade in place between releases, install the same variant.
             - The `.rvp` patch bundle and `.rve` extension files are also attached for use with `revanced-cli` directly.
           files: |
             apks/GameHub-6.0-Patched-*.apk

@@ -12,7 +12,6 @@ import com.github.luben.zstd.ZstdInputStreamNoFinalizer;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.json.JSONObject;
-import org.tukaani.xz.XZInputStream;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -77,9 +76,13 @@ public final class ComponentInjectorHelper {
 
     private static TarArchiveInputStream openTar(Context ctx, Uri uri, int firstByte) throws Exception {
         InputStream raw = ctx.getContentResolver().openInputStream(uri);
-        InputStream wrapped = (firstByte == 0x28)
-                ? new ZstdInputStreamNoFinalizer(raw)
-                : new XZInputStream(raw, -1);
+        if (firstByte != 0x28) {
+            try { raw.close(); } catch (Exception ignored) {}
+            throw new IllegalArgumentException(
+                    "Unsupported wcp compression (firstByte=0x" + Integer.toHexString(firstByte)
+                            + "); only zstd is supported on GameHub 6.0.");
+        }
+        InputStream wrapped = new ZstdInputStreamNoFinalizer(raw);
         return new TarArchiveInputStream(wrapped);
     }
 

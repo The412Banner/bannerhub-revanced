@@ -106,11 +106,17 @@ jobs:
         run: |
           set -e
           mkdir -p out
+          # Values are wrapped in JSON-string quotes so picocli's
+          # Map<String,Object> parser doesn't try to coerce them as
+          # numbers (e.g. "com.tencent.tmgp.cf" — the trailing 'f' is
+          # parsed as a Java float suffix and triggers NumberFormatException
+          # before the patch ever runs). The quotes also make values with
+          # spaces (e.g. "GameHub PuBG CrossFire") a non-issue.
           java -jar shared/revanced-cli.jar patch shared/GameHub_6.0.0.apk \
             --patches shared/patches.rvp \
             --bypass-verification \
-            -e "Change package name" -O "packageName=${{ matrix.variant.pkg }}" \
-            -e "Change app name" -O "appName=${{ matrix.variant.label }}" \
+            -e "Change package name" -O 'packageName="${{ matrix.variant.pkg }}"' \
+            -e "Change app name" -O 'appName="${{ matrix.variant.label }}"' \
             --out "out/${{ matrix.variant.file }}"
           ls -la "out/${{ matrix.variant.file }}"
 

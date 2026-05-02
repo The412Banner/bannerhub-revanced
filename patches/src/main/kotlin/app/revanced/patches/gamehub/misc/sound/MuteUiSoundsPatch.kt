@@ -23,7 +23,10 @@ val muteUiSoundsPatch = resourcePatch(
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
 
     apply {
-        val silentBytes = MuteUiSoundsPatch::class.java.getResourceAsStream(SILENT_RESOURCE)
+        // The patch is a top-level val, not a class, so we can't write
+        // ::class.java directly. Anchor on an anonymous object whose runtime
+        // class lives in the same patch-bundle classloader as the resource.
+        val silentBytes = object {}.javaClass.getResourceAsStream(SILENT_RESOURCE)
             ?.use { it.readBytes() }
             ?: throw PatchException("Bundled silent.wav not found at $SILENT_RESOURCE in patch resources.")
 

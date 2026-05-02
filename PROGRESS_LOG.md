@@ -1,5 +1,33 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-05-02 — `v0.3.9-cm-prefix` — namespace component name with category prefix
+
+### Symptom (v0.3.8 device test)
+Lists populate normally now (cleanjson hotfix worked). But injected FEXCore 2604 + 2603 still don't appear in the CPU translator picker. Both entries verified present in `sp_winemu_unified_resources.xml` with clean JSON, no `_bh_*` leftover.
+
+### Root cause
+The per-game picker filters entries by `entry.type` AND `name` prefix. Every host server entry starts with `Fex_` / `Fex-` (FEX), `Box64-`, `dxvk-`, `vkd3d-`, or `Adreno_` / `turnip_` / `qcom-` (GPU). Our entries used the user's raw component name from the WCP profile's `versionName` field (e.g. `2604`, `2603`) — no category prefix → picker rejects them inside the `type=1` translator bucket.
+
+Bonus discovery: `ComponentManagerActivity.TYPE_BOX64` and `TYPE_FEXCORE` were still hardcoded to `6` (runtime-dep type) for the local-file-pick path, even though the download path was fixed to `1` in v0.3.3. Two paths were inconsistent.
+
+### Fix
+- New `ComponentInjectorHelper.prefixedName(rawName, categoryTag)` — adds `Fex_` for FEXCore, `Box64-` for Box64, `dxvk-` for DXVK, `vkd3d-` for VKD3D. GPU left as-is (server uses mixed Adreno_/turnip_/qcom- prefixes). Skips if user's name already starts with the prefix.
+- `injectComponent` signature gained `int categoryTag` parameter; applied via `prefixedName` before `registerComponent`.
+- Both callers updated:
+  - `ComponentDownloadActivity.startDownload` already had `categoryTag` from `detectType`; passes it through.
+  - `ComponentManagerActivity` (local file pick) now tracks `selectedCategoryTag` alongside `selectedType` so the prefix step has the discriminator (since `selectedType=1` covers both FEX and Box64).
+- `ComponentManagerActivity.TYPE_BOX64` and `TYPE_FEXCORE` corrected from `6` to `1` for parity with the download path and the host's actual translator type.
+
+### Effect on the user's existing entries (2603, 2604)
+Already-injected entries in sidecar use the raw names. After installing v0.3.9:
+- They will continue to live at sidecar key `COMPONENT:2604` and host key `COMPONENT:2604` (unprefixed) — the rehydrate doesn't rename existing keys, only re-writes them.
+- To get them into the picker, **re-inject** with v0.3.9 — that runs the prefix step, sidecar gets `COMPONENT:Fex_2604`, host gets `COMPONENT:Fex_2604`, picker sees `Fex_2604` and renders it.
+- Old `COMPONENT:2604` entries will linger but are harmless (they don't pass the picker filter, just sit in the registry).
+
+### Build
+- Tag: `v0.3.9-cm-prefix`
+- Trigger: `gh workflow run release.yml --ref gamehub-600-build -f tag=v0.3.9-cm-prefix`
+
 ## 2026-05-02 — `v0.3.8-cm-cleanjson` — strip _bh_ markers before host write
 
 ### Symptom

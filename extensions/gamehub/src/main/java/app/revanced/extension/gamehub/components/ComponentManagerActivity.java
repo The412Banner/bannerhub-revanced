@@ -42,17 +42,28 @@ public final class ComponentManagerActivity extends Activity
 
     // 6.0 EnvLayerEntity.type values (per master map):
     // 2=GPU driver, 3=DXVK, 4=VKD3D, 5=settings pack, 6=runtime dep.
+    // Host EnvLayerEntity.type values — confirmed against installed registry
+    // (Fex_*/Box64-* share type=1 translator bucket; FEX vs Box64 disambiguated
+    // by name prefix downstream).
     private static final int TYPE_GPU = 2;
     private static final int TYPE_DXVK = 3;
     private static final int TYPE_VKD3D = 4;
-    private static final int TYPE_BOX64 = 6;
-    private static final int TYPE_FEXCORE = 6;
+    private static final int TYPE_BOX64 = 1;
+    private static final int TYPE_FEXCORE = 1;
+
+    // Category tags — full discriminator preserved for the name-prefix step.
+    private static final int CAT_DXVK = 0xc;
+    private static final int CAT_VKD3D = 0xd;
+    private static final int CAT_GPU = 0xa;
+    private static final int CAT_BOX64 = 0x5e;
+    private static final int CAT_FEXCORE = 0x5f;
 
     private ListView listView;
     private int mode;
     private File[] components = new File[0];
     private int selectedIndex;
     private int selectedType;
+    private int selectedCategoryTag;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -158,11 +169,11 @@ public final class ComponentManagerActivity extends Activity
                     return;
                 }
                 switch (position) {
-                    case 1: selectedType = TYPE_DXVK; break;
-                    case 2: selectedType = TYPE_VKD3D; break;
-                    case 3: selectedType = TYPE_BOX64; break;
-                    case 4: selectedType = TYPE_FEXCORE; break;
-                    case 5: selectedType = TYPE_GPU; break;
+                    case 1: selectedType = TYPE_DXVK;    selectedCategoryTag = CAT_DXVK;    break;
+                    case 2: selectedType = TYPE_VKD3D;   selectedCategoryTag = CAT_VKD3D;   break;
+                    case 3: selectedType = TYPE_BOX64;   selectedCategoryTag = CAT_BOX64;   break;
+                    case 4: selectedType = TYPE_FEXCORE; selectedCategoryTag = CAT_FEXCORE; break;
+                    case 5: selectedType = TYPE_GPU;     selectedCategoryTag = CAT_GPU;     break;
                     default:
                         showComponents();
                         return;
@@ -193,7 +204,7 @@ public final class ComponentManagerActivity extends Activity
 
         Uri uri = data.getData();
         if (mode == 3) {
-            ComponentInjectorHelper.injectComponent(this, uri, selectedType);
+            ComponentInjectorHelper.injectComponent(this, uri, selectedType, selectedCategoryTag);
             showComponents();
         } else {
             injectFile(uri);

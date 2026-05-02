@@ -318,7 +318,7 @@ public final class ComponentDownloadActivity extends Activity
 
                 runOnUiThread(() -> {
                     ComponentInjectorHelper.injectComponent(
-                            ComponentDownloadActivity.this, fileUri, sidecarType);
+                            ComponentDownloadActivity.this, fileUri, sidecarType, categoryTag);
                     finish();
                 });
             } catch (Exception e) {

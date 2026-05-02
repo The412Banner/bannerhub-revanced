@@ -178,6 +178,42 @@ public final class ComponentInjectorHelper {
         return meta;
     }
 
+    // Category tag values from ComponentDownloadActivity — duplicated here
+    // because we use them to namespace the component name so the per-game
+    // picker's name-prefix filter matches our entry. Host server entries
+    // always start with Fex_/Fex-, Box64-, dxvk-, vkd3d- inside their
+    // shared entry.type=1/3/4 buckets.
+    private static final int CAT_DXVK = 0xc;
+    private static final int CAT_VKD3D = 0xd;
+    private static final int CAT_GPU = 0xa;
+    private static final int CAT_BOX64 = 0x5e;
+    private static final int CAT_FEXCORE = 0x5f;
+
+    /** Prefix the user's component name with the category prefix the host's
+     * picker filter expects. Skip if already prefixed. GPU intentionally not
+     * prefixed — server uses mixed Adreno_/turnip_/qcom- prefixes. */
+    public static String prefixedName(String rawName, int categoryTag) {
+        if (rawName == null || rawName.isEmpty()) return rawName;
+        String lower = rawName.toLowerCase();
+        switch (categoryTag) {
+            case CAT_FEXCORE:
+                if (lower.startsWith("fex")) return rawName;
+                return "Fex_" + rawName;
+            case CAT_BOX64:
+                if (lower.startsWith("box64")) return rawName;
+                return "Box64-" + rawName;
+            case CAT_DXVK:
+                if (lower.startsWith("dxvk")) return rawName;
+                return "dxvk-" + rawName;
+            case CAT_VKD3D:
+                if (lower.startsWith("vkd3d")) return rawName;
+                return "vkd3d-" + rawName;
+            case CAT_GPU:
+            default:
+                return rawName;
+        }
+    }
+
     /**
      * Build a sidecar entry JSON in the official-registry shape and write it
      * via {@link SidecarRegistry}. Replaces 3.5.0's {@code EmuComponents.D()}
@@ -244,7 +280,7 @@ public final class ComponentInjectorHelper {
      *
      * @param contentType  6.0 type int (2 GPU / 3 DXVK / 4 VKD3D / 5 settings / 6 dep)
      */
-    public static void injectComponent(Context ctx, Uri uri, int contentType) {
+    public static void injectComponent(Context ctx, Uri uri, int contentType, int categoryTag) {
         try {
             int firstByte = getFirstByte(ctx, uri);
             String name;
@@ -301,9 +337,12 @@ public final class ComponentInjectorHelper {
                 extractWcp(ctx, uri, firstByte, targetDir, flatten);
             }
 
-            registerComponent(ctx, name, version, desc, contentType, uri.toString());
+            // Namespace the name so the per-game picker's prefix filter
+            // matches our entry inside the shared entry.type bucket.
+            String registryName = prefixedName(name, categoryTag);
+            registerComponent(ctx, registryName, version, desc, contentType, uri.toString());
 
-            Toast.makeText(ctx, "Added to GameHub: " + name, Toast.LENGTH_LONG).show();
+            Toast.makeText(ctx, "Added to GameHub: " + registryName, Toast.LENGTH_LONG).show();
         } catch (Exception e) {
             String msg = e.getMessage();
             if (msg == null) msg = "Injection failed";

@@ -319,3 +319,50 @@ Awaiting device install + functional test (Job 11):
 - Inside any imported game's PC settings, open the matching dropdown
   (GPU/DXVK/VKD3D) → injected component appears alongside official entries.
 - "Download from Online Repos" → all 6 repos fetch and list assets.
+
+## 2026-05-02 — v0.3.1-cm-tarfix: tar bundle missing in host APK
+
+### Crash on Component Manager download (v0.3.0-component-manager-test, GameHub-6.0-Patched-Original.apk)
+
+```
+FATAL EXCEPTION: main (PID 16770)
+java.lang.NoClassDefFoundError: Failed resolution of:
+  Lorg/apache/commons/compress/archivers/tar/TarArchiveInputStream;
+  at ComponentInjectorHelper.openTar(ComponentInjectorHelper.java:83)
+  at ComponentInjectorHelper.readWcpProfile(ComponentInjectorHelper.java:87)
+  at ComponentInjectorHelper.injectComponent(ComponentInjectorHelper.java:270)
+  at ComponentDownloadActivity.lambda$startDownload$2(ComponentDownloadActivity.java:320)
+```
+
+### Root cause
+GameHub 6.0 ships only the `org.apache.commons.compress.archivers.zip` subpackage —
+`archivers/tar/*` and `org.tukaani.xz` are absent from the host APK. The
+`ComponentInjectorHelper` was written against the BannerHub 3.5.0 host
+which had the full commons-compress + xz set, so on 6.0 it dies the moment a
+.wcp arrives.
+
+Confirmed via `/tmp/gh600_smali`:
+- `smali_classes5/org/apache/commons/compress/archivers/zip/` ✅
+- `smali_classes5/org/apache/commons/compress/archivers/tar/` ❌
+- `smali/com/github/luben/zstd/ZstdInputStreamNoFinalizer.smali` ✅
+- `smali/.../org/tukaani/xz/` ❌
+
+### Fix (commit `cdbe2be`)
+- Add `implementation("org.apache.commons:commons-compress:1.26.2")` to
+  `extensions/gamehub/build.gradle.kts` so tar archivers bundle into the
+  extension dex via D8 → host APK.
+- Drop `XZInputStream` import. `openTar` now throws
+  `IllegalArgumentException` for non-zstd headers instead of crashing with
+  `NoClassDefFoundError`. All BannerHub-built wcp components are zstd
+  (firstByte 0x28 = `\x28\xb5\x2f\xfd` zstd magic), so the XZ branch
+  was dead anyway.
+
+### CI
+`gh workflow run release.yml --ref gamehub-600-build -f tag=v0.3.1-cm-tarfix`
+→ run **25249925551** in progress.
+
+### Fallback if v0.3.1 fails to merge tar classes
+Option 2: hand-roll a 50-line tar reader in `ComponentInjectorHelper`. The
+ustar header is fixed-layout (name@0, size@124 octal, header padded to 512;
+data padded to 512). Only need: iterate entries, get name + size, read
+data. No commons-compress dep needed.

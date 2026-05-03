@@ -260,3 +260,36 @@ firstMethod { definingClass == "Los0;" && name == "e" }.apply {
 ```
 
 Debug probes intentionally **kept in place** (xm7.u ENTRY/CATCH, el7 ENTRY, both insert PRE markers, FakeAuthToken.get, DebugLogPatch) so the next device test can confirm `FakeUserAccount.get() called` fires before the UI populates and that the import flow is otherwise unchanged. Probes will be removed in a cleanup pass after the import flow is confirmed end-to-end.
+
+## 2026-05-02 — v1.0.0-600 stable release session
+
+### Goal
+Ship the first stable BannerHub-API-enabled GameHub 6.0 release that pairs with the Worker's `/v6/` gate.
+
+### Branch operations
+- `bannerhub-api-patch` (commits `7644ad0` Redirect catalog API + `561b246` Prefix /v6) was fast-forward merged into `gamehub-600-build`. Branch kept (not deleted) per user instruction.
+- `gamehub-537-build` deleted from local + `origin` (9 unique commits, all 5.3.7 work — the v6 CLI revert, settings menu disable for 5.3.7 R8 renames, target-APK swap, etc.). Abandoned 5.3.7 port; nothing reachable elsewhere.
+
+### Stable release v1.0.0-600 (run 25264095270, commit 572ff30)
+Triggered via `gh workflow run release.yml --ref gamehub-600-build -f tag=v1.0.0-600 -f stable=true`. Workflow opt-in `stable=true` checkbox produces the GitHub Release; default behavior is artifacts-only prerelease.
+
+Title: **"Gamehub 6.0 - Bannerhub API - No Login - Muted UI"** (renamed in-place via `gh release edit` after the initial publish; workflow `name:` field also updated for future runs).
+
+9 variant APKs + .rvp bundle + .rve extension files attached:
+- Normal (`banner.hub`), Normal-GHL (`gamehub.lite`), PuBG (`com.tencent.ig`), AnTuTu (`com.antutu.ABenchMark`), alt-AnTuTu (`com.antutu.benchmark.full`), PuBG-CrossFire (`com.tencent.tmgp.cf`), Ludashi (`com.ludashi.aibench`), Genshin (`com.miHoYo.GenshinImpact`), Original (`com.xiaoji.egggame`).
+
+### Release notes iterations (workflow body + live release body kept in sync via `gh release edit --notes-file`)
+1. **Initial body was stale** — described only Bypass login + Disable Crashlytics + Debug logging + File manager + per-variant naming. Missing 3 patches that had landed since: Mute UI sounds (5ce470d, 2df0e54), Redirect catalog API (7644ad0), Prefix API path /v6 (561b246). Cancelled the in-flight run, updated `release.yml` body, retriggered. Run 25264031838 (cancelled) → 25264095270 (succeeded).
+2. **Cross-release install warning added** — every CI run mints a new debug keystore (no `--keystore` passed to revanced-cli, ephemeral runner has empty workdir), so Android refuses cross-release upgrades with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Replaced the wrong "To upgrade in place install the same variant" line with explicit uninstall-first instruction.
+3. **Known limitations section added** with two callouts:
+   - Steam launches via standard client are likely broken — use Lightweight Steam (`steam_client_0403`).
+   - Imported games need cover art set manually.
+4. **PC game settings orientation note added** — side benefit of the API redirect: per-game PC settings now renders in both landscape AND portrait (vanilla locked it to landscape only). Caused by the BannerHub Worker not carrying upstream's orientation constraint in the catalog response.
+
+### README rewritten for v1.0.0-600 (commit 816dd2d, then b4cee47 for the orientation note)
+Full doc rewrite covering all four user-facing patches (was stale, only described the No Login flow). Adds: cross-release fresh-install warning, Known Limitations section, per-patch sections for Mute UI sounds + Redirect catalog API + Prefix /v6, link to `bannerhub-api` repo as catalog backend, Releases section explaining stable-vs-prerelease workflow.
+
+### Open follow-ups
+- **Persistent keystore** — pin one in Actions secrets and pass `--keystore`/`--keystore-entry-alias`/`--keystore-password`/`--keystore-entry-password` on the revanced-cli patch command. Eliminates the cross-release uninstall requirement.
+- **Bump versionCode per release** — patches don't currently touch versionCode; APKs ship with the base APK's value. Cosmetic only (Android allows install-replace with equal versionCode), but proper update-detection in package installers wants it bumped.
+- **Component Manager port still pinned on `component-manager-injection`** at `5b89073`. Picker still doesn't show injected `Fex_2604`. Resume plan in memory unchanged: ship debug build with `Log.i("GH600-DEBUG", ...)` at top of every `HostCache.*` method, then in-foreground inject test.

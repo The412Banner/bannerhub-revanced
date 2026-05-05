@@ -316,4 +316,10 @@ Practical impact: Android allows one app per provider authority globally. Instal
 - `updateProviders=true` also rewrites authorities on **all** existing providers in the base APK (not just ours), which the option's own description warns can break features.
 
 ### Status
-Pushed; CI any-branch compile **green** (run 25379952428, 1m41s, `build_pull_request.yml` via workflow_dispatch). Branch not merged yet — awaits device verification that all 9 variants now install side-by-side without `INSTALL_FAILED_CONFLICTING_PROVIDER`.
+- CI compile green run 25379952428 (`build_pull_request.yml`).
+- **Round 1** (commit 6d329bd, `apply{} → afterDependents{}`): release run 25382219259 success, but verifying APKs with `aapt dump xmltree | grep MTDataFiles` showed authority + taskAffinity STILL frozen at `com.xiaoji.egggame.*` for every variant. afterDependents alone wasn't sufficient.
+- **Round 2** (commit 8f4a8fc, added `dependsOn(changePackageNamePatch)`): release run 25382742203 success, same negative result — patcher schedule still didn't put our manifest write after the rename.
+- **Round 3 — verified working** (commit fadeaab, read `packageNameOption.value` directly): release run 25383226328 success. APKs now show per-variant authorities (`banner.hub.app.…MTDataFilesProvider`, `gamehub.lite.app.…MTDataFilesProvider`, …) and per-variant taskAffinities (`banner.hub.MTDataFilesWakeUp`, etc.). `Original` correctly stays at `com.xiaoji.egggame.*`. Branch ready to merge after device-side install test.
+
+### Lesson
+For revanced-patcher resource patches that need to react to "Change package name", do not rely on `afterDependents` + `dependsOn(changePackageNamePatch)` to read the post-rename `manifest@package` value — the scheduling guarantees aren't there. Instead, read `packageNameOption.value` directly (with a fallback to `packageNameOption.default`). The CLI option is set before any patch applies, so it's the only reliable source of the variant package within other patches.

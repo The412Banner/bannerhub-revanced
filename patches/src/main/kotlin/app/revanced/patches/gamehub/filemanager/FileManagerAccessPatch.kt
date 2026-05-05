@@ -21,7 +21,7 @@ val fileManagerAccessPatch = resourcePatch(
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
     dependsOn(sharedGamehubExtensionPatch)
 
-    apply {
+    afterDependents {
         document("AndroidManifest.xml").use { dom ->
             val manifestNode = dom.getNode("manifest")
             val packageAttr = manifestNode.attributes.getNamedItem("package")
@@ -39,7 +39,7 @@ val fileManagerAccessPatch = resourcePatch(
                     it.attributes.getNamedItem("android:name")?.nodeValue == PROVIDER_CLASS
                 }
             ) {
-                return@apply
+                return@afterDependents
             }
 
             // Register the wake-up activity.

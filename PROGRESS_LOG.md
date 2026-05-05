@@ -293,3 +293,27 @@ Full doc rewrite covering all four user-facing patches (was stale, only describe
 - **Persistent keystore** — pin one in Actions secrets and pass `--keystore`/`--keystore-entry-alias`/`--keystore-password`/`--keystore-entry-password` on the revanced-cli patch command. Eliminates the cross-release uninstall requirement.
 - **Bump versionCode per release** — patches don't currently touch versionCode; APKs ship with the base APK's value. Cosmetic only (Android allows install-replace with equal versionCode), but proper update-detection in package installers wants it bumped.
 - **Component Manager port still pinned on `component-manager-injection`** at `5b89073`. Picker still doesn't show injected `Fex_2604`. Resume plan in memory unchanged: ship debug build with `Log.i("GH600-DEBUG", ...)` at top of every `HostCache.*` method, then in-foreground inject test.
+
+## 2026-05-05 — Fix: per-variant DocumentsProvider authority
+
+### Problem
+v1.0.0-600 ships 9 variants that all declare the **same** DocumentsProvider authority, baked at the unrenamed `com.xiaoji.egggame.app.revanced.extension.gamehub.filemanager.MTDataFilesProvider`. Cause: `FileManagerAccessPatch` runs in the default `apply { ... }` block, which executes BEFORE `ChangePackageNamePatch`'s `afterDependents { ... }`, so it reads the original `manifest@package` value before the variant rename happens. The wake-up activity's `android:taskAffinity` (`com.xiaoji.egggame.MTDataFilesWakeUp`) is frozen the same way.
+
+Practical impact: Android allows one app per provider authority globally. Installing a second variant alongside a first fails with `INSTALL_FAILED_CONFLICTING_PROVIDER`.
+
+### Branch
+`fix/file-manager-per-variant-authority` off `gamehub-600-build` (per branch-per-patch policy).
+
+### Change
+`patches/src/main/kotlin/app/revanced/patches/gamehub/filemanager/FileManagerAccessPatch.kt`: `apply { ... }` → `afterDependents { ... }` (and `return@apply` → `return@afterDependents`). Patch body unchanged. Now reads `manifest@package` after `ChangePackageNamePatch` has rewritten it, so each variant gets:
+
+- `<provider android:authorities="<variant-pkg>.app.revanced.extension.gamehub.filemanager.MTDataFilesProvider">`
+- wake-up activity `android:taskAffinity="<variant-pkg>.MTDataFilesWakeUp"`
+
+### Why this over `-O updateProviders=true`
+- Single-file change vs workflow edit (and CLI option that has to be remembered on every future build).
+- `updateProviders=true` only rewrites `<provider android:authorities>` — it does NOT touch `taskAffinity` on the wake-up activity, which would still collide across variants.
+- `updateProviders=true` also rewrites authorities on **all** existing providers in the base APK (not just ours), which the option's own description warns can break features.
+
+### Status
+Pushed; CI any-branch compile pending.

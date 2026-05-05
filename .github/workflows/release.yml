@@ -186,11 +186,23 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
-          name: Gamehub 6.0 - Bannerhub API - No Login - Muted UI
+          name: Gamehub 6.0 - BannerHub API - Multi-Install
           body: |
-            ## Gamehub 6.0 - Bannerhub API - No Login - Muted UI
+            ## Gamehub 6.0 - BannerHub API - Multi-Install
 
-            A patched build of XiaoJi GameHub 6.0.0 (`com.xiaoji.egggame`) that removes the login requirement so games can be imported and used without an account.
+            A patched build of XiaoJi GameHub 6.0.0 (`com.xiaoji.egggame`) that removes the login requirement so games can be imported and used without an account, redirects the catalog API to the BannerHub Cloudflare Worker, and ships **9 variants that install side-by-side on the same device**.
+
+            ### ✅ What's new vs v1.0.0-600
+
+            v1.0.0-600 looked like it supported side-by-side install (each variant had its own package name and launcher label) but in practice every fresh-install of a second variant was rejected by Android with the unhelpful **"package conflicts with a current package"** dialog. Three independent install-blockers were stacked behind that one error:
+
+            1. **MTDataFiles `<provider android:authorities>` was the same for every variant** (`com.xiaoji.egggame.app.revanced.extension.gamehub.filemanager.MTDataFilesProvider`). On Android, two installed apps cannot register the same `authorities` string → `INSTALL_FAILED_CONFLICTING_PROVIDER`. The wake-up activity's `taskAffinity` had the same problem. Fixed by reading `packageNameOption.value` directly inside `FileManagerAccessPatch` so the values follow the variant package.
+            2. **The `signature`-protected `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` was still namespaced to `com.xiaoji.egggame.*`** in every variant. Two apps signed with different certs cannot both declare the same `signature` permission → install fails. Fixed by passing `-O 'updatePermissions=true'` to the upstream `Change package name` patch in `release.yml`.
+            3. **The Mob Push SDK's `com.xiaoji.egggame.permission.C2D_MESSAGE` `<permission>` declaration survived the rename** in every variant. Android 7+ rejects multi-declaration of any custom permission name regardless of `protectionLevel`, regardless of cert match → second-variant install fails. Fixed by a new `Rewrite custom permissions per variant` patch that reads `packageNameOption.value` directly.
+
+            Also, the workflow now passes `-O 'updateProviders=true'` so the 10 upstream provider authorities baked into the base APK (Mob, file, Fly, utilcode, Firebase, AndroidContext, androidx-startup, filekit, fileprovider, wbsdk) are renamed per-variant as well — those weren't blocking install in v1.0.0-600 (the MT one shadowed them) but they were the next set of blockers after the MT fix landed.
+
+            **Migrating from v1.0.0-600:** uninstall every previously-installed BannerHub-ReVanced variant — not just the one you're replacing. Older variants still declare the legacy `com.xiaoji.egggame.permission.C2D_MESSAGE`, so even one of them on-device blocks fresh installs from this release. After the device is clean, install one variant from v1.0.1-600, then install any others alongside it without uninstalling.
 
             ### Source
             - **Base APK**: `GameHub_beta_6.0.0_global.apk` — the official 6.0.0 global build
@@ -220,7 +232,8 @@ jobs:
             | **Bypass login** | Skips the login screen entirely. Patches the `g8e` navigator so the Login route is never selected, replaces `os0.h()`'s isLoggedIn StateFlow to emit `TRUE`, replaces `os0.e()`'s user-account StateFlow to emit a synthetic `f4m{user_id="99999"}` so library queries return rows, and replaces `xm7.f()` and `is0.f()` to keep the user-id consistent across the read and write code paths. Result: launches straight into the home screen; game-import saves persist to `db_game_library.db`; imported games appear in the library list. |
             | **Disable Firebase Crashlytics** | Removes the Crashlytics initialisation block in reverse instruction order so the ART verifier accepts the resulting bytecode. Without this, GameHub 6.0 crashes on launch with `VerifyError`. |
             | **Debug logging** | Sets `android:debuggable="true"` and inserts `Log.i("GH600-DEBUG", ...)` markers along the import code path (`xm7.u`, `el7.invokeSuspend`, both Room DAO inserts) plus a `Throwable` hook on the `odb.e()` global swallower. Used to triage the import flow during development; will be removed in a follow-up build once the import flow is confirmed stable. |
-            | **File manager access** | Adds an exposed `MTDataFiles` content provider so external file managers can browse GameHub's data directory. |
+            | **File manager access** | Adds an exposed `MTDataFiles` content provider so external file managers can browse GameHub's data directory. The provider authority and wake-up activity `taskAffinity` are derived per-variant from `packageNameOption.value` so two variants don't collide on `INSTALL_FAILED_CONFLICTING_PROVIDER`. |
+            | **Rewrite custom permissions per variant** | Iterates the manifest's `<permission>` and `<uses-permission>` elements; any whose name starts `com.xiaoji.egggame.permission.` (notably the Mob Push SDK's `C2D_MESSAGE`) gets the prefix rewritten to the variant package. Without this, Android 7+ rejects the second-installed variant with `INSTALL_FAILED_DUPLICATE_PERMISSION`. |
             | **Mute UI sounds** | Replaces the bundled UI feedback sounds (`assets/.../sound/*.wav`) with silent PCM, so menu navigation and button taps no longer click. The patch substitutes the resource at packaging time — no runtime audio routing is changed. |
             | **Redirect catalog API** | Patches the `mcj` environment enum's `Online` value so the catalog API's `cnHost` and `overseaHost` both point at the BannerHub Cloudflare Worker (`bannerhub-api.the412banner.workers.dev`) instead of `landscape-api-{cn,oversea}.vgabc.com`. The Worker serves a curated component catalog from GitHub Pages and forwards unallowlisted paths back to the original upstream with the original signed-request behavior preserved. Beta + Test enum values, the analytics hosts, and the bigeyes CDN are intentionally untouched. **Side benefit:** the per-game **PC game settings** screen now renders correctly in both landscape *and* portrait orientation. Upstream's response constrained the screen to landscape only; the BannerHub Worker's payload doesn't carry that constraint, so the picker is usable from a portrait-held phone for the first time. |
             | **Prefix API path with /v6** | Hooks `zdb.b(qx9, String)` — the single chokepoint every relative API call funnels through — and prepends `v6/` to the path. Together with **Redirect catalog API**, this lets the Worker serve 6.0-only response variants (firmware 1.3.4 vs 1.3.3, `base.fileType=0`, the `EnvListData` wrapper required by 6.0's kotlinx-strict deserializer) without affecting 5.x clients, which never carry the prefix. Full URLs (`http://`, `https://`) are passed through untouched so direct downloads still work. |

@@ -2,9 +2,17 @@
 
 A ReVanced patch bundle and pre-built APKs for [XiaoJi GameHub](https://www.gamehubglobal.com/) 6.0.0 (`com.xiaoji.egggame`) that **remove the login requirement, redirect the catalog API to the BannerHub Cloudflare Worker, mute UI sound feedback, and ship a debug-logging probe**, plus build-side variants that install side-by-side on the same device.
 
-**Latest stable release:** [`v1.0.0-600` — Gamehub 6.0 - Bannerhub API - No Login - Muted UI](https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.0.0-600) — 9 ready-to-install APK variants + the `.rvp` patch bundle and `.rve` extension files for use with `revanced-cli`.
+**Latest stable release:** [`v1.0.1-600` — Gamehub 6.0 - BannerHub API - Multi-Install](https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.0.1-600) — 9 ready-to-install APK variants + the `.rvp` patch bundle and `.rve` extension files for use with `revanced-cli`.
 
-> ⚠ **A fresh install is required if a previous release is still installed.** Each release run generates a new debug keystore, so the signing certificate differs between releases and Android refuses the upgrade with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Uninstall the previous version of the same variant first, then install the new one. (Within a single release, all 9 variants are signed with the same cert.)
+> ✅ **Multiple variants now install side-by-side.** v1.0.0-600 shipped with three independent install-blockers (a duplicate MTDataFiles content-provider authority across variants, a duplicate `signature`-protected `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`, and a duplicate Mob-Push `C2D_MESSAGE` custom permission), all camouflaged behind the same vague "package conflicts with a current package" dialog. v1.0.1-600 fixes all three — installing two variants alongside each other is now a clean operation. See *What's new* below.
+
+> ⚠ **A fresh install is required if a previous release is still installed.** Each release run generates a new debug keystore, so the signing certificate differs between releases and Android refuses the upgrade with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Uninstall the previous version of the same variant first, then install the new one. (Within a single release, all 9 variants are signed with the same cert.) **In addition for the v1.0.0-600 → v1.0.1-600 jump:** uninstall every previously-installed BannerHub-ReVanced variant, not just the one you're replacing — older variants still declare the legacy `com.xiaoji.egggame.permission.C2D_MESSAGE` and will block fresh installs from this release.
+
+## What's new in v1.0.1-600
+
+- **`File manager access`** — the MTDataFiles `<provider android:authorities>` and wake-up activity `android:taskAffinity` are now derived per-variant from `packageNameOption.value`, instead of being baked at `com.xiaoji.egggame.*` for every variant.
+- **`Rewrite custom permissions per variant`** *(new patch)* — rewrites the `com.xiaoji.egggame.permission.C2D_MESSAGE` declaration (and any other upstream-baked custom permission with the same prefix) so each variant's permission name is namespaced to that variant's package. Without this, Android 7+ rejects the second-installed variant with `INSTALL_FAILED_DUPLICATE_PERMISSION`.
+- **`Change package name` invocation** — the `release.yml` workflow now passes `-O 'updatePermissions=true'` and `-O 'updateProviders=true'` to the upstream patch, so the 10 inherited provider authorities (Mob, file, Fly, utilcode, Firebase, AndroidContext, androidx-startup, filekit, fileprovider, wbsdk) and the `signature`-protected `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` are all rewritten to the variant package.
 
 ---
 
@@ -105,11 +113,15 @@ Kept in this release for ongoing device-side triage; will be dropped from a futu
 
 ### `File manager access`
 
-Adds an exposed `MTDataFiles` content provider (Java extension class shipped in the patches `.rve`) so external file managers like MT Manager can browse GameHub's per-app data directory without needing root.
+Adds an exposed `MTDataFiles` content provider (Java extension class shipped in the patches `.rve`) so external file managers like MT Manager can browse GameHub's per-app data directory without needing root. The provider's `android:authorities` and the wake-up activity's `android:taskAffinity` are derived from `packageNameOption.value` so each variant gets its own values — required to avoid `INSTALL_FAILED_CONFLICTING_PROVIDER` when two variants are installed side-by-side.
+
+### `Rewrite custom permissions per variant`
+
+Iterates the manifest's `<permission>` and `<uses-permission>` elements and rewrites any name starting `com.xiaoji.egggame.permission.` so the prefix matches the variant's package. The notable case is the Mob Push SDK's `C2D_MESSAGE` permission, which upstream declares directly. Without this rewrite, two installed variants both declaring `com.xiaoji.egggame.permission.C2D_MESSAGE` violate Android 7+'s rule against multiple packages declaring the same custom permission, and the second-installed variant gets rejected with `INSTALL_FAILED_DUPLICATE_PERMISSION` (UI surfaces this as the unhelpful "package conflicts with a current package" dialog). Reads `packageNameOption.value` directly rather than relying on patcher ordering against `Change package name`.
 
 ### `Change package name` *(per variant)*
 
-Rewrites the APK's `<manifest package=…>` and `<application>` references to the variant's value listed in the table above, plus rewrites compatibility receiver permissions and exported provider authorities so they don't collide with the upstream package. Driven by the `packageName` option, set per matrix entry in `release.yml`.
+Rewrites the APK's `<manifest package=…>` and `<application>` references to the variant's value listed in the table above, plus rewrites compatibility receiver permissions and exported provider authorities so they don't collide with the upstream package. Driven by the `packageName` option, set per matrix entry in `release.yml`. The workflow now also passes `updatePermissions=true` and `updateProviders=true` so the upstream-baked `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` and the 10 inherited provider authorities are renamed to the variant package as well.
 
 ### `Change app name` *(per variant)*
 

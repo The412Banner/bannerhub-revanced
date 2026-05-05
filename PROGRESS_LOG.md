@@ -316,4 +316,4 @@ Practical impact: Android allows one app per provider authority globally. Instal
 - `updateProviders=true` also rewrites authorities on **all** existing providers in the base APK (not just ours), which the option's own description warns can break features.
 
 ### Status
-Pushed; CI any-branch compile pending.
+Pushed; CI any-branch compile **green** (run 25379952428, 1m41s, `build_pull_request.yml` via workflow_dispatch). Branch not merged yet — awaits device verification that all 9 variants now install side-by-side without `INSTALL_FAILED_CONFLICTING_PROVIDER`.

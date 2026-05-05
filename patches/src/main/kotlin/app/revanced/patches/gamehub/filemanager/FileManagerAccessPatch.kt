@@ -1,6 +1,7 @@
 package app.revanced.patches.gamehub.filemanager
 
 import app.revanced.patcher.patch.resourcePatch
+import app.revanced.patches.all.misc.packagename.changePackageNamePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
 import app.revanced.patches.gamehub.GAMEHUB_VERSION
 import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
@@ -19,7 +20,7 @@ val fileManagerAccessPatch = resourcePatch(
         "Framework clients can browse the app's internal storage directories.",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
-    dependsOn(sharedGamehubExtensionPatch)
+    dependsOn(sharedGamehubExtensionPatch, changePackageNamePatch)
 
     afterDependents {
         document("AndroidManifest.xml").use { dom ->

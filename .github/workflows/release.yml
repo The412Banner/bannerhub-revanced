@@ -124,7 +124,10 @@ jobs:
           java -jar shared/revanced-cli.jar patch shared/GameHub_6.0.0.apk \
             --patches shared/patches.rvp \
             --bypass-verification \
-            -e "Change package name" -O 'packageName="${{ matrix.variant.pkg }}"' \
+            -e "Change package name" \
+              -O 'packageName="${{ matrix.variant.pkg }}"' \
+              -O 'updatePermissions=true' \
+              -O 'updateProviders=true' \
             -e "Change app name" -O 'appName="${{ matrix.variant.label }}"' \
             --out "out/${{ matrix.variant.file }}"
           ls -la "out/${{ matrix.variant.file }}"

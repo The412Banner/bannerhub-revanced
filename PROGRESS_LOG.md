@@ -340,3 +340,28 @@ Verified APKs at `/storage/emulated/0/bannerhub-revanced-test-25385421598/`. All
 - MTDataFiles provider authority + wake-up taskAffinity per-variant (round 3)
 
 Ready to merge into `gamehub-600-build` once device install test confirms two variants install alongside each other without `INSTALL_FAILED_CONFLICTING_PROVIDER`.
+
+### Round 5 — C2D_MESSAGE permission per-variant (commit 91436af)
+User reported the install dialog still said "package conflicts with a current package" when trying to install one variant alongside another, even on package names they didn't have installed. Re-audited all `com.xiaoji.egggame.*` literals in the alt-AnTuTu manifest from run 25385421598 — only one globally-unique identifier was still shared across variants:
+
+```xml
+<permission android:name="com.xiaoji.egggame.permission.C2D_MESSAGE" />
+<uses-permission android:name="com.xiaoji.egggame.permission.C2D_MESSAGE" />
+```
+
+This is the install blocker. Android 7+ rejects any install that declares a `<permission>` whose name another installed package already declares — regardless of `protectionLevel`, regardless of signing cert match. The package manager reports it as `INSTALL_FAILED_DUPLICATE_PERMISSION`, surfaced in the UI as the unhelpfully-vague "package conflicts with a current package" dialog. (Earlier I'd called this permission "harmless" on the grounds that `normal`-protection allows multi-declaration. That was wrong — the multi-declaration restriction was tightened to apply to all custom permissions in API 24, regardless of protection level.)
+
+Other `com.xiaoji.egggame.*` literals in the manifest are NOT install blockers:
+- `<activity android:name="...">` and `<service android:name="...">` — these are fully-qualified class names scoped to the app, not globally unique
+- `taskAffinity="com.xiaoji.egggame"` — affinity is a task-grouping hint, not a unique system identifier; multiple apps can share it
+- `<data android:scheme/host>` in intent-filters — multiple apps can register the same scheme
+
+Fix: new `RewriteCustomPermissionsPatch` (resource patch, GameHub-specific). Iterates the manifest's `<permission>` and `<uses-permission>` elements; any element whose `android:name` starts with `com.xiaoji.egggame.permission.` gets the prefix rewritten to the variant package. Reads `packageNameOption.value` directly (same pattern as the MTDataFiles fix from round 3) — does not rely on patcher ordering against ChangePackageNamePatch. Confirmed via grep that no smali in the 6.0 decompile references `C2D_MESSAGE` literally, so renaming the manifest declaration doesn't break runtime broadcasts (the SDK either computes the name from `BuildConfig.APPLICATION_ID` at runtime, or doesn't use the permission at all).
+
+Release run 25387394484 verified: each of the 9 variants now declares its own per-variant `<permission android:name="<variantPkg>.permission.C2D_MESSAGE">`. APKs at `/storage/emulated/0/bannerhub-revanced-test-25387394484/`.
+
+### How to actually test
+1. Uninstall ALL previously-installed BannerHub-ReVanced variants from the device (including any v1.0.0-600 builds and any earlier test builds from this branch). They still declare `com.xiaoji.egggame.permission.C2D_MESSAGE` and will block fresh installs from run 25387394484.
+2. Install Variant A (e.g. `Normal` = `banner.hub`).
+3. Install Variant B (e.g. `PuBG` = `com.tencent.ig`) without uninstalling A.
+4. Both should now coexist on the launcher. If step 3 still fails with the same "package conflicts with a current package" message, run `adb logcat -d | grep -iE 'install_failed|already declared'` immediately after the failed install and paste the output — there's another globally-unique declaration to track down.

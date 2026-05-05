@@ -323,3 +323,20 @@ Practical impact: Android allows one app per provider authority globally. Instal
 
 ### Lesson
 For revanced-patcher resource patches that need to react to "Change package name", do not rely on `afterDependents` + `dependsOn(changePackageNamePatch)` to read the post-rename `manifest@package` value — the scheduling guarantees aren't there. Instead, read `packageNameOption.value` directly (with a fallback to `packageNameOption.default`). The CLI option is set before any patch applies, so it's the only reliable source of the variant package within other patches.
+
+### Round 4 — upstream literals also per-variant (commit f306a48)
+After round 3 fixed MTDataFiles, manifest inspection of alt-AnTuTu showed pre-existing upstream literals still stuck at `com.xiaoji.egggame.*`:
+- `<permission>`/`<uses-permission>` `com.xiaoji.egggame.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` — `signature` protectionLevel, would have blocked side-by-side install of variants with different signing certs
+- 10 `<provider android:authorities="com.xiaoji.egggame.*">` declarations from MobProvider / fileprovider / FlyProvider / utilcode / firebaseinit / AndroidContext / androidx-startup / filekit / fileprovider / wbsdk — same authority, different package names → install conflict
+- `<permission>` `com.xiaoji.egggame.permission.C2D_MESSAGE` — `normal` protectionLevel, NOT a blocker (Android allows multi-declaration of normal perms across apps)
+
+Fix: added `-O 'updatePermissions=true'` and `-O 'updateProviders=true'` to the Change package name CLI invocation in `.github/workflows/release.yml`. Release run 25385421598 verified all 10 upstream provider authorities and the `signature` permission are now per-variant. C2D_MESSAGE intentionally untouched — `updatePermissions` only rewrites the hardcoded `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` per upstream patch source, and C2D_MESSAGE is harmless cosmetically.
+
+### Final state for branch fix/file-manager-per-variant-authority
+Verified APKs at `/storage/emulated/0/bannerhub-revanced-test-25385421598/`. All 9 variants now have fully decoupled manifests:
+- `manifest@package` per-variant (existing)
+- `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` per-variant (round 4)
+- All 10 upstream provider authorities per-variant (round 4)
+- MTDataFiles provider authority + wake-up taskAffinity per-variant (round 3)
+
+Ready to merge into `gamehub-600-build` once device install test confirms two variants install alongside each other without `INSTALL_FAILED_CONFLICTING_PROVIDER`.

@@ -365,3 +365,30 @@ Release run 25387394484 verified: each of the 9 variants now declares its own pe
 2. Install Variant A (e.g. `Normal` = `banner.hub`).
 3. Install Variant B (e.g. `PuBG` = `com.tencent.ig`) without uninstalling A.
 4. Both should now coexist on the launcher. If step 3 still fails with the same "package conflicts with a current package" message, run `adb logcat -d | grep -iE 'install_failed|already declared'` immediately after the failed install and paste the output — there's another globally-unique declaration to track down.
+
+## 2026-05-05 — v1.0.1-600 stable cut
+
+### Branch operation
+`fix/file-manager-per-variant-authority` (8 commits — 5 patch fixes + 3 progress-log updates) fast-forward merged into `gamehub-600-build` (commit range `7108634..2113683`). Branch deleted from local + origin. `gamehub-600-build` advanced from `7108634` → `2113683` → `220a204` (after the docs/release-notes prep commit).
+
+### Stable release
+Run **25389334422** (`gh workflow run release.yml --ref gamehub-600-build -f tag=v1.0.1-600 -f stable=true`) — all 10 jobs green (build + 9-variant patch matrix + Create GitHub Release). Published as https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.0.1-600.
+
+Title: **"Gamehub 6.0 - BannerHub API - Multi-Install"** (rebrand from v1.0.0-600's "Gamehub 6.0 - Bannerhub API - No Login - Muted UI" to highlight the headline fix).
+
+### Release notes structure
+1. Lead with the side-by-side install fix being the headline.
+2. New `What's new vs v1.0.0-600` section explaining the three independent install-blockers stacked behind the single Android dialog (MTDataFiles authority + DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION + C2D_MESSAGE), each with its own root cause.
+3. Migration warning: must uninstall **all** prior BannerHub-ReVanced variants — the legacy C2D_MESSAGE declaration on any single one of them blocks fresh installs from this release.
+4. Full patch table updated to include the new `Rewrite custom permissions per variant` row and the per-variant `File manager access` callout.
+
+### README
+Bumped latest-stable line to v1.0.1-600 with the new title and link, added the "What's new" callouts and migration instruction, updated `File manager access` and `Change package name` patch sections, added new `Rewrite custom permissions per variant` section.
+
+### Pre-release policy now in effect
+Per `feedback_bannerhub_revanced_prerelease.md`, every workflow run from now on returns to artifact-only prerelease mode (no `stable=true`) until the user explicitly says "stable" again.
+
+### Open follow-ups (unchanged from v1.0.0-600)
+- Persistent keystore in Actions secrets so cross-release upgrades stop hitting `INSTALL_FAILED_UPDATE_INCOMPATIBLE`.
+- Bump `versionCode` per release (cosmetic, but proper).
+- Component Manager port resume — branch `component-manager-injection` still pinned at `5b89073`.

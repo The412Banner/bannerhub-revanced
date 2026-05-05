@@ -2,6 +2,7 @@ package app.revanced.patches.gamehub.filemanager
 
 import app.revanced.patcher.patch.resourcePatch
 import app.revanced.patches.all.misc.packagename.changePackageNamePatch
+import app.revanced.patches.all.misc.packagename.packageNameOption
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
 import app.revanced.patches.gamehub.GAMEHUB_VERSION
 import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
@@ -25,12 +26,19 @@ val fileManagerAccessPatch = resourcePatch(
     afterDependents {
         document("AndroidManifest.xml").use { dom ->
             val manifestNode = dom.getNode("manifest")
-            val packageAttr = manifestNode.attributes.getNamedItem("package")
+            val manifestPackage = manifestNode.attributes.getNamedItem("package")?.nodeValue
                 ?: throw IllegalStateException("AndroidManifest.xml is missing 'package' attribute")
-            val packageName = packageAttr.nodeValue
 
-            val providerAuthority = "$packageName.$PROVIDER_CLASS"
-            val wakeUpTaskAffinity = "$packageName.MTDataFilesWakeUp"
+            // Source of truth for the variant package: the CLI option passed to "Change package name".
+            // Reading manifest@package isn't reliable here — patcher schedule does not guarantee that
+            // ChangePackageNamePatch's rename has been applied by the time we run, even with a dependsOn
+            // declared. The option's value is set by CLI parsing, before any patch runs.
+            val variantPackage = packageNameOption.value
+                ?.takeIf { it != packageNameOption.default }
+                ?: manifestPackage
+
+            val providerAuthority = "$variantPackage.$PROVIDER_CLASS"
+            val wakeUpTaskAffinity = "$variantPackage.MTDataFilesWakeUp"
 
             val applicationNode = dom.getNode("application")
 

@@ -414,3 +414,22 @@ Verify existing patch bundle still applies cleanly against the new XiaoJi GameHu
 - Device-test one variant (likely Original) installed alongside or replacing v1.0.1-600.
 - If install + login-bypass + import flow OK, draft v1.0.0-601 release notes (or v1.0.2-600 if we treat as a refresh).
 - Decide whether to merge `gamehub-601-build` → `gamehub-600-build` after stable, or keep them parallel.
+
+## 2026-05-07 — v1.0.0-601 stable shipped
+
+### Tag
+[`v1.0.0-601`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.0.0-601) — "Gamehub 6.0.1 - BannerHub API - Multi-Install" — 9 APKs + `.rvp` bundle + `.rve` extensions
+
+### Build
+- Branch: `gamehub-601-build` (kept separate from `gamehub-600-build` per user direction; not merged back)
+- Final commit on branch: `990e30e` (release prep — release.yml/README rewrites)
+- Stable CI run: [25518201750](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25518201750), all 9 variants green, release job published successfully
+
+### What shipped
+- Base APK: `GameHub_6.0.1.apk` (versionCode 111) from `base-apk-601` release
+- Same 9 patches as v1.0.1-600 — bypass login, disable Crashlytics, debug logging, file manager (per-variant), rewrite custom permissions (per-variant), mute UI sounds, redirect catalog API, prefix /v6/, change package name (per-variant), change app name (per-variant)
+- Functional delta from v1.0.1-600: zero. This is a base APK refresh only.
+- Variant filenames bumped from `GameHub-6.0-Patched-*.apk` to `GameHub-6.0.1-Patched-*.apk` so users can tell which base version they're running.
+
+### Awaiting
+- Device test of any v1.0.0-601 variant. v1.0.0-601 should be drop-in compatible with v1.0.1-600 device test results; only base APK changed.

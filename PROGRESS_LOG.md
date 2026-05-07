@@ -526,3 +526,26 @@ Trigger Release workflow (no `stable=true`) on `gamehub-601-build`. Pull artifac
 - `GH600-DEBUG: FakeAuthToken.get() called`  → `ls0.f()` patch fired
 - `GH600-DEBUG: FakeUserAccount.get() called` → `rs0.e()` patch fired
 - Library opens without login wall → `rs0.h()` + navigator + interceptor patches all working
+
+## 2026-05-07 (cont. 2) — API redirect patches also broken on 6.0.1
+
+### Symptom
+Device test of bypass-fix prerelease: login bypass + mute UI work, but BannerHub catalog API redirect doesn't take effect. App still hits upstream landscape-api.vgabc.com instead of the Worker.
+
+### Diagnosis
+Same R8 letter-shuffle pattern as BypassLoginPatch. Verified by inspecting prerelease patched APK: `zhj.smali` (the new Environment enum) still contains `"landscape-api-cn.vgabc.com"` and `"landscape-api-oversea.vgabc.com"` literals — `RedirectCatalogApiPatch.kt` silently no-op'd because it's hunting `Lmcj;` which is a different class in 6.0.1.
+
+### Mapping
+| 6.0.0 | 6.0.1 | Role |
+|---|---|---|
+| `Lmcj;` | `Lzhj;` | Catalog Environment enum (Online/Beta/Test); contains the host string literals |
+| `Lzdb;` | `Lohb;` | Static URL-path helper (Ktor pipeline) |
+| `Lqx9;` | `Lj1a;` | URL builder param type (Ktor HttpRequestBuilder.url) |
+| `Lm1l;->t1` | `Lu9l;->s1` | String trim helper (referenced inside the body, not patched directly) |
+
+### Fix
+- **`RedirectCatalogApiPatch.kt`**: `MCJ_CLASS = "Lmcj;"` → `ENV_ENUM_CLASS = "Lzhj;"` with structural anchor comment ("the unique class containing both `landscape-api-cn.vgabc.com` and `landscape-api-oversea.vgabc.com`"). String literals are R8-stable so the anchor survives future minor versions; only the ONE letter `Lzhj;` needs updating per bump (or could be auto-derived).
+- **`PrefixApiPathPatch.kt`**: `ZDB_CLASS = "Lzdb;"` → `URL_HELPER_CLASS = "Lohb;"`, plus new `URL_BUILDER_TYPE = "Lj1a;"` const replacing the hardcoded `"Lqx9;"` in the parameterTypes match. Body shape is byte-stable across versions; the anchor comment records the structural recipe (static method `(LBuilder;String)V` whose body starts iget-object from the builder's URL field then calls a string-trim helper).
+
+### Re-verify after this fix
+After CI: pull the new artifact, decompile, confirm `zhj.smali` now shows `"bannerhub-api.the412banner.workers.dev"` in BOTH host slots; confirm `ohb.b(Lj1a;String)V` opens with `invoke-static {p1}, V6PathPrefix->prefix(...)`.

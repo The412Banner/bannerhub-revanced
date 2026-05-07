@@ -15,8 +15,15 @@ import com.android.tools.smali.dexlib2.iface.reference.StringReference
 
 // The Environment enum that holds the catalog API host pairs (cn + oversea)
 // for Online / Beta / Test. The Online value's two host literals are the redirect
-// targets — its <clinit> initializer in mcj.smali is where we swap.
-private const val MCJ_CLASS = "Lmcj;"
+// targets — its <clinit> initializer is where we swap.
+//
+// R8-mangled letter, update on each base APK bump:
+//   6.0.0 → Lmcj;
+//   6.0.1 → Lzhj;
+// Structural anchor (always portable): the unique class that contains BOTH
+// "landscape-api-cn.vgabc.com" and "landscape-api-oversea.vgabc.com" string
+// literals — find via `grep -rl "landscape-api-cn.vgabc.com" smali*/`.
+private const val ENV_ENUM_CLASS = "Lzhj;"
 
 // Original GameHub 6.0 hosts the patch removes from the Online enum value.
 // They are bare hostnames — t40.smali builds the URL as "<scheme>://<host>",
@@ -53,7 +60,7 @@ val redirectCatalogApiPatch = bytecodePatch(
         // numbers — we locate by StringReference, then preserve whatever register
         // each instruction targets.
         firstMethod {
-            definingClass == MCJ_CLASS && name == "<clinit>"
+            definingClass == ENV_ENUM_CLASS && name == "<clinit>"
         }.apply {
             // Replace cnHost literal.
             val cnIdx = indexOfFirstInstructionOrThrow {

@@ -6,12 +6,20 @@ import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
 import app.revanced.patches.gamehub.GAMEHUB_VERSION
 
-// zdb is the static URL-path helper every GameHub API request flows through:
-// `zdb.b(qx9 builder, String path)` accepts a relative path like
-// "simulator/v2/getAllComponentList" and appends it to the Ktor builder's
-// host (set elsewhere from mcj.b()). Patching this single chokepoint with a
-// "v6/" prefix is enough to tag every request from the patched 6.0 APK.
-private const val ZDB_CLASS = "Lzdb;"
+// The static URL-path helper every GameHub API request flows through.
+// Signature: `<helper>.b(<builder>, String path)` where `path` is a relative
+// path like "simulator/v2/getAllComponentList" and the builder is Ktor's
+// HttpRequestBuilder.url. Patching this single chokepoint with a "v6/"
+// prefix is enough to tag every request from the patched 6.0 APK.
+//
+// R8-mangled letters, update on each base APK bump:
+//   6.0.0 → Lzdb;->b(Lqx9;Ljava/lang/String;)V
+//   6.0.1 → Lohb;->b(Lj1a;Ljava/lang/String;)V
+// Structural anchor: a static method `(L<2-3-letter>;Ljava/lang/String;)V`
+// whose body starts with `iget-object` from the builder's URL field then
+// calls a string-trim helper. Body shape is byte-stable across versions.
+private const val URL_HELPER_CLASS  = "Lohb;"
+private const val URL_BUILDER_TYPE  = "Lj1a;"
 
 // V6PathPrefix.prefix(String) returns "v6/" + path for relative paths and
 // passes full-URL paths (http://, https://) through unchanged. Implementing
@@ -39,9 +47,9 @@ val prefixApiPathPatch = bytecodePatch(
         // let the original method body run unchanged. Static helper means no
         // register juggling beyond the move-result.
         firstMethod {
-            definingClass == ZDB_CLASS &&
+            definingClass == URL_HELPER_CLASS &&
                 name == "b" &&
-                parameterTypes == listOf("Lqx9;", "Ljava/lang/String;") &&
+                parameterTypes == listOf(URL_BUILDER_TYPE, "Ljava/lang/String;") &&
                 returnType == "V"
         }.apply {
             addInstructions(

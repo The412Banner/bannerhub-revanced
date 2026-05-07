@@ -433,3 +433,61 @@ Verify existing patch bundle still applies cleanly against the new XiaoJi GameHu
 
 ### Awaiting
 - Device test of any v1.0.0-601 variant. v1.0.0-601 should be drop-in compatible with v1.0.1-600 device test results; only base APK changed.
+
+## 2026-05-07 — v1.0.0-601 BROKEN: BypassLoginPatch is a no-op on 6.0.1
+
+### Symptom
+Device test of v1.0.0-601 (Original variant, `com.xiaoji.egggame`): app launches, opening game library shows the login wall. Logcat captured 7× `SHOW_SOFT_INPUT_BY_INSETS_API` consistent with login-form text fields gaining focus.
+
+### Diagnosis (proven)
+**All four targets in `BypassLoginPatch.kt` silently no-op'd against 6.0.1.** R8 in 6.0.1 renumbered class letters; the patch's hardcoded `Los0;`/`Lxm7;`/`Lis0;`/`Lg8e;` literals still resolve to *some* class in 6.0.1, but those classes have completely different roles:
+
+| Class | 6.0.0 role | 6.0.1 reality |
+|---|---|---|
+| `Los0;` | DB-backed auth session impl with `h()`/`e()` StateFlow getters | Tiny `Flow.emit` operator wrapper — only `<init>` + `emit()` |
+| `Lxm7;` | `GameLibraryRepository.f()` returning userId | A `Lbf3;` SuspendLambda — only `<init>` + `invokeSuspend` |
+| `Lis0;` | Auth interface with default `f()` returning `Ll4m;` | The **actual** auth/user repository now (has `UserDao` + `AuthTokenDao` fields); `f()` is `(String, Continuation)→Object` — wrong signature |
+| `Lg8e;` | Navigator class with `i(rh0)`/`r(rh0)` Login gates | Kotlin lambda factory `<init>` + `invoke()` only |
+
+**Hard proof:**
+- `os0.smali` MD5 identical between base 6.0.1 and patched 6.0.1: `50bb1fc9ea86ab180234aed6fe1e1cd4`
+- `FakeAuthToken`/`FakeUserAccount` extension classes ARE bundled in the patched APK (`smali_classes7/app/revanced/extension/gamehub/login/`) but **no smali outside DebugTrace string literal calls them** — the patch never injected the calls.
+- CI run 25517417367 + stable run 25518201750 both passed because patcher v22's `firstMethod { ... }` is lenient — when no method matches, it silently no-ops. The "all 9 variants green" was a false positive on 6.0.1.
+
+### Artifacts available on resume
+- 6.0.1 base APK decompile: `/tmp/gh601_smali/` (apktool, --no-res)
+- 6.0.1 patched APK decompile: `/tmp/gh601_patched_smali/`
+- Logcat from device repro: `/home/claude-user/logcat-com.xiaoji.egggame-20260507-170151.txt`
+- 6.0.0 (working) decompile may need to be regenerated: `~/GameHub_beta_6.0.0_global.apk` is on disk
+- Patch source: `bannerhub-revanced/patches/src/main/kotlin/app/revanced/patches/gamehub/misc/login/BypassLoginPatch.kt`
+
+### Chosen fix path: Option A — string-literal refingerprinting
+User picked re-fingerprinting with stable anchors (vs. quick-fix hardcoding new 6.0.1 letters) so the patch survives future minor versions (6.0.2, 6.0.3, …).
+
+### What "string-literal refingerprinting" means here
+Instead of `definingClass == "Los0;" && name == "h"`, anchor on things R8 *can't* mangle:
+- **String literals** the class references (e.g., SharedPreferences keys like `"auth_token"`, screen route names like `"login"`/`"home"`, error messages)
+- **DAO/Entity types** at instance-field level (`com.xiaoji.egggame.core.database.dao.UserDao`, `AuthTokenDao` — these names are stable, kept by R8 keep-rules)
+- **Return-type shape** (e.g., method returning `Lf3k;` or kotlinx StateFlow)
+- **Method-call sequences** (e.g., a method that calls both `UserDao.observeCurrent()` and `AuthTokenDao.observeCurrent()` is the auth-state combiner)
+
+Concrete fingerprint targets to find in 6.0.1:
+1. **Auth-session class** — has `UserDao` + `AuthTokenDao` instance fields; in 6.0.1 this is `Lis0;` (verified). Find via field-type fingerprint, not class name.
+2. **isLoggedIn StateFlow getter** — method on the auth class returning `Lf3k;`/StateFlow over `Ljava/lang/Boolean;`. Find via return-type + a string-literal anchor.
+3. **User-account StateFlow getter** — method returning StateFlow over the user entity (likely `Lcom/xiaoji/egggame/core/database/entity/UserEntity;` based on 6.0.1 smali).
+4. **Auth token getter** — method returning the token wrapper class (was `Ll4m;` in 6.0.0 — verify shape in 6.0.1; probably renamed).
+5. **GameLibraryRepository userId getter** — method returning `Ljava/lang/String;` keyed off the auth token.
+6. **Navigator gate** — method that contains both `iget Lis0;->...` (or its 6.0.1 equiv) AND a string literal "login"/"home" in proximity. The instruction-pattern match (iget+invoke-interface+if-nez+new-instance) is what we re-anchor on.
+
+### Resume checklist
+1. Re-decompile current 6.0.0 base APK (`~/GameHub_beta_6.0.0_global.apk`) to confirm what role each renamed class held → use as cross-reference for what semantics we're trying to match in 6.0.1.
+2. Find the auth-session class in 6.0.1 by field-type fingerprint (UserDao + AuthTokenDao). Confirmed candidate: `Lis0;`.
+3. For each of the 6 targets above, write a fingerprint that resolves to the right method in 6.0.1.
+4. Update `BypassLoginPatch.kt` to use ReVanced patcher's `MethodFingerprint` API instead of literal `definingClass ==` checks.
+5. Add a runtime sanity log inside the patched method (one Log.i per gate fires) so future device tests immediately tell us if the patch ran.
+6. Build, deploy, device-test on Original variant. Pull logcat and confirm the new sentinel logs fire AND the library opens without login.
+7. Cut a v1.0.0-601 hotfix (probably v1.0.1-601) once verified.
+
+### Decision parking lot
+- v1.0.0-601 release is BROKEN (all installs hit login wall). Did not roll it back per user direction (we'll fix forward).
+- 5.x stable v1.0.1-600 (gamehub-600-build) is unaffected — those patches still work against the 6.0.0 base.

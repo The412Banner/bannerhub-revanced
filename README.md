@@ -1,14 +1,17 @@
 # BannerHub for ReVanced — GameHub 6.0
 
-A ReVanced patch bundle and pre-built APKs for [XiaoJi GameHub](https://www.gamehubglobal.com/) 6.0.0 (`com.xiaoji.egggame`) that **remove the login requirement, redirect the catalog API to the BannerHub Cloudflare Worker, mute UI sound feedback, and ship a debug-logging probe**, plus build-side variants that install side-by-side on the same device.
+A ReVanced patch bundle and pre-built APKs for [XiaoJi GameHub](https://www.gamehubglobal.com/) 6.0.1 (`com.xiaoji.egggame`) that **remove the login requirement, redirect the catalog API to the BannerHub Cloudflare Worker, mute UI sound feedback, and ship a debug-logging probe**, plus build-side variants that install side-by-side on the same device.
 
-**Latest stable release:** [`v1.0.1-600` — Gamehub 6.0 - BannerHub API - Multi-Install](https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.0.1-600) — 9 ready-to-install APK variants + the `.rvp` patch bundle and `.rve` extension files for use with `revanced-cli`.
+**Latest stable release:** [`v1.0.0-601` — Gamehub 6.0.1 - BannerHub API - Multi-Install](https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.0.0-601) — 9 ready-to-install APK variants + the `.rvp` patch bundle and `.rve` extension files for use with `revanced-cli`.
 
-> ✅ **Multiple variants now install side-by-side.** v1.0.0-600 shipped with three independent install-blockers (a duplicate MTDataFiles content-provider authority across variants, a duplicate `signature`-protected `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`, and a duplicate Mob-Push `C2D_MESSAGE` custom permission), all camouflaged behind the same vague "package conflicts with a current package" dialog. v1.0.1-600 fixes all three — installing two variants alongside each other is now a clean operation. See *What's new* below.
+> ⚠ **A fresh install is required if a previous release is still installed.** Each release run generates a new debug keystore, so the signing certificate differs between releases and Android refuses the upgrade with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Uninstall the previous version of the same variant first, then install the new one. (Within a single release, all 9 variants are signed with the same cert.)
 
-> ⚠ **A fresh install is required if a previous release is still installed.** Each release run generates a new debug keystore, so the signing certificate differs between releases and Android refuses the upgrade with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Uninstall the previous version of the same variant first, then install the new one. (Within a single release, all 9 variants are signed with the same cert.) **In addition for the v1.0.0-600 → v1.0.1-600 jump:** uninstall every previously-installed BannerHub-ReVanced variant, not just the one you're replacing — older variants still declare the legacy `com.xiaoji.egggame.permission.C2D_MESSAGE` and will block fresh installs from this release.
+## What's new in v1.0.0-601
 
-## What's new in v1.0.1-600
+- **Base APK refresh: GameHub 6.0.0 → 6.0.1** (versionCode 110 → 111). Re-targets the same patch bundle at the new XiaoJi base APK; every patch from v1.0.1-600 still applies cleanly without smali repair.
+- Functional behaviour is unchanged from v1.0.1-600 — same 9 patches, same multi-install fix, on top of a newer base.
+
+## What's new in v1.0.1-600 (historical)
 
 - **`File manager access`** — the MTDataFiles `<provider android:authorities>` and wake-up activity `android:taskAffinity` are now derived per-variant from `packageNameOption.value`, instead of being baked at `com.xiaoji.egggame.*` for every variant.
 - **`Rewrite custom permissions per variant`** *(new patch)* — rewrites the `com.xiaoji.egggame.permission.C2D_MESSAGE` declaration (and any other upstream-baked custom permission with the same prefix) so each variant's permission name is namespaced to that variant's package. Without this, Android 7+ rejects the second-installed variant with `INSTALL_FAILED_DUPLICATE_PERMISSION`.
@@ -33,8 +36,8 @@ It also fixes a launch-time `VerifyError` that the original 5.x `Disable Crashly
 
 ## Source
 
-- **Base APK:** `GameHub_beta_6.0.0_global.apk` — the official 6.0.0 global build, attached unmodified to the [`base-apk-600`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/base-apk-600) release for reproducibility.
-- **Patcher:** [ReVanced CLI 6.0.0](https://github.com/ReVanced/revanced-cli/releases/tag/v6.0.0) + the bundle built from this repo's `gamehub-600-build` branch (the default branch).
+- **Base APK:** `GameHub_6.0.1.apk` — the official 6.0.1 global build (versionCode 111), attached unmodified to the [`base-apk-601`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/base-apk-601) release for reproducibility. The previous 6.0.0 base APK remains attached to [`base-apk-600`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/base-apk-600) for older releases.
+- **Patcher:** [ReVanced CLI 6.0.0](https://github.com/ReVanced/revanced-cli/releases/tag/v6.0.0) + the bundle built from this repo's `gamehub-601-build` branch (`gamehub-600-build` remains the rolling default for older 6.0.0 work).
 - **Catalog backend:** [`The412Banner/bannerhub-api`](https://github.com/The412Banner/bannerhub-api) — Cloudflare Worker source, deployed at `bannerhub-api.the412banner.workers.dev`. Serves the curated component catalog from GitHub Pages and forwards unallowlisted paths back to upstream `landscape-api.vgabc.com` with the original signed-request behavior preserved.
 - **Build environment:** GitHub Actions, Ubuntu 24.04 runner, Temurin JDK 17. The full pipeline is [`.github/workflows/release.yml`](.github/workflows/release.yml): a `build` job produces the `.rvp` patch bundle, a 9-way matrix patches the base APK in parallel (one variant per matrix entry), and a final `release` job globs all artefacts into a single GitHub Release when triggered with `stable=true`.
 
@@ -44,15 +47,15 @@ The same patch bundle is applied to the same base APK 9 times, each time with a 
 
 | Variant | APK file | Package | Launcher label |
 | --- | --- | --- | --- |
-| Normal | `GameHub-6.0-Patched-Normal.apk` | `banner.hub` | GameHub |
-| Normal (GHL) | `GameHub-6.0-Patched-Normal.GHL.apk` *(GitHub strips parentheses from `Normal(GHL)`)* | `gamehub.lite` | GameHub |
-| PuBG | `GameHub-6.0-Patched-PuBG.apk` | `com.tencent.ig` | GameHub PuBG |
-| AnTuTu | `GameHub-6.0-Patched-AnTuTu.apk` | `com.antutu.ABenchMark` | GameHub AnTuTu |
-| alt-AnTuTu | `GameHub-6.0-Patched-alt-AnTuTu.apk` | `com.antutu.benchmark.full` | GameHub AnTuTu |
-| PuBG-CrossFire | `GameHub-6.0-Patched-PuBG-CrossFire.apk` | `com.tencent.tmgp.cf` | GameHub PuBG CrossFire |
-| Ludashi | `GameHub-6.0-Patched-Ludashi.apk` | `com.ludashi.aibench` | GameHub Ludashi |
-| Genshin | `GameHub-6.0-Patched-Genshin.apk` | `com.miHoYo.GenshinImpact` | GameHub Genshin |
-| Original | `GameHub-6.0-Patched-Original.apk` | `com.xiaoji.egggame` | GameHub |
+| Normal | `GameHub-6.0.1-Patched-Normal.apk` | `banner.hub` | GameHub |
+| Normal (GHL) | `GameHub-6.0.1-Patched-Normal.GHL.apk` *(GitHub strips parentheses from `Normal(GHL)`)* | `gamehub.lite` | GameHub |
+| PuBG | `GameHub-6.0.1-Patched-PuBG.apk` | `com.tencent.ig` | GameHub PuBG |
+| AnTuTu | `GameHub-6.0.1-Patched-AnTuTu.apk` | `com.antutu.ABenchMark` | GameHub AnTuTu |
+| alt-AnTuTu | `GameHub-6.0.1-Patched-alt-AnTuTu.apk` | `com.antutu.benchmark.full` | GameHub AnTuTu |
+| PuBG-CrossFire | `GameHub-6.0.1-Patched-PuBG-CrossFire.apk` | `com.tencent.tmgp.cf` | GameHub PuBG CrossFire |
+| Ludashi | `GameHub-6.0.1-Patched-Ludashi.apk` | `com.ludashi.aibench` | GameHub Ludashi |
+| Genshin | `GameHub-6.0.1-Patched-Genshin.apk` | `com.miHoYo.GenshinImpact` | GameHub Genshin |
+| Original | `GameHub-6.0.1-Patched-Original.apk` | `com.xiaoji.egggame` | GameHub |
 
 ## Patches applied
 
@@ -145,22 +148,22 @@ cd bannerhub-revanced
 ./gradlew build
 
 # 2. Get the base APK
-gh release download base-apk-600 \
+gh release download base-apk-601 \
   --repo The412Banner/bannerhub-revanced \
-  --pattern "GameHub_beta_6.0.0_global.apk" \
-  --output GameHub_6.0.0.apk
+  --pattern "GameHub_6.0.1.apk" \
+  --output GameHub_6.0.1.apk
 
 # 3. Get ReVanced CLI
 curl -L https://github.com/ReVanced/revanced-cli/releases/download/v6.0.0/revanced-cli-6.0.0-all.jar \
   -o revanced-cli.jar
 
 # 4. Patch it (single-variant example: Normal)
-java -jar revanced-cli.jar patch GameHub_6.0.0.apk \
+java -jar revanced-cli.jar patch GameHub_6.0.1.apk \
   --patches "$(find patches/build/libs -name '*.rvp' ! -name '*-sources*' ! -name '*-javadoc*' | head -1)" \
   --bypass-verification \
   -e "Change package name" -O 'packageName="banner.hub"' \
   -e "Change app name"     -O 'appName="GameHub"' \
-  --out GameHub-6.0-Patched-Normal.apk
+  --out GameHub-6.0.1-Patched-Normal.apk
 ```
 
 > **Note on `-O` quoting:** the JSON-string quotes around the value (`"…"` inside the single-quoted shell argument) are required. Picocli's `Map<String,Object>` parser auto-coerces values and trips on package names ending in `f`/`d`/`l` (Java numeric-literal suffixes — `com.tencent.tmgp.cf` is the canonical example).
@@ -170,7 +173,7 @@ java -jar revanced-cli.jar patch GameHub_6.0.0.apk \
 The release pipeline has two modes:
 
 - **Prerelease (default)** — every tag push and every `workflow_dispatch` run produces the 9 variant APKs as Actions artifacts only. Useful for testing without cluttering the Releases page.
-- **Stable** — `workflow_dispatch` from `Actions → Run workflow` with the **`stable`** checkbox ticked and a tag (e.g. `v1.0.0-600`) populated. The matrix runs as normal, then a final `release` job creates a GitHub Release with the 9 APKs, `.rvp` bundle, `.rve` extension files, and the release notes (sourced verbatim from `release.yml`).
+- **Stable** — `workflow_dispatch` from `Actions → Run workflow` with the **`stable`** checkbox ticked and a tag (e.g. `v1.0.0-601`) populated. The matrix runs as normal, then a final `release` job creates a GitHub Release with the 9 APKs, `.rvp` bundle, `.rve` extension files, and the release notes (sourced verbatim from `release.yml`).
 
 ## Repo layout
 

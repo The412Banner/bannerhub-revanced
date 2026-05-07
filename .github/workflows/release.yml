@@ -89,15 +89,15 @@ jobs:
       fail-fast: false
       matrix:
         variant:
-          - { name: Normal,         file: "GameHub-6.0-Patched-Normal.apk",          pkg: "banner.hub",                 label: "GameHub" }
-          - { name: Normal-GHL,     file: "GameHub-6.0-Patched-Normal(GHL).apk",     pkg: "gamehub.lite",               label: "GameHub" }
-          - { name: PuBG,           file: "GameHub-6.0-Patched-PuBG.apk",            pkg: "com.tencent.ig",             label: "GameHub PuBG" }
-          - { name: AnTuTu,         file: "GameHub-6.0-Patched-AnTuTu.apk",          pkg: "com.antutu.ABenchMark",      label: "GameHub AnTuTu" }
-          - { name: alt-AnTuTu,     file: "GameHub-6.0-Patched-alt-AnTuTu.apk",      pkg: "com.antutu.benchmark.full",  label: "GameHub AnTuTu" }
-          - { name: PuBG-CrossFire, file: "GameHub-6.0-Patched-PuBG-CrossFire.apk",  pkg: "com.tencent.tmgp.cf",        label: "GameHub PuBG CrossFire" }
-          - { name: Ludashi,        file: "GameHub-6.0-Patched-Ludashi.apk",         pkg: "com.ludashi.aibench",        label: "GameHub Ludashi" }
-          - { name: Genshin,        file: "GameHub-6.0-Patched-Genshin.apk",         pkg: "com.miHoYo.GenshinImpact",   label: "GameHub Genshin" }
-          - { name: Original,       file: "GameHub-6.0-Patched-Original.apk",        pkg: "com.xiaoji.egggame",         label: "GameHub" }
+          - { name: Normal,         file: "GameHub-6.0.1-Patched-Normal.apk",          pkg: "banner.hub",                 label: "GameHub" }
+          - { name: Normal-GHL,     file: "GameHub-6.0.1-Patched-Normal(GHL).apk",     pkg: "gamehub.lite",               label: "GameHub" }
+          - { name: PuBG,           file: "GameHub-6.0.1-Patched-PuBG.apk",            pkg: "com.tencent.ig",             label: "GameHub PuBG" }
+          - { name: AnTuTu,         file: "GameHub-6.0.1-Patched-AnTuTu.apk",          pkg: "com.antutu.ABenchMark",      label: "GameHub AnTuTu" }
+          - { name: alt-AnTuTu,     file: "GameHub-6.0.1-Patched-alt-AnTuTu.apk",      pkg: "com.antutu.benchmark.full",  label: "GameHub AnTuTu" }
+          - { name: PuBG-CrossFire, file: "GameHub-6.0.1-Patched-PuBG-CrossFire.apk",  pkg: "com.tencent.tmgp.cf",        label: "GameHub PuBG CrossFire" }
+          - { name: Ludashi,        file: "GameHub-6.0.1-Patched-Ludashi.apk",         pkg: "com.ludashi.aibench",        label: "GameHub Ludashi" }
+          - { name: Genshin,        file: "GameHub-6.0.1-Patched-Genshin.apk",         pkg: "com.miHoYo.GenshinImpact",   label: "GameHub Genshin" }
+          - { name: Original,       file: "GameHub-6.0.1-Patched-Original.apk",        pkg: "com.xiaoji.egggame",         label: "GameHub" }
     steps:
       - name: Setup Java
         uses: actions/setup-java@v5
@@ -186,27 +186,23 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
-          name: Gamehub 6.0 - BannerHub API - Multi-Install
+          name: Gamehub 6.0.1 - BannerHub API - Multi-Install
           body: |
-            ## Gamehub 6.0 - BannerHub API - Multi-Install
+            ## Gamehub 6.0.1 - BannerHub API - Multi-Install
 
-            A patched build of XiaoJi GameHub 6.0.0 (`com.xiaoji.egggame`) that removes the login requirement so games can be imported and used without an account, redirects the catalog API to the BannerHub Cloudflare Worker, and ships **9 variants that install side-by-side on the same device**.
+            A patched build of XiaoJi GameHub 6.0.1 (`com.xiaoji.egggame`, versionCode 111) that removes the login requirement so games can be imported and used without an account, redirects the catalog API to the BannerHub Cloudflare Worker, and ships **9 variants that install side-by-side on the same device**.
 
-            ### ✅ What's new vs v1.0.0-600
+            ### ✅ What's new vs v1.0.1-600
 
-            v1.0.0-600 looked like it supported side-by-side install (each variant had its own package name and launcher label) but in practice every fresh-install of a second variant was rejected by Android with the unhelpful **"package conflicts with a current package"** dialog. Three independent install-blockers were stacked behind that one error:
+            **Base APK refresh: GameHub 6.0.0 → 6.0.1.** XiaoJi released GameHub 6.0.1 (versionCode 111, was 110); this build re-targets the entire patch bundle at the new base APK. Every patch from v1.0.1-600 still applies cleanly against 6.0.1 — no fingerprint or smali repair was needed — so functional behaviour is unchanged from v1.0.1-600. You're getting the same 9 patches on top of the newer base.
 
-            1. **MTDataFiles `<provider android:authorities>` was the same for every variant** (`com.xiaoji.egggame.app.revanced.extension.gamehub.filemanager.MTDataFilesProvider`). On Android, two installed apps cannot register the same `authorities` string → `INSTALL_FAILED_CONFLICTING_PROVIDER`. The wake-up activity's `taskAffinity` had the same problem. Fixed by reading `packageNameOption.value` directly inside `FileManagerAccessPatch` so the values follow the variant package.
-            2. **The `signature`-protected `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` was still namespaced to `com.xiaoji.egggame.*`** in every variant. Two apps signed with different certs cannot both declare the same `signature` permission → install fails. Fixed by passing `-O 'updatePermissions=true'` to the upstream `Change package name` patch in `release.yml`.
-            3. **The Mob Push SDK's `com.xiaoji.egggame.permission.C2D_MESSAGE` `<permission>` declaration survived the rename** in every variant. Android 7+ rejects multi-declaration of any custom permission name regardless of `protectionLevel`, regardless of cert match → second-variant install fails. Fixed by a new `Rewrite custom permissions per variant` patch that reads `packageNameOption.value` directly.
+            Same multi-install fix from v1.0.1-600 ships here: side-by-side variants install cleanly on the same device with all three install-blockers from v1.0.0-600 (MT provider authority collision, signature-protected DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION, Mob Push SDK C2D_MESSAGE permission) addressed.
 
-            Also, the workflow now passes `-O 'updateProviders=true'` so the 10 upstream provider authorities baked into the base APK (Mob, file, Fly, utilcode, Firebase, AndroidContext, androidx-startup, filekit, fileprovider, wbsdk) are renamed per-variant as well — those weren't blocking install in v1.0.0-600 (the MT one shadowed them) but they were the next set of blockers after the MT fix landed.
-
-            **Migrating from v1.0.0-600:** uninstall every previously-installed BannerHub-ReVanced variant — not just the one you're replacing. Older variants still declare the legacy `com.xiaoji.egggame.permission.C2D_MESSAGE`, so even one of them on-device blocks fresh installs from this release. After the device is clean, install one variant from v1.0.1-600, then install any others alongside it without uninstalling.
+            **Migrating from v1.0.1-600 or earlier:** uninstall any previously-installed BannerHub-ReVanced variant of the same name first — release-to-release the signing keystore changes (CI generates a fresh debug keystore each run), so Android refuses cross-release upgrades with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Within v1.0.0-601 itself, all 9 variants share signing and install side-by-side.
 
             ### Source
-            - **Base APK**: `GameHub_beta_6.0.0_global.apk` — the official 6.0.0 global build
-            - **Patcher**: ReVanced CLI 6.0.0 + this repo's patch bundle, branch `gamehub-600-build`
+            - **Base APK**: `GameHub_6.0.1.apk` — the official 6.0.1 global build (versionCode 111), attached to [`base-apk-601`](https://github.com/${{ github.repository }}/releases/tag/base-apk-601)
+            - **Patcher**: ReVanced CLI 6.0.0 + this repo's patch bundle, branch `gamehub-601-build`
             - **Repo**: https://github.com/${{ github.repository }}
 
             ### Variants
@@ -215,15 +211,15 @@ jobs:
 
             | Variant | APK | Package | Launcher label |
             | --- | --- | --- | --- |
-            | Normal | `GameHub-6.0-Patched-Normal.apk` | `banner.hub` | GameHub |
-            | Normal (GHL) | `GameHub-6.0-Patched-Normal(GHL).apk` | `gamehub.lite` | GameHub |
-            | PuBG | `GameHub-6.0-Patched-PuBG.apk` | `com.tencent.ig` | GameHub PuBG |
-            | AnTuTu | `GameHub-6.0-Patched-AnTuTu.apk` | `com.antutu.ABenchMark` | GameHub AnTuTu |
-            | alt-AnTuTu | `GameHub-6.0-Patched-alt-AnTuTu.apk` | `com.antutu.benchmark.full` | GameHub AnTuTu |
-            | PuBG-CrossFire | `GameHub-6.0-Patched-PuBG-CrossFire.apk` | `com.tencent.tmgp.cf` | GameHub PuBG CrossFire |
-            | Ludashi | `GameHub-6.0-Patched-Ludashi.apk` | `com.ludashi.aibench` | GameHub Ludashi |
-            | Genshin | `GameHub-6.0-Patched-Genshin.apk` | `com.miHoYo.GenshinImpact` | GameHub Genshin |
-            | Original | `GameHub-6.0-Patched-Original.apk` | `com.xiaoji.egggame` | GameHub |
+            | Normal | `GameHub-6.0.1-Patched-Normal.apk` | `banner.hub` | GameHub |
+            | Normal (GHL) | `GameHub-6.0.1-Patched-Normal(GHL).apk` | `gamehub.lite` | GameHub |
+            | PuBG | `GameHub-6.0.1-Patched-PuBG.apk` | `com.tencent.ig` | GameHub PuBG |
+            | AnTuTu | `GameHub-6.0.1-Patched-AnTuTu.apk` | `com.antutu.ABenchMark` | GameHub AnTuTu |
+            | alt-AnTuTu | `GameHub-6.0.1-Patched-alt-AnTuTu.apk` | `com.antutu.benchmark.full` | GameHub AnTuTu |
+            | PuBG-CrossFire | `GameHub-6.0.1-Patched-PuBG-CrossFire.apk` | `com.tencent.tmgp.cf` | GameHub PuBG CrossFire |
+            | Ludashi | `GameHub-6.0.1-Patched-Ludashi.apk` | `com.ludashi.aibench` | GameHub Ludashi |
+            | Genshin | `GameHub-6.0.1-Patched-Genshin.apk` | `com.miHoYo.GenshinImpact` | GameHub Genshin |
+            | Original | `GameHub-6.0.1-Patched-Original.apk` | `com.xiaoji.egggame` | GameHub |
 
             ### Patches applied
 
@@ -247,10 +243,10 @@ jobs:
 
             ### Notes
 
-            - The base APK is unmodified XiaoJi GameHub 6.0.0; only the bytecode/resources required by the patches above are touched.
+            - The base APK is unmodified XiaoJi GameHub 6.0.1; only the bytecode/resources required by the patches above are touched.
             - **A fresh install is required if a previous release is still installed.** Each release run generates a new debug keystore, so the signing certificate differs between releases and Android refuses the upgrade with `INSTALL_FAILED_UPDATE_INCOMPATIBLE` (signature mismatch). Uninstall the previous version of the same variant first, then install the new one. Within a single release, all 9 variants are signed with the same cert.
             - The `.rvp` patch bundle and `.rve` extension files are also attached for use with `revanced-cli` directly.
           files: |
-            apks/GameHub-6.0-Patched-*.apk
+            apks/GameHub-6.0.1-Patched-*.apk
             shared/*.rvp
             shared/rve/*.rve

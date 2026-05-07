@@ -559,3 +559,24 @@ User confirmed prerelease build (run 25526407710, commit 3f81890) on Original va
 - Title: "Gamehub 6.0.1 - BannerHub API - Multi-Install" (same as v1.0.0-601)
 - release.yml body rewritten with "Hotfix vs v1.0.0-601" section explaining the 3 patches that no-op'd and now don't
 - README "Latest stable" pointer + What's-new block updated; broken-build warning added at the top
+
+## 2026-05-07 (cont. 4) — v1.0.1-601 SHIPPED + cleanup
+
+### Live release
+[`v1.0.1-601` — Gamehub 6.0.1 - BannerHub API - Multi-Install](https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.0.1-601). 9 APKs + .rvp bundle + .rve extensions. CI run 25526848503, branch head `9ea01d4`.
+
+### Cleanup
+- Deleted v1.0.0-601 release entirely (was already de-listed; tag also removed from origin + local).
+- v1.0.1-601 is now Latest.
+- Memory file `project_bypass_login_601_refingerprint.md` deleted (obsolete now that the fix shipped).
+- Memory `project_bannerhub_revanced.md` updated: gamehub-601-build entry rewritten, "Active next step" block rewritten to reflect shipped state, MEMORY.md index entry updated.
+
+### What we know works on 6.0.1 (per device test of prerelease run 25526407710)
+1. ✅ Bypass login (rs0.h/e + ls0.f + hp7.f + ade.i/r + ar0.a)
+2. ✅ Redirect catalog API (zhj Online enum hosts → Worker)
+3. ✅ Prefix API path with /v6 (ohb.b inserts V6PathPrefix call)
+4. ✅ Mute UI sounds
+5. (untested but applied per CI) Disable Crashlytics, Debug logging, File manager, Rewrite custom permissions, Change package name, Change app name
+
+### Known follow-up
+None blocking. Possible future work: migrate the const-block letter mapping to true MethodFingerprint-based auto-discovery so future minor-version bumps don't require any source edits at all. Deferred — current setup is good enough for the 6.0.x series.

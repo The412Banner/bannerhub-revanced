@@ -200,6 +200,18 @@ jobs:
 
             **Migrating from v1.0.1-600 or earlier:** uninstall any previously-installed BannerHub-ReVanced variant of the same name first — release-to-release the signing keystore changes (CI generates a fresh debug keystore each run), so Android refuses cross-release upgrades with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Within v1.0.0-601 itself, all 9 variants share signing and install side-by-side.
 
+            ### 🆕 New in GameHub 6.0.1 (upstream)
+
+            These are XiaoJi-side improvements that came with the 6.0.1 base APK; you get them automatically by using this build:
+
+            1. **Improved Steam login and game download stability**
+            2. **Faster Steam game launch speeds**
+            3. **Virtual button layouts can now be switched dynamically via keypress**
+            4. **Multiple new touchscreen input methods**
+            5. **Gyroscope support for camera control**
+            6. **AI frame generation now supported across all games**
+            7. **Numerous bug fixes**
+
             ### Source
             - **Base APK**: `GameHub_6.0.1.apk` — the official 6.0.1 global build (versionCode 111), attached to [`base-apk-601`](https://github.com/${{ github.repository }}/releases/tag/base-apk-601)
             - **Patcher**: ReVanced CLI 6.0.0 + this repo's patch bundle, branch `gamehub-601-build`

@@ -11,6 +11,18 @@ A ReVanced patch bundle and pre-built APKs for [XiaoJi GameHub](https://www.game
 - **Base APK refresh: GameHub 6.0.0 → 6.0.1** (versionCode 110 → 111). Re-targets the same patch bundle at the new XiaoJi base APK; every patch from v1.0.1-600 still applies cleanly without smali repair.
 - Functional behaviour is unchanged from v1.0.1-600 — same 9 patches, same multi-install fix, on top of a newer base.
 
+### 🆕 Inherited from upstream GameHub 6.0.1
+
+XiaoJi-side improvements that came with the 6.0.1 base APK; you get them automatically by using this build:
+
+1. Improved Steam login and game download stability
+2. Faster Steam game launch speeds
+3. Virtual button layouts can now be switched dynamically via keypress
+4. Multiple new touchscreen input methods
+5. Gyroscope support for camera control
+6. AI frame generation now supported across all games
+7. Numerous bug fixes
+
 ## What's new in v1.0.1-600 (historical)
 
 - **`File manager access`** — the MTDataFiles `<provider android:authorities>` and wake-up activity `android:taskAffinity` are now derived per-variant from `packageNameOption.value`, instead of being baked at `com.xiaoji.egggame.*` for every variant.

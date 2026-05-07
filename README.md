@@ -2,14 +2,20 @@
 
 A ReVanced patch bundle and pre-built APKs for [XiaoJi GameHub](https://www.gamehubglobal.com/) 6.0.1 (`com.xiaoji.egggame`) that **remove the login requirement, redirect the catalog API to the BannerHub Cloudflare Worker, mute UI sound feedback, and ship a debug-logging probe**, plus build-side variants that install side-by-side on the same device.
 
-**Latest stable release:** [`v1.0.0-601` — Gamehub 6.0.1 - BannerHub API - Multi-Install](https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.0.0-601) — 9 ready-to-install APK variants + the `.rvp` patch bundle and `.rve` extension files for use with `revanced-cli`.
+**Latest stable release:** [`v1.0.1-601` — Gamehub 6.0.1 - BannerHub API - Multi-Install](https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.0.1-601) — 9 ready-to-install APK variants + the `.rvp` patch bundle and `.rve` extension files for use with `revanced-cli`.
+
+> ⚠ **v1.0.0-601 was broken** — it shipped with `Bypass login` + `Redirect catalog API` + `Prefix API path` all silently no-op'd because R8 in the 6.0.1 base APK reshuffled class letters and the patcher's fingerprints matched unrelated classes (the patcher reported success but the rewrites never landed). Use **v1.0.1-601** instead — same 9 patches, all correctly applied.
 
 > ⚠ **A fresh install is required if a previous release is still installed.** Each release run generates a new debug keystore, so the signing certificate differs between releases and Android refuses the upgrade with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Uninstall the previous version of the same variant first, then install the new one. (Within a single release, all 9 variants are signed with the same cert.)
 
+## What's new in v1.0.1-601 (hotfix)
+
+- **`Bypass login`, `Redirect catalog API`, and `Prefix API path with /v6`** — all three were silently no-op on v1.0.0-601 because R8 in the 6.0.1 base APK reshuffled class letters between 6.0.0 and 6.0.1. The patcher's class-letter-keyed fingerprints matched unrelated classes (the patcher reported success but the methods were never actually rewritten). All three patches now re-anchored against the new 6.0.1 letters; structural-anchor comments added at the top of each patch source so future minor-version bumps are easy to track down.
+
 ## What's new in v1.0.0-601
 
-- **Base APK refresh: GameHub 6.0.0 → 6.0.1** (versionCode 110 → 111). Re-targets the same patch bundle at the new XiaoJi base APK; every patch from v1.0.1-600 still applies cleanly without smali repair.
-- Functional behaviour is unchanged from v1.0.1-600 — same 9 patches, same multi-install fix, on top of a newer base.
+- **Base APK refresh: GameHub 6.0.0 → 6.0.1** (versionCode 110 → 111). Re-targets the same patch bundle at the new XiaoJi base APK.
+- Functional behaviour intended to be unchanged from v1.0.1-600 — same 9 patches, same multi-install fix, on top of a newer base. *Three of those patches turned out to silently no-op due to R8 reshuffling — see v1.0.1-601 above for the fix.*
 
 ### 🆕 Inherited from upstream GameHub 6.0.1
 

@@ -192,13 +192,19 @@ jobs:
 
             A patched build of XiaoJi GameHub 6.0.1 (`com.xiaoji.egggame`, versionCode 111) that removes the login requirement so games can be imported and used without an account, redirects the catalog API to the BannerHub Cloudflare Worker, and ships **9 variants that install side-by-side on the same device**.
 
-            ### ✅ What's new vs v1.0.1-600
+            ### 🛠️ Hotfix vs v1.0.0-601
 
-            **Base APK refresh: GameHub 6.0.0 → 6.0.1.** XiaoJi released GameHub 6.0.1 (versionCode 111, was 110); this build re-targets the entire patch bundle at the new base APK. Every patch from v1.0.1-600 still applies cleanly against 6.0.1 — no fingerprint or smali repair was needed — so functional behaviour is unchanged from v1.0.1-600. You're getting the same 9 patches on top of the newer base.
+            **v1.0.0-601 shipped with three patches silently broken** because R8 in the 6.0.1 base APK reshuffled class letters between 6.0.0 and 6.0.1, and the patcher's class-letter-keyed fingerprints matched unrelated classes instead of the intended auth/API targets — the patcher reported success but the methods were never actually rewritten. This hotfix re-anchors all three patches against the new 6.0.1 letters and adds structural-anchor comments in the patch sources so future minor-version bumps are easy to track down.
 
-            Same multi-install fix from v1.0.1-600 ships here: side-by-side variants install cleanly on the same device with all three install-blockers from v1.0.0-600 (MT provider authority collision, signature-protected DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION, Mob Push SDK C2D_MESSAGE permission) addressed.
+            - **Bypass login** — was no-op on v1.0.0-601 (login wall on library tap). Now patches `Lrs0;` (was `Los0;`), `Lls0;` (was `Lis0;`), `Lhp7;` (was `Lxm7;`), `Lade;` (was `Lg8e;`), and the new 6.0.1-only `Lar0;` NavigationInterceptor. Login is bypassed end-to-end; library opens straight to home.
+            - **Redirect catalog API** — was no-op on v1.0.0-601 (catalog requests went to upstream `landscape-api.vgabc.com` instead of the BannerHub Worker). Now patches `Lzhj;` (was `Lmcj;`); both Online enum hosts redirect to `bannerhub-api.the412banner.workers.dev`.
+            - **Prefix API path with /v6** — was no-op on v1.0.0-601 (the Worker received unprefixed requests and served the 5.x response shapes, not the 6.0-specific reshapes). Now patches `Lohb;->b(Lj1a;String)V` (was `Lzdb;->b(Lqx9;String)V`); every relative path from the patched 6.0.1 client carries the `v6/` tag.
 
-            **Migrating from v1.0.1-600 or earlier:** uninstall any previously-installed BannerHub-ReVanced variant of the same name first — release-to-release the signing keystore changes (CI generates a fresh debug keystore each run), so Android refuses cross-release upgrades with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Within v1.0.0-601 itself, all 9 variants share signing and install side-by-side.
+            ### ✅ Same as v1.0.0-601 (base APK refresh from 6.0.0 → 6.0.1)
+
+            Same 9 patches on top of the GameHub 6.0.1 base (versionCode 111). Same multi-install fix from v1.0.1-600: side-by-side variants install cleanly on the same device with all three install-blockers from v1.0.0-600 (MT provider authority collision, signature-protected DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION, Mob Push SDK C2D_MESSAGE permission) addressed.
+
+            **Migrating from v1.0.0-601 or earlier:** uninstall any previously-installed BannerHub-ReVanced variant of the same name first — release-to-release the signing keystore changes (CI generates a fresh debug keystore each run), so Android refuses cross-release upgrades with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Within v1.0.1-601 itself, all 9 variants share signing and install side-by-side.
 
             ### 🆕 New in GameHub 6.0.1 (upstream)
 

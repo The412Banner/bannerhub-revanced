@@ -549,3 +549,13 @@ Same R8 letter-shuffle pattern as BypassLoginPatch. Verified by inspecting prere
 
 ### Re-verify after this fix
 After CI: pull the new artifact, decompile, confirm `zhj.smali` now shows `"bannerhub-api.the412banner.workers.dev"` in BOTH host slots; confirm `ohb.b(Lj1a;String)V` opens with `invoke-static {p1}, V6PathPrefix->prefix(...)`.
+
+## 2026-05-07 (cont. 3) — Device test ALL GREEN; cutting v1.0.1-601 hotfix
+
+User confirmed prerelease build (run 25526407710, commit 3f81890) on Original variant: login bypassed, library opens, BannerHub catalog API redirect working, mute UI working. All 9 patches now actually applying as intended on 6.0.1.
+
+### Cut as v1.0.1-601 stable
+- Tag: v1.0.1-601
+- Title: "Gamehub 6.0.1 - BannerHub API - Multi-Install" (same as v1.0.0-601)
+- release.yml body rewritten with "Hotfix vs v1.0.0-601" section explaining the 3 patches that no-op'd and now don't
+- README "Latest stable" pointer + What's-new block updated; broken-build warning added at the top

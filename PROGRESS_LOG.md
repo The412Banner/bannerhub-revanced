@@ -392,3 +392,25 @@ Per `feedback_bannerhub_revanced_prerelease.md`, every workflow run from now on 
 - Persistent keystore in Actions secrets so cross-release upgrades stop hitting `INSTALL_FAILED_UPDATE_INCOMPATIBLE`.
 - Bump `versionCode` per release (cosmetic, but proper).
 - Component Manager port resume — branch `component-manager-injection` still pinned at `5b89073`.
+
+## 2026-05-07 — base APK bump to GameHub 6.0.1
+
+### Goal
+Verify existing patch bundle still applies cleanly against the new XiaoJi GameHub 6.0.1 base APK.
+
+### What changed
+- New base APK on hand: `GameHub_6.0.1.apk` — `com.xiaoji.egggame` versionCode `111` (was `110`), versionName `6.0.1`. Same signing cert (`gamesir`), same `targetSdkVersion=36`.
+- Branch: `gamehub-601-build` cut from `gamehub-600-build` per branch-per-patch workflow.
+- Commit `ab70d25`: `Constants.kt` `GAMEHUB_VERSION` `6.0.0` → `6.0.1`; `release.yml` source release `base-apk-600` → `base-apk-601` and asset/staged/CLI filenames `GameHub_beta_6.0.0_global.apk` / `GameHub_6.0.0.apk` → `GameHub_6.0.1.apk`. Variant output filenames left at `GameHub-6.0-Patched-*.apk` (version-agnostic enough for now).
+- New release `base-apk-601` created with `GameHub_6.0.1.apk` (133 MB) attached.
+
+### Result — CI run [25517417367](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25517417367)
+**All 9 variants green** in ~3 min. No fingerprint or smali repair needed; every patch (BypassLogin, DisableCrashlytics, DebugLog, FileManagerAccess, RewriteCustomPermissions, MuteUiSounds, RedirectCatalogApi, PrefixApiPath, ChangePackageName, ChangeAppName) still applies untouched against versionCode 111.
+
+### Implication
+6.0.1 is a minor base bump only — no fingerprint targets moved. `gamehub-601-build` is shippable as-is once release notes are written; release-body text + variant output filenames in `release.yml` should be updated before the first stable v1.0.0-601 cut, but those are cosmetic, not functional.
+
+### Next
+- Device-test one variant (likely Original) installed alongside or replacing v1.0.1-600.
+- If install + login-bypass + import flow OK, draft v1.0.0-601 release notes (or v1.0.2-600 if we treat as a refresh).
+- Decide whether to merge `gamehub-601-build` → `gamehub-600-build` after stable, or keep them parallel.

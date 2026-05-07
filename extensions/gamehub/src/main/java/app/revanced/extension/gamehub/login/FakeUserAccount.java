@@ -5,20 +5,27 @@ import app.revanced.extension.gamehub.debug.DebugTrace;
 import java.lang.reflect.Constructor;
 
 /**
- * Constructs a synthetic f4m (user-account) so is0.e() and is0.b() return a
- * non-null value when login is bypassed. The Compose library-list pipeline
- * is `is0.e().flatMapLatest { f4m? -> if (null) emptyFlow else dao.subjectAllByUserId(f4m.a) }`.
- * Without an auth-token row in the DB, os0.e()'s underlying StateFlow emits
- * null and the list shows empty even after the row is in t_game_library_base.
+ * Constructs a synthetic user-account so AUTH_INTERFACE.e() and .b() return a
+ * non-null value when login is bypassed. The Compose library-list pipeline is
+ * `AUTH_INTERFACE.e().flatMapLatest { acc? -> if (null) emptyFlow else dao.subjectAllByUserId(acc.a) }`.
+ * Without an auth-token row in the DB, the underlying StateFlow emits null
+ * and the list shows empty even after the row is in t_game_library_base.
  *
- * f4m has 27 fields (a..z plus A). Constructor sig:
+ * Class name is R8-mangled and must be updated per base-APK bump:
+ *   6.0.0 → f4m
+ *   6.0.1 → adm  (current)
+ * 27 fields (a..z plus A). Constructor sig is stable across versions:
  *   (String,String,String,String,String,String,I,I,Z,String,I,I,I,I,I,J,
  *    String,String,I,I,String,J,I,String,String,J,J)V
  * Smali ctor body asserts non-null on p1 (a) and p18 (q, the 17th Java arg).
- * We pass empty strings for every String field to be safe.
+ * Empty strings for every String field are safe.
  */
 public final class FakeUserAccount {
     private static final String FAKE_USER_ID = "99999";
+
+    /** R8-mangled class name of the user-account data class. Update on base APK bump. */
+    private static final String USER_ACCOUNT_CLASS = "adm";
+
     private static volatile Object cached;
 
     public static Object get() {
@@ -28,8 +35,8 @@ public final class FakeUserAccount {
         synchronized (FakeUserAccount.class) {
             if (cached != null) return cached;
             try {
-                Class<?> f4m = Class.forName("f4m");
-                Constructor<?> ctor = f4m.getDeclaredConstructor(
+                Class<?> userClass = Class.forName(USER_ACCOUNT_CLASS);
+                Constructor<?> ctor = userClass.getDeclaredConstructor(
                         String.class, String.class, String.class, String.class,
                         String.class, String.class,
                         int.class, int.class, boolean.class,
@@ -57,7 +64,7 @@ public final class FakeUserAccount {
                         0,
                         "", "",
                         0L, 0L);
-                DebugTrace.write("FakeUserAccount: built synthetic f4m a=" + FAKE_USER_ID);
+                DebugTrace.write("FakeUserAccount: built synthetic " + USER_ACCOUNT_CLASS + " a=" + FAKE_USER_ID);
                 return cached;
             } catch (Throwable e) {
                 DebugTrace.write("FakeUserAccount: construction failed", e);

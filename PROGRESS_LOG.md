@@ -491,3 +491,38 @@ Concrete fingerprint targets to find in 6.0.1:
 ### Decision parking lot
 - v1.0.0-601 release is BROKEN (all installs hit login wall). Did not roll it back per user direction (we'll fix forward).
 - 5.x stable v1.0.1-600 (gamehub-600-build) is unaffected — those patches still work against the 6.0.0 base.
+
+## 2026-05-07 (cont.) — BypassLoginPatch rewritten for 6.0.1
+
+### Mapping derived from base APK decompile
+| 6.0.0 letter | 6.0.1 letter | Role |
+|---|---|---|
+| `Los0;` | `Lrs0;` | Auth-session impl (3 StateFlow fields, UserDao+AuthTokenDao ctor) |
+| `Lis0;` | `Lls0;` | Auth-session interface (`a/b/c/d/e/f/g/h` methods) |
+| `Lxm7;` | `Lhp7;` | GameLibraryRepository (`b:AUTH_INTERFACE` field, `f()String`) |
+| `Lg8e;` | `Lade;` | Navigator (`b:AUTH_INTERFACE` field, `i(Lph0;)V` + `r(Lph0;)V` gates) |
+| `Lga0;` | `Lca0;` | Login navigation intent (referenced from gates; not patched directly) |
+| `Lrh0;` | `Lph0;` | Navigator i/r param type |
+| `Ll4m;` | `Lfdm;` | Auth token wrapper (10-field data class, identical shape) |
+| `Lf4m;` | `Ladm;` | User account (27-field data class, identical shape) |
+| `Lf3k;` | `Lr8k;` | StateFlow read interface |
+| `Lr8o;->r(Object)Lf3k;` | `Lumn;->h(Object)Lt8k;` | MutableStateFlow factory |
+
+### What changed in code (commit pending)
+- **`BypassLoginPatch.kt`**: full rewrite with all class letters extracted to a single named const block at top, accompanied by structural anchors (decompile recipes) for each. Patch body unchanged in semantics — same six targets — just sourcing names from the const block. Verified `Lt8k;` IS-A `Lr8k;` via `Lx6e;` so the synthetic flow returned from `rs0.h/e` type-checks against the declared return type.
+- **NEW patch on `Lar0;->a(...)`**: 6.0.1 introduced a separate NavigationInterceptor (`getOrder()==10`, `Llxb;` interface) that gates on `Lls0;->a()Z` independently of the navigator. Same iget+invoke-interface+if-nez+new-instance pattern as `ade.i/r`; bypassed identically with `const/4 vN, 0x1`.
+- **`FakeAuthToken.java`**: `Class.forName("l4m")` → `Class.forName("fdm")`, hoisted to `AUTH_TOKEN_CLASS` const for one-line bumps next time. Same 10-arg ctor (verified shape identical between `Ll4m;` and `Lfdm;`).
+- **`FakeUserAccount.java`**: `Class.forName("f4m")` → `Class.forName("adm")`, hoisted to `USER_ACCOUNT_CLASS` const. Same 27-arg ctor (verified shape identical).
+- **No inline `Log.i` sentinels** in the patched method bodies: `rs0.h/e` and `ls0.f` are `.locals 0`, can't accommodate two free registers without growing locals (which patcher v22's `addInstructions` doesn't auto-do). Sentinel signal is provided by the existing `DebugTrace.write` calls inside `FakeAuthToken.get()` and `FakeUserAccount.get()` — the next device test's logcat will show "FakeAuthToken.get() called" / "FakeUserAccount.get() called" lines tagged GH600-DEBUG, which only fire if the `ls0.f()` / `rs0.e()` patches landed.
+
+### Why this still requires letter updates next minor version
+Even with the const block, the letters `Lrs0;`/`Lls0;`/`Lhp7;`/`Lade;`/`Lar0;`/`Lumn;`/`Lt8k;`/`Lfdm;`/`Ladm;` will all rotate again on the next R8 build. The improvement vs. the original patch is:
+- All letters are in ONE place (const block + 2 Java strings), so re-deriving a new mapping is a 9-string PR instead of a 4-file scavenger hunt.
+- Each const has a structural anchor comment so the resolver recipe is recorded.
+- True version-independence (no manual updates ever) would require resolving classes by structural fingerprint at patch time. Deferred — that's a bigger refactor and the const-block approach is sufficient for the 6.0.x series.
+
+### Next: CI prerelease + device test
+Trigger Release workflow (no `stable=true`) on `gamehub-601-build`. Pull artifact APK, install Original variant, repro library tap. Logcat must show:
+- `GH600-DEBUG: FakeAuthToken.get() called`  → `ls0.f()` patch fired
+- `GH600-DEBUG: FakeUserAccount.get() called` → `rs0.e()` patch fired
+- Library opens without login wall → `rs0.h()` + navigator + interceptor patches all working

@@ -7,20 +7,27 @@ import app.revanced.extension.gamehub.debug.DebugTrace;
 import java.lang.reflect.Constructor;
 
 /**
- * Constructs a synthetic l4m (auth-token wrapper) so is0.f() returns a
- * non-null value when login is bypassed. l4m carries the user-id string in
- * field 'a' and the username in field 'b'. Consumers we know of:
- *   - xm7 (GameLibraryRepository) — read+write, via xm7.f() → is0.f().a
- *   - lvd ("checkLocalHandTourGame" request prep) — reads l4m.b
- *   - aae (synthetic property-getter lambda)
+ * Constructs a synthetic auth-token wrapper so AUTH_INTERFACE.f() returns a
+ * non-null value when login is bypassed. The wrapper carries the user-id
+ * string in field 'a' and the username in field 'b'.
  *
- * l4m is in the R8-renamed default package, so we reach it via reflection.
- * Constructor sig: (String,String,String,String,Long,Long,J,Z,J,J)V
+ * Class name is R8-mangled and must be updated per base-APK bump:
+ *   6.0.0 → l4m
+ *   6.0.1 → fdm  (current)
+ * Constructor sig is stable across versions: (S,S,S,S,Long,Long,J,Z,J,J)V.
  * The first two String args are non-null asserted via getClass() in <init>.
+ *
+ * On a base APK bump, find the new letter via BypassLoginPatch.kt's
+ * AUTH_TOKEN structural anchor (10-field data class returned by the auth
+ * interface's f() method).
  */
 public final class FakeAuthToken {
     private static final String TAG = "GH600-DEBUG";
     private static final String FAKE_USER_ID = "99999";
+
+    /** R8-mangled class name of the auth-token wrapper. Update on base APK bump. */
+    private static final String AUTH_TOKEN_CLASS = "fdm";
+
     private static volatile Object cached;
 
     public static Object get() {
@@ -30,8 +37,8 @@ public final class FakeAuthToken {
         synchronized (FakeAuthToken.class) {
             if (cached != null) return cached;
             try {
-                Class<?> l4m = Class.forName("l4m");
-                Constructor<?> ctor = l4m.getDeclaredConstructor(
+                Class<?> tokenClass = Class.forName(AUTH_TOKEN_CLASS);
+                Constructor<?> ctor = tokenClass.getDeclaredConstructor(
                         String.class, String.class, String.class, String.class,
                         Long.class, Long.class,
                         long.class, boolean.class,
@@ -40,7 +47,7 @@ public final class FakeAuthToken {
                 cached = ctor.newInstance(
                         FAKE_USER_ID, "", null, null, null, null,
                         0L, false, 0L, 0L);
-                DebugTrace.write("FakeAuthToken: built synthetic l4m a=" + FAKE_USER_ID);
+                DebugTrace.write("FakeAuthToken: built synthetic " + AUTH_TOKEN_CLASS + " a=" + FAKE_USER_ID);
                 return cached;
             } catch (Throwable e) {
                 DebugTrace.write("FakeAuthToken: construction failed", e);

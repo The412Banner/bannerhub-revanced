@@ -2,7 +2,7 @@
 
 A ReVanced patch bundle and pre-built APKs for [XiaoJi GameHub](https://www.gamehubglobal.com/) 6.0.1 (`com.xiaoji.egggame`) that **remove the login requirement, redirect the catalog API to the BannerHub Cloudflare Worker, mute UI sound feedback, and ship a debug-logging probe**, plus build-side variants that install side-by-side on the same device.
 
-**Latest stable release:** [`v1.0.1-601` — Gamehub 6.0.1 - BannerHub API - Multi-Install](https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.0.1-601) — 9 ready-to-install APK variants + the `.rvp` patch bundle and `.rve` extension files for use with `revanced-cli`.
+**Latest stable release:** [`v1.0.1-601` — Gamehub 6.0.1 - BannerHub API - Patched](https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.0.1-601) — 9 ready-to-install APK variants + the `.rvp` patch bundle and `.rve` extension files for use with `revanced-cli`.
 
 > ⚠ **v1.0.0-601 was broken** — it shipped with `Bypass login` + `Redirect catalog API` + `Prefix API path` all silently no-op'd because R8 in the 6.0.1 base APK reshuffled class letters and the patcher's fingerprints matched unrelated classes (the patcher reported success but the rewrites never landed). Use **v1.0.1-601** instead — same 9 patches, all correctly applied.
 
@@ -42,7 +42,7 @@ XiaoJi-side improvements that came with the 6.0.1 base APK; you get them automat
 GameHub 6.0 (the KMP rewrite under the package `com.xiaoji.egggame`) gates the entire game-library flow behind a login screen, ships with bundled UI feedback sounds, and hits XiaoJi's `landscape-api-{cn,oversea}.vgabc.com` catalog endpoints for the component (driver / DXVK / FEX / Wine prefix / firmware) registry that drives every game launch. This patch bundle changes all three:
 
 - **No login** — five bytecode rewrites short-circuit the auth gate so a fresh install lands on the home screen, the **Import → Save** dialog persists rows to the on-device Room database (`db_game_library.db`), and the imported games appear in the library list — all without ever logging in or hitting the upstream auth endpoint.
-- **Catalog redirect to the BannerHub Cloudflare Worker** — both `landscape-api-*.vgabc.com` hosts on the `mcj` `Online` enum value are swapped for `bannerhub-api.the412banner.workers.dev`, and a single chokepoint helper (`zdb.b`) is hooked to prefix every relative API call with `v6/`. The Worker uses the prefix to serve 6.0-specific response shapes (firmware 1.3.4, `EnvListData` wrapper required by 6.0's kotlinx-strict deserializer, etc.) while a parallel 5.x branch keeps the upstream shape for older clients.
+- **Catalog redirect to the BannerHub Cloudflare Worker** — both `landscape-api-*.vgabc.com` hosts on the `zhj` `Online` enum value are swapped for `bannerhub-api.the412banner.workers.dev`, and a single chokepoint helper (`ohb.b`) is hooked to prefix every relative API call with `v6/`. The Worker uses the prefix to serve 6.0-specific response shapes (firmware 1.3.5, `EnvListData` wrapper required by 6.0's kotlinx-strict deserializer, etc.) while a parallel 5.x branch keeps the upstream shape for older clients.
 - **Muted UI sounds** — bundled menu/click `.wav` assets are replaced with silent PCM at packaging time, no runtime audio routing is touched.
 
 It also fixes a launch-time `VerifyError` that the original 5.x `Disable Crashlytics` patch caused on 6.0, ships a diagnostic `Debug logging` probe (will be removed in a follow-up build now that the import flow is confirmed stable end-to-end), and includes an unrelated convenience patch (`File manager access`) that exposes a content provider for browsing GameHub's data dir from external file managers.
@@ -83,11 +83,12 @@ This bundle ships only patches that successfully apply against GameHub 6.0. Ever
 
 Skips the login screen entirely and makes the library system function under a synthetic identity. Five bytecode rewrites cooperate:
 
-1. **`g8e.i(rh0)` and `g8e.r(rh0)`** — the navigator methods that gate Login routing. Original logic does `iget Lg8e;->b:Lis0;` → `invoke-interface Lis0;->a()Z` → `if-nez :skipLogin` → otherwise build a Login navigation intent. Patch removes the `invoke-interface`/`move-result` pair and substitutes `const/4 vN, 0x1` so the branch is always taken.
-2. **`os0.h()`** — the real DB-backed `is0` implementation's `isLoggedIn` `StateFlow<Boolean?>`. Body replaced to return `r8o.r(Boolean.TRUE)` (a fresh `MutableStateFlow` over `TRUE`) so every collector — `NavHost.collectAsState`, the `ah7` listener, the `xv0` analytics pipeline — sees a logged-in state.
-3. **`os0.e()`** — the user-account `StateFlow<f4m?>`. Without an `auth_token` row in the DB this emits `null` and the library-list reader's `flatMapLatest` collapses to an empty `Flow`. Patch replaces the body with `r8o.r(FakeUserAccount.get())` where `FakeUserAccount` is a Java extension that reflectively constructs `Lf4m;` via `Class.forName("f4m").getDeclaredConstructor(...)`, with `a="99999"` and every other field zeroed/empty. Result: the library reader's pipeline `is0.e().flatMapLatest { f4m -> dao.subjectAllByUserId(f4m.a) }` always queries with `user_id="99999"` and returns the imported rows.
-4. **`xm7.f()`** — the `GameLibraryRepository`'s user-id getter, called from both write (`xm7.u()` early-bail) and read paths. Returns `"99999"` directly so it matches the synthetic user account.
-5. **`is0.f()`** — the interface default method that returns the current `l4m` auth token. Body replaced to call `FakeAuthToken.get()`, a Java extension that reflectively constructs `Ll4m;` with `a="99999"` and `b=""`. Several callers (`lvd`, `aae`, `fh2`, `dt0`, `sak`, `w79`, `kpl`, `dlk`, `npl`) use this directly to read the user-id for network-prep and lambda capture; under the bypass they all see the same synthetic identity.
+1. **`ade.i(ph0)` and `ade.r(ph0)`** — the navigator methods that gate Login routing. Original logic does `iget Lade;->b:Lls0;` → `invoke-interface Lls0;->a()Z` → `if-nez :skipLogin` → otherwise build a Login navigation intent. Patch removes the `invoke-interface`/`move-result` pair and substitutes `const/4 vN, 0x1` so the branch is always taken.
+2. **`ar0.a(...)`** — a separate NavigationInterceptor (`getOrder()==10`) added in 6.0.1 that gates on `Lls0;->a()Z` independently of the navigator. Same iget+invoke-interface+if-nez pattern; bypassed identically with `const/4 vN, 0x1`.
+3. **`rs0.h()`** — the real DB-backed `Lls0;` implementation's `isLoggedIn` `StateFlow<Boolean?>`. Body replaced to return `umn.h(Boolean.TRUE)` (a fresh `MutableStateFlow` over `TRUE`) so every collector — `NavHost.collectAsState`, the listener, the analytics pipeline — sees a logged-in state.
+4. **`rs0.e()`** — the user-account `StateFlow<adm?>`. Without an `auth_token` row in the DB this emits `null` and the library-list reader's `flatMapLatest` collapses to an empty `Flow`. Patch replaces the body with `umn.h(FakeUserAccount.get())` where `FakeUserAccount` is a Java extension that reflectively constructs `Ladm;` via `Class.forName("adm").getDeclaredConstructor(...)`, with `a="99999"` and every other field zeroed/empty. Result: the library reader's pipeline `rs0.e().flatMapLatest { adm -> dao.subjectAllByUserId(adm.a) }` always queries with `user_id="99999"` and returns the imported rows.
+5. **`hp7.f()`** — the `GameLibraryRepository`'s user-id getter, called from both write (Save flow early-bail) and read paths. Returns `"99999"` directly so it matches the synthetic user account.
+6. **`ls0.f()`** — the interface default method that returns the current `fdm` auth token. Body replaced to call `FakeAuthToken.get()`, a Java extension that reflectively constructs `Lfdm;` with `a="99999"` and `b=""`. Several lambdas use this directly to read the user-id for network-prep and lambda capture; under the bypass they all see the same synthetic identity.
 
 End-to-end consequence: a fresh install lands on the home screen, the **Import** dialog opens, picking an APK + metadata + tapping **Save** persists a row into `/data/data/<pkg>/databases/db_game_library.db` (`t_game_library_base`, `t_game_launch_method`), and the row appears in the library list immediately because the read pipeline is now keyed off the matching synthetic user-id.
 
@@ -101,7 +102,7 @@ Replaces the bundled UI feedback sounds (`assets/.../sound/*.wav`) with silent P
 
 ### `Redirect catalog API`
 
-Patches the `mcj` environment enum's `Online` value so the catalog API's `cnHost` and `overseaHost` both point at the BannerHub Cloudflare Worker (`bannerhub-api.the412banner.workers.dev`) instead of `landscape-api-{cn,oversea}.vgabc.com`. The Worker:
+Patches the `zhj` environment enum's `Online` value so the catalog API's `cnHost` and `overseaHost` both point at the BannerHub Cloudflare Worker (`bannerhub-api.the412banner.workers.dev`) instead of `landscape-api-{cn,oversea}.vgabc.com`. The Worker:
 
 - Serves a curated component catalog from `the412banner.github.io/bannerhub-api/` for `simulator/v2/*` and other allowlisted paths (drivers, DXVK, VKD3D, FEX, Box64, Wine prefix, firmware metadata).
 - Reshapes responses for 6.0's kotlinx-strict deserializer (wraps `getAllComponentList` data in `EnvListData` `{list, page, page_size, total}` instead of a bare array — without this the `l13.smali:861` cast silently fails and the in-memory COMPONENT registry stays empty, breaking game launch at "Download Game Config").
@@ -114,11 +115,11 @@ The Beta + Test enum values, the analytics hosts (`landscape-api-*-*.vgabc.com/e
 
 ### `Prefix API path with /v6`
 
-Hooks `zdb.b(qx9 builder, String path)` — the single static helper through which every relative GameHub API request flows — and prepends `v6/` via the small `V6PathPrefix.prefix()` Java extension. The Worker strips the prefix and uses it as a feature gate so the same backend can serve 6.0 and 5.x clients side-by-side without divergent state:
+Hooks `ohb.b(j1a builder, String path)` — the single static Ktor URL-builder helper through which every relative GameHub API request flows — and prepends `v6/` via the small `V6PathPrefix.prefix()` Java extension. The Worker strips the prefix and uses it as a feature gate so the same backend can serve 6.0 and 5.x clients side-by-side without divergent state:
 
 - `/v6/simulator/v2/getAllComponentList` → `EnvListData`-wrapped response, reshaped for 6.0 (`is_ui` / `gpu_range` stripped, `fileType` / `framework` / `framework_type` / `is_steam` / `status` / `blurb` / `upgrade_msg` / `sub_data` / `base` injected, `base.fileType=0`).
 - `/simulator/v2/getAllComponentList` (no prefix, from a 5.x client) → native upstream catalog passed through with `is_ui` / `gpu_range` preserved.
-- `/v6/simulator/v2/getImagefsDetail` → firmware 1.3.4. Without prefix → firmware 1.3.3.
+- `/v6/simulator/v2/getImagefsDetail` → firmware 1.3.5. Without prefix → firmware 1.3.3.
 
 Full URLs (paths already starting with `http://` or `https://`) are short-circuited by the helper and pass through untouched, so direct downloads from the catalog's `download_url` fields still resolve to the Worker-authored GitHub-release URLs without the prefix being injected into them.
 
@@ -127,7 +128,7 @@ Full URLs (paths already starting with `http://` or `https://`) are short-circui
 A diagnostic patch that:
 
 - Sets `android:debuggable="true"` in the `<application>` manifest so `Log.d` / `Log.v` lines from the patched APK reach `logcat`.
-- Inserts `Log.i("GH600-DEBUG", ...)` markers along the import code path: `xm7.u` ENTRY/CATCH, `el7.invokeSuspend` ENTRY, both Room DAO insert PRE markers (`GameLaunchMethodDao.insert`, `GameLibraryBaseDao.insert`), and per-call markers in `FakeAuthToken.get()` and `FakeUserAccount.get()`.
+- Inserts `Log.i("GH600-DEBUG", ...)` markers along the import code path: Save ENTRY/CATCH, transaction body ENTRY, both Room DAO insert PRE markers (`GameLaunchMethodDao.insert`, `GameLibraryBaseDao.insert`), and per-call markers in `FakeAuthToken.get()` and `FakeUserAccount.get()`.
 - Hooks the global `odb.e()` `Throwable` swallower to surface every exception that the app's Kotlin coroutine state machines would otherwise eat silently.
 
 Kept in this release for ongoing device-side triage; will be dropped from a future release now that the import flow is confirmed stable end-to-end.

@@ -580,3 +580,14 @@ User confirmed prerelease build (run 25526407710, commit 3f81890) on Original va
 
 ### Known follow-up
 None blocking. Possible future work: migrate the const-block letter mapping to true MethodFingerprint-based auto-discovery so future minor-version bumps don't require any source edits at all. Deferred — current setup is good enough for the 6.0.x series.
+
+## 2026-05-07 — vjoy cloud-share Worker proxy (cross-repo) + docs
+
+User reported the new 6.0.1 cloud-share vjoy/Scheme screen still showed "log in first" even with bypass-login active. Diagnosed via temporary KV-debug intercept on the Worker: the 401 is server-side (upstream rejects unauthenticated requests on `vcontroller/recommendMapList`); the client sends GETs with `clientparams`/`sign`/`time` headers but no token at all. Existing Worker fall-through stripped all original headers and never injected a token, so upstream got an anonymous request → 401 → "Please login first".
+
+Fixed in `bannerhub-api` repo (commit `0792400` on master + main): new dedicated handler covering `vcontroller/*`, `simulator/{configList,getConfigById,shareConfig,deleteShareConfig,reportConfigApply}`, `readLayoutType/*`, `writeLayoutType/*`. Forwards original request headers verbatim, drops only hop-by-hop and CF-injected ones, injects `token: <bannerhub_token>` from KV, and recomputes `sign` for POST bodies that contain a token field. Verified live → device-confirmed: full upstream catalog visible (GTA5专用按键, Gamehub 2, etc.). Side-effect: every BannerHub user authenticates as the same shared `bannerhub_token` user — acceptable for now.
+
+### Documentation updates
+- `gamehub_reports/GAMEHUB_600_MASTER_MAP.md` — added § 26 (6.0.0 → 6.0.1 deltas) covering APK identity bump, full R8 letter-remap table with structural anchors, new vjoy/Scheme cloud-share subsystem (NavKeys, data model, repository, ViewModel, on-device storage), new API endpoint family, new `Lar0;` NavigationInterceptor, firmware 1.3.4 → 1.3.5, upstream feature highlights. Map grew 2556 → 2702 lines.
+- `gamehub_reports/BANNERHUB_API_6.0_INTEGRATION.md` — added § 14 (2026-05-07 6.0.1 changes) covering v1.0.1-601 hotfix, R8 letter remap, firmware bump, new endpoint family, captured request-shape table, Worker proxy implementation, verification, files-touched manifest.
+- Memory: `project_gamehub_600_master_map.md`, `project_bannerhub_api_60_integration_report.md`, `project_bannerhub_api_worker.md`, `MEMORY.md` index — all updated to reflect the new sections + line counts + the "on the next 6.0.x bump" instructions for re-deriving R8 letters via structural anchors.

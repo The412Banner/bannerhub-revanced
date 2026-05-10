@@ -13,7 +13,8 @@ import java.lang.reflect.Constructor;
  *
  * Class name is R8-mangled and must be updated per base-APK bump:
  *   6.0.0 → f4m
- *   6.0.1 → adm  (current)
+ *   6.0.1 → adm
+ *   6.0.2 → fpm  (current)
  * 27 fields (a..z plus A). Constructor sig is stable across versions:
  *   (String,String,String,String,String,String,I,I,Z,String,I,I,I,I,I,J,
  *    String,String,I,I,String,J,I,String,String,J,J)V
@@ -24,7 +25,7 @@ public final class FakeUserAccount {
     private static final String FAKE_USER_ID = "99999";
 
     /** R8-mangled class name of the user-account data class. Update on base APK bump. */
-    private static final String USER_ACCOUNT_CLASS = "adm";
+    private static final String USER_ACCOUNT_CLASS = "fpm";
 
     private static volatile Object cached;
 

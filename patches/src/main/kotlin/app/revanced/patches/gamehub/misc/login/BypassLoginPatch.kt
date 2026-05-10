@@ -15,10 +15,10 @@ import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 
 // =========================================================================
-// 6.0.1 R8-mangled class letter map
+// 6.0.2 R8-mangled class letter map
 //
-// All names below are R8 outputs from the GameHub 6.0.1 base APK (r8-map-id
-// 1c1886510d56...). They WILL change on the next minor-version bump; treat
+// All names below are R8 outputs from the GameHub 6.0.2 base APK (r8-map-id
+// 032c299c671f...). They WILL change on the next minor-version bump; treat
 // this block as version config — update here, leave the patch body alone.
 //
 // To re-derive on a new base APK: decompile (`apktool d --no-res`) and find
@@ -26,37 +26,61 @@ import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 //
 //   AUTH_IMPL          : class with three instance fields of the same
 //                        StateFlow-impl type AND a constructor accepting
-//                        UserDao + AuthTokenDao. (Was `Los0;` in 6.0.0.)
+//                        UserDao + AuthTokenDao.
+//                        (Was `Los0;` in 6.0.0, `Lrs0;` in 6.0.1.)
 //   AUTH_INTERFACE     : interface with abstract `h()`/`e()`/`d()` returning
 //                        a StateFlow type. AUTH_IMPL implements it.
-//                        (Was `Lis0;` in 6.0.0.)
-//   MUTABLE_FLOW_FACTORY : a static `(Object) → MutableStateFlowImpl` whose
-//                        body is `new-instance` + `<init>(p0)V` + `return v0`.
-//                        Returned class transitively implements StateFlow.
-//                        (Was `Lr8o;->r(Ljava/lang/Object;)Lf3k;` in 6.0.0.)
+//                        (Was `Lis0;` in 6.0.0, `Lls0;` in 6.0.1.)
 //   AUTH_TOKEN         : 10-field data class (S,S,S,S,Long,Long,J,Z,J,J)
-//                        returned by AUTH_INTERFACE.f(). (Was `Ll4m;`.)
+//                        returned by AUTH_INTERFACE.f().
+//                        (Was `Ll4m;` in 6.0.0, `Lfdm;` in 6.0.1.)
 //   GAME_LIB_REPO      : class with `b:AUTH_INTERFACE` field AND constructor
-//                        taking GameLibraryDatabase + AUTH_INTERFACE.
-//                        (Was `Lxm7;` in 6.0.0.)
+//                        taking GameLibraryDatabase + AUTH_INTERFACE. Has
+//                        a no-arg `String` getter that reads
+//                        AUTH_INTERFACE.f().a (the user-id field). Method
+//                        name renamed `f()` → `e()` between 6.0.1 and 6.0.2.
+//                        (Was `Lxm7;` in 6.0.0, `Lhp7;` in 6.0.1.)
+//   GAME_LIB_REPO_USERID_METHOD : the no-arg `()Ljava/lang/String;` method
+//                        on GAME_LIB_REPO that returns the auth-token's
+//                        user-id field. Verified by reading the body — it
+//                        does `iget GAME_LIB_REPO->b:AUTH_INTERFACE` then
+//                        `invoke-interface AUTH_INTERFACE->f()` then reads
+//                        AUTH_TOKEN->a:String. Name changed across versions:
+//                        6.0.0/6.0.1 → "f", 6.0.2 → "e".
 //   NAVIGATOR          : class with `b:AUTH_INTERFACE` field AND two methods
-//                        whose body matches `iget NAVIGATOR->b:AUTH_INTERFACE`
+//                        whose body somewhere matches `iget NAVIGATOR->b:AUTH_INTERFACE`
 //                        + `invoke-interface AUTH_INTERFACE->a()Z` + `if-nez`
-//                        + `new-instance Lca0;` (Login intent build).
-//                        Methods are `i(Lph0;)V` + `r(Lph0;)V` in 6.0.1.
-//                        (Was `Lg8e;` in 6.0.0.)
+//                        + `new-instance L<Login intent>;`. The two methods
+//                        are still called `i` and `r` in 6.0.2, but their
+//                        single arg (the screen-route enum) is now `Lgi0;`
+//                        (was `Lph0;` in 6.0.1). The Login intent class is
+//                        `Lsa0;` in 6.0.2 (was `Lca0;` in 6.0.1). The patch
+//                        anchors on the iget instruction, not the params.
+//                        (Was `Lg8e;` in 6.0.0, `Lade;` in 6.0.1.)
 //   NAV_INTERCEPTOR    : class implementing the host's NavigationInterceptor
 //                        with `<init>(AUTH_INTERFACE)V` constructor and an
 //                        `a(...)Object` method that calls AUTH_INTERFACE.a()
 //                        before delegating to the next interceptor in chain.
-//                        New gate added in 6.0.1; not present in 6.0.0.
-private const val AUTH_IMPL              = "Lrs0;"
-private const val AUTH_INTERFACE         = "Lls0;"
-private const val MUTABLE_FLOW_FACTORY   = "Lumn;->h(Ljava/lang/Object;)Lt8k;"
-private const val AUTH_TOKEN             = "Lfdm;"
-private const val GAME_LIB_REPO          = "Lhp7;"
-private const val NAVIGATOR              = "Lade;"
-private const val NAV_INTERCEPTOR        = "Lar0;"
+//                        (Was `Lar0;` in 6.0.1; not present in 6.0.0.)
+//
+// MUTABLE_FLOW_FACTORY (6.0.0 / 6.0.1): a static `(Object) → StateFlow-impl`
+//   method that was DIRECTLY assignable to AUTH_INTERFACE.h()'s return type.
+//   In 6.0.2 the only one-arg factory (`Ltwo;->l(Object)Ltjk;`) returns a
+//   type that is NOT a subtype of the abstract StateFlow interface declared
+//   on h()/e(); the host wraps it in an `Lhzh;` adapter before exposing it.
+//   To avoid growing patched-method `.locals` from 0 to 2, we route both
+//   patches through the FakeStateFlow Java extension, which performs the
+//   wrap via reflection and caches the result. Update the letter constants
+//   inside FakeStateFlow.java on each base APK bump.
+private const val AUTH_IMPL              = "Lit0;"
+private const val AUTH_INTERFACE         = "Lct0;"
+private const val AUTH_TOKEN             = "Lkpm;"
+private const val GAME_LIB_REPO          = "Luu7;"
+private const val GAME_LIB_REPO_USERID_METHOD = "e"
+private const val NAVIGATOR              = "Lxle;"
+private const val NAV_INTERCEPTOR        = "Lrr0;"
+
+private const val FAKE_STATE_FLOW = "Lapp/revanced/extension/gamehub/login/FakeStateFlow;"
 // =========================================================================
 
 @Suppress("unused")
@@ -70,27 +94,25 @@ val bypassLoginPatch = bytecodePatch(
         // -----------------------------------------------------------------
         // AUTH_IMPL.h() — isLoggedIn StateFlow getter.
         //
-        // Original body: `iget-object p0, p0, AUTH_IMPL->c:Luph;` + return.
+        // Original body: `iget-object p0, p0, AUTH_IMPL->c:Lhzh;` + return.
         // The Boolean StateFlow it returns is built in the ctor by combining
         // UserDao + AuthTokenDao flows; default initial value is FALSE so
         // every collector sees logged-out at startup.
         //
-        // Replace with `MutableStateFlow(Boolean.TRUE)` so every collector
-        // (NavHost, the AUTH_INTERFACE.a() default impl, Compose flow
-        // observers) sees logged-in immediately. Sentinel log fires on each
-        // call so device tests can confirm the patch ran.
+        // Replace with `FakeStateFlow.boolTrue()` (a host-compatible
+        // StateFlow holding TRUE). The helper handles the per-version
+        // construction so we don't have to grow `.locals`.
         // -----------------------------------------------------------------
         firstMethod {
             definingClass == AUTH_IMPL && name == "h"
         }.apply {
-            removeInstruction(0) // iget-object p0, p0, $AUTH_IMPL->c:Luph;
+            removeInstruction(0) // iget-object p0, p0, $AUTH_IMPL->c:Lhzh;
             removeInstruction(0) // return-object p0
             // .locals is 0 in the original; we only use p0 so no register grow.
             addInstructions(
                 0,
                 """
-                    sget-object p0, Ljava/lang/Boolean;->TRUE:Ljava/lang/Boolean;
-                    invoke-static {p0}, $MUTABLE_FLOW_FACTORY
+                    invoke-static {}, $FAKE_STATE_FLOW->boolTrue()Ljava/lang/Object;
                     move-result-object p0
                     return-object p0
                 """,
@@ -100,29 +122,23 @@ val bypassLoginPatch = bytecodePatch(
         // -----------------------------------------------------------------
         // AUTH_IMPL.e() — current-user StateFlow getter.
         //
-        // Original body: `iget-object p0, p0, AUTH_IMPL->a:Luph;` + return.
+        // Original body: `iget-object p0, p0, AUTH_IMPL->a:Lhzh;` + return.
         // Underlying StateFlow emits null when no UserEntity is in Room;
         // the library-list reader then `flatMapLatest`s null to an empty
         // Flow and the imported game never appears.
         //
-        // Replace with `MutableStateFlow(FakeUserAccount.get())` so the
-        // reader's flatMapLatest hits the userId-keyed query.
+        // Replace with `FakeStateFlow.userFlow()` so the reader's
+        // flatMapLatest hits the userId-keyed query.
         // -----------------------------------------------------------------
         firstMethod {
             definingClass == AUTH_IMPL && name == "e"
         }.apply {
-            removeInstruction(0) // iget-object p0, p0, $AUTH_IMPL->a:Luph;
+            removeInstruction(0) // iget-object p0, p0, $AUTH_IMPL->a:Lhzh;
             removeInstruction(0) // return-object p0
-            // FakeUserAccount.get() does the DebugTrace.write internally, so
-            // logcat will show "FakeUserAccount.get() called" each time this
-            // patched getter fires. No need to add a sentinel here (would
-            // require growing .locals from 0).
             addInstructions(
                 0,
                 """
-                    invoke-static {}, Lapp/revanced/extension/gamehub/login/FakeUserAccount;->get()Ljava/lang/Object;
-                    move-result-object p0
-                    invoke-static {p0}, $MUTABLE_FLOW_FACTORY
+                    invoke-static {}, $FAKE_STATE_FLOW->userFlow()Ljava/lang/Object;
                     move-result-object p0
                     return-object p0
                 """,
@@ -130,14 +146,20 @@ val bypassLoginPatch = bytecodePatch(
         }
 
         // -----------------------------------------------------------------
-        // GAME_LIB_REPO.f() — repository userId getter.
+        // GAME_LIB_REPO userId getter (name == GAME_LIB_REPO_USERID_METHOD).
         //
         // Returns the user-id string used by Save (xm7.u in 6.0.0 / hp7
-        // equivalent in 6.0.1) to filter library queries. Pinning it to
-        // "99999" matches the synthetic identity used elsewhere.
+        // equivalent in 6.0.1 / uu7.v in 6.0.2) to filter library queries.
+        // Pinning it to "99999" matches the synthetic identity used
+        // elsewhere. Method name was `f()` in 6.0.0/6.0.1 and renamed to
+        // `e()` in 6.0.2; the parameterTypes/returnType filter prevents an
+        // accidental match against a same-named overload.
         // -----------------------------------------------------------------
         firstMethod {
-            definingClass == GAME_LIB_REPO && name == "f"
+            definingClass == GAME_LIB_REPO &&
+                name == GAME_LIB_REPO_USERID_METHOD &&
+                parameterTypes.isEmpty() &&
+                returnType == "Ljava/lang/String;"
         }.returnEarly("99999")
 
         // -----------------------------------------------------------------
@@ -149,8 +171,8 @@ val bypassLoginPatch = bytecodePatch(
         // move-result-object → check-cast AUTH_TOKEN → return-object.
         //
         // Replace with `FakeAuthToken.get() as AUTH_TOKEN` so direct
-        // callers (the various lambdas that read fdm.a or fdm.b directly)
-        // see a consistent synthetic identity.
+        // callers (the various lambdas that read the auth-token's a/b
+        // fields directly) see a consistent synthetic identity.
         // -----------------------------------------------------------------
         firstMethod {
             definingClass == AUTH_INTERFACE && name == "f"
@@ -172,12 +194,12 @@ val bypassLoginPatch = bytecodePatch(
         // -----------------------------------------------------------------
         // NAVIGATOR.i(...) and NAVIGATOR.r(...) — Login navigation gates.
         //
-        // Both methods have the pattern:
+        // Both methods have the pattern (somewhere in their body):
         //   iget-object vN, p0, NAVIGATOR->b:AUTH_INTERFACE
         //   invoke-interface {vN}, AUTH_INTERFACE->a()Z   ← isLoggedIn check
         //   move-result vN
         //   if-nez vN, :skipLogin                          ← skips on logged in
-        //   new-instance Lca0;                              ← Login intent build
+        //   new-instance L<Login intent>;                   ← Login intent build
         //
         // Replace `invoke-interface a()Z` + `move-result` with `const/4 1`
         // so the branch always skips. Belt-and-braces with the StateFlow
@@ -216,7 +238,7 @@ val bypassLoginPatch = bytecodePatch(
         //   invoke-interface {p0}, AUTH_INTERFACE->a()Z
         //   move-result p0
         //   if-nez p0, :cond_0
-        //   new-instance p0, Lcyb;     ← redirect-to-login result
+        //   new-instance p0, L<redirect-to-login result>;
         //   ...
         //   :cond_0  ← passthrough delegation
         //

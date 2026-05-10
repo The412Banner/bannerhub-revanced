@@ -591,3 +591,65 @@ Fixed in `bannerhub-api` repo (commit `0792400` on master + main): new dedicated
 - `gamehub_reports/GAMEHUB_600_MASTER_MAP.md` — added § 26 (6.0.0 → 6.0.1 deltas) covering APK identity bump, full R8 letter-remap table with structural anchors, new vjoy/Scheme cloud-share subsystem (NavKeys, data model, repository, ViewModel, on-device storage), new API endpoint family, new `Lar0;` NavigationInterceptor, firmware 1.3.4 → 1.3.5, upstream feature highlights. Map grew 2556 → 2702 lines.
 - `gamehub_reports/BANNERHUB_API_6.0_INTEGRATION.md` — added § 14 (2026-05-07 6.0.1 changes) covering v1.0.1-601 hotfix, R8 letter remap, firmware bump, new endpoint family, captured request-shape table, Worker proxy implementation, verification, files-touched manifest.
 - Memory: `project_gamehub_600_master_map.md`, `project_bannerhub_api_60_integration_report.md`, `project_bannerhub_api_worker.md`, `MEMORY.md` index — all updated to reflect the new sections + line counts + the "on the next 6.0.x bump" instructions for re-deriving R8 letters via structural anchors.
+
+## 2026-05-10 — gamehub-602-build (GameHub 6.0.2 base bump)
+
+### Goal
+Bump base from GameHub 6.0.1 (versionCode 111) to 6.0.2 (versionCode 112). Re-anchor every bytecode patch against the new R8 letter map, mirror what we did for the 6.0.0 → 6.0.1 jump.
+
+### Branch + base APK
+- Branch: `gamehub-602-build`, forked from `gamehub-601-build` head (`9ea01d4`).
+- Base APK: `GameHub_6.0.2.apk` (135 MB, package `com.xiaoji.egggame`, versionCode 112).
+- Hosted as release tag [`base-apk-602`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/base-apk-602) (target = `gamehub-602-build`). Workflow downloads from there during patch-build.
+- Decompile: `apktool d --no-res` against the 6.0.2 APK lands in `/tmp/gh602_smali/` across `smali/`, `smali_classes2/` … `smali_classes6/` (6 dex shards, up from 5 on 6.0.1). r8-map-id `032c299c671f291b037da144c04f4b9bdf25a0ddc75c43b14ff2382d5f50d1fa` is the unique build identifier — every smali file's `.source` line carries it, useful as a single-grep verification that the decompile is actually 6.0.2 and not a 6.0.1 leftover.
+
+### Fingerprint verification — every single bytecode anchor moved
+
+Same situation as 6.0.0 → 6.0.1: a sweeping R8 letter reshuffle. None of the 6.0.1 letter classes still hold the same shape in 6.0.2 (some keep their letter but the body is now an unrelated coroutine continuation). New mappings derived via the structural-anchor recipes recorded in each patch source:
+
+| Patch | Anchor | 6.0.1 | 6.0.2 | How re-derived |
+|---|---|---|---|---|
+| BypassLogin | AUTH_IMPL | `Lrs0;` | `Lit0;` | Class with ctor `(UserDao, AuthTokenDao, Lu70;)V` + 3 same-type StateFlow fields |
+| BypassLogin | AUTH_INTERFACE | `Lls0;` | `Lct0;` | `.implements` line on AUTH_IMPL — interface with abstract `d/e/h()Lrjk;` |
+| BypassLogin | AUTH_TOKEN | `Lfdm;` | `Lkpm;` | 10-field data class returned by `ct0.f()`; ctor sig `(S,S,S,S,Long,Long,J,Z,J,J)V` matches exactly |
+| BypassLogin | GAME_LIB_REPO | `Lhp7;` | `Luu7;` | Class with `b:Lct0;` field + ctor `(GameLibraryDatabase, Lct0;)V`. ⚠ userId getter renamed `f()` → `e()` between 6.0.1 and 6.0.2 — patch updated to filter by `parameterTypes.isEmpty() && returnType == "Ljava/lang/String;"` to avoid matching unrelated overloads |
+| BypassLogin | NAVIGATOR | `Lade;` | `Lxle;` | Class with `b:Lct0;` field + `i(Lgi0;)V` and `r(Lgi0;)V` methods that contain the `iget b:ct0` + `invoke-interface ct0->a()Z` + `new-instance Lsa0;` (Login intent — was Lca0; in 6.0.1) gate pattern at xle.i:270 / xle.r:79 |
+| BypassLogin | NAV_INTERCEPTOR | `Lar0;` | `Lrr0;` | Class with `<init>(Lct0;)V` ctor + `a(Lp4c;Ls2c;Lzh3;)Object` that calls `ct0.a()Z` then builds `Lo5c;` redirect |
+| RedirectCatalogApi | ENV_ENUM_CLASS | `Lzhj;` | `Lxrj;` | Unique class containing both `landscape-api-cn.vgabc.com` and `landscape-api-oversea.vgabc.com` string literals (in xrj's `<clinit>` at lines 41/45) |
+| PrefixApiPath | URL_HELPER_CLASS | `Lohb;` | `Lvob;` | Static method `b(L<short>;Ljava/lang/String;)V` whose body starts with `iget-object` from the builder's URL field then `Lpll;->s1(CharSequence)CharSequence` trim |
+| PrefixApiPath | URL_BUILDER_TYPE | `Lj1a;` | `Lm7a;` | First param of vob.b — the Ktor URLBuilder analog |
+| DebugLog | y2d-impl | `Lodb;` | `Li86;` | Concrete class implementing `pgd.e(Throwable, Lmw6;)V` whose body delegates to `pgd.e` then writes to a sink |
+| DebugLog | save method | `Lxm7;->u` | `Luu7;->v` | 3-arg `(GameInfo, LaunchMethod, Continuation)` method on uu7 that calls `pgd.e` in catch (line 322) |
+| DebugLog | retro upsert wrapper | `Ly4i;->b` | `Lyji;->b` | Single class referencing `RetroGameDao;->upsert` (yji.smali:97) |
+| DebugLog | y2d-interface | `Ly2d;` | `Lpgd;` | Abstract method `e(Ljava/lang/Throwable;Lmw6;)V` (`Lmw6;` is the Function0 type) |
+| DebugLog | inner Room txn | `Lel7;` | `Lvs7;` | Continuation class with `invokeSuspend.locals 70` (closest to original `el7` `.locals 69`) and both `GameLaunchMethodDao.insert` + `GameLibraryBaseDao.insert` |
+
+Patches keyed on full Android / Firebase / asset-path / manifest names — Disable Crashlytics (anchored on `Lcom/xiaoji/egggame/BaseAndroidApp;->onCreate` + `FirebaseCrashlytics->getInstance` / `setCrashlyticsCollectionEnabled`), Mute UI sounds (asset path `assets/composeResources/com.xiaoji.egggame.core/files/sound`), File manager access (manifest), Rewrite custom permissions (manifest), Change package name / Change app name (revanced built-ins) — apply byte-for-byte without any source change.
+
+### MutableStateFlow factory surgery
+
+The 6.0.0 / 6.0.1 patch could call `Lumn;->h(Object)Lt8k;` inline — a one-arg StateFlow factory whose return type was directly assignable to `AUTH_INTERFACE.h()` / `.e()`'s declared return type. In 6.0.2 the only one-arg factory is `Ltwo;->l(Object)Ltjk;`, and `Ltjk;` does NOT implement the abstract StateFlow interface (`Lrjk;`) that `h()`/`e()` declare; the host wraps it in `Lhzh;` (which DOES implement Lrjk;) before exposing it via `Leuo;->e0` (stateIn).
+
+Doing the same wrap inline from smali would require growing the patched method's `.locals` from 0 to 2 (need scratch registers for the inner Ltjk; instance and the outer Lhzh; instance). To avoid that, added a `FakeStateFlow` Java extension that does the wrap via reflection (`Class.forName("tjk")` → `<init>(Object)` → `Class.forName("hzh")` → `<init>(vfe)` where `Class.forName("vfe")` is the Lhzh; ctor's interface arg). Both factories cached after first build. Smali edit stays a single `invoke-static`:
+
+```smali
+invoke-static {}, FakeStateFlow->boolTrue()Ljava/lang/Object;
+move-result-object p0
+return-object p0
+```
+
+Updated FakeAuthToken (`adm` → `kpm`) and FakeUserAccount (`fdm` → `fpm`) extension class refs. `FakeUserAccount`'s 27-arg ctor signature stayed byte-identical between 6.0.1 and 6.0.2.
+
+### Workflow + release notes
+`.github/workflows/release.yml` rewritten for 6.0.2: base APK download tag, all 9 variant filenames (`GameHub-6.0.2-Patched-*.apk`), release name + body. Release narrative documents the 6.0.1 → 6.0.2 letter remap so future readers don't have to guess.
+
+### CI verification
+First test build kicked off as run [`25619647877`](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25619647877) on `gamehub-602-build` via `gh workflow run release.yml --ref gamehub-602-build -f tag=v0.1.0-602-test` (artifact-only prerelease — not a stable cut). Watching for green; if patches build cleanly the next step is device-test the 9 APKs to confirm bypass-login + catalog-redirect + /v6 prefix all fire end-to-end.
+
+### CI verification result
+Run [`25619647877`](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25619647877) **green in 2m49s** (started 04:20:19 UTC, finished 04:23:08 UTC):
+- ✅ Build patches bundle
+- ✅ Patch Normal / Normal-GHL / PuBG / AnTuTu / alt-AnTuTu / PuBG-CrossFire / Ludashi / Genshin / Original (all 9)
+- ⏭ Create GitHub Release (intentionally skipped — `stable=false` on this test run)
+
+Every re-anchored fingerprint matched at patcher time. All 9 APK artifacts (~111 MB each) on the run, 14-day retention. **Next step: device test** — install the `Original` artifact (or any of the variants) and confirm bypass-login + catalog redirect + /v6 prefix all fire on 6.0.2 the same as they did on 6.0.1, then cut a stable release.

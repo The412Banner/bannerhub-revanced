@@ -18,15 +18,13 @@ A ReVanced patch bundle and pre-built APKs for [XiaoJi GameHub](https://www.game
 
 ### 🆕 Inherited from upstream GameHub 6.0.2
 
-XiaoJi-side improvements bundled with the 6.0.2 base APK; you get them automatically by using this build. The 6.0.2 changelog is incremental on top of 6.0.1, so at minimum:
+XiaoJi marks 6.0.2 as the official worldwide launch of GameHub. Three headline upgrades bundled with the 6.0.2 base APK that you get automatically by using this build:
 
-1. Improved Steam login and game download stability
-2. Faster Steam game launch speeds
-3. Virtual button layouts switchable dynamically via keypress
-4. Multiple new touchscreen input methods
-5. Gyroscope support for camera control
-6. AI frame generation supported across all games
-7. Bug fixes
+1. **Landscape / portrait auto-rotation across the UI** — first-ever rotation support in GameHub; one-tap seamless layout switching optimized for both PC widescreen and mobile / portable form factors.
+2. **Epic Games Store integration + Retro module** — full Epic Games support (sync your Epic library, launch from inside GameHub) and a dedicated retro section for arcade and classic-console titles.
+3. **AI Super Frame Interpolation in the PC emulator** — runtime frame-interpolation pipeline that lifts effective framerate above native with low added latency for smoother PC-game playback on Android.
+
+(Source: XiaoJi's official 6.0.2 announcement.)
 
 ## What's new in v1.0.1-601 (historical hotfix)
 

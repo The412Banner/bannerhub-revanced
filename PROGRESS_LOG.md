@@ -653,3 +653,9 @@ Run [`25619647877`](https://github.com/The412Banner/bannerhub-revanced/actions/r
 - ⏭ Create GitHub Release (intentionally skipped — `stable=false` on this test run)
 
 Every re-anchored fingerprint matched at patcher time. All 9 APK artifacts (~111 MB each) on the run, 14-day retention. **Next step: device test** — install the `Original` artifact (or any of the variants) and confirm bypass-login + catalog redirect + /v6 prefix all fire on 6.0.2 the same as they did on 6.0.1, then cut a stable release.
+
+### Stable release — v1.0.0-602 (2026-05-10 14:59 UTC)
+
+[`v1.0.0-602` — Gamehub 6.0.2 - BannerHub API - Patched](https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.0.0-602) is live. Stable cut as run [`25631854018`](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25631854018) — all 9 variant patch jobs succeeded plus the `release` job (`stable=true`), 12 assets attached: the 9 patched APKs + the `.rvp` patch bundle + the 2 `.rve` extension files. Device-tested by user before stable cut. Release notes ship the 6.0.1 → 6.0.2 R8 letter remap table and the `FakeStateFlow` rationale verbatim.
+
+This is the first stable on the `gamehub-602-build` branch and the first one in the project's history that didn't require a `.0` → `.1` hotfix because the structural-anchor recipes recorded after the 6.0.0 → 6.0.1 fiasco let every fingerprint be re-derived correctly on the first try. README updated to reflect 6.0.2 as the latest stable; v1.0.1-601 / v1.0.0-601 / v1.0.1-600 sections moved into "historical" sections at the top.

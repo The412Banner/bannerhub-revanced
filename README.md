@@ -55,7 +55,7 @@ It also fixes a launch-time `VerifyError` that the original 5.x `Disable Crashly
 ## ⚠ Known limitations — please read
 
 - **Steam game launches via the standard Steam client are likely broken.** Redirecting the catalog API to the BannerHub Worker changes which Steam client component the host resolves at launch. If your Steam games stop launching after upgrading, switch to the **Lightweight Steam client** in the picker — it's the variant that pairs cleanly with the BannerHub catalog. The standard Steam client may still work for some titles, but Lightweight should be your default on this build.
-- **Imported games have no cover art by default.** When you add a game via Import, no banner / cover / hero artwork is fetched automatically. Open the imported game's edit screen and set the artwork manually (cover, banner, hero, logo as applicable). The game itself is fully importable and launchable without artwork — this is purely cosmetic.
+- ~~**Imported games have no cover art by default.**~~ **Fixed 2026-05-11 in the BannerHub Worker** (deploy `5fd6c6a7…`). The PC-EXE import recognition call (`/simulator/getLocalGameDetail`) was falling through to the worker's anonymous-passthrough path, so upstream returned an empty `LocalGameInfoSvrEntity` and imported games landed with no artwork. The endpoint is now on the same authenticated-proxy branch as the vjoy/Scheme endpoints — client headers are forwarded and the shared `bannerhub_token` is injected, so upstream returns populated `logo`/`cover_image`/`back_image`/`hero_capsule`/`square_image` fields. **No APK rebuild required** — the fix is server-side and applies retroactively to every existing patched build.
 
 ## Source
 

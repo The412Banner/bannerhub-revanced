@@ -1,4 +1,6 @@
 # BannerHub for ReVanced — GameHub 6.0
+[![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.gg/n8S4G2WZQ4)
+
 
 A ReVanced patch bundle and pre-built APKs for [XiaoJi GameHub](https://www.gamehubglobal.com/) 6.0.0 (`com.xiaoji.egggame`) that **remove the login requirement, redirect the catalog API to the BannerHub Cloudflare Worker, mute UI sound feedback, and ship a debug-logging probe**, plus build-side variants that install side-by-side on the same device.
 
@@ -193,3 +195,8 @@ The release pipeline has two modes:
 ## License
 
 GPLv3 — same as upstream ReVanced.
+
+
+## Community
+
+Join our Discord: https://discord.gg/n8S4G2WZQ4

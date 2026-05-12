@@ -67,7 +67,7 @@ val vibrationPatch = bytecodePatch(
         "TideGear/GameHub-Vibration-Fix (BannerHub PR #80).",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
-    dependsOn(sharedGamehubExtensionPatch, vibrationManifestPatch)
+    dependsOn(sharedGamehubExtensionPatch, vibrationManifestPatch, vibrationLibPatch)
 
     apply {
         // -----------------------------------------------------------------

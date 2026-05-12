@@ -1,18 +1,24 @@
 # BannerHub for ReVanced — GameHub 6.0
 
-> *expect issues !  this is a work in progress and incomplete!*
+A ReVanced patch bundle and pre-built APKs for [XiaoJi GameHub](https://www.gamehubglobal.com/) 6.0.4 (`com.xiaoji.egggame`) that **remove the login requirement, redirect the catalog API to the BannerHub Cloudflare Worker, fall back to a cached component list when offline, mute UI sound feedback, and ship a debug-logging probe**, plus build-side variants that install side-by-side on the same device.
 
-A ReVanced patch bundle and pre-built APKs for [XiaoJi GameHub](https://www.gamehubglobal.com/) 6.0.2 (`com.xiaoji.egggame`) that **remove the login requirement, redirect the catalog API to the BannerHub Cloudflare Worker, mute UI sound feedback, and ship a debug-logging probe**, plus build-side variants that install side-by-side on the same device.
-
-**Latest stable release:** [`v1.0.0-602` — Gamehub 6.0.2 - BannerHub API - Patched](https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.0.0-602) — 9 ready-to-install APK variants + the `.rvp` patch bundle and `.rve` extension files for use with `revanced-cli`.
+**Latest stable release:** [`v1.0.0-604` — Gamehub 6.0.4 - BannerHub API - Patched](https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.0.0-604) — 9 ready-to-install APK variants + the `.rvp` patch bundle and `.rve` extension files for use with `revanced-cli`.
 
 > ⚠ **A fresh install is required if a previous release is still installed.** Each release run generates a new debug keystore, so the signing certificate differs between releases and Android refuses the upgrade with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Uninstall the previous version of the same variant first, then install the new one. (Within a single release, all 9 variants are signed with the same cert.)
 
-## Unreleased on `gamehub-602-build` (next pre-release)
+## What's new in v1.0.0-604
 
-- **`Offline component cache fallback`** *(new patch)* — when the device is offline, the per-game pickers (GPU driver, DXVK, VKD3D, FEXCore, Box64, container) used to render only the embedded built-in versions, even though every cached catalog entry the user had ever seen online was already sitting in the on-disk `sp_winemu_unified_resources.xml`. Root cause: `eci.a(RepoCategory, Continuation)` short-circuits to Kotlin's `EmptyList` sentinel when the network-backed `Uaa` flow returns an empty list. The patch swaps that sentinel for an `invoke-static` into `PickerCacheFallback.fromXxo(...)`, which reflects through the `eci.a:Lxxo;` field to read the `xxo.c:ConcurrentHashMap` (already hydrated by `u6o.<init>` from disk at app start) and returns a category-filtered `ArrayList<WinEmuRepo>`. Online behavior is unchanged — the hook only fires on the original empty-list path; any non-empty `Uaa` list goes through the original filter loop as before. Fields are looked up by single-letter name (`a`, `c`) plus a runtime type sanity check, so it survives R8 letter shuffles between minor base APK bumps without source change. See [`OfflineComponentCachePatch.kt`](patches/src/main/kotlin/app/revanced/patches/gamehub/misc/offlinecache/OfflineComponentCachePatch.kt) for the structural-anchor recipes used to re-derive `eci`, `RepoCategory`, and `KOTLIN_EMPTY_LIST_CLASS` (currently `Lz85;`) on a fresh decompile.
+- **Base APK refresh: GameHub 6.0.2 → 6.0.4** (versionCode 112 → 114). The 6.0.2 → 6.0.4 bump triggered another sweeping R8 letter reshuffle (new r8-map-id `6a5cde6143fc…57b`). Every anchor was re-derived against the new base via the structural-anchor recipes in the patch sources; all 9 variants applied cleanly on the first patcher run — second consecutive base bump where the structural anchors caught everything first try, no .0 → .1 hotfix needed.
+- **`Bypass login` re-anchored** — `AUTH_IMPL` `Lit0;` → `Ljt0;`, `AUTH_INTERFACE` `Lct0;` → `Ldt0;`, `AUTH_TOKEN` `Lkpm;` → `Lwpm;`, `GAME_LIB_REPO` `Luu7;` → `Lvu7;` (userId-getter still `e()`), `NAVIGATOR` `Lxle;` → `Lgme;` (Login intent class `Lsa0;` → `Lta0;`; screen-route enum `Lgi0;` → `Lhi0;`). The reflective `FakeStateFlow` wrap targets the 6.0.4 trio: `STATE_FLOW_IMPL` `tjk` → `akk`, `STATE_FLOW_WRAPPER` `hzh` → `ozh`, `STATE_FLOW_HOLDER_INTERFACE` `vfe` → `dge`; abstract StateFlow interface `Lrjk;` → `Lyjk;`. `FakeAuthToken` follows `Lkpm;` → `Lwpm;` and `FakeUserAccount` follows `Lfpm;` → `Lrpm;` (both ctor signatures byte-identical to 6.0.2).
+- **`NAV_INTERCEPTOR` skipped on 6.0.4** — `Liod;->a(...)`'s body no longer holds the iget+invoke+if-nez auth check inline; it constructs a `Lhod;` coroutine continuation and the pattern moved into `Lhod;->invokeSuspend`. The remaining six BypassLogin hooks (StateFlow fakes + navigator gates + user-id getter + token wrapper) cover the user-facing surface, confirmed by device test — no login-redirect leak from the skip. If a future regression requires re-enabling it, the patch source has a commented-out apply block as a starting point for hooking the continuation directly.
+- **`Redirect catalog API` re-anchored** — `ENV_ENUM_CLASS` `Lxrj;` → `Lesj;`. Both Online enum hosts still redirect to `bannerhub-api.the412banner.workers.dev`.
+- **`Prefix API path with /v6` re-anchored** — `Lvob;->b(Lm7a;String)V` → `Lcpb;->b(Ln7a;String)V`. Same anchor shape (iget on the builder's URL field + string-trim helper; trim moved from `Lpll;->s1` to `Lbml;->s1` in the host but the patch hooks the helper at its head before any of that runs).
+- **`Debug logging` re-anchored** — `Li86;` → `Lj86;` (y2d-impl), `Lpgd;` → `Lxgd;` (y2d-interface), `Lmw6;` → `Lnw6;` (Function0), `Luu7;->v` → `Lvu7;->v` (game-import save), `Lyji;` → `Lfki;` (RetroGameDao.upsert wrapper), `Lvs7;` → `Lws7;` (inner Room transaction; `.locals 70` again — closest to the original 6.0.0 `.locals 69`). Probe semantics unchanged.
+- **`Offline component cache fallback` re-anchored** — `ECI_CLASS` `Leci;` → `Lmci;`, `CONTINUATION_TYPE` `Lai3;` → `Lci3;`, `KOTLIN_EMPTY_LIST_CLASS` `Lz85;` → `Lw85;`. Same `:goto_2` sget-object swap point; runtime field lookups (`a`, `c`) are still single-letter + type-checked so no extension-side change was needed. (This is the first stable to ship the offline-cache patch — it was added to `gamehub-602-build` after v1.0.0-602 was cut and ships in 6.0.4 stable first.)
+- **✅ Steam launches via the standard Steam client now work end-to-end.** The "use Lightweight Steam client only" warning from v1.0.0-602 no longer applies. The BannerHub API Worker was fixed server-side to serve a Steam-launch-compatible payload for both client variants, so the standard Steam client launches games successfully on this build (and on existing patched builds — the fix is server-side and retroactive). Pick whichever Steam client suits your title; both work.
+- **No-touch patches** — `Disable Firebase Crashlytics`, `Mute UI sounds`, `File manager access`, `Rewrite custom permissions per variant`, `Change package name`, `Change app name` apply byte-for-byte against the new base because they anchor on full Android / Firebase / asset-path / manifest names that R8 doesn't touch.
 
-## What's new in v1.0.0-602
+## What's new in v1.0.0-602 (historical)
 
 - **Base APK refresh: GameHub 6.0.1 → 6.0.2** (versionCode 111 → 112). The 6.0.1 → 6.0.2 minor bump triggered another sweeping R8 letter reshuffle (every single class letter the bytecode patches keyed on was reassigned), so every anchor was re-derived against the new base via the structural-anchor recipes recorded in the patch sources. Same situation as 6.0.0 → 6.0.1; CI green on the first try this time, no silent-no-op surprises.
 - **`Bypass login` re-anchored** — `AUTH_IMPL` `Lrs0;` → `Lit0;`, `AUTH_INTERFACE` `Lls0;` → `Lct0;`, `AUTH_TOKEN` `Lfdm;` → `Lkpm;`, `GAME_LIB_REPO` `Lhp7;` → `Luu7;` (its userId-getter renamed `f()` → `e()`), `NAVIGATOR` `Lade;` → `Lxle;`, `NAV_INTERCEPTOR` `Lar0;` → `Lrr0;`. The Login intent class is now `Lsa0;` (was `Lca0;` in 6.0.1) but the patch anchors on the iget instruction so it doesn't need an explicit ref.
@@ -60,13 +66,13 @@ It also fixes a launch-time `VerifyError` that the original 5.x `Disable Crashly
 
 ## ⚠ Known limitations — please read
 
-- **Steam game launches via the standard Steam client are likely broken.** Redirecting the catalog API to the BannerHub Worker changes which Steam client component the host resolves at launch. If your Steam games stop launching after upgrading, switch to the **Lightweight Steam client** in the picker — it's the variant that pairs cleanly with the BannerHub catalog. The standard Steam client may still work for some titles, but Lightweight should be your default on this build.
+- ~~**Steam game launches via the standard Steam client are likely broken.**~~ **Fixed server-side in the BannerHub API Worker** — both the standard Steam client and the Lightweight Steam client now launch games end-to-end on patched 6.0.4 builds (and on existing patched builds; the fix is retroactive — no APK rebuild needed).
 - ~~**Imported games have no cover art by default.**~~ **Fixed 2026-05-11 in the BannerHub Worker** (deploy `5fd6c6a7…`). The PC-EXE import recognition call (`/simulator/getLocalGameDetail`) was falling through to the worker's anonymous-passthrough path, so upstream returned an empty `LocalGameInfoSvrEntity` and imported games landed with no artwork. The endpoint is now on the same authenticated-proxy branch as the vjoy/Scheme endpoints — client headers are forwarded and the shared `bannerhub_token` is injected, so upstream returns populated `logo`/`cover_image`/`back_image`/`hero_capsule`/`square_image` fields. **No APK rebuild required** — the fix is server-side and applies retroactively to every existing patched build.
 
 ## Source
 
-- **Base APK:** `GameHub_6.0.2.apk` — the official 6.0.2 global build (versionCode 112), attached unmodified to the [`base-apk-602`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/base-apk-602) release for reproducibility. Earlier base APKs remain attached to [`base-apk-601`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/base-apk-601) (6.0.1) and [`base-apk-600`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/base-apk-600) (6.0.0) for older releases.
-- **Patcher:** [ReVanced CLI 6.0.0](https://github.com/ReVanced/revanced-cli/releases/tag/v6.0.0) + the bundle built from this repo's `gamehub-602-build` branch (`gamehub-601-build` and `gamehub-600-build` remain in place for older 6.0.x work).
+- **Base APK:** `GameHub_6.0.4.apk` — the official 6.0.4 global build (versionCode 114), attached unmodified to the [`base-apk-604`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/base-apk-604) release for reproducibility. Earlier base APKs remain attached to [`base-apk-602`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/base-apk-602) (6.0.2), [`base-apk-601`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/base-apk-601) (6.0.1) and [`base-apk-600`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/base-apk-600) (6.0.0) for older releases.
+- **Patcher:** [ReVanced CLI 6.0.0](https://github.com/ReVanced/revanced-cli/releases/tag/v6.0.0) + the bundle built from this repo's `gamehub-604-build` branch (`gamehub-602-build`, `gamehub-601-build`, and `gamehub-600-build` remain in place for older 6.0.x work).
 - **Catalog backend:** [`The412Banner/bannerhub-api`](https://github.com/The412Banner/bannerhub-api) — Cloudflare Worker source, deployed at `bannerhub-api.the412banner.workers.dev`. Serves the curated component catalog from GitHub Pages and forwards unallowlisted paths back to upstream `landscape-api.vgabc.com` with the original signed-request behavior preserved.
 - **Build environment:** GitHub Actions, Ubuntu 24.04 runner, Temurin JDK 17. The full pipeline is [`.github/workflows/release.yml`](.github/workflows/release.yml): a `build` job produces the `.rvp` patch bundle, a 9-way matrix patches the base APK in parallel (one variant per matrix entry), and a final `release` job globs all artefacts into a single GitHub Release when triggered with `stable=true`.
 
@@ -76,15 +82,15 @@ The same patch bundle is applied to the same base APK 9 times, each time with a 
 
 | Variant | APK file | Package | Launcher label |
 | --- | --- | --- | --- |
-| Normal | `GameHub-6.0.2-Patched-Normal.apk` | `banner.hub` | GameHub |
-| Normal (GHL) | `GameHub-6.0.2-Patched-Normal.GHL.apk` *(GitHub strips parentheses from `Normal(GHL)`)* | `gamehub.lite` | GameHub |
-| PuBG | `GameHub-6.0.2-Patched-PuBG.apk` | `com.tencent.ig` | GameHub PuBG |
-| AnTuTu | `GameHub-6.0.2-Patched-AnTuTu.apk` | `com.antutu.ABenchMark` | GameHub AnTuTu |
-| alt-AnTuTu | `GameHub-6.0.2-Patched-alt-AnTuTu.apk` | `com.antutu.benchmark.full` | GameHub AnTuTu |
-| PuBG-CrossFire | `GameHub-6.0.2-Patched-PuBG-CrossFire.apk` | `com.tencent.tmgp.cf` | GameHub PuBG CrossFire |
-| Ludashi | `GameHub-6.0.2-Patched-Ludashi.apk` | `com.ludashi.aibench` | GameHub Ludashi |
-| Genshin | `GameHub-6.0.2-Patched-Genshin.apk` | `com.miHoYo.GenshinImpact` | GameHub Genshin |
-| Original | `GameHub-6.0.2-Patched-Original.apk` | `com.xiaoji.egggame` | GameHub |
+| Normal | `GameHub-6.0.4-Patched-Normal.apk` | `banner.hub` | GameHub |
+| Normal (GHL) | `GameHub-6.0.4-Patched-Normal.GHL.apk` *(GitHub strips parentheses from `Normal(GHL)`)* | `gamehub.lite` | GameHub |
+| PuBG | `GameHub-6.0.4-Patched-PuBG.apk` | `com.tencent.ig` | GameHub PuBG |
+| AnTuTu | `GameHub-6.0.4-Patched-AnTuTu.apk` | `com.antutu.ABenchMark` | GameHub AnTuTu |
+| alt-AnTuTu | `GameHub-6.0.4-Patched-alt-AnTuTu.apk` | `com.antutu.benchmark.full` | GameHub AnTuTu |
+| PuBG-CrossFire | `GameHub-6.0.4-Patched-PuBG-CrossFire.apk` | `com.tencent.tmgp.cf` | GameHub PuBG CrossFire |
+| Ludashi | `GameHub-6.0.4-Patched-Ludashi.apk` | `com.ludashi.aibench` | GameHub Ludashi |
+| Genshin | `GameHub-6.0.4-Patched-Genshin.apk` | `com.miHoYo.GenshinImpact` | GameHub Genshin |
+| Original | `GameHub-6.0.4-Patched-Original.apk` | `com.xiaoji.egggame` | GameHub |
 
 ## Patches applied
 
@@ -92,7 +98,7 @@ This bundle ships only patches that successfully apply against GameHub 6.0. Ever
 
 ### `Bypass login`
 
-Skips the login screen entirely and makes the library system function under a synthetic identity. Six bytecode rewrites cooperate (R8 letter map shown at 6.0.2 — the same patch logic was already used on 6.0.0 / 6.0.1 with different letter names, see the per-patch source comments for the full version history):
+Skips the login screen entirely and makes the library system function under a synthetic identity. Six bytecode rewrites cooperate (the walkthrough below uses the 6.0.2 R8 letter names for historical continuity; the 6.0.4 mappings are listed in the "What's new in v1.0.0-604" section above, and every prior version's letters are recorded in the per-patch source comments. The patch *mechanics* are identical across versions — only the class letters differ.):
 
 1. **`xle.i(gi0)` and `xle.r(gi0)`** — the navigator methods that gate Login routing. Original logic does `iget Lxle;->b:Lct0;` → `invoke-interface Lct0;->a()Z` → `if-nez :skipLogin` → otherwise build a `Lsa0;` Login navigation intent. Patch removes the `invoke-interface`/`move-result` pair and substitutes `const/4 vN, 0x1` so the branch is always taken.
 2. **`rr0.a(...)`** — a separate `NavigationInterceptor` (`getOrder()==10`) added in 6.0.1 that gates on `Lct0;->a()Z` independently of the navigator. Same iget+invoke-interface+if-nez pattern; bypassed identically with `const/4 vN, 0x1`.
@@ -105,7 +111,7 @@ End-to-end consequence: a fresh install lands on the home screen, the **Import**
 
 ### `Disable Firebase Crashlytics`
 
-Removes the Firebase Crashlytics initialisation block. Without this, GameHub 6.0.2 crashes on launch with `VerifyError`. Root cause: the upstream 5.x patch used `goto` to skip the Crashlytics call site, which in 6.0 leaves a join-point where the same register holds either `String` (goto path) or `Boolean` (fall-through path) and the ART verifier rejects it. The 6.0-compatible patch removes the three Crashlytics instructions in **reverse index order** (`setCrashlyticsCollectionEnabled`, `move-result-object`, `invoke-static getInstance`) so the intermediate `const/4 v2, 0x0` redefines the register with a consistent `Boolean` type at the join point. Anchored on `Lcom/xiaoji/egggame/BaseAndroidApp;->onCreate` plus full Firebase class names, so it ports across versions without source change.
+Removes the Firebase Crashlytics initialisation block. Without this, GameHub 6.0 crashes on launch with `VerifyError`. Root cause: the upstream 5.x patch used `goto` to skip the Crashlytics call site, which in 6.0 leaves a join-point where the same register holds either `String` (goto path) or `Boolean` (fall-through path) and the ART verifier rejects it. The 6.0-compatible patch removes the three Crashlytics instructions in **reverse index order** (`setCrashlyticsCollectionEnabled`, `move-result-object`, `invoke-static getInstance`) so the intermediate `const/4 v2, 0x0` redefines the register with a consistent `Boolean` type at the join point. Anchored on `Lcom/xiaoji/egggame/BaseAndroidApp;->onCreate` plus full Firebase class names, so it ports across versions without source change.
 
 ### `Mute UI sounds`
 
@@ -134,7 +140,7 @@ Hooks `vob.b(m7a builder, String path)` — the single static Ktor URL-builder h
 
 Full URLs (paths already starting with `http://` or `https://`) are short-circuited by the helper and pass through untouched, so direct downloads from the catalog's `download_url` fields still resolve to the Worker-authored GitHub-release URLs without the prefix being injected into them.
 
-### `Offline component cache fallback` *(unreleased — on `gamehub-602-build` after v1.0.0-602)*
+### `Offline component cache fallback`
 
 Lets the per-game pickers (GPU driver, DXVK, VKD3D, FEXCore, Box64, container) render cached entries when the device is offline. Without this patch, an offline `eci.a(RepoCategory, Continuation)` falls through to Kotlin's `EmptyList` sentinel and the pickers show only the embedded built-in versions — even though `u6o.<init>` already hydrated `xxo.c` (a `ConcurrentHashMap`) from `sp_winemu_unified_resources.xml` at app start with every catalog entry the user has ever seen online.
 
@@ -186,28 +192,28 @@ Available for ad-hoc CLI use; have no effect on the released APKs unless explici
 ```sh
 git clone https://github.com/The412Banner/bannerhub-revanced.git
 cd bannerhub-revanced
-git checkout gamehub-602-build
+git checkout gamehub-604-build
 
 # 1. Build the patch bundle
 ./gradlew build
 
 # 2. Get the base APK
-gh release download base-apk-602 \
+gh release download base-apk-604 \
   --repo The412Banner/bannerhub-revanced \
-  --pattern "GameHub_6.0.2.apk" \
-  --output GameHub_6.0.2.apk
+  --pattern "GameHub_6.0.4.apk" \
+  --output GameHub_6.0.4.apk
 
 # 3. Get ReVanced CLI
 curl -L https://github.com/ReVanced/revanced-cli/releases/download/v6.0.0/revanced-cli-6.0.0-all.jar \
   -o revanced-cli.jar
 
 # 4. Patch it (single-variant example: Normal)
-java -jar revanced-cli.jar patch GameHub_6.0.2.apk \
+java -jar revanced-cli.jar patch GameHub_6.0.4.apk \
   --patches "$(find patches/build/libs -name '*.rvp' ! -name '*-sources*' ! -name '*-javadoc*' | head -1)" \
   --bypass-verification \
   -e "Change package name" -O 'packageName="banner.hub"' \
   -e "Change app name"     -O 'appName="GameHub"' \
-  --out GameHub-6.0.2-Patched-Normal.apk
+  --out GameHub-6.0.4-Patched-Normal.apk
 ```
 
 > **Note on `-O` quoting:** the JSON-string quotes around the value (`"…"` inside the single-quoted shell argument) are required. Picocli's `Map<String,Object>` parser auto-coerces values and trips on package names ending in `f`/`d`/`l` (Java numeric-literal suffixes — `com.tencent.tmgp.cf` is the canonical example).
@@ -217,7 +223,7 @@ java -jar revanced-cli.jar patch GameHub_6.0.2.apk \
 The release pipeline has two modes:
 
 - **Prerelease (default)** — every tag push and every `workflow_dispatch` run produces the 9 variant APKs as Actions artifacts only. Useful for testing without cluttering the Releases page.
-- **Stable** — `workflow_dispatch` from `Actions → Run workflow` with the **`stable`** checkbox ticked and a tag (e.g. `v1.0.0-602`) populated. The matrix runs as normal, then a final `release` job creates a GitHub Release with the 9 APKs, `.rvp` bundle, `.rve` extension files, and the release notes (sourced verbatim from `release.yml`).
+- **Stable** — `workflow_dispatch` from `Actions → Run workflow` with the **`stable`** checkbox ticked and a tag (e.g. `v1.0.0-604`) populated. The matrix runs as normal, then a final `release` job creates a GitHub Release with the 9 APKs, `.rvp` bundle, `.rve` extension files, and the release notes (sourced verbatim from `release.yml`).
 
 ## Repo layout
 
@@ -226,7 +232,7 @@ The release pipeline has two modes:
   - `misc/analytics/DisableCrashlyticsPatch.kt` — reverse-order Crashlytics removal.
   - `misc/sound/MuteUiSoundsPatch.kt` — silent-PCM resource swap.
   - `misc/apiredirect/RedirectCatalogApiPatch.kt` and `misc/apiredirect/PrefixApiPathPatch.kt` — Worker redirect + `/v6/` prefix.
-  - `misc/offlinecache/OfflineComponentCachePatch.kt` — per-game-picker offline cache fallback (unreleased on `gamehub-602-build`).
+  - `misc/offlinecache/OfflineComponentCachePatch.kt` — per-game-picker offline cache fallback.
   - `misc/debuglog/DebugLogPatch.kt` — debug-log probes.
   - `misc/permissions/RewriteCustomPermissionsPatch.kt` — per-variant rewrite of `com.xiaoji.egggame.permission.*`.
   - `filemanager/FileManagerAccessPatch.kt` — MTDataFiles provider patch.

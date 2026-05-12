@@ -750,3 +750,12 @@ User feedback: the v1.0.0-604 release page is too long; the per-patch R8 letter-
 - The "Patches applied" table rows are now one-line user-facing descriptions of what each patch does, instead of the patcher-side mechanics. A single sentence below the table links to the README's Patches applied section + the patch source directory for the deeper breakdown. (commit `3b89575`)
 
 Both updates pushed to `release.yml` for future re-cuts and mirrored onto the live `v1.0.0-604` release body via `gh release edit --notes-file`. README is intentionally untouched — its long-form section is the canonical deep-dive and the release page now links to it.
+
+### Offline component cache fallback — flagged broken on 6.0.4 (2026-05-12)
+
+User reported the offline component cache fallback patch isn't delivering the intended behavior at runtime on 6.0.4 despite patcher-side success (CI green, the patch applies, structural anchors all resolved correctly). Flagged as **currently broken** in `release.yml` body, the README's "what's new" bullet AND its detailed `### Offline component cache fallback` section, and at the top of `OfflineComponentCachePatch.kt` itself. Live `v1.0.0-604` release body refreshed via `gh release edit --notes-file` so users see the warning. Patch stays enabled per user direction.
+
+Investigation angles to check on the next pass (recorded at top of the patch source):
+- Has `mci.a(RepoCategory, Continuation)` itself changed shape beyond the `:goto_2` sentinel? Walk the full method body and compare against the 6.0.2 `eci.a` body the patch was designed around.
+- Did `xxo`'s field layout / `xxo.c` `ConcurrentHashMap` type change? `PickerCacheFallback.fromXxo` uses single-letter field lookups (`a`, `c`) plus a runtime type sanity check; if `c`'s declared type is no longer assignable to `Map`, the sanity check returns the empty ArrayList silently — visible only via `DebugTrace`.
+- Is `u6o.<init>` still the disk-hydrator? If 6.0.4 renamed/restructured the hydrator the map could simply be empty at the time the picker consults it, in which case the patch IS firing but has nothing to return.

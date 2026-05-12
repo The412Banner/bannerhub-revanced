@@ -58,16 +58,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release download base-apk-602 \
-            --pattern "GameHub_6.0.2.apk" \
+          gh release download base-apk-604 \
+            --pattern "GameHub_6.0.4.apk" \
             --repo ${{ github.repository }} \
-            --output GameHub_6.0.2.apk
+            --output GameHub_6.0.4.apk
 
       - name: Stage shared artifacts
         run: |
           mkdir -p shared
           cp revanced-cli.jar shared/
-          cp GameHub_6.0.2.apk shared/
+          cp GameHub_6.0.4.apk shared/
           cp $(find patches/build/libs -name "*.rvp" ! -name "*-javadoc*" ! -name "*-sources*" | head -1) shared/patches.rvp
           # Side-channel artefacts that ship in the final release
           cp patches/build/libs/*.rvp shared/ 2>/dev/null || true
@@ -89,15 +89,15 @@ jobs:
       fail-fast: false
       matrix:
         variant:
-          - { name: Normal,         file: "GameHub-6.0.2-Patched-Normal.apk",          pkg: "banner.hub",                 label: "GameHub" }
-          - { name: Normal-GHL,     file: "GameHub-6.0.2-Patched-Normal(GHL).apk",     pkg: "gamehub.lite",               label: "GameHub" }
-          - { name: PuBG,           file: "GameHub-6.0.2-Patched-PuBG.apk",            pkg: "com.tencent.ig",             label: "GameHub PuBG" }
-          - { name: AnTuTu,         file: "GameHub-6.0.2-Patched-AnTuTu.apk",          pkg: "com.antutu.ABenchMark",      label: "GameHub AnTuTu" }
-          - { name: alt-AnTuTu,     file: "GameHub-6.0.2-Patched-alt-AnTuTu.apk",      pkg: "com.antutu.benchmark.full",  label: "GameHub AnTuTu" }
-          - { name: PuBG-CrossFire, file: "GameHub-6.0.2-Patched-PuBG-CrossFire.apk",  pkg: "com.tencent.tmgp.cf",        label: "GameHub PuBG CrossFire" }
-          - { name: Ludashi,        file: "GameHub-6.0.2-Patched-Ludashi.apk",         pkg: "com.ludashi.aibench",        label: "GameHub Ludashi" }
-          - { name: Genshin,        file: "GameHub-6.0.2-Patched-Genshin.apk",         pkg: "com.miHoYo.GenshinImpact",   label: "GameHub Genshin" }
-          - { name: Original,       file: "GameHub-6.0.2-Patched-Original.apk",        pkg: "com.xiaoji.egggame",         label: "GameHub" }
+          - { name: Normal,         file: "GameHub-6.0.4-Patched-Normal.apk",          pkg: "banner.hub",                 label: "GameHub" }
+          - { name: Normal-GHL,     file: "GameHub-6.0.4-Patched-Normal(GHL).apk",     pkg: "gamehub.lite",               label: "GameHub" }
+          - { name: PuBG,           file: "GameHub-6.0.4-Patched-PuBG.apk",            pkg: "com.tencent.ig",             label: "GameHub PuBG" }
+          - { name: AnTuTu,         file: "GameHub-6.0.4-Patched-AnTuTu.apk",          pkg: "com.antutu.ABenchMark",      label: "GameHub AnTuTu" }
+          - { name: alt-AnTuTu,     file: "GameHub-6.0.4-Patched-alt-AnTuTu.apk",      pkg: "com.antutu.benchmark.full",  label: "GameHub AnTuTu" }
+          - { name: PuBG-CrossFire, file: "GameHub-6.0.4-Patched-PuBG-CrossFire.apk",  pkg: "com.tencent.tmgp.cf",        label: "GameHub PuBG CrossFire" }
+          - { name: Ludashi,        file: "GameHub-6.0.4-Patched-Ludashi.apk",         pkg: "com.ludashi.aibench",        label: "GameHub Ludashi" }
+          - { name: Genshin,        file: "GameHub-6.0.4-Patched-Genshin.apk",         pkg: "com.miHoYo.GenshinImpact",   label: "GameHub Genshin" }
+          - { name: Original,       file: "GameHub-6.0.4-Patched-Original.apk",        pkg: "com.xiaoji.egggame",         label: "GameHub" }
     steps:
       - name: Setup Java
         uses: actions/setup-java@v5
@@ -121,7 +121,7 @@ jobs:
           # parsed as a Java float suffix and triggers NumberFormatException
           # before the patch ever runs). The quotes also make values with
           # spaces (e.g. "GameHub PuBG CrossFire") a non-issue.
-          java -jar shared/revanced-cli.jar patch shared/GameHub_6.0.2.apk \
+          java -jar shared/revanced-cli.jar patch shared/GameHub_6.0.4.apk \
             --patches shared/patches.rvp \
             --bypass-verification \
             -e "Change package name" \
@@ -186,9 +186,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
-          name: Gamehub 6.0.2 - BannerHub API - Patched
+          name: Gamehub 6.0.4 - BannerHub API - Patched
           body: |
-            ## Gamehub 6.0.2 - BannerHub API - Patched
+            ## Gamehub 6.0.4 - BannerHub API - Patched
 
             A patched build of XiaoJi GameHub 6.0.2 (`com.xiaoji.egggame`, versionCode 112) that removes the login requirement so games can be imported and used without an account, redirects the catalog API to the BannerHub Cloudflare Worker, and ships **9 variants that install side-by-side on the same device**.
 
@@ -215,8 +215,8 @@ jobs:
             (Source: XiaoJi's official 6.0.2 announcement.)
 
             ### Source
-            - **Base APK**: `GameHub_6.0.2.apk` — the official 6.0.2 global build (versionCode 112), attached to [`base-apk-602`](https://github.com/${{ github.repository }}/releases/tag/base-apk-602)
-            - **Patcher**: ReVanced CLI 6.0.0 + this repo's patch bundle, branch `gamehub-602-build`
+            - **Base APK**: `GameHub_6.0.4.apk` — the official 6.0.2 global build (versionCode 112), attached to [`base-apk-604`](https://github.com/${{ github.repository }}/releases/tag/base-apk-604)
+            - **Patcher**: ReVanced CLI 6.0.0 + this repo's patch bundle, branch `gamehub-604-build`
             - **Repo**: https://github.com/${{ github.repository }}
 
             ### Variants
@@ -225,15 +225,15 @@ jobs:
 
             | Variant | APK | Package | Launcher label |
             | --- | --- | --- | --- |
-            | Normal | `GameHub-6.0.2-Patched-Normal.apk` | `banner.hub` | GameHub |
-            | Normal (GHL) | `GameHub-6.0.2-Patched-Normal(GHL).apk` | `gamehub.lite` | GameHub |
-            | PuBG | `GameHub-6.0.2-Patched-PuBG.apk` | `com.tencent.ig` | GameHub PuBG |
-            | AnTuTu | `GameHub-6.0.2-Patched-AnTuTu.apk` | `com.antutu.ABenchMark` | GameHub AnTuTu |
-            | alt-AnTuTu | `GameHub-6.0.2-Patched-alt-AnTuTu.apk` | `com.antutu.benchmark.full` | GameHub AnTuTu |
-            | PuBG-CrossFire | `GameHub-6.0.2-Patched-PuBG-CrossFire.apk` | `com.tencent.tmgp.cf` | GameHub PuBG CrossFire |
-            | Ludashi | `GameHub-6.0.2-Patched-Ludashi.apk` | `com.ludashi.aibench` | GameHub Ludashi |
-            | Genshin | `GameHub-6.0.2-Patched-Genshin.apk` | `com.miHoYo.GenshinImpact` | GameHub Genshin |
-            | Original | `GameHub-6.0.2-Patched-Original.apk` | `com.xiaoji.egggame` | GameHub |
+            | Normal | `GameHub-6.0.4-Patched-Normal.apk` | `banner.hub` | GameHub |
+            | Normal (GHL) | `GameHub-6.0.4-Patched-Normal(GHL).apk` | `gamehub.lite` | GameHub |
+            | PuBG | `GameHub-6.0.4-Patched-PuBG.apk` | `com.tencent.ig` | GameHub PuBG |
+            | AnTuTu | `GameHub-6.0.4-Patched-AnTuTu.apk` | `com.antutu.ABenchMark` | GameHub AnTuTu |
+            | alt-AnTuTu | `GameHub-6.0.4-Patched-alt-AnTuTu.apk` | `com.antutu.benchmark.full` | GameHub AnTuTu |
+            | PuBG-CrossFire | `GameHub-6.0.4-Patched-PuBG-CrossFire.apk` | `com.tencent.tmgp.cf` | GameHub PuBG CrossFire |
+            | Ludashi | `GameHub-6.0.4-Patched-Ludashi.apk` | `com.ludashi.aibench` | GameHub Ludashi |
+            | Genshin | `GameHub-6.0.4-Patched-Genshin.apk` | `com.miHoYo.GenshinImpact` | GameHub Genshin |
+            | Original | `GameHub-6.0.4-Patched-Original.apk` | `com.xiaoji.egggame` | GameHub |
 
             ### Patches applied
 
@@ -261,6 +261,6 @@ jobs:
             - **A fresh install is required if a previous release is still installed.** Each release run generates a new debug keystore, so the signing certificate differs between releases and Android refuses the upgrade with `INSTALL_FAILED_UPDATE_INCOMPATIBLE` (signature mismatch). Uninstall the previous version of the same variant first, then install the new one. Within a single release, all 9 variants are signed with the same cert.
             - The `.rvp` patch bundle and `.rve` extension files are also attached for use with `revanced-cli` directly.
           files: |
-            apks/GameHub-6.0.2-Patched-*.apk
+            apks/GameHub-6.0.4-Patched-*.apk
             shared/*.rvp
             shared/rve/*.rve

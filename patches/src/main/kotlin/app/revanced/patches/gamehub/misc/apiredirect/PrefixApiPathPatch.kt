@@ -16,12 +16,12 @@ import app.revanced.patches.gamehub.GAMEHUB_VERSION
 //   6.0.0 → Lzdb;->b(Lqx9;Ljava/lang/String;)V
 //   6.0.1 → Lohb;->b(Lj1a;Ljava/lang/String;)V
 //   6.0.2 → Lvob;->b(Lm7a;Ljava/lang/String;)V
+//   6.0.4 → Lcpb;->b(Ln7a;Ljava/lang/String;)V  (string-trim helper now Lbml;->s1)
 // Structural anchor: a static method `(L<2-3-letter>;Ljava/lang/String;)V`
 // whose body starts with `iget-object` from the builder's URL field then
-// calls a string-trim helper (Lpll;->s1(CharSequence)CharSequence). Body
-// shape is byte-stable across versions.
-private const val URL_HELPER_CLASS  = "Lvob;"
-private const val URL_BUILDER_TYPE  = "Lm7a;"
+// calls a string-trim helper. Body shape is byte-stable across versions.
+private const val URL_HELPER_CLASS  = "Lcpb;"
+private const val URL_BUILDER_TYPE  = "Ln7a;"
 
 // V6PathPrefix.prefix(String) returns "v6/" + path for relative paths and
 // passes full-URL paths (http://, https://) through unchanged. Implementing

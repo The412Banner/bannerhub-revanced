@@ -39,10 +39,12 @@ import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 //   - KOTLIN_EMPTY_LIST_CLASS by searching the matched method for the
 //     `sget-object` that's wrapped by `goto :goto_2` returns — the field's
 //     `definingClass` is EmptyList.
-private const val ECI_CLASS               = "Leci;"
+// 6.0.4: ECI_CLASS Leci; → Lmci;; CONTINUATION_TYPE Lai3; → Lci3;;
+//        KOTLIN_EMPTY_LIST_CLASS Lz85; → Lw85;.
+private const val ECI_CLASS               = "Lmci;"
 private const val REPO_CATEGORY           = "Lcom/xiaoji/egggame/common/winemu/bean/RepoCategory;"
-private const val CONTINUATION_TYPE       = "Lai3;"
-private const val KOTLIN_EMPTY_LIST_CLASS = "Lz85;"
+private const val CONTINUATION_TYPE       = "Lci3;"
+private const val KOTLIN_EMPTY_LIST_CLASS = "Lw85;"
 
 private const val PICKER_FALLBACK =
     "Lapp/revanced/extension/gamehub/winemu/PickerCacheFallback;"

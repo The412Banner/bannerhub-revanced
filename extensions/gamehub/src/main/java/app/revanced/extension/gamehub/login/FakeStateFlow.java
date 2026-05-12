@@ -18,9 +18,11 @@ import java.lang.reflect.Constructor;
  * the smali edit at a one-line invoke-static.
  *
  * R8-mangled letter map (update on each base APK bump):
- *   STATE_FLOW_IMPL_CLASS = "tjk"  (the (Object) → Lvfe; constructible state holder)
- *   STATE_FLOW_WRAPPER_CLASS = "hzh"  (the Lvfe; → Lrjk;-implementing wrapper)
- *   STATE_FLOW_HOLDER_INTERFACE = "vfe"  (the interface Lhzh ctor accepts)
+ *   6.0.2: tjk / hzh / vfe (Lrjk; was the abstract StateFlow iface)
+ *   6.0.4: akk / ozh / dge (Lyjk; is the abstract StateFlow iface)
+ *   STATE_FLOW_IMPL_CLASS = "akk"   (the (Object) → Ldge; constructible state holder)
+ *   STATE_FLOW_WRAPPER_CLASS = "ozh"   (the Ldge; → Lyjk;-implementing wrapper)
+ *   STATE_FLOW_HOLDER_INTERFACE = "dge" (the interface Lozh ctor accepts)
  *
  * Structural anchors:
  *   STATE_FLOW_IMPL_CLASS       — final class with `<init>(Ljava/lang/Object;)V`
@@ -42,9 +44,9 @@ import java.lang.reflect.Constructor;
  */
 public final class FakeStateFlow {
 
-    private static final String STATE_FLOW_IMPL_CLASS       = "tjk";
-    private static final String STATE_FLOW_WRAPPER_CLASS    = "hzh";
-    private static final String STATE_FLOW_HOLDER_INTERFACE = "vfe";
+    private static final String STATE_FLOW_IMPL_CLASS       = "akk";
+    private static final String STATE_FLOW_WRAPPER_CLASS    = "ozh";
+    private static final String STATE_FLOW_HOLDER_INTERFACE = "dge";
 
     private static volatile Constructor<?> implCtor;
     private static volatile Constructor<?> wrapperCtor;

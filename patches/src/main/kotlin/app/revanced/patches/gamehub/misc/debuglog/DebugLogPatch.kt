@@ -76,8 +76,9 @@ val debugLogPatch = bytecodePatch(
         // real impl: every release-build catch handler funnels caught Throwables here,
         // and disabling Firebase Crashlytics turned its sink into a no-op. Trace every
         // Throwable that reaches odb.e so silently-swallowed exceptions surface.
+        // 6.0.4: Y2D_IMPL Li86; → Lj86;
         firstMethod {
-            definingClass == "Li86;" && name == "e"
+            definingClass == "Lj86;" && name == "e"
         }.apply {
             addInstructions(
                 0,
@@ -93,14 +94,15 @@ val debugLogPatch = bytecodePatch(
         //   1. Entry — confirms the save use case reached this method
         //   2. Catch path (right before y2d.e) — independent of which y2d impl is bound
         //      to xm7.c, so we capture exceptions even if it is not odb.
+        // 6.0.4: SAVE_REPO Luu7; → Lvu7;, Y2D_INTERFACE Lpgd; → Lxgd;
         firstMethod {
-            definingClass == "Luu7;" && name == "v"
+            definingClass == "Lvu7;" && name == "v"
         }.apply {
             // Insert probe 2 first so its index doesn't shift when probe 1 inserts at 0.
             val y2dCallIdx = indexOfFirstInstructionOrThrow {
                 opcode == Opcode.INVOKE_INTERFACE &&
                     getReference<MethodReference>()?.let {
-                        it.definingClass == "Lpgd;" && it.name == "e"
+                        it.definingClass == "Lxgd;" && it.name == "e"
                     } == true
             }
             addInstructions(
@@ -125,8 +127,9 @@ val debugLogPatch = bytecodePatch(
         // If this probe fires after Save → write happened, bug is library-read-side.
         // If it does NOT fire → write was never attempted, bug is upstream.
         // y4i.b has .locals 0, so we use a no-arg marker that needs no register.
+        // 6.0.4: RETRO_REPO_WRAPPER Lyji; → Lfki;
         firstMethod {
-            definingClass == "Lyji;" && name == "b"
+            definingClass == "Lfki;" && name == "b"
         }.apply {
             addInstructions(
                 0,
@@ -141,8 +144,9 @@ val debugLogPatch = bytecodePatch(
         // Probe entry plus right before each insert. If both insert markers fire
         // → write side is fine, bug is library-read-side. If neither → transaction
         // body bailed before reaching the inserts.
+        // 6.0.4: IMPORT_TXN Lvs7; → Lws7; (.locals 70, closest to 6.0.0's 69)
         firstMethod {
-            definingClass == "Lvs7;" && name == "invokeSuspend"
+            definingClass == "Lws7;" && name == "invokeSuspend"
         }.apply {
             // Walk instructions backwards so we can insert without index drift.
             val launchInsertIdx = indexOfFirstInstructionOrThrow {

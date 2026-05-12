@@ -72,13 +72,22 @@ import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 //   patches through the FakeStateFlow Java extension, which performs the
 //   wrap via reflection and caches the result. Update the letter constants
 //   inside FakeStateFlow.java on each base APK bump.
-private const val AUTH_IMPL              = "Lit0;"
-private const val AUTH_INTERFACE         = "Lct0;"
-private const val AUTH_TOKEN             = "Lkpm;"
-private const val GAME_LIB_REPO          = "Luu7;"
+// 6.0.4 (r8-map-id 6a5cde6143fc...57b) — every anchor reshuffled from 6.0.2;
+// see gamehub_reports/GH604_LETTER_MAP.md for the full delta and structural
+// verification per anchor.
+private const val AUTH_IMPL              = "Ljt0;"
+private const val AUTH_INTERFACE         = "Ldt0;"
+private const val AUTH_TOKEN             = "Lwpm;"
+private const val GAME_LIB_REPO          = "Lvu7;"
 private const val GAME_LIB_REPO_USERID_METHOD = "e"
-private const val NAVIGATOR              = "Lxle;"
-private const val NAV_INTERCEPTOR        = "Lrr0;"
+private const val NAVIGATOR              = "Lgme;"
+// NAV_INTERCEPTOR in 6.0.4 is Liod;, but its a(...) body no longer holds the
+// auth check inline — it dispatches to coroutine continuation Lhod;->invokeSuspend
+// where the iget+invoke+if-nez pattern actually lives. The apply block below
+// is commented out for 6.0.4; if device testing reveals a login-redirect leak
+// post-build, switch to option C (hook hod.invokeSuspend) — see GH604_LETTER_MAP.md.
+@Suppress("unused")
+private const val NAV_INTERCEPTOR        = "Liod;"
 
 private const val FAKE_STATE_FLOW = "Lapp/revanced/extension/gamehub/login/FakeStateFlow;"
 // =========================================================================
@@ -229,40 +238,41 @@ val bypassLoginPatch = bytecodePatch(
         }
 
         // -----------------------------------------------------------------
-        // NAV_INTERCEPTOR.a(...) — NavigationInterceptor.intercept.
+        // NAV_INTERCEPTOR.a(...) — SKIPPED FOR 6.0.4.
         //
-        // 6.0.1 added a separate NavigationInterceptor class (`getOrder()
-        // == 10`). Body:
-        //
-        //   iget-object p0, p0, NAV_INTERCEPTOR->a:AUTH_INTERFACE
-        //   invoke-interface {p0}, AUTH_INTERFACE->a()Z
-        //   move-result p0
-        //   if-nez p0, :cond_0
-        //   new-instance p0, L<redirect-to-login result>;
-        //   ...
-        //   :cond_0  ← passthrough delegation
-        //
-        // Same shape as NAVIGATOR gates — short-circuit to const 1 so the
-        // interceptor always passes through.
+        // In 6.0.0–6.0.2 this class held the auth check inline (iget +
+        // invoke-interface a()Z + if-nez + new-instance redirect). In 6.0.4
+        // Liod;->a(Lrdb;Lzzn;Laem;)V builds a coroutine continuation Lhod;
+        // and dispatches to it; the pattern this block looks for now lives
+        // in Lhod;->invokeSuspend instead, with a continuation state-machine
+        // register window. Hooking that requires a different edit shape
+        // (option C in GH604_LETTER_MAP.md). For now skip and rely on:
+        //   - AUTH_IMPL h/e/d returning fake StateFlows
+        //   - NAVIGATOR i/r gates short-circuiting
+        //   - GAME_LIB_REPO.e returning "99999"
+        //   - is0.f / AUTH_INTERFACE.f returning the fake token
+        // If device testing surfaces a login-redirect leak that the above
+        // doesn't cover, implement option C against Lhod;->invokeSuspend.
         // -----------------------------------------------------------------
-        firstMethod {
-            definingClass == NAV_INTERCEPTOR && name == "a"
-        }.apply {
-            val igetIdx = indexOfFirstInstructionOrThrow {
-                opcode == Opcode.IGET_OBJECT &&
-                    getReference<FieldReference>()?.let {
-                        it.name == "a" && it.definingClass == NAV_INTERCEPTOR
-                    } == true
-            }
-            val reg = (getInstruction(igetIdx) as TwoRegisterInstruction).registerA
-            removeInstruction(igetIdx + 2) // move-result vN
-            removeInstruction(igetIdx + 1) // invoke-interface AUTH_INTERFACE->a()Z
-            addInstructions(
-                igetIdx + 1,
-                """
-                    const/4 v$reg, 0x1
-                """,
-            )
-        }
+        // 6.0.4 TODO: re-enable via option C if needed.
+        // firstMethod {
+        //     definingClass == NAV_INTERCEPTOR && name == "a"
+        // }.apply {
+        //     val igetIdx = indexOfFirstInstructionOrThrow {
+        //         opcode == Opcode.IGET_OBJECT &&
+        //             getReference<FieldReference>()?.let {
+        //                 it.name == "a" && it.definingClass == NAV_INTERCEPTOR
+        //             } == true
+        //     }
+        //     val reg = (getInstruction(igetIdx) as TwoRegisterInstruction).registerA
+        //     removeInstruction(igetIdx + 2) // move-result vN
+        //     removeInstruction(igetIdx + 1) // invoke-interface AUTH_INTERFACE->a()Z
+        //     addInstructions(
+        //         igetIdx + 1,
+        //         """
+        //             const/4 v$reg, 0x1
+        //         """,
+        //     )
+        // }
     }
 }

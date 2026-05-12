@@ -14,7 +14,8 @@ import java.lang.reflect.Constructor;
  * Class name is R8-mangled and must be updated per base-APK bump:
  *   6.0.0 → l4m
  *   6.0.1 → fdm
- *   6.0.2 → kpm  (current)
+ *   6.0.2 → kpm
+ *   6.0.4 → wpm  (current)
  * Constructor sig is stable across versions: (S,S,S,S,Long,Long,J,Z,J,J)V.
  * The first two String args are non-null asserted via getClass() in <init>.
  *
@@ -27,7 +28,7 @@ public final class FakeAuthToken {
     private static final String FAKE_USER_ID = "99999";
 
     /** R8-mangled class name of the auth-token wrapper. Update on base APK bump. */
-    private static final String AUTH_TOKEN_CLASS = "kpm";
+    private static final String AUTH_TOKEN_CLASS = "wpm";
 
     private static volatile Object cached;
 

@@ -21,10 +21,11 @@ import com.android.tools.smali.dexlib2.iface.reference.StringReference
 //   6.0.0 → Lmcj;
 //   6.0.1 → Lzhj;
 //   6.0.2 → Lxrj;
+//   6.0.4 → Lesj;
 // Structural anchor (always portable): the unique class that contains BOTH
 // "landscape-api-cn.vgabc.com" and "landscape-api-oversea.vgabc.com" string
 // literals — find via `grep -rl "landscape-api-cn.vgabc.com" smali*/`.
-private const val ENV_ENUM_CLASS = "Lxrj;"
+private const val ENV_ENUM_CLASS = "Lesj;"
 
 // Original GameHub 6.0 hosts the patch removes from the Online enum value.
 // They are bare hostnames — t40.smali builds the URL as "<scheme>://<host>",

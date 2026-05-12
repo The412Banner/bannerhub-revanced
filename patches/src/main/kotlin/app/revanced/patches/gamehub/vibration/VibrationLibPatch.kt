@@ -16,6 +16,11 @@ private const val LIB_PATH = "lib/arm64-v8a/libevshim.so"
 // before the gradle build packages everything into the .rvp.
 private const val RESOURCE_PATH = "lib/arm64-v8a/libevshim.so"
 
+// Sentinel class for classloader access. Referring to vibrationLibPatch
+// from inside its own initializer trips Kotlin's recursive type-inference
+// because the patch's type is being inferred at the same site.
+private object VibrationLibResources
+
 @Suppress("unused")
 val vibrationLibPatch = resourcePatch(
     name = "Vibration native shim",
@@ -30,7 +35,7 @@ val vibrationLibPatch = resourcePatch(
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
 
     apply {
-        val resourceStream = vibrationLibPatch::class.java.classLoader
+        val resourceStream = VibrationLibResources::class.java.classLoader
             ?.getResourceAsStream(RESOURCE_PATH)
             ?: return@apply  // CI build step didn't stage the .so; skip.
 

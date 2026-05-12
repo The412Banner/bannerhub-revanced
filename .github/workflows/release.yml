@@ -240,7 +240,7 @@ jobs:
             | **Mute UI sounds** | Replaces the bundled menu/button click sounds with silent PCM. Game audio is untouched. |
             | **Redirect catalog API** | Points the catalog API at the BannerHub Cloudflare Worker (`bannerhub-api.the412banner.workers.dev`) for curated component delivery. Side benefit: per-game PC settings now render in both landscape and portrait. |
             | **Prefix API path with /v6** | Prepends `v6/` to every relative API call so the Worker can serve 6.0-only response variants without affecting 5.x clients. |
-            | **Offline component cache fallback** | Per-game pickers (GPU driver, DXVK, VKD3D, FEXCore, Box64, container) show your cached components when the device is offline. Online behavior unchanged. |
+            | **Offline component cache fallback** ⚠ *currently broken on 6.0.4* | *Intended to let per-game pickers show your cached components when the device is offline.* Online behavior is unchanged, so this caveat only matters when you're offline — pickers will still show only the embedded built-in versions instead of the cached entries the patch was meant to surface. Investigation pending; safe to ignore unless you specifically rely on offline picker contents. |
             | **Change package name** *(per variant)* | Renames the APK package per variant so all 9 variants install side-by-side. The `Original` variant keeps `com.xiaoji.egggame`. |
             | **Change app name** *(per variant)* | Renames the launcher label per variant. |
 

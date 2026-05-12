@@ -13,6 +13,34 @@ import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 
 // ============================================================================
+// ⚠ KNOWN BROKEN ON 6.0.4 (2026-05-12)
+//
+// The patch applies cleanly (CI green, all 9 variants patched on v1.0.0-604)
+// but at runtime it doesn't deliver the intended cached-entry fallback. The
+// structural anchors and reflective field lookups apparently survived the
+// 6.0.2 → 6.0.4 R8 reshuffle on the surface — patcher-side everything looks
+// fine — but the runtime behavior regressed somewhere downstream.
+//
+// Investigation pending. Possible angles to check on the next pass:
+//   - Has `mci.a(RepoCategory, Continuation)` itself changed shape beyond
+//     the `:goto_2` sentinel? Walk the full method body and compare against
+//     the 6.0.2 `eci.a` body the patch was designed around.
+//   - Did `xxo`'s field layout / `xxo.c` `ConcurrentHashMap` type change?
+//     `PickerCacheFallback.fromXxo` uses single-letter field lookups (`a`,
+//     `c`) plus a runtime type sanity check; if `c`'s declared type is no
+//     longer assignable to `Map`, the sanity check returns the empty
+//     ArrayList silently — visible only via `DebugTrace`.
+//   - Is `u6o.<init>` still the disk-hydrator? If 6.0.4 renamed/restructured
+//     the hydrator the map could simply be empty at the time the picker
+//     consults it, in which case the patch IS firing but has nothing to
+//     return.
+//
+// Online behavior is unchanged because the hook only fires on the
+// network-returned-empty path. Safe to leave enabled in v1.0.0-604 (no
+// regression for online users); safe to disable via revanced-cli `-d
+// "Offline component cache fallback"` for users who want a leaner build.
+//
+// ============================================================================
 // 6.0.2 R8-mangled letter map
 //
 // ECI_CLASS                  : the ViewModel-side per-category list fetcher

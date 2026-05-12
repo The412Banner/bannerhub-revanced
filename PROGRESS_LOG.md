@@ -737,3 +737,7 @@ Release notes ship the 6.0.2 → 6.0.4 R8 letter remap table, the `NAV_INTERCEPT
 Second consecutive base bump (after v1.0.0-602) where the structural-anchor recipes caught every fingerprint on the first patcher run — no .0 → .1 hotfix needed.
 
 README updates: header bumped to 6.0.4 latest stable, v1.0.0-602 moved to historical, offline-cache "unreleased" markers dropped, Source + Build sections point at `base-apk-604` and `gamehub-604-build`, Variants table file names refresh, Known limitations drops the standard-Steam-client warning.
+
+### Post-release tweak — xtask first-launch hint (2026-05-12)
+
+User-flagged caveat for v1.0.0-604: if a user's **first** Steam game launch errors with `xtask install components failed`, the workaround is to open that title's PC game settings, set components manually (Wine prefix, DXVK, VKD3D, container, etc.), confirm the correct Steam client is selected, then retry — it's a one-time setup hiccup, not a fatal regression. Added to both `release.yml` body (commit `b9397c8`) and README's "what's new" Steam bullet; live `v1.0.0-604` release body refreshed via `gh release edit --notes-file` so the in-flight published page already carries the hint.

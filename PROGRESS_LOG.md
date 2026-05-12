@@ -759,3 +759,51 @@ Investigation angles to check on the next pass (recorded at top of the patch sou
 - Has `mci.a(RepoCategory, Continuation)` itself changed shape beyond the `:goto_2` sentinel? Walk the full method body and compare against the 6.0.2 `eci.a` body the patch was designed around.
 - Did `xxo`'s field layout / `xxo.c` `ConcurrentHashMap` type change? `PickerCacheFallback.fromXxo` uses single-letter field lookups (`a`, `c`) plus a runtime type sanity check; if `c`'s declared type is no longer assignable to `Map`, the sanity check returns the empty ArrayList silently — visible only via `DebugTrace`.
 - Is `u6o.<init>` still the disk-hydrator? If 6.0.4 renamed/restructured the hydrator the map could simply be empty at the time the picker consults it, in which case the patch IS firing but has nothing to return.
+
+## Vibration port to 6.0.4 — feature/vibration branch (2026-05-12)
+
+User requested porting BannerHub PR #80 (TideGear's PC-accurate XInput rumble support, shipped in BannerHub v3.7.0 stable on 5.3.5) as a ReVanced patch for our 6.0.4 build. TideGear had already done the legwork to port it to GameHub 6.0.2 at https://github.com/TideGear/GameHub-Vibration-Fix — only 4 smali hooks on 6.0.2 (vs 5 on 5.3.5; 6.0 fixed the lazy-attach issue natively so the GamepadManager.B0 wake-up hook is unnecessary).
+
+### Feasibility verification
+
+Verified each of TideGear's 4 smali anchors against the 6.0.4 decompile. Trap caught: the 6.0.2 letters `Lza8;` (Physical) and `Ldg5;` (EnvBuilder) both still exist as class names in 6.0.4, but R8 reassigned them to completely unrelated classes (an empty marker interface and a coroutine continuation respectively). Naive name matching would have patched the wrong code; structural matching by method shapes + field layouts found the true 6.0.4 equivalents.
+
+### 6.0.2 → 6.0.4 vibration-anchor delta
+
+| Symbol | 6.0.2 (TideGear) | 6.0.4 (re-derived) | Recipe |
+|---|---|---|---|
+| `GamepadServerManager.onRumble(III)V` | same | same | Annotated `@Keep`, `:cond_4` label preserved |
+| Physical class | `Lza8;` | `Lab8;` | `public final` extends `Lcb8;`, `g(II)V`/`f()V` shapes preserved |
+| Physical.k field type | `Llrl;` | `Lxrl;` | Motor manager |
+| EnvBuilder class | `Ldg5;` | `Lbg5;` | `a(...)V` `.locals 35`, anchor block lines 458-465 byte-identical |
+| Join helper class | `Lns2;` | `Lps2;` | CollectionsKt joinToString$default |
+| Join method name | `I0` | `I0` | **survived R8** |
+| Function1 lambda type | `Low6;` | `Lpw6;` | |
+
+### Branch state
+
+`feature/vibration` cut off `gamehub-604-build` head `65e6902` 2026-05-12. Head: `4b25858`.
+
+### Stage 1 — bytecode hooks + manifest registration (commit `0ae2228` → `248f7bd`)
+
+- `extensions/gamehub/.../com/xj/winemu/vibration/BhVibrationController.java` (1106 lines, TideGear's package preserved verbatim — only Android SDK imports, no host references)
+- `extensions/gamehub/.../com/xj/winemu/vibration/BhVibrationSettingsActivity.java` (266 lines)
+- `patches/.../gamehub/vibration/VibrationPatch.kt` — 4 bytecode hooks with the 6.0.4 letters above
+- `patches/.../gamehub/vibration/VibrationManifestPatch.kt` — registers BhVibrationSettingsActivity (exported=false, translucent theme)
+- `extensions/gamehub/build.gradle.kts` — added lint suppression for `MissingPermission` / `NewApi` / `WrongConstant` (false positives — host APK declares VIBRATE permission and host targets Android 14, but extension lint runs in isolation against compile-only stubs).
+
+CI run [`25761322965`](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25761322965) green on commit `248f7bd`. Bytecode patches all applied across the 9 variants — but the LD_PRELOAD inject was inert (no .so to find at runtime).
+
+### Stage 2 — NDK build + native-shim injection (commit `d9b9c96` → `4b25858`)
+
+- `native/evshim/evshim.c` + `CMakeLists.txt` (TideGear's source copied verbatim — 698 lines of C, patches `winebus.so`'s `pSDL_JoystickRumble` + `pSDL_JoystickClose` .bss pointers via `LD_PRELOAD`)
+- `patches/.../gamehub/vibration/VibrationLibPatch.kt` — resource patch that reads `libevshim.so` from the .rvp's classloader resources and writes it into the staged APK's `lib/arm64-v8a/`. Sentinel class (`private object VibrationLibResources`) used as classloader anchor to dodge Kotlin's self-referential type inference (can't reference `vibrationLibPatch::class` inside its own initializer body).
+- `.github/workflows/release.yml` — new "Build libevshim.so" step inserted before the gradle build: locates the runner's NDK, builds via cmake/ninja for arm64-v8a android-29, drops the output under `patches/src/main/resources/lib/arm64-v8a/` so gradle bakes it into the .rvp.
+
+CI run [`25761713424`](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25761713424) green on commit `4b25858`. Now end-to-end: NDK builds .so → gradle bakes it into .rvp → revanced-cli applies → resource patch copies .so into APK's lib dir → bytecode hook injects LD_PRELOAD at runtime → libevshim re-issues SDL rumble every 500ms to defeat the 1s auto-stop.
+
+### Pending
+
+**Device test.** Pull any variant from run 25761713424 artifacts (14-day retention) or trigger a fresh run with a named tag. Install on a phone with at least one Bluetooth rumble-capable controller (DualSense / DS4 / 8BitDo Pro 2 in XInput mode). Launch any Wine PC game that uses XInput rumble (Brawlhalla, Diablo, etc.). Expected: heavy/light motors driven independently, sustained holds last as long as the in-game rumble effect, instant release on let-go.
+
+If the device test passes, merge `feature/vibration` → `gamehub-604-build` and cut a follow-up release (e.g. `v1.1.0-604` for the feature bump).

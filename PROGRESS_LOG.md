@@ -659,3 +659,65 @@ Every re-anchored fingerprint matched at patcher time. All 9 APK artifacts (~111
 [`v1.0.0-602` — Gamehub 6.0.2 - BannerHub API - Patched](https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.0.0-602) is live. Stable cut as run [`25631854018`](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25631854018) — all 9 variant patch jobs succeeded plus the `release` job (`stable=true`), 12 assets attached: the 9 patched APKs + the `.rvp` patch bundle + the 2 `.rve` extension files. Device-tested by user before stable cut. Release notes ship the 6.0.1 → 6.0.2 R8 letter remap table and the `FakeStateFlow` rationale verbatim.
 
 This is the first stable on the `gamehub-602-build` branch and the first one in the project's history that didn't require a `.0` → `.1` hotfix because the structural-anchor recipes recorded after the 6.0.0 → 6.0.1 fiasco let every fingerprint be re-derived correctly on the first try. README updated to reflect 6.0.2 as the latest stable; v1.0.1-601 / v1.0.0-601 / v1.0.1-600 sections moved into "historical" sections at the top.
+
+## 6.0.4 base port — 2026-05-12
+
+### Setup
+
+User requested 6.0.4 base bump from 6.0.2 stable. `GameHub_6.0.4.apk` (versionCode 114, versionName 6.0.4) staged from Downloads → home → released as `base-apk-604`. Decompile to `/tmp/gh604_smali` with the standard recipe. New branch `gamehub-604-build` cut off `gamehub-602-build` head `abf1eac` per the branch-per-patch rule.
+
+### R8 letter delta (6.0.2 → 6.0.4)
+
+R8 map id `6a5cde6143fc8cf76f6f3a447d0fececd4794d83066e6ead7a9537e6527b057b` (vs 6.0.2's `032c299c…`). Every anchor reshuffled again. Full per-anchor verification + structural-recipe trace lives in `gamehub_reports/GH604_LETTER_MAP.md`.
+
+| Patch | Anchor | 6.0.2 | 6.0.4 | Structural verification |
+|---|---|---|---|---|
+| BypassLogin | AUTH_IMPL | `Lit0;` | `Ljt0;` | 3× `Lozh;` fields, ctor `(UserDao, AuthTokenDao, Lv70;)V`, implements `Ldt0;` |
+| BypassLogin | AUTH_INTERFACE | `Lct0;` | `Ldt0;` | Abstract `d/e/h()Lyjk;` + `f()Lwpm;` + `b()Lrpm;` |
+| BypassLogin | AUTH_TOKEN | `Lkpm;` | `Lwpm;` | 10-field data class returned by `dt0.f()`, ctor sig `(S,S,S,S,Long,Long,J,Z,J,J)V` matches exactly |
+| BypassLogin | GAME_LIB_REPO | `Luu7;` | `Lvu7;` | Class with `b:Ldt0;` field + ctor `(GameLibraryDatabase, Ldt0;)V`. User-id getter still `e()` |
+| BypassLogin | NAVIGATOR | `Lxle;` | `Lgme;` | `b:Ldt0;` field + `i(Lhi0;)V` and `r(Lhi0;)V` methods carrying iget+invoke+if-nez+new-instance `Lta0;` (Login intent — was `Lsa0;` in 6.0.2) |
+| BypassLogin | NAV_INTERCEPTOR | `Lrr0;` | **`Liod;` (skipped)** | Inline auth check moved into coroutine continuation `Lhod;->invokeSuspend` (lines 255/259/267). Apply block commented out; option C TODO recorded for later |
+| RedirectCatalogApi | ENV_ENUM_CLASS | `Lxrj;` | `Lesj;` | Unique class containing both `landscape-api-cn.vgabc.com` + `landscape-api-oversea.vgabc.com` |
+| PrefixApiPath | URL_HELPER_CLASS | `Lvob;` | `Lcpb;` | Static `b(Ln7a;Ljava/lang/String;)V` body: iget URL field → invoke trim → toString → length |
+| PrefixApiPath | URL_BUILDER_TYPE | `Lm7a;` | `Ln7a;` | First param of cpb.b; field `a:Lokm;` (Ktor builder shape preserved). Trim helper moved from `Lpll;->s1` to `Lbml;->s1` (patch doesn't reference it directly) |
+| DebugLog | y2d-impl | `Li86;` | `Lj86;` | Concrete class with `e(Throwable, Lnw6;)V` delegating to `Lxgd;->e` |
+| DebugLog | y2d-interface | `Lpgd;` | `Lxgd;` | Abstract `e(Throwable, Lnw6;)V` + 9 other methods. `Lnw6;` is the Function0 type (was `Lmw6;`) |
+| DebugLog | save method | `Luu7;->v` | `Lvu7;->v` | Same method name; new owning class follows GAME_LIB_REPO |
+| DebugLog | retro upsert wrapper | `Lyji;->b` | `Lfki;->b` | Single field `a:RetroGameDao`, method `b(RetroGameEntity, Ci3)Object` is the only meaningful upsert wrapper |
+| DebugLog | inner Room txn | `Lvs7;` | `Lws7;` | `.locals 70`, calls both `GameLaunchMethodDao;->insert` and `GameLibraryBaseDao;->insert` |
+| OfflineComponentCache | ECI_CLASS | `Leci;` | `Lmci;` | `a(RepoCategory, Lci3;)Ljava/io/Serializable;` — unique match in dex tree |
+| OfflineComponentCache | CONTINUATION_TYPE | `Lai3;` | `Lci3;` | Inferred from mci.a's second parameter |
+| OfflineComponentCache | KOTLIN_EMPTY_LIST_CLASS | `Lz85;` | `Lw85;` | `implements List, Serializable, RandomAccess` (kotlin.collections.EmptyList) — sget'd at `:goto_2` in mci.a |
+| FakeAuthToken ext | AUTH_TOKEN_CLASS | `kpm` | `wpm` | Same as BypassLogin AUTH_TOKEN |
+| FakeUserAccount ext | USER_ACCOUNT_CLASS | `fpm` | `rpm` | 27-field class matching reflective 27-arg ctor lookup; `dt0.b()` returns `Lrpm;` |
+| FakeStateFlow ext | STATE_FLOW_IMPL_CLASS | `tjk` | `akk` | `<init>(Object)V`, implements `Ldge;` (the holder iface) |
+| FakeStateFlow ext | STATE_FLOW_WRAPPER_CLASS | `hzh` | `ozh` | `<init>(Ldge;)V`, implements `Lyjk;` (the abstract StateFlow interface) |
+| FakeStateFlow ext | STATE_FLOW_HOLDER_INTERFACE | `vfe` | `dge` | Inferred from ozh ctor + akk `.implements` |
+
+Patches unchanged (no R8-renamed anchors): Disable Crashlytics, Mute UI sounds, File manager access, Rewrite custom permissions, Change package/app name. Constants.GAMEHUB_VERSION bumped `6.0.2` → `6.0.4`.
+
+### NAV_INTERCEPTOR architectural change (the "fingerprint problem")
+
+In 6.0.0–6.0.2 the NAV_INTERCEPTOR's `a(...)` method body held the auth check inline — patch hooked on `iget AUTH_INTERFACE` + `invoke-interface a()Z` + `if-nez` + `new-instance Lredirect;`. In 6.0.4 `Liod;->a(Lrdb;Lzzn;Laem;)V` no longer iget's its `a:Ldt0;` field directly — it constructs a coroutine continuation `Lhod;` and dispatches to it. The pattern the patch looked for now lives at `Lhod;->invokeSuspend` (lines 255/259/267), reading the AUTH_INTERFACE from `p1` (the outer iod reference) not `p0` (this is now the continuation).
+
+Three options documented:
+- **A (chosen for v1)**: Skip NAV_INTERCEPTOR entirely. Other 6 BypassLogin hooks (AUTH_IMPL fake StateFlows + NAVIGATOR i/r gates + GAME_LIB_REPO user-id getter + is0.f → FakeAuthToken) may cover the user-facing surface. Cheapest.
+- **B**: Patch `Liod;->a` body wholesale (return-void or passthrough). Risk: unclear what downstream navigation expects.
+- **C**: Hook `Lhod;->invokeSuspend` directly — most surgical but needs continuation-state-machine-aware edits.
+
+If device testing reveals a login-redirect leak, implement option C. The `NAV_INTERCEPTOR` constant value is kept (`@Suppress("unused")` `"Liod;"`) and the apply block left commented in `BypassLoginPatch.kt` for archaeology.
+
+### CI verification result
+
+Run [`25747297755`](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25747297755) on `gamehub-604-build` head `147d63c` triggered via `gh workflow run release.yml --ref gamehub-604-build -f tag=v0.0.1-604-test` (artifact-only prerelease). All 11 jobs green:
+
+- ✅ Build patches bundle
+- ✅ Patch Normal / Normal-GHL / PuBG / AnTuTu / alt-AnTuTu / PuBG-CrossFire / Ludashi / Genshin / Original (all 9 variants)
+- ⏭ Create GitHub Release (intentionally skipped — `stable=false`)
+
+Every re-anchored fingerprint matched at patcher time. 9 APK artifacts on the run (14-day retention). **Next step: device test** — install any variant, confirm launch lands on home screen (bypass login working), confirm game-import save persists (library DB writes working), confirm catalog redirect + /v6 prefix all fire. If no login-redirect leak from the skipped NAV_INTERCEPTOR, cut stable. If a leak surfaces, implement option C.
+
+### Known caveat — release notes
+
+`.github/workflows/release.yml` body text still narrates the 6.0.1 → 6.0.2 migration. Workflow + variant filenames + `base-apk-604` download + release title were swapped, but the long-form release-page markdown remains 6.0.2-flavored. Only relevant if `stable=true` is flipped on the next dispatch; rewrite before cutting a 6.0.4 stable release.

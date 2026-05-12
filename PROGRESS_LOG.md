@@ -727,3 +727,13 @@ Every re-anchored fingerprint matched at patcher time. 9 APK artifacts on the ru
 User installed and verified one of the run 25747297755 artifacts on real hardware. End-to-end working: bypass-login lands on home screen, catalog redirect to BannerHub Worker + /v6 prefix both firing, game-import path persists rows correctly. The skipped NAV_INTERCEPTOR (Option A) had no observable effect — the remaining six BypassLogin hooks (AUTH_IMPL h/e/d + NAVIGATOR i/r gates + GAME_LIB_REPO.e + is0.f → FakeAuthToken) cover the user-facing surface fully on 6.0.4. Option C (hook `Lhod;->invokeSuspend`) is **not needed**.
 
 **Status:** 6.0.4 patch port is feature-complete and verified. Ready for stable cut (`v1.0.0-604`) once release.yml's body text is rewritten from 6.0.1→6.0.2 narrative to 6.0.2→6.0.4 narrative.
+
+### Stable release — v1.0.0-604 (2026-05-12 17:56 UTC)
+
+[`v1.0.0-604` — Gamehub 6.0.4 - BannerHub API - Patched](https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.0.0-604) is live. Stable cut as run [`25752321469`](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25752321469) — all 9 variant patch jobs succeeded + the `release` job (`stable=true`), 12 assets attached (9 APKs ~114 MB each + the `.rvp` bundle/sources). Branch head at release: `508cede` on `gamehub-604-build`.
+
+Release notes ship the 6.0.2 → 6.0.4 R8 letter remap table, the `NAV_INTERCEPTOR` skip rationale (Liod;->a's inline auth check moved into the `Lhod;` coroutine continuation in 6.0.4 — left commented in the patch source as a starting point for option C if a future regression requires it), the `FakeStateFlow` letter-trio update (`tjk/hzh/vfe` → `akk/ozh/dge`), the `Offline component cache fallback` patch's first stable shipping (was on `gamehub-602-build` post-602 stable but never made it into a release), and — at the user's call-out — the **server-side Steam-launch fix** in the BannerHub API Worker. The previous "use Lightweight Steam client only" warning is dropped from both `release.yml` and `README.md`; both standard and Lightweight Steam clients now launch games end-to-end (server-side, retroactive to existing patched builds).
+
+Second consecutive base bump (after v1.0.0-602) where the structural-anchor recipes caught every fingerprint on the first patcher run — no .0 → .1 hotfix needed.
+
+README updates: header bumped to 6.0.4 latest stable, v1.0.0-602 moved to historical, offline-cache "unreleased" markers dropped, Source + Build sections point at `base-apk-604` and `gamehub-604-build`, Variants table file names refresh, Known limitations drops the standard-Steam-client warning.

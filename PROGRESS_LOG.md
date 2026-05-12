@@ -721,3 +721,9 @@ Every re-anchored fingerprint matched at patcher time. 9 APK artifacts on the ru
 ### Known caveat — release notes
 
 `.github/workflows/release.yml` body text still narrates the 6.0.1 → 6.0.2 migration. Workflow + variant filenames + `base-apk-604` download + release title were swapped, but the long-form release-page markdown remains 6.0.2-flavored. Only relevant if `stable=true` is flipped on the next dispatch; rewrite before cutting a 6.0.4 stable release.
+
+### Device-test pass — 2026-05-12
+
+User installed and verified one of the run 25747297755 artifacts on real hardware. End-to-end working: bypass-login lands on home screen, catalog redirect to BannerHub Worker + /v6 prefix both firing, game-import path persists rows correctly. The skipped NAV_INTERCEPTOR (Option A) had no observable effect — the remaining six BypassLogin hooks (AUTH_IMPL h/e/d + NAVIGATOR i/r gates + GAME_LIB_REPO.e + is0.f → FakeAuthToken) cover the user-facing surface fully on 6.0.4. Option C (hook `Lhod;->invokeSuspend`) is **not needed**.
+
+**Status:** 6.0.4 patch port is feature-complete and verified. Ready for stable cut (`v1.0.0-604`) once release.yml's body text is rewritten from 6.0.1→6.0.2 narrative to 6.0.2→6.0.4 narrative.

@@ -741,3 +741,12 @@ README updates: header bumped to 6.0.4 latest stable, v1.0.0-602 moved to histor
 ### Post-release tweak — xtask first-launch hint (2026-05-12)
 
 User-flagged caveat for v1.0.0-604: if a user's **first** Steam game launch errors with `xtask install components failed`, the workaround is to open that title's PC game settings, set components manually (Wine prefix, DXVK, VKD3D, container, etc.), confirm the correct Steam client is selected, then retry — it's a one-time setup hiccup, not a fatal regression. Added to both `release.yml` body (commit `b9397c8`) and README's "what's new" Steam bullet; live `v1.0.0-604` release body refreshed via `gh release edit --notes-file` so the in-flight published page already carries the hint.
+
+### Post-release release-page trim (2026-05-12)
+
+User feedback: the v1.0.0-604 release page is too long; the per-patch R8 letter-by-letter delta table and the per-patch smali-edit walkthrough in the "Patches applied" table aren't useful for end users. Trimmed both:
+
+- The base-APK-refresh section dropped its six bullet-pointed letter-by-letter remap and now just says the patches were re-anchored, with a pointer line to `gamehub_reports/GH604_LETTER_MAP.md` + the patch sources for anyone who wants the gritty detail. (commit `2771684`)
+- The "Patches applied" table rows are now one-line user-facing descriptions of what each patch does, instead of the patcher-side mechanics. A single sentence below the table links to the README's Patches applied section + the patch source directory for the deeper breakdown. (commit `3b89575`)
+
+Both updates pushed to `release.yml` for future re-cuts and mirrored onto the live `v1.0.0-604` release body via `gh release edit --notes-file`. README is intentionally untouched — its long-form section is the canonical deep-dive and the release page now links to it.

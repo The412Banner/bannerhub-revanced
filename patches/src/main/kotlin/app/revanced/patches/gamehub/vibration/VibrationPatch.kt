@@ -1,6 +1,8 @@
 package app.revanced.patches.gamehub.vibration
 
+import app.revanced.patcher.extensions.ExternalLabel
 import app.revanced.patcher.extensions.addInstructions
+import app.revanced.patcher.extensions.addInstructionsWithLabels
 import app.revanced.patcher.firstMethod
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
@@ -184,7 +186,19 @@ val vibrationPatch = bytecodePatch(
                     } == true
             }
 
-            addInstructions(
+            // Capture the original join instruction so we can hang an
+            // ExternalLabel off it. A label at the END of the snippet (older
+            // attempt) gets parsed by smali as offset=block-length and then
+            // baked into the resulting method as an absolute address — which
+            // is why v1.1.0-pre crashed at WineActivity.onCreate with
+            // `VerifyError: target dex pc 0x28 is not at instruction start`
+            // (0x28 == 40 == byte length of the 18 inserted instructions).
+            // ExternalLabel resolves to the original `invoke-static/range`
+            // by Instruction identity, so the patcher tracks it correctly
+            // after insertion shifts the target down.
+            val joinInstruction = getInstruction(joinIdx)
+
+            addInstructionsWithLabels(
                 joinIdx,
                 """
                     iget-object v13, v0, $ENV_BUILDER->a:Landroid/content/Context;
@@ -205,8 +219,8 @@ val vibrationPatch = bytecodePatch(
                     if-eqz v15, :bh_skip_evshim_preload
                     const/4 v15, 0x0
                     invoke-virtual {v12, v15, v13}, Ljava/util/ArrayList;->add(ILjava/lang/Object;)V
-                    :bh_skip_evshim_preload
                 """.trimIndent(),
+                ExternalLabel("bh_skip_evshim_preload", joinInstruction),
             )
         }
     }

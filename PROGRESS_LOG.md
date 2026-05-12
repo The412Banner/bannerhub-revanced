@@ -807,3 +807,34 @@ CI run [`25761713424`](https://github.com/The412Banner/bannerhub-revanced/action
 **Device test.** Pull any variant from run 25761713424 artifacts (14-day retention) or trigger a fresh run with a named tag. Install on a phone with at least one Bluetooth rumble-capable controller (DualSense / DS4 / 8BitDo Pro 2 in XInput mode). Launch any Wine PC game that uses XInput rumble (Brawlhalla, Diablo, etc.). Expected: heavy/light motors driven independently, sustained holds last as long as the in-game rumble effect, instant release on let-go.
 
 If the device test passes, merge `feature/vibration` → `gamehub-604-build` and cut a follow-up release (e.g. `v1.1.0-604` for the feature bump).
+
+### Stage 3 — Hook 4 VerifyError fix (2026-05-12)
+
+**Device crash on first game launch.** User installed a variant from run 25761713424, opened a game, and `banner.hub:wine` immediately died at `WineActivity.onCreate` with:
+
+```
+java.lang.VerifyError: Verifier rejected class bg5:
+  void bg5.a(eco, java.lang.String, boolean):
+  [0x1F2] target dex pc 0x28 is not at instruction start.
+```
+
+Logcat: `/data/data/com.termux/files/home/log_2026_05_12_19_54_05.log`.
+
+**Root cause.** Hook 4 (the EnvBuilder LD_PRELOAD inject) used `addInstructions` with a label `:bh_skip_evshim_preload` placed at the END of the inserted block:
+
+```smali
+if-eqz v15, :bh_skip_evshim_preload
+const/4 v15, 0x0
+invoke-virtual {v12, v15, v13}, Ljava/util/ArrayList;->add(ILjava/lang/Object;)V
+:bh_skip_evshim_preload
+```
+
+When `addInstructions` parses the snippet, smali assigns the trailing label an offset of *block-length-in-bytes* relative to the snippet start. The inserted block is exactly 18 instructions = 40 bytes = **0x28** — matching the verifier error target verbatim. The patcher embeds that absolute 0x28 in the resulting method, instead of resolving it to the original `invoke-static/range` that follows the injection. The `if-eqz` then branches to absolute offset 0x28 of `bg5.a`, which lands mid-instruction in the original prologue → VerifyError.
+
+**Why Hooks 1 + 2 didn't crash with the same shape.** They insert at index 0. Snippet-relative offset *equals* absolute offset in the destination method when the shift is zero, so the bug doesn't surface. Hook 3 has no labels at all.
+
+**Fix.** Switched Hook 4 to `addInstructionsWithLabels` + `ExternalLabel`, capturing the original `invoke-static/range` instruction at `joinIdx` *before* insertion. The patcher resolves the label by Instruction identity and tracks it correctly after insertion shifts the target index down by 18. Trailing `:bh_skip_evshim_preload` line removed from the snippet.
+
+**Imports added.** `ExternalLabel`, `addInstructionsWithLabels` (both from `app.revanced.patcher.extensions`).
+
+**Lesson for future bytecode patches.** When inserting at index > 0 with a forward branch that needs to skip past the inserted block, always use ExternalLabel pointing to the original instruction at the insertion index. Trailing-label-in-snippet is a footgun that only surfaces when insertion shifts > 0.

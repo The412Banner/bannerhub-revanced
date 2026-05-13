@@ -1325,3 +1325,7 @@ Game-details "More Menu" still has its own PC Vibration row from pre10. Both sur
 `feature/menu-vibration-row` (14 commits, head `f472868`) merged into `gamehub-604-build` at **merge commit `91947fe`** with `--no-ff` so the pre7→pre17 iteration trail is preserved under the merge commit. Pushed to origin. `gamehub-604-build` head `4d609f0` → `91947fe`.
 
 Will trigger an artifacts-only build to verify the merged tree builds clean.
+
+### 2026-05-13 — README "What's new" trim
+
+Per user: "under the what's new section of the read me only show the latest release." Removed the five historical "What's new" sections from `README.md` (v1.0.0-604 historical, v1.0.0-602, v1.0.1-601 hotfix, v1.0.0-601, v1.0.1-600) — collectively ~45 lines. Left a one-line pointer note directing readers to the per-release pages for past notes, then kept the existing `---` separator and `## What this is` header in place. Top-of-README "What's new" now shows only `v1.1.0-604`.

@@ -91,6 +91,9 @@ Every CI release run prints the cert SHA-256 via `apksigner verify --print-certs
 
 ## Patches applied
 
+<details>
+<summary><strong>📦 Click to expand the full patch list (17 patches + disabled-by-default options)</strong></summary>
+
 This bundle ships only patches that successfully apply against GameHub 6.0. Every patch below appears as an individually-named, individually-toggleable entry in the published `.rvp` bundle (`revanced-cli list-patches patches.rvp` to enumerate; `--include` / `--exclude` to pick).
 
 ### `Bypass login`
@@ -228,6 +231,8 @@ A handful of generic patches from upstream `patches/all/misc/` are included but 
 - `Custom network security`, `Enable Android debugging`, `Override certificate pinning`, plus the `Change app name` / `Change package name` patches we explicitly enable per variant.
 
 Available for ad-hoc CLI use; have no effect on the released APKs unless explicitly enabled.
+
+</details>
 
 ## Build it yourself
 

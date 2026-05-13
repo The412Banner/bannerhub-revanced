@@ -1333,3 +1333,7 @@ Per user: "under the what's new section of the read me only show the latest rele
 ### 2026-05-13 — README "Known limitations" section removed
 
 Per user: "remove the known limitatiin section." Dropped the `## ⚠ Known limitations — please read` block from `README.md`. Both bullets in that section were already strikethroughs of fixed issues (standard Steam client launches + missing cover-art-on-import), both fixed server-side in the BannerHub Worker and retroactively applied to existing patched builds. README now flows `## What this is` → `## Source` directly.
+
+### 2026-05-13 — README "Patches applied" wrapped in collapsible `<details>`
+
+Per user: "make the patches applied collapsed with a button/link to expand." Kept the `## Patches applied` header (so the `#patches-applied` anchor referenced from the top-of-README nav still resolves) and wrapped the entire body (intro paragraph through "Disabled-by-default options") in a `<details><summary><strong>📦 Click to expand the full patch list (17 patches + disabled-by-default options)</strong></summary>` block. Closing `</details>` sits immediately before `## Build it yourself` to keep section boundaries clean. Matches the same collapsible pattern used in `release.yml`'s release-notes template.

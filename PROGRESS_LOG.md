@@ -1318,5 +1318,10 @@ Game-details "More Menu" still has its own PC Vibration row from pre10. Both sur
 ### Pending
 
 - ☐ Tap-test "PC Vibration Settings" in the library popup → confirm it opens BhVibrationSettingsActivity dialog (haven't device-tested the click yet, just the row rendering)
-- ☐ Merge `feature/menu-vibration-row` → `gamehub-604-build`
 - ☐ When ready, cut `v1.1.0-604` stable — first release with full menu integration
+
+### Merged 2026-05-13
+
+`feature/menu-vibration-row` (14 commits, head `f472868`) merged into `gamehub-604-build` at **merge commit `91947fe`** with `--no-ff` so the pre7→pre17 iteration trail is preserved under the merge commit. Pushed to origin. `gamehub-604-build` head `4d609f0` → `91947fe`.
+
+Will trigger an artifacts-only build to verify the merged tree builds clean.

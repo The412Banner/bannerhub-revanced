@@ -1345,6 +1345,29 @@ Per user: "add the discord server badge and ai disclaimer at the top also please
 1. **Discord shield badge** — centered `<p>` with a Shields.io for-the-badge style discord badge (`https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white&style=for-the-badge`) linking to `discord.gg/n8S4G2WZQ4` (the The412Banner community invite, per `feedback_discord_link_new_repos.md`). Placed between the subtitle paragraph and the existing in-page nav bar.
 2. **AI Disclaimer section** — new `## AI Disclaimer` H2 inserted right after the in-place-updates callout and before `## What's new in v1.1.0-604`. Two paragraphs verbatim from the user, with the model name bolded and `logcat` set as inline code. Also added an `· AI disclaimer` entry to the in-page nav bar so readers can jump straight to it from the top.
 
+### 2026-05-13 — feature/disable-mob-push — Plan 5 of the privacy hardening list
+
+Plan 4 (`feature/disable-firebase-analytics`) device-confirmed and merged to `gamehub-604-build` at merge commit `178c5ec` (--no-ff). Post-merge sanity build queued as run 25822790159.
+
+**Plan 5 recon (gamehub_604_decompile/):**
+
+- Mob SDK bundled at `smali_classes3/com/mob/` — full surface: core, pushsdk, plugins (fcm/honor/huawei/meizu/oppo/vivo/xiaomi), commons, tools, mgs. Plus `cn.fly.commons` (Mob's analytics submodule, same vendor).
+- XiaoJi-side init call sites found:
+  - `smali/com/xiaoji/egggame/BaseAndroidApp.smali` line 29 — `Lcom/mob/MobSDK;->submitPolicyGrantResult(Z)V` (consent gate, `v2=true`)
+  - `smali/com/xiaoji/egggame/BaseAndroidApp.smali` line 247 — `Lcom/mob/pushsdk/MobPush;->addPushReceiverInMain(Context, MobPushReceiver)V`
+  - `smali_classes4/nt5.smali` method `N(Landroid/content/Context;)V` line 3352 — second `submitPolicyGrantResult` call followed by 4 downstream Mob calls (`setClickNotificationToLaunchMainActivity`, `getRegistrationId`, two `restartPush` inside a `:try_start_0 .. .catchall :catchall_0` wrapper)
+- Manifest auto-init surface: `<provider android:name="com.mob.MobProvider">` is the critical one — ContentProviders bootstrap before `Application.onCreate`, so bytecode-only neutralization is insufficient. Manifest layer is required.
+
+**Patch:** `patches/src/main/kotlin/app/revanced/patches/gamehub/misc/analytics/DisableMobPushPatch.kt`. Single user-facing patch ("Disable Mob Push tracking") with two layers:
+
+- **Layer B — `disableMobPushManifestPatch` (private `resourcePatch`)**: scans `<application>` for `<provider>/<service>/<receiver>/<activity>` whose `android:name` starts with `com.mob.` or `cn.fly.` and sets `android:enabled="false"`. Removes Mob/cn.fly `<meta-data>` outright (no enabled attribute supported).
+- **Layer A — `disableMobPushPatch` (`bytecodePatch`, depends on the manifest patch)**: removes the 3 init invocations in reverse-index order, verifier-safe because all three are void-returning singles with no `move-result`. `BaseAndroidApp.onCreate` is anchored by stable class name. The nt5 helper is anchored **structurally** (single-arg `Context` parameter, void return, contains a `submitPolicyGrantResult` invoke, NOT `BaseAndroidApp`) so the patch survives R8 reshuffles on future minor bumps.
+- Downstream calls in `nt5.N` (`setClickNotificationToLaunchMainActivity`, `getRegistrationId`, `restartPush` x2) intentionally left in place — without the policy grant the SDK stays dormant and these calls either no-op or throw the kind of NPE the existing `:try_start_0/.catchall` already eats. Surgically removing them mid-method would break the try-catch label structure for no functional gain.
+
+**Expected behavior:** Mob Push delivery dies (no inbound notifications from XiaoJi). MobID device-ID collection dies. Mob's `cn.fly` analytics dies. FCM (used by Mob as a delivery layer) is also disabled at the `FCMFirebaseInstanceIdService` registration — pure Firebase FCM is untouched if anything else uses it, but XiaoJi doesn't appear to. No user-facing UI change.
+
+**Verification plan:** post-patch device test should show `adb logcat | grep -iE 'mob|pushsdk'` empty on cold launch, and `tcpdump` should show zero egress to Mob endpoints.
+
 ### 2026-05-13 — feature/disable-firebase-analytics — Plan 4 of the privacy hardening list
 
 User asked for the privacy hardening plan; Plan 4 (Disable Firebase Analytics manifest kill-switch) selected as first action because it's the highest ROI per hour.

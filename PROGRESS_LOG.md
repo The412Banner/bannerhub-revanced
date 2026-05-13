@@ -1345,6 +1345,12 @@ Per user: "add the discord server badge and ai disclaimer at the top also please
 1. **Discord shield badge** — centered `<p>` with a Shields.io for-the-badge style discord badge (`https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white&style=for-the-badge`) linking to `discord.gg/n8S4G2WZQ4` (the The412Banner community invite, per `feedback_discord_link_new_repos.md`). Placed between the subtitle paragraph and the existing in-page nav bar.
 2. **AI Disclaimer section** — new `## AI Disclaimer` H2 inserted right after the in-place-updates callout and before `## What's new in v1.1.0-604`. Two paragraphs verbatim from the user, with the model name bolded and `logcat` set as inline code. Also added an `· AI disclaimer` entry to the in-page nav bar so readers can jump straight to it from the top.
 
+### 2026-05-13 — Plan 5 MERGED to `gamehub-604-build`
+
+`feature/disable-mob-push` (head `503204a`) merged into `gamehub-604-build` at merge commit `282c9ea` (`--no-ff` so the pre1 → pre2 anchor-fix history is preserved under the merge). Post-merge sanity build queued as run 25825313855.
+
+Status after this merge: Plans 4 + 5 of the privacy hardening series are both live on `gamehub-604-build`. Remaining: Plans 1+7 (analytics-event redirect), Plan 6 (Bugly), Plan 8 (5.3.5 inventory), Plan 9 (PRIVACY.md). Plans 2 + 3 deliberately skipped (low value vs effort). Cross-cutting inventory + decisions log: auto-memory `project_bannerhub_revanced_privacy_hardening.md`.
+
 ### 2026-05-13 — Plan 4 artifact-grep verification (post-merge sanity)
 
 Downloaded `apk-Normal` artifact from CI run 25821952000 (the original `feature/disable-firebase-analytics` artifact build), decoded with apktool, grepped `AndroidManifest.xml`. All three injected `<meta-data>` entries confirmed present under `<application>`:

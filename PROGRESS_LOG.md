@@ -1034,15 +1034,26 @@ CN-locale auth logo (`features_auth_ic_logo_cn.png`, 270×72) intentionally left
 
 Branch head: `718d241`. Validation [run 25777014627](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25777014627) all 9 patch jobs green, `"Change app icon" succeeded` on every variant, apksigner cert SHA-256 = `10895a311fe04f95f82e4da5c9a6c041ba9282bf211f1b578fe1cbeb894ce0ba` (unchanged across pre1 → pre2 → pre3 → pre4 → upgrades between any pair should be in-place).
 
+### Pre5 — added splash_logo to same patch (2026-05-13)
+
+User asked to additionally rebrand `assets/composeResources/com.xiaoji.egggame.features.splash/drawable/splash_logo.png` (stock 996×200, 4.98:1 aspect, RGBA) using the same overseas-banner artwork source. Same 5.08:1 aspect on the source; resolved by resizing to 996×196 to preserve proportions exactly, then `-extent 996x200` to pad 2 px of transparency top + bottom. Output is RGBA so a future splash background change (e.g. dark mode) can bleed through cleanly.
+
+ImageMagick produces RGBA automatically when an RGB input is `-extent`'d with a transparent background — useful pattern.
+
+ChangeAppIconPatch (still ONE patch) now ships **five** drawables in its apply block: launcher foreground (+ vector delete), wine_logo, auth landscape, auth overseas, splash. CN-locale `drawable-zh-rCN/splash_logo.png` left alone — same policy as `features_auth_ic_logo_cn.png` (not displayed on overseas builds).
+
+Branch head: `0d55adf`. Validation [run 25777391685](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25777391685) all 9 patch jobs green, `"Change app icon" succeeded` on every variant, cert SHA-256 = `10895a311fe04f95f82e4da5c9a6c041ba9282bf211f1b578fe1cbeb894ce0ba` (unchanged pre1 → pre5).
+
 ### Pending
 
-- ☐ User device-tests pre4 Normal installed over pre3 (or pre2) Normal:
-  1. Android accepts the upgrade with no uninstall (verifies keystore stable across patch-set changes)
-  2. Launcher tile shows BannerHub icon (verifies adaptive-icon foreground swap + vector-delete on all densities)
-  3. wine_logo rebranded somewhere in-app (verifies the in-app res/drawable swap)
-  4. Auth-screen logos (landscape + overseas) show BannerHub branding on the login flow (verifies the Compose Multiplatform assets/ swap)
-- ☐ If all four pass, merge `feature/app-icon` → `gamehub-604-build` (recommended `--no-ff` to preserve the 2-commit feature history)
-- ☐ When ready, cut `v1.1.0-604` stable on the updated gamehub-604-build — first stable on the new cert, shipping vibration + new naming/labels/signing + full icon rebrand together
+- ☐ User device-tests pre5 Normal installed on top of any earlier new-cert build (pre2/pre3/pre4):
+  1. Android accepts the upgrade with no uninstall (keystore pipeline holds across patch additions)
+  2. Launcher tile shows BannerHub icon
+  3. wine_logo rebrand visible somewhere in-app (Wine flow)
+  4. Auth-screen logos (landscape + overseas) show BannerHub branding on login
+  5. Splash screen on app launch shows BannerHub banner
+- ☐ If green, merge `feature/app-icon` → `gamehub-604-build` (`--no-ff`, preserves the 4-commit feature history)
+- ☐ When ready, cut `v1.1.0-604` stable — first new-cert release shipping vibration + new naming/labels/signing + full 5-drawable icon rebrand together
 
 ### Per-game hamburger-menu Vibration Settings option — NOT in this build
 

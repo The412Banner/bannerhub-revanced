@@ -893,6 +893,20 @@ User retested v1.1.0-604-pre3 (`9681b60`) with **GTA 5 Enhanced** and a real con
 
 This unblocks the merge: `feature/vibration` ready to land on `gamehub-604-build`.
 
+### Merged into gamehub-604-build 2026-05-12
+
+Pre-merge commit `7d149f1` (docs: GTA 5 confirmation + stable-release-pipeline spec section) pushed to `origin/feature/vibration`, then:
+
+```
+git checkout gamehub-604-build
+git merge --no-ff feature/vibration
+git push origin gamehub-604-build
+```
+
+Merge commit: **`222730a`** (`Merge feature/vibration into gamehub-604-build`). `--no-ff` preserves the 8-commit feature history under the merge commit so the staged Verifier-error debugging trail (Stage 1 → 3b) stays readable in `git log --graph`.
+
+`gamehub-604-build` head 65e6902 → 222730a on origin. `feature/vibration` left at `7d149f1` on origin (not deleted — kept as a reference for the verifier-fix post-mortem).
+
 ### Per-game hamburger-menu Vibration Settings option — NOT in this build
 
 User asked whether the per-game hamburger-menu "Vibration Settings" item from BannerHub 3.7.2 stable also ships in the ReVanced build. **No.** The ReVanced patch set only registers `com.xj.winemu.vibration.BhVibrationSettingsActivity` in the manifest with `exported="false"` and no `<intent-filter>` (`VibrationManifestPatch.kt:32-37`). There is no patch under `patches/.../gamehub/` that injects a menu item into the XJ Java/XML UI to launch that activity — that would be a separate bytecode patch (find the per-game menu adapter R8 class, inject a row that fires an explicit Intent to `BhVibrationSettingsActivity --es gameId <gid>`).

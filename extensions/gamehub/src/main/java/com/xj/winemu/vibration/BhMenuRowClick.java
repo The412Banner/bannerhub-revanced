@@ -340,10 +340,14 @@ public final class BhMenuRowClick implements Function1<Object, Object> {
             Field aField = Class.forName("tdi").getDeclaredField("a");
             aField.setAccessible(true);
             Object key = aField.get(ell);
+            Log.i(TAG, "maybeResolveCustomLabel called key=" + key);
             if ("string:bh_pc_vibration_label".equals(key)) {
+                Log.i(TAG, "  → short-circuiting to 'PC Vibration Settings'");
                 return "PC Vibration Settings";
             }
-        } catch (Throwable ignored) { }
+        } catch (Throwable t) {
+            Log.w(TAG, "maybeResolveCustomLabel error", t);
+        }
         return null;
     }
 

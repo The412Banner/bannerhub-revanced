@@ -32,9 +32,13 @@
 
 ## AI Disclaimer
 
-All smali edits, patches, and code changes in this project are developed with the assistance of **Claude AI Sonnet 4.6** by Anthropic. Claude is used to write, review, and modify smali bytecode and Java extension code since this project has no source code to work from — all changes are applied directly to the decompiled APK via [apktool](https://apktool.org/).
+This project has no source code — XiaoJi GameHub is closed-source and ships only the compiled APK. To work on it at all, every GameHub release has to be decompiled, mapped, and patched at the bytecode level. **Claude AI Sonnet 4.6** by Anthropic is used across that whole pipeline:
 
-Before any stable release is published, all changes are **manually debugged and tested by me across multiple devices — both rooted and unrooted**. Debugging is done using `logcat` output and in-app debug log files to diagnose and verify behavior before changes are finalized.
+- **Decompile & analyse the APK.** Every new GameHub release is pulled to my Android phone and decompiled inside [Termux](https://termux.dev/) using [apktool](https://apktool.org/) (installed via Termux's `pkg` package manager). Claude then maps the resulting smali / manifest / resource tree — full R8 class-letter map, Compose Multiplatform resource layout, manifest deltas vs the previous release — and the analysis is checked into the [`gamehub_reports/`](gamehub_reports/) folder so the same map can be referenced across versions.
+- **Write / rewrite ReVanced patches.** Claude helps author new patches against the current GameHub release **and port the older patches forward** from the GameHub **5.3.5** ReVanced project. Because R8 reshuffles every class letter on every minor-version bump (6.0.0 → 6.0.1 → 6.0.2 → 6.0.4 each completely renumbered the smali class names), every patch's structural anchors have to be re-derived against the new release — Claude does the heavy lifting on that re-derivation. Patches themselves are written in Kotlin against the ReVanced patcher API; Java "extension" helpers (`.rve`) handle anything too fiddly for raw smali edits.
+- **Build & iterate.** Builds run on GitHub Actions CI (never on the phone). Every iteration is pushed up, CI patches all 9 variants, and the artefacts are pulled back to the phone for install + on-device test.
+
+Before any **stable release** is published, every change is **manually debugged and tested by me across multiple devices — both rooted and unrooted**. Debugging uses `logcat` output (captured with the [`getlog` Magisk helper](https://github.com/The412Banner/logcat-bridge) on rooted devices, plain `adb logcat` on unrooted) plus the in-app debug log files that the `Debug logging` patch produces. No release is cut until the change has been verified end-to-end on hardware.
 
 ## What's new in v1.1.0-604
 

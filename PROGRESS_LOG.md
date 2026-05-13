@@ -1344,3 +1344,17 @@ Per user: "add the discord server badge and ai disclaimer at the top also please
 
 1. **Discord shield badge** — centered `<p>` with a Shields.io for-the-badge style discord badge (`https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white&style=for-the-badge`) linking to `discord.gg/n8S4G2WZQ4` (the The412Banner community invite, per `feedback_discord_link_new_repos.md`). Placed between the subtitle paragraph and the existing in-page nav bar.
 2. **AI Disclaimer section** — new `## AI Disclaimer` H2 inserted right after the in-place-updates callout and before `## What's new in v1.1.0-604`. Two paragraphs verbatim from the user, with the model name bolded and `logcat` set as inline code. Also added an `· AI disclaimer` entry to the in-page nav bar so readers can jump straight to it from the top.
+
+### 2026-05-13 — README AI Disclaimer expanded with pipeline detail
+
+Per user: "rewrite the disclaimer to explain it is used to help decompile and analyze Game Hub release apks using termux and termux package tool, the map out the apk contents and help write/rewrite new/old revanced patches from Gamehub 5.3.5 revanced project. I am sure anything in that disclaimer you can correct for me I missed"
+
+Rewrote the disclaimer into a lead-in paragraph + three bulleted pipeline stages + a closing manual-verification paragraph:
+
+- **Lead-in:** GameHub is closed-source; all work happens at bytecode level.
+- **Decompile & analyse:** Termux + `pkg`-installed apktool on the Android phone; Claude maps R8 letters, Compose resources, manifest deltas; analysis lives in `gamehub_reports/`.
+- **Write / rewrite patches:** new patches + ports forward from the **GameHub 5.3.5 ReVanced project**; R8 reshuffles every minor bump (6.0.0 → 6.0.1 → 6.0.2 → 6.0.4) so structural anchors get re-derived per release; patches in Kotlin against ReVanced patcher API + `.rve` Java extensions for fiddly edits.
+- **Build & iterate:** GitHub Actions CI only, never local builds (per `feedback_build_method.md`); 9-variant matrix; artefacts pulled to phone for device test.
+- **Manual verification (closing paragraph):** rooted + unrooted devices; logcat via the `getlog` Magisk helper (linked to The412Banner/logcat-bridge) on rooted, `adb logcat` on unrooted, plus in-app debug log files from the `Debug logging` patch. No stable cut until verified on hardware.
+
+Kept the user's first-person voice ("by me", "my Android phone") and preserved "Claude AI Sonnet 4.6" verbatim from the user's disclaimer text (the model the user specified — not autocorrected to the runtime model).

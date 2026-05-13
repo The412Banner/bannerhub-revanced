@@ -313,6 +313,16 @@ jobs:
             - **Catalog backend**: [`The412Banner/bannerhub-api`](https://github.com/The412Banner/bannerhub-api) — Cloudflare Worker, deployed at `bannerhub-api.the412banner.workers.dev`.
             - **Repo**: https://github.com/${{ github.repository }}
 
+            #### Naming & versioning scheme
+
+            APK files follow the pattern **`BannerHub-V6-{version}-Patched-{variant}.apk`** — e.g. `BannerHub-V6-1.1.0-604-Patched-Normal.apk`. The version string itself has three parts:
+
+            - **BannerHub v6** — product name. The `v6` is fixed; it's our branch family aligned with GameHub's 6.x series and stays put across upstream patch-version bumps.
+            - **`1.1.0`** — BannerHub-side semver (`major.minor.patch`). Tracks our own changes: new patches, infrastructure work, bug fixes. Bumps on every release.
+            - **`-604`** — GameHub base version with the dots stripped (`6.0.4` → `604`). Tells you which upstream GameHub APK was patched. When GameHub upstream releases `6.0.5`, the suffix becomes `-605` and the same patch set can be retargeted (e.g. `v1.1.0-605`) without otherwise changing.
+
+            The release tag (`v1.1.0-604`) is just the version string with a leading `v`. The `{variant}` slot in the filename identifies which of the 9 side-by-side packagings you grabbed.
+
             ### Variants
 
             Nine APKs are produced from the same patch bundle, each with a different package name + launcher label so they install side-by-side. The `Original` variant **replaces** an installed GameHub; the rest install **alongside** the original.

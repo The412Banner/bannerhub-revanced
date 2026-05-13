@@ -1127,3 +1127,196 @@ Replace revanced-cli's per-run ephemeral keystore with a checked-in test keystor
 11. ☐ Lock cert SHA-256 into memory + README for permanent verification reference
 
 Full spec in `[[project_bannerhub_revanced_stable_release_pipeline]]` memory file.
+
+## 2026-05-13 — Per-game menu integration recon
+
+User wants a 5th menu row "PC Vibration Settings" in the per-game library popup (PC Game Settings / Add to Desktop / Remove from Library / Edit Cover). Pure Compose Multiplatform, heavy R8 obfuscation. Full architecture mapped this session before the patch implementation begins.
+
+### Menu Composable host
+
+**`smali_classes4/x57.smali`** (18,783 lines), method `a(Lf37;Lpo7;Lv83;I)V` (line 214 → ~7807). Per-game menu rows built lines ~3120-3300.
+
+### Row data class
+
+`Liae;` (file `smali/iae.smali`):
+| Field | Type | Meaning |
+|---|---|---|
+| `a` | `Lo05;` | Icon (Painter / vector) |
+| `b` | `Ljava/lang/String;` | Resolved label string |
+| `c` | `Lpw6;` | onClick (Function1<Object, Object>) |
+| `d` | `Z` | Enabled boolean |
+
+Constructor: `<init>(Lo05;Ljava/lang/String;Lpw6;)V` (3-arg overload defaults d=true).
+
+### Click handler interface
+
+`Lpw6;` = Compose's `Function1` — single abstract method `invoke(Ljava/lang/Object;)Ljava/lang/Object;`.
+
+### Label resolver lookup
+
+`Lwhl;` is the only ComposableSingletons holder containing all four menu labels:
+- `Lwhl;->S:Lxrl;` — `Lwgl(23)` = `common_game_remove_from_library` ✓ verified
+- `Lwhl;->e0:Lxrl;` — `Ldhl(13)` = `game_cover_edit_title` ✓ verified
+- Two more (PC Game Settings + Add to Desktop) in the same singleton
+
+### Compose label int values (verified by walking pswitch tables)
+
+- `Lghl(25)` → `features_winemu_entrance_setting` ("PC Game Settings")
+- `Ltfl(20)` → `features_game_add_to_desktop` ("Add to Desktop")
+- `Lwgl(23)` → `common_game_remove_from_library` ("Remove from Library")
+- `Ldhl(13)` → `game_cover_edit_title` ("Edit Cover")
+
+### Canonical row construction pattern (x57 lines ~3130-3210)
+
+```smali
+:goto_30
+if-eqz v36, :cond_66                                 ; row-visible state guard
+const v2, -0x3f27e2da                                ; Compose state-group key
+invoke-virtual {v7, v2}, Ln49;->g0(I)V               ; Composer.startReplaceableGroup
+sget-object v2, Lzz4;->m:Lxrl;                       ; ICON ref
+invoke-virtual {v2}, Lxrl;->getValue()Ljava/lang/Object;
+move-result-object v2
+check-cast v2, Lo05;                                 ; v2 = Lo05 icon
+sget-object v3, Lwhl;->S:Lxrl;                       ; LABEL ref
+invoke-virtual {v3}, Lxrl;->getValue()Ljava/lang/Object;
+move-result-object v3
+check-cast v3, Lell;
+const/4 v9, 0x0
+invoke-static {v3, v7, v9}, Lxd3;->l1(Lell;Lv83;I)Ljava/lang/String;
+move-result-object v3                                ; v3 = resolved string
+invoke-virtual {v7, v10}, Ln49;->i(Ljava/lang/Object;)Z   ; Composer.changed
+move-result v13
+invoke-virtual {v7}, Ln49;->S()Ljava/lang/Object;    ; Composer.rememberedValue
+move-result-object v9
+if-nez v13, :cond_64
+if-ne v9, v15, :cond_65                              ; reuse remembered if not Empty
+:cond_64
+new-instance v9, Lb47;
+const/4 v13, 0x0
+invoke-direct {v9, v10, v0, v6, v13}, Lb47;-><init>(Lpo7;Lcge;Lcge;I)V
+invoke-virtual {v7, v9}, Ln49;->p0(Ljava/lang/Object;)V   ; Composer.updateRememberedValue
+:cond_65
+check-cast v9, Lpw6;                                 ; v9 = onClick Function1
+new-instance v13, Liae;
+invoke-direct {v13, v2, v3, v9}, Liae;-><init>(Lo05;Ljava/lang/String;Lpw6;)V
+invoke-virtual {v4, v13}, Lx9d;->add(Ljava/lang/Object;)Z   ; list builder v4 ← row
+invoke-virtual {v7}, Ln49;->u()V                     ; Composer.endReplaceableGroup
+```
+
+### Implementation plan
+
+Two artifacts:
+
+1. **Java helper** `extensions/gamehub/src/main/java/com/xj/winemu/vibration/BhMenuRowClick.java` implementing `kotlin.jvm.functions.Function1<Object, Object>`:
+   - Walks `ActivityThread` (reflection — same pattern `BhVibrationController.maybeResolveContainerFromActivityStack` already uses) to find current top Activity
+   - Reads gameId Intent extra from the active WineActivity if present
+   - Fires `currentActivity.startActivity(Intent(currentActivity, BhVibrationSettingsActivity.class).putExtra("gameId", gameId))`
+
+2. **Bytecode patch** `patches/.../gamehub/vibration/VibrationMenuRowPatch.kt`:
+   - Structural anchor: find a method with `sget-object .*Lwhl;->S:Lxrl;` AND `Lx9d;->add(Object)Z` AND `Liae;-><init>(Lo05;Ljava/lang/String;Lpw6;)V`
+   - Just before the method's final return (or at the end of the row-construction block), inject the smali to construct a new `Liae("PC Vibration Settings", icon, BhMenuRowClick(), true)` and append to `v4` via `Lx9d;->add`
+   - Use ExternalLabel pattern via `addInstructionsWithLabels`; reserve fresh free registers; preserve Composer state-group balance with paired `Ln49.g0` / `Ln49.u`
+
+### Risk factors / iteration expectations
+
+- Compose `Composer.startReplaceableGroup` / `endReplaceableGroup` pairs must match — wrong boundary = ART verifier crash on app start
+- Compose's `Ln49.i` / `Ln49.S` / `Ln49.p0` remember-state slot tracking has strict invariants
+- Register reuse: `v7` (Composer), `v4` (list builder), `v10` / `v15` (constants) must not clobber
+- Expect 2-4 CI cycles to pass verifier + 1-2 device-test cycles to confirm row renders cleanly without crashing the popup
+
+### Recon files referenced
+
+| File | Role |
+|---|---|
+| `x57.smali` | Menu Composable host (18,783 lines, method `a()` builds rows) |
+| `iae.smali` | Row data class `Liae(icon, label, onClick, enabled)` |
+| `b47.smali` | Compose-emitted onClick closure (`Lpw6` impl, 4-field captured state) |
+| `cge.smali` | State delegate interface (NOT click handler — `MutableState`-like) |
+| `pw6.smali` | Function1 interface — actual click-handler type |
+| `whl.smali` | ComposableSingletons holder for menu labels |
+| `ghl.smali` / `tfl.smali` / `wgl.smali` / `dhl.smali` | Label string resolvers (packed-switch on int → string key) |
+| `vhl.smali` / `shl.smali` / `zhl.smali` | Other singletons (NOT the per-game menu) |
+| `jfd.smali` | ViewModel (game detail), 16-way Lhed sealed dispatch |
+| `ddd.smali` | FlowCollector handling 13 sealed event types |
+| `ycd.smali` | Edit Cover confirm closure |
+| `j47.smali` | Composable lambda factory (5 different ctors, 14-callback variant) |
+| `igg.smali:21668` | Builds j47 with `Ljava/util/List;` of menu rows |
+
+### AppNavKey concrete names found
+
+| AppNavKey class | Obfuscated |
+|---|---|
+| `AppNavKey$PcGameSettingEntrance` | `Lff0;` |
+| `AppNavKey$GamepadVibrationSetting` | `Ltd0;` (built-in 6.0.4 — different from our BhVibrationSettingsActivity) |
+
+## 2026-05-13 — Patch iterations (pre7 → pre11)
+
+Branch `feature/menu-vibration-row`. Iteration trail captured in memory file `project_bannerhub_revanced_vibration.md`:
+
+| Pre | Commit | Outcome |
+|---|---|---|
+| pre7 | `2d0c85c` | Kotlin compile fail (`Pair<...>.addInstructions` doesn't exist — use `firstMethod`) |
+| pre8 | `8b1cb3f` | ART verifier reject — in-line smali clobbered v9 with `BhMenuRowClick` type, breaking downstream type-flow merge at `:goto_35` |
+| pre9 | `28c5bd3` | Helper called repeatedly but failed `!pw6Cls.isInstance(click)` — R8 renamed `kotlin.jvm.functions.Function1` → `Lpw6;` so our extension's Function1 impl is a different JVM class |
+| pre10 | `7eb024e` | ✅ Row appears in game-details More Menu — `java.lang.reflect.Proxy` implementing Lpw6 satisfies the Iae ctor type check |
+| pre11 | `19080af` | Added 2nd injection in `ted.smali f()` for library tile popup — but logcat confirms helper never called; ted.f() is NOT the library tile popup |
+
+### Confirmed working surface
+
+`x57.smali` method `a(Lf37;Lpo7;Lv83;I)V` injection at lastAddIdx+1:
+```
+invoke-static {v4}, Lcom/xj/winemu/vibration/BhMenuRowClick;->appendVibrationRowTo(Ljava/lang/Object;)V
+```
+Helper reflectively constructs `Liae(icon, "PC Vibration Settings", Proxy<Lpw6>)` and appends to list builder `Lx9d` at `v4`. Renders as 5th item in the game-details screen "More Menu" popup. Device-confirmed via screenshot 2026-05-13 08:04.
+
+## 2026-05-13 — BOTH menus working at pre17 🎉
+
+After 10 iterations (pre7 → pre17), the library tile popup row now ALSO works.
+
+### What got it across the line
+
+Pre15-16 silently had a `PatchException: classDef is null` in the resolver short-circuit's `addInstructionsWithLabels`-via-`ExternalLabel` path. revanced-cli reported the OVERALL job as success because the per-patch SEVERE error doesn't fail the CI run. The 3 other injections landed but the resolver patch silently no-op'd, leaving rows in pzc.j0's output pointing at unresolvable Lell keys that crashed at render time.
+
+Pre17 switched to plain `addInstructions` (no labels) at index 0 — works because the trailing-label-in-snippet footgun only applies mid-method. Index 0 lets the snippet-relative offset equal the absolute offset.
+
+### Final injection pattern (3 sites + 1 resolver patch)
+
+1. **Game-details "More Menu"** (`Lx57.a()`): `addInstructions(lastAddIdx+1, "invoke-static {v4}, ...->appendVibrationRowTo(Object)V")` → Java helper builds `Liae(icon, label-as-String, Proxy<Lpw6>)` and `list.add()`s.
+2. **Library tile popup** (`Lpzc.j0()`): hook the return — `addInstructions(returnIdx, "invoke-static {vN}, ...->appendLibraryPopupRow(Object)List; \n move-result-object vN")` → Java helper builds `Lz4e(Lell-via-Unsafe, Proxy<Lnw6>, 0)` and returns augmented ArrayList.
+3. **Resolver short-circuit** (`Lxd3.l1()`): `addInstructions(0, "invoke-static {p0}, ...->maybeResolveCustomLabel(Object)String; \n move-result-object v0 \n if-eqz v0, :tail \n return-object v0 \n :tail")` → Java helper returns "PC Vibration Settings" for our sentinel key, null for everything else.
+4. **Compose resource entry** (`VibrationMenuLabelPatch`): appends to `assets/composeResources/com.xiaoji.egggame.features.home/values*/strings.commonMain.cvr` for documentation/future-use (actual mechanism is #3 since Compose Multiplatform's runtime needs a manifest registration the bare .cvr doesn't provide).
+
+### Three architectural challenges solved
+
+- **R8 renamed kotlin.jvm.functions.Function0/1** to `Lnw6;`/`Lpw6;`. Extension's `implements Function1` doesn't satisfy `pw6Cls.isInstance()`. Fix: `java.lang.reflect.Proxy.newProxyInstance` implementing the renamed interface.
+- **Lell is an empty Kotlin subclass** of abstract `Ltdi(String, Set)`. Lell.smali has NO `.method`, NO `.field`. JVM-level the host does `new-instance + invoke-direct Ltdi.<init>`. `Lell.class.getDeclaredConstructor` returns nothing. Fix: `sun.misc.Unsafe.allocateInstance` + reflect-set the inherited fields `Ltdi.a` (key) and `Ltdi.b` (Set).
+- **Compose resource keys** for library popup labels go through `Lxd3.l1` resolver which throws on unknown keys. Just appending to the .cvr isn't enough — runtime needs a manifest. Fix: bytecode short-circuit the resolver at its head.
+
+### Full engineering reference
+
+The reusable playbook (with smali patterns, register conventions, common pitfalls, full code snippets) lives in `project_bannerhub_revanced_menu_injection_playbook.md`. Future menu-row additions should start there.
+
+### Critical CI anti-pattern caught
+
+`revanced-cli` reports per-patch failures as `SEVERE:` log lines but the OVERALL CI job exits 0. Always grep CI logs for SEVERE after every iteration — wasted pre15 and pre16 by assuming "all 9 variants green" meant all patches landed.
+
+```bash
+gh run view --log --job <id> | grep -E "SEVERE|INFO.*<patch name>"
+```
+
+### Device confirmation 2026-05-13 12:51
+
+Library tile 3-dot popup screenshot shows 5 rows in vertical text-only list:
+- PC Game Settings
+- Add to Desktop
+- Remove from Library
+- Edit Cover
+- **PC Vibration Settings** ← OUR row
+
+Game-details "More Menu" still has its own PC Vibration row from pre10. Both surfaces working independently.
+
+### Pending
+
+- ☐ Tap-test "PC Vibration Settings" in the library popup → confirm it opens BhVibrationSettingsActivity dialog (haven't device-tested the click yet, just the row rendering)
+- ☐ Merge `feature/menu-vibration-row` → `gamehub-604-build`
+- ☐ When ready, cut `v1.1.0-604` stable — first release with full menu integration

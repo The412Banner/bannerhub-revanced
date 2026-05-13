@@ -1329,3 +1329,7 @@ Will trigger an artifacts-only build to verify the merged tree builds clean.
 ### 2026-05-13 — README "What's new" trim
 
 Per user: "under the what's new section of the read me only show the latest release." Removed the five historical "What's new" sections from `README.md` (v1.0.0-604 historical, v1.0.0-602, v1.0.1-601 hotfix, v1.0.0-601, v1.0.1-600) — collectively ~45 lines. Left a one-line pointer note directing readers to the per-release pages for past notes, then kept the existing `---` separator and `## What this is` header in place. Top-of-README "What's new" now shows only `v1.1.0-604`.
+
+### 2026-05-13 — README "Known limitations" section removed
+
+Per user: "remove the known limitatiin section." Dropped the `## ⚠ Known limitations — please read` block from `README.md`. Both bullets in that section were already strikethroughs of fixed issues (standard Steam client launches + missing cover-art-on-import), both fixed server-side in the BannerHub Worker and retroactively applied to existing patched builds. README now flows `## What this is` → `## Source` directly.

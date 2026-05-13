@@ -51,11 +51,6 @@ GameHub 6.0 (the KMP rewrite under the package `com.xiaoji.egggame`) gates the e
 
 It also fixes a launch-time `VerifyError` that the original 5.x `Disable Crashlytics` patch caused on 6.0, ships a diagnostic `Debug logging` probe (kept for ongoing triage convenience even though the import flow is confirmed stable end-to-end), and includes an unrelated convenience patch (`File manager access`) that exposes a content provider for browsing GameHub's data dir from external file managers.
 
-## ⚠ Known limitations — please read
-
-- ~~**Steam game launches via the standard Steam client are likely broken.**~~ **Fixed server-side in the BannerHub API Worker** — both the standard Steam client and the Lightweight Steam client now launch games end-to-end on patched 6.0.4 builds (and on existing patched builds; the fix is retroactive — no APK rebuild needed).
-- ~~**Imported games have no cover art by default.**~~ **Fixed 2026-05-11 in the BannerHub Worker** (deploy `5fd6c6a7…`). The PC-EXE import recognition call (`/simulator/getLocalGameDetail`) was falling through to the worker's anonymous-passthrough path, so upstream returned an empty `LocalGameInfoSvrEntity` and imported games landed with no artwork. The endpoint is now on the same authenticated-proxy branch as the vjoy/Scheme endpoints — client headers are forwarded and the shared `bannerhub_token` is injected, so upstream returns populated `logo`/`cover_image`/`back_image`/`hero_capsule`/`square_image` fields. **No APK rebuild required** — the fix is server-side and applies retroactively to every existing patched build.
-
 ## Source
 
 - **Base APK:** `GameHub_6.0.4.apk` — the official 6.0.4 global build (versionCode 114), attached unmodified to the [`base-apk-604`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/base-apk-604) release for reproducibility. Earlier base APKs remain attached to [`base-apk-602`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/base-apk-602) (6.0.2), [`base-apk-601`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/base-apk-601) (6.0.1) and [`base-apk-600`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/base-apk-600) (6.0.0) for older releases.

@@ -1050,9 +1050,19 @@ Branch head: `0d55adf`. Validation [run 25777391685](https://github.com/The412Ba
 
 `gamehub-604-build` head e3c708a → bf2882e. `feature/app-icon` left at `46a1a6e` on origin as a reference branch.
 
+### Post-merge sanity build 2026-05-13 (pre6 on gamehub-604-build)
+
+User triggered an artifacts-only build of `gamehub-604-build` @ `841a0ba` after the icon-patch merge to verify the merged tree builds clean: `gh workflow run release.yml --ref gamehub-604-build -f version=1.1.0-604-pre6 -f stable=false`.
+
+[Run 25777687347](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25777687347) — all 9 patch jobs green, `Create GitHub Release` correctly skipped (stable=false). Per-job:
+- `"Change app icon" succeeded` on every variant
+- apksigner cert SHA-256 = `10895a311fe04f95f82e4da5c9a6c041ba9282bf211f1b578fe1cbeb894ce0ba` (unchanged pre1 → pre6)
+
+Confirms vibration patch + stable-release-pipeline + 5-drawable icon patch all coexist cleanly. Artifacts live 14 days at the run URL.
+
 ### Pending
 
-- ☐ User device-tests pre5 (or pre4) Normal installed on top of any earlier new-cert build:
+- ☐ User device-tests pre6 (or pre5/pre4) Normal installed on top of any earlier new-cert build:
   1. Android accepts the upgrade with no uninstall
   2. Launcher tile shows BannerHub icon
   3. wine_logo rebrand visible somewhere in-app

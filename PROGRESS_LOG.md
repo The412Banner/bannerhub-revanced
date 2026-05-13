@@ -960,10 +960,16 @@ Passwords (`bannerhub`/`bannerhub`) and full security model documented in `keyst
   - apksigner found at `/usr/local/lib/android/sdk/build-tools/37.0.0/apksigner` (auto-discovered via the `ls -d "${ANDROID_HOME}/build-tools"/* | sort -V | tail -1` lookup)
 - Artifacts available for 14 days under run 25775495418's artifacts tab
 
+### Merged 2026-05-13
+
+`feature/stable-release-pipeline` (head `7344420`, 2 commits) merged into `gamehub-604-build` at **merge commit `41a2b27`** with `--no-ff` so the feature history is preserved under the merge commit. Pushed to origin.
+
+`gamehub-604-build` head e26529b → 41a2b27. `feature/stable-release-pipeline` left at `7344420` on origin (not deleted — kept as a reference branch).
+
 ### Pending
 
-- ☐ Merge `feature/stable-release-pipeline` → `gamehub-604-build` (--no-ff to preserve the feature commit)
-- ☐ When ready, cut `v1.1.0-604` stable: `gh workflow run release.yml --ref gamehub-604-build -f version=1.1.0-604 -f stable=true` (or push tag first, then run workflow_dispatch). Will create the v1.1.0-604 GitHub Release with all 9 APKs attached. Note: release notes should explicitly call out the one-time uninstall requirement for users on v1.0.0-604 or older.
+- ☐ Pre2 rebuild on `gamehub-604-build` to verify in-place updates: `gh workflow run release.yml --ref gamehub-604-build -f version=1.1.0-604-pre2 -f stable=false`. Expected: same cert SHA-256 `10895a311fe04f95f82e4da5c9a6c041ba9282bf211f1b578fe1cbeb894ce0ba`. User will install pre1 (from run 25775495418 artifacts), then install pre2 on top to confirm Android accepts the upgrade with no uninstall.
+- ☐ When ready, cut `v1.1.0-604` stable: `gh workflow run release.yml --ref gamehub-604-build -f version=1.1.0-604 -f stable=true`. Release notes should call out the one-time uninstall for users on v1.0.0-604 or older.
 
 ### Per-game hamburger-menu Vibration Settings option — NOT in this build
 

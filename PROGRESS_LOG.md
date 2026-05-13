@@ -1022,14 +1022,27 @@ R.drawable.wine_logo (resource ID `0x7f080180`, declared in `res/values/public.x
   - apksigner cert SHA-256 = `10895a311fe04f95f82e4da5c9a6c041ba9282bf211f1b578fe1cbeb894ce0ba` on every variant — byte-for-byte identical to pre1 (run 25775495418) and pre2 (run 25775755966), so an in-place upgrade install of pre3 over pre2 should be accepted by Android without uninstall
 - Artifacts live 14 days under run 25776533760
 
+### Pre4 — added 2 Compose Multiplatform auth-screen logos to same patch (2026-05-13)
+
+User asked to additionally rebrand:
+- `assets/composeResources/com.xiaoji.egggame.features.auth/drawable/features_auth_ic_logo_landscape.png` (stock 96×96 square — "landscape" refers to auth-screen orientation, not image aspect) — replaced with BannerHub icon scaled to 96×96 with transparent padding
+- `assets/composeResources/com.xiaoji.egggame.features.auth/drawable/features_auth_ic_logo_overseas.png` (stock 366×72, 5.08:1 wide) — replaced with user-supplied 2277×448 RGB source `/storage/emulated/0/Download/ADM/features_auth_ic_logo_overseas.png` direct-downscaled (aspect ratio matched exactly, no padding). RGB→RGB transition acceptable since auth screen has opaque background.
+
+Extended `ChangeAppIconPatch` (still ONE patch, one entry in `revanced-cli list-patches`) with two more `copy()` calls. Refactored apply block to factor out the classloader-load + parent-mkdirs + stream-copy pattern into a local helper, eliminating four near-identical blocks.
+
+CN-locale auth logo (`features_auth_ic_logo_cn.png`, 270×72) intentionally left alone — not shown on overseas builds.
+
+Branch head: `718d241`. Validation [run 25777014627](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25777014627) all 9 patch jobs green, `"Change app icon" succeeded` on every variant, apksigner cert SHA-256 = `10895a311fe04f95f82e4da5c9a6c041ba9282bf211f1b578fe1cbeb894ce0ba` (unchanged across pre1 → pre2 → pre3 → pre4 → upgrades between any pair should be in-place).
+
 ### Pending
 
-- ☐ User device-tests pre3 Normal installed on top of pre2 Normal:
-  1. Android accepts the upgrade with no uninstall prompt (verifies the keystore pipeline holds across patch-set changes)
-  2. Launcher tile shows BannerHub icon (verifies the adaptive-icon foreground swap + vector-delete worked at every density)
-  3. Wherever wine_logo appears in-app, it shows the new asset (verifies the in-app drawable swap)
-- ☐ If all three pass, merge `feature/app-icon` → `gamehub-604-build` (recommended `--no-ff` to preserve the single-commit feature history)
-- ☐ When ready, cut `v1.1.0-604` stable on the updated gamehub-604-build — first stable on the new cert, with vibration + new naming/labels/signing + new icon all shipping together
+- ☐ User device-tests pre4 Normal installed over pre3 (or pre2) Normal:
+  1. Android accepts the upgrade with no uninstall (verifies keystore stable across patch-set changes)
+  2. Launcher tile shows BannerHub icon (verifies adaptive-icon foreground swap + vector-delete on all densities)
+  3. wine_logo rebranded somewhere in-app (verifies the in-app res/drawable swap)
+  4. Auth-screen logos (landscape + overseas) show BannerHub branding on the login flow (verifies the Compose Multiplatform assets/ swap)
+- ☐ If all four pass, merge `feature/app-icon` → `gamehub-604-build` (recommended `--no-ff` to preserve the 2-commit feature history)
+- ☐ When ready, cut `v1.1.0-604` stable on the updated gamehub-604-build — first stable on the new cert, shipping vibration + new naming/labels/signing + full icon rebrand together
 
 ### Per-game hamburger-menu Vibration Settings option — NOT in this build
 

@@ -1345,6 +1345,29 @@ Per user: "add the discord server badge and ai disclaimer at the top also please
 1. **Discord shield badge** — centered `<p>` with a Shields.io for-the-badge style discord badge (`https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white&style=for-the-badge`) linking to `discord.gg/n8S4G2WZQ4` (the The412Banner community invite, per `feedback_discord_link_new_repos.md`). Placed between the subtitle paragraph and the existing in-page nav bar.
 2. **AI Disclaimer section** — new `## AI Disclaimer` H2 inserted right after the in-place-updates callout and before `## What's new in v1.1.0-604`. Two paragraphs verbatim from the user, with the model name bolded and `logcat` set as inline code. Also added an `· AI disclaimer` entry to the in-page nav bar so readers can jump straight to it from the top.
 
+### 2026-05-13 — feature/strip-privacy-permissions-ota — Branch 1 of Plan 8 ports
+
+User: "begin" — kicking off Branch 1 (Plan 8a + 8b together) after the Plan 6 N/A finding and Plan 8 inventory.
+
+**Patches written (2 files on `feature/strip-privacy-permissions-ota`):**
+
+1. **`misc/analytics/StripAdIdPermissionsPatch.kt`** — `resourcePatch`. Removes the three `<uses-permission>` declarations for `com.google.android.gms.permission.AD_ID`, `android.permission.ACCESS_ADSERVICES_ATTRIBUTION`, `android.permission.ACCESS_ADSERVICES_AD_ID` from the manifest root. Collect-then-remove pattern (avoid live-NodeList iteration issues). Idempotent. Strengthens Plan 4 — that one disables collection via `<meta-data>` kill-switches but the declared permissions still flag privacy scanners.
+
+2. **`misc/ota/DisableOtaUpdatesPatch.kt`** — `bytecodePatch` + private `otaCleanupResourcePatch` dependency.
+   - **Bytecode layer**: anchors structurally on any method containing a `const-string` whose value starts with `https://www.xiaoji.com/firmware/update`. In 6.0.4 this resolves to `smali_classes4/ki4.smali` method `ki4.d(String, String, I, ci3)Object` at instruction `const-string v2, "https://www.xiaoji.com/firmware/update/x1"`. After the const-string load, inserts `const-string v$urlReg, "http://127.0.0.1"` so the URL register holds the loopback before downstream HTTP code reads it. No control-flow changes, no try/catch label disruption.
+   - **Resource layer (`otaCleanupResourcePatch`)**: strips `libJieLiUsbOta.so` and `libjl_ota_auth.so` (1 arch dir each in 6.0.4) — JieLi gamepad-firmware native libs that are dead weight on a phone install.
+   - **5.3.5 → 6.0.4 delta**: the original 5.3.5 patch's URL anchor used a trailing slash (`...update/x1/`); 6.0.4 dropped it. Port uses prefix-match on `...firmware/update` to survive both shapes plus any future minor adjustments. Also dropped the `dependsOn(creditsPatch)` from the 5.3.5 source — the `creditsPatch` is one of the 34 missing patches we didn't carry forward.
+
+**Expected behaviour:**
+
+- No user-visible UI change.
+- `adb logcat` should not show the OTA URL being contacted on cold launch (or the launch should show a connection-refused on 127.0.0.1).
+- Manifest dump (`aapt dump permissions`) should report zero ad-ID permission declarations.
+
+**Risk:** Low. Both patches are anchored on string contents (manifest attribute values + smali const-string), neither touches R8-mangled class letters. Resource patches don't have ART verifier complications.
+
+**Verification chain (per `project_bannerhub_revanced_privacy_hardening.md`):** CI green → grep SEVERE = 0 → "succeeded" line count = 9 → artifact-grep on `apk-Normal` (manifest has 0 ad-ID permissions, smali has the loopback URL override at the right index, lib/ has no JieLi sos) → user device test.
+
 ### 2026-05-13 — Plan 6 N/A + Plan 8 inventory complete (3 portable findings)
 
 **Plan 6 (Bugly) is not applicable to 6.0.4.** Recon against `gamehub_604_decompile/`: no `com/tencent/bugly/` smali tree, no Bugly manifest entries, no `initCrashReport` call sites. XiaoJi appears to rely entirely on Firebase Crashlytics for crash reporting (already neutralized by the existing `DisableCrashlyticsPatch`). My earlier "Bugly is likely bundled" was a guess from the typical "Chinese app bundles Bugly" assumption — recon refuted it. Plan 6 is now marked N/A in the privacy-hardening memory file.

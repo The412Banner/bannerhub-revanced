@@ -187,20 +187,44 @@ val vibrationPatch = bytecodePatch(
                     } == true
             }
 
-            // Capture the original join instruction so we can hang an
-            // ExternalLabel off it. A label at the END of the snippet (older
-            // attempt) gets parsed by smali as offset=block-length and then
-            // baked into the resulting method as an absolute address — which
-            // is why v1.1.0-pre crashed at WineActivity.onCreate with
-            // `VerifyError: target dex pc 0x28 is not at instruction start`
-            // (0x28 == 40 == byte length of the 18 inserted instructions).
-            // ExternalLabel resolves to the original `invoke-static/range`
-            // by Instruction identity, so the patcher tracks it correctly
-            // after insertion shifts the target down.
-            val joinInstruction = getInstruction(joinIdx)
+            // Walk back to the start of the joinToString$default arg-setup
+            // block — the 5 instructions immediately preceding the
+            // invoke-static/range:
+            //
+            //   const/16 v16, 0x0
+            //   const/16 v17, 0x3e
+            //   const-string v13, ":"
+            //   const/4 v14, 0x0
+            //   const/4 v15, 0x0
+            //
+            // We insert BEFORE this setup (not after, as v1.1.0-pre1+pre2
+            // did). The setup re-initializes v13..v17 to the types
+            // invoke-static/range expects (`null` ConstZero for the
+            // CharSequence prefix/postfix slots, `:` String for the
+            // separator, int for the limit + mask).
+            //
+            // v1.1.0-pre2 inserted AT joinIdx (after setup, before invoke),
+            // so our File path-builder clobbered v14 with `File` and the
+            // verifier rejected the invoke with
+            // `register v14 has type Reference: java.io.File
+            //  but expected Reference: java.lang.String`.
+            // By moving the insertion 5 instructions earlier, both the
+            // fall-through and branch-taken paths from our `if-eqz` flow
+            // into the setup block, which restores the join args cleanly.
+            //
+            // The ExternalLabel target is the original instruction at
+            // setupStartIdx (the const/16 v16); after insertion shifts it
+            // down by 18, the patcher tracks the new position via
+            // Instruction identity.
+            val setupStartIdx = joinIdx - 5
+            require(setupStartIdx >= 0) {
+                "ENV_BUILDER.a join setup block not found (joinIdx=$joinIdx); " +
+                    "expected ≥5 instructions of arg setup before invoke-static/range"
+            }
+            val setupStartInstruction = getInstruction(setupStartIdx)
 
             addInstructionsWithLabels(
-                joinIdx,
+                setupStartIdx,
                 """
                     iget-object v13, v0, $ENV_BUILDER->a:Landroid/content/Context;
                     invoke-virtual {v13}, Landroid/content/Context;->getApplicationInfo()Landroid/content/pm/ApplicationInfo;
@@ -221,7 +245,7 @@ val vibrationPatch = bytecodePatch(
                     const/4 v15, 0x0
                     invoke-virtual {v12, v15, v13}, Ljava/util/ArrayList;->add(ILjava/lang/Object;)V
                 """.trimIndent(),
-                ExternalLabel("bh_skip_evshim_preload", joinInstruction),
+                ExternalLabel("bh_skip_evshim_preload", setupStartInstruction),
             )
         }
     }

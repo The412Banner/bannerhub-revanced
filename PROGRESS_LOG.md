@@ -838,3 +838,33 @@ When `addInstructions` parses the snippet, smali assigns the trailing label an o
 **Imports added.** `ExternalLabel`, `addInstructionsWithLabels` (both from `app.revanced.patcher.extensions`).
 
 **Lesson for future bytecode patches.** When inserting at index > 0 with a forward branch that needs to skip past the inserted block, always use ExternalLabel pointing to the original instruction at the insertion index. Trailing-label-in-snippet is a footgun that only surfaces when insertion shifts > 0.
+
+### Stage 3b — Hook 4 v14-type-mismatch fix (2026-05-12, after pre2)
+
+**Second device crash.** v1.1.0-604-pre2 installed and the VerifyError shape changed:
+
+```
+java.lang.VerifyError: Verifier rejected class bg5:
+  void bg5.a(eco, java.lang.String, boolean):
+  [0x1F8] register v14 has type Reference: java.io.File
+  but expected Reference: java.lang.String
+```
+
+Crash log at `/data/data/com.termux/files/home/log_2026_05_12_20_07_32_crash.log` (PID 19846, `banner.hub:wine`).
+
+**Root cause.** Hook 4 inserts at `joinIdx` = the `invoke-static/range` of `JOIN_HELPER->I0`. The 5 instructions immediately preceding the invoke are Kotlin's joinToString$default arg setup:
+
+```
+const/16 v16, 0x0
+const/16 v17, 0x3e
+const-string v13, ":"
+const/4 v14, 0x0       ← v14 set to ConstZero (null CharSequence)
+const/4 v15, 0x0
+invoke-static/range {v12..v17}, JOIN_HELPER->I0(...)
+```
+
+So inserting AT joinIdx places our File-path code *after* the setup. Our `new-instance v14, Ljava/io/File;` then overwrites v14 with `File`, and the verifier rejects the subsequent invoke with `expected Reference: java.lang.String`.
+
+**Fix.** Move the insertion point 5 instructions earlier, to the start of the setup block (`setupStartIdx = joinIdx - 5`). Now both the fall-through and branch-taken paths from our `if-eqz` flow into the setup, which cleanly re-initializes v13..v17 to the types `invoke-static/range` expects. ExternalLabel target updated to the original `const/16 v16` instruction at `setupStartIdx`. Added a `require()` for the setup-block lookback in case a future R8 reshuffle inlines or reorders the setup.
+
+Insertion ordering matters: when inserting `addInstructionsWithLabels` at an index, our snippet is placed *before* the existing instruction at that index. So `setupStartIdx` (= joinIdx - 5) puts our injection just before the setup; the setup then runs after our injection, before the invoke.

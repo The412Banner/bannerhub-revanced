@@ -95,6 +95,66 @@ public final class BhMenuRowClick implements Function1<Object, Object> {
         }
     }
 
+    /**
+     * Constructs a per-game-menu row Iae instance via reflection and appends
+     * it to the passed-in list builder. Called from a 1-line smali injection
+     * inside the menu Composable — keeps the bytecode patch trivial (no
+     * register juggling, no verifier risk) at the cost of a runtime
+     * reflection lookup.
+     *
+     * The obfuscated class names {@code iae}, {@code o05}, {@code pw6},
+     * {@code zz4} are stable in the GameHub 6.0.4 base APK; if a future
+     * R8-map shift renames them, this method silently no-ops (logged) and
+     * the menu falls back to the original 4 rows.
+     */
+    public static void appendVibrationRowTo(Object menuList) {
+        try {
+            if (!(menuList instanceof java.util.List)) return;
+            java.util.List list = (java.util.List) menuList;
+
+            Class<?> iaeCls = Class.forName("iae");
+            Class<?> o05Cls = Class.forName("o05");
+            Class<?> pw6Cls = Class.forName("pw6");
+
+            // Resolve a gear/settings icon. zz4 is the ComposableSingletons
+            // class for menu-row icons; the `m` field holds an Lxrl wrapper
+            // whose getValue() returns an Lo05 (Painter or vector ref).
+            Class<?> zz4Cls = Class.forName("zz4");
+            Field iconHolderField = zz4Cls.getDeclaredField("m");
+            iconHolderField.setAccessible(true);
+            Object xrlWrapper = iconHolderField.get(null);
+            if (xrlWrapper == null) {
+                Log.w(TAG, "zz4.m is null; cannot resolve icon");
+                return;
+            }
+            // Lxrl has getValue() returning Object
+            Object iconValue = xrlWrapper.getClass().getMethod("getValue").invoke(xrlWrapper);
+            if (!o05Cls.isInstance(iconValue)) {
+                Log.w(TAG, "zz4.m.getValue() did not return Lo05");
+                return;
+            }
+
+            // Construct the click handler (this class implements Function1 = Lpw6)
+            BhMenuRowClick click = new BhMenuRowClick();
+            if (!pw6Cls.isInstance(click)) {
+                // Shouldn't happen — Function1 IS pw6 at the JVM level — but
+                // guard so the cast doesn't silently fail.
+                Log.w(TAG, "BhMenuRowClick is not assignable to Lpw6");
+                return;
+            }
+
+            // Find the Iae 3-arg ctor: Iae(o05, String, pw6)
+            java.lang.reflect.Constructor<?> ctor =
+                iaeCls.getDeclaredConstructor(o05Cls, String.class, pw6Cls);
+            ctor.setAccessible(true);
+
+            Object row = ctor.newInstance(iconValue, "PC Vibration Settings", click);
+            list.add(row);
+        } catch (Throwable t) {
+            Log.w(TAG, "appendVibrationRowTo failed", t);
+        }
+    }
+
     /** If a WineActivity is in the stack, grab its gameId Intent extra. */
     private static String sniffGameIdFromStack() {
         try {

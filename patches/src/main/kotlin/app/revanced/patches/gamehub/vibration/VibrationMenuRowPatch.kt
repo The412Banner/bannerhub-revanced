@@ -97,34 +97,20 @@ val vibrationMenuRowPatch = bytecodePatch(
 
         // Inject AFTER the last existing add() — index = lastAddIdx + 1.
         //
-        // Register strategy (all 4-bit safe, reusing dead regs between rows):
-        //   v2  — icon (Lo05)
-        //   v3  — label String
-        //   v9  — onClick (BhMenuRowClick / Lpw6)
-        //   v13 — new Liae row instance
-        //   v4  — list builder Lx9d (live across the whole row-construction; we
-        //         only read from it via add())
+        // pre7 (first attempt) used 9 smali instructions reusing dead regs
+        // v2/v3/v9/v13 in-line. ART verifier rejected because reassigning v9
+        // to BhMenuRowClick conflicted with downstream type-flow expectations
+        // at the merge point in :goto_35 — the verifier couldn't unify
+        // `BhMenuRowClick` with the `Lpw6` type other paths assume.
         //
-        // No Composer.startReplaceableGroup / endReplaceableGroup needed: we
-        // inject between the last add() and the next state-group boundary,
-        // and we touch only data registers — never Composer state.
+        // Fix: hand the entire row construction off to a Java helper. The
+        // smali injection collapses to a single invoke-static taking the
+        // list builder (v4) as its only argument — zero register clobbering,
+        // zero new types introduced into x57's verifier flow analysis.
         menuMethod.addInstructions(
             lastAddIdx + 1,
             """
-                const-string v3, "PC Vibration Settings"
-
-                sget-object v2, $ICON_HOLDER->$ICON_FIELD:$XRL_WRAPPER
-                invoke-virtual {v2}, $XRL_WRAPPER->getValue()Ljava/lang/Object;
-                move-result-object v2
-                check-cast v2, Lo05;
-
-                new-instance v9, $CLICK_HANDLER
-                invoke-direct {v9}, $CLICK_HANDLER-><init>()V
-
-                new-instance v13, $ROW_DATA
-                invoke-direct {v13, v2, v3, v9}, $ROW_DATA-><init>(Lo05;Ljava/lang/String;Lpw6;)V
-
-                invoke-virtual {v4, v13}, $LIST_BUILDER->add(Ljava/lang/Object;)Z
+                invoke-static {v4}, $CLICK_HANDLER->appendVibrationRowTo(Ljava/lang/Object;)V
             """.trimIndent(),
         )
     }

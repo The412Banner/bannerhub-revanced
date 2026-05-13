@@ -1248,3 +1248,27 @@ Two artifacts:
 |---|---|
 | `AppNavKey$PcGameSettingEntrance` | `Lff0;` |
 | `AppNavKey$GamepadVibrationSetting` | `Ltd0;` (built-in 6.0.4 — different from our BhVibrationSettingsActivity) |
+
+## 2026-05-13 — Patch iterations (pre7 → pre11)
+
+Branch `feature/menu-vibration-row`. Iteration trail captured in memory file `project_bannerhub_revanced_vibration.md`:
+
+| Pre | Commit | Outcome |
+|---|---|---|
+| pre7 | `2d0c85c` | Kotlin compile fail (`Pair<...>.addInstructions` doesn't exist — use `firstMethod`) |
+| pre8 | `8b1cb3f` | ART verifier reject — in-line smali clobbered v9 with `BhMenuRowClick` type, breaking downstream type-flow merge at `:goto_35` |
+| pre9 | `28c5bd3` | Helper called repeatedly but failed `!pw6Cls.isInstance(click)` — R8 renamed `kotlin.jvm.functions.Function1` → `Lpw6;` so our extension's Function1 impl is a different JVM class |
+| pre10 | `7eb024e` | ✅ Row appears in game-details More Menu — `java.lang.reflect.Proxy` implementing Lpw6 satisfies the Iae ctor type check |
+| pre11 | `19080af` | Added 2nd injection in `ted.smali f()` for library tile popup — but logcat confirms helper never called; ted.f() is NOT the library tile popup |
+
+### Confirmed working surface
+
+`x57.smali` method `a(Lf37;Lpo7;Lv83;I)V` injection at lastAddIdx+1:
+```
+invoke-static {v4}, Lcom/xj/winemu/vibration/BhMenuRowClick;->appendVibrationRowTo(Ljava/lang/Object;)V
+```
+Helper reflectively constructs `Liae(icon, "PC Vibration Settings", Proxy<Lpw6>)` and appends to list builder `Lx9d` at `v4`. Renders as 5th item in the game-details screen "More Menu" popup. Device-confirmed via screenshot 2026-05-13 08:04.
+
+### Pending: library tile popup
+
+Still searching for the Composable that renders the library tile's text-only 3-dot popup. Recon notes in memory file. Pre11 ships with both injections (no harm in keeping the unused one) so the row is reachable via game-details until we find the library popup.

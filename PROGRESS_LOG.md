@@ -1345,6 +1345,29 @@ Per user: "add the discord server badge and ai disclaimer at the top also please
 1. **Discord shield badge** — centered `<p>` with a Shields.io for-the-badge style discord badge (`https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white&style=for-the-badge`) linking to `discord.gg/n8S4G2WZQ4` (the The412Banner community invite, per `feedback_discord_link_new_repos.md`). Placed between the subtitle paragraph and the existing in-page nav bar.
 2. **AI Disclaimer section** — new `## AI Disclaimer` H2 inserted right after the in-place-updates callout and before `## What's new in v1.1.0-604`. Two paragraphs verbatim from the user, with the model name bolded and `logcat` set as inline code. Also added an `· AI disclaimer` entry to the in-page nav bar so readers can jump straight to it from the top.
 
+### 2026-05-13 — feature/disable-firebase-analytics — Plan 4 of the privacy hardening list
+
+User asked for the privacy hardening plan; Plan 4 (Disable Firebase Analytics manifest kill-switch) selected as first action because it's the highest ROI per hour.
+
+**Recon (against `/data/data/com.termux/files/home/gamehub_604_decompile/`):**
+
+- `com/google/firebase/analytics`, `crashlytics`, `messaging`, `installations`, `sessions`, `auth`, `datatransport` smali trees all present.
+- ⚠ **`com/google/firebase/remoteconfig` present** — but `grep -rE 'Lcom/google/firebase/remoteconfig/' --include='*.smali'` against everything *outside* the Firebase SDK tree returns **0 hits**. Remote Config is a transitive dependency that XiaoJi's own code never invokes — safe to ship the strong `firebase_analytics_collection_deactivated=true` flag without breaking anything.
+- Firebase In-App Messaging is **not bundled** (no `inappmessaging` smali path).
+- FCM is bundled but used by **Mob Push** as a delivery layer (`com.mob.pushsdk.plugins.fcm.FCMFirebaseInstanceIdService`) — Analytics-deactivation flag does not affect FCM behavior. Mob Push neutralization is a separate Plan-5 work item.
+
+**Patch:** `patches/src/main/kotlin/app/revanced/patches/gamehub/misc/analytics/DisableFirebaseAnalyticsPatch.kt`. Resource patch (manifest-only, no bytecode), modeled on `VibrationManifestPatch` for the DOM-edit pattern. Adds three `<meta-data>` entries to `<application>`:
+
+1. `firebase_analytics_collection_deactivated = true` — Firebase's strongest kill switch (stops SDK init entirely, not just data emission).
+2. `google_analytics_adid_collection_enabled = false` — kills Google Ads ID (gAID) collection.
+3. `google_analytics_ssaid_collection_enabled = false` — kills SSAID (Android ID) collection.
+
+Each is guarded by a duplicate-check so the patch is idempotent across re-runs and won't collide with any upstream-declared key. ReVanced auto-discovers the new `@Suppress("unused") val disableFirebaseAnalyticsPatch = ...` via Kotlin reflection at patcher-build time — no patch-registry edit required.
+
+**Expected behavior:** zero user-facing change. Background: no events sent to `app-measurement.com`; XiaoJi's Firebase Analytics dashboard loses all patched-APK telemetry. All gameplay, library, components, Wine, Steam launches, controller input, framegen, vibration, etc. are unaffected (none touch Analytics).
+
+**Reversibility:** delete the patch file, rebuild. No bytecode, no state to migrate.
+
 ### 2026-05-13 — README top-of-page "separate projects + use at own risk" disclaimer
 
 Per user: warning text covering "Does not replace current Bannerhub 3.7.x (built from Gamehub revanced 5.3.5 by PlayDay) or Bannerhub Lite (built from Gamehub Lite 5.1.4 by Producdevity); Bannerhub, Bannerhub Lite and Bannerhub v6 are SEPARATE projects! NOT to be updated over by any of the other projects! Keep in mind Bannerhub v6 is still a work in progress and will frequently re-release as new base Gamehub versions come out from the original developers. Compatibility is different, so don't expect all games that work on one to work on v6, it uses a new component system and steam clients, thus far, barely tested in general! USE AT YOUR OWN RISK!"

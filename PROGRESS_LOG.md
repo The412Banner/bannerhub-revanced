@@ -1355,9 +1355,45 @@ Downloaded `apk-Normal` artifact from CI run 25821952000 (the original `feature/
 
 Plan 4 verification chain now complete: source → CI green → device-verified by user → merge sanity build green (run 25822790159) → artifact manifest-grep confirmed patch landed.
 
-### 2026-05-13 — Plan 5 status (`feature/disable-mob-push`)
+### 2026-05-13 — Plan 5 pre1 → pre2 fix (BaseAndroidApp anchor)
 
-Plan 5 work landed on its own branch (`feature/disable-mob-push`, head `29c1e5b`) per the branch-per-patch workflow. Full recon + patch details captured on that branch's PROGRESS_LOG. Not merged to `gamehub-604-build` yet — awaiting CI run 25823321334 to finish + user device test. Cross-cutting plan inventory + decisions log lives in auto-memory at `project_bannerhub_revanced_privacy_hardening.md`.
+`feature/disable-mob-push` pre1 (CI run 25823321334) reported overall CI green but had **0/9 variants actually apply the patch** — all 9 SEVERE-failed silently with `app.revanced.patcher.patch.PatchException: Could not find instruction index`. The CI summary read green because revanced-cli's per-patch SEVERE failures don't propagate to the overall job exit code (same anti-pattern as the menu-injection playbook). **Lesson: always grep CI logs for `SEVERE` even when conclusion is success.**
+
+Root cause: Mob init calls in `BaseAndroidApp.smali` live in the helper method `a()V` (called from `onCreate`), not in `onCreate` itself. The pre1 anchor used `name == "onCreate"` which matched the empty 5-line delegating `onCreate` at line 350 of the smali. `indexOfFirstInstructionOrThrow` then found no `submitPolicyGrantResult` invoke in that method and bailed the entire patch.
+
+Fix in `503204a`: switched the BaseAndroidApp anchor to the same structural body-contains-invoke pattern already used for the nt5 hook. Method name (`a`/`b`/etc.) becomes irrelevant; survives R8 reshuffles on minor bumps.
+
+Pre2 build (CI run 25824684180) verification:
+
+- ✅ 0 SEVERE lines across all 9 variant jobs
+- ✅ `"Disable Mob Push tracking" succeeded` on 9/9 variants
+- ✅ Manifest in apk-Normal: all 12 `com.mob.*` / `cn.fly.*` components carry `android:enabled="false"` (MobProvider, FlyProvider, MobIDActivity, MobIDService, FlyIDActivity, FlyIDService, MobPushJobService, MobPushActivity, MobLReceiver, NotifyActionReceiver, FCMFirebaseInstanceIdService, FCMFireMessagingReceiver)
+- ✅ `BaseAndroidApp.smali` has **0** residual `Lcom/mob/` references (both `submitPolicyGrantResult` and `addPushReceiverInMain` removed)
+- ✅ `nt5.smali` has 0 `submitPolicyGrantResult` references; the 4 intentionally-preserved downstream calls (`setClickNotificationToLaunchMainActivity`, `getRegistrationId`, `restartPush` ×2) are still present, ready to no-op against the dormant SDK
+- ⚠ 2 `submitPolicyGrantResult` invokes remain inside `com/mob/MobSDK.smali` itself — these are Mob's own internal recursive calls (MobSDK methods calling each other). They're dead code since nothing external can reach MobSDK anymore. Correct behaviour, not a leak.
+
+### 2026-05-13 — feature/disable-mob-push — Plan 5 of the privacy hardening list
+
+Plan 4 (`feature/disable-firebase-analytics`) device-confirmed and merged to `gamehub-604-build` at merge commit `178c5ec` (--no-ff). Post-merge sanity build queued as run 25822790159.
+
+**Plan 5 recon (gamehub_604_decompile/):**
+
+- Mob SDK bundled at `smali_classes3/com/mob/` — full surface: core, pushsdk, plugins (fcm/honor/huawei/meizu/oppo/vivo/xiaomi), commons, tools, mgs. Plus `cn.fly.commons` (Mob's analytics submodule, same vendor).
+- XiaoJi-side init call sites found:
+  - `smali/com/xiaoji/egggame/BaseAndroidApp.smali` line 29 — `Lcom/mob/MobSDK;->submitPolicyGrantResult(Z)V` (consent gate, `v2=true`)
+  - `smali/com/xiaoji/egggame/BaseAndroidApp.smali` line 247 — `Lcom/mob/pushsdk/MobPush;->addPushReceiverInMain(Context, MobPushReceiver)V`
+  - `smali_classes4/nt5.smali` method `N(Landroid/content/Context;)V` line 3352 — second `submitPolicyGrantResult` call followed by 4 downstream Mob calls (`setClickNotificationToLaunchMainActivity`, `getRegistrationId`, two `restartPush` inside a `:try_start_0 .. .catchall :catchall_0` wrapper)
+- Manifest auto-init surface: `<provider android:name="com.mob.MobProvider">` is the critical one — ContentProviders bootstrap before `Application.onCreate`, so bytecode-only neutralization is insufficient. Manifest layer is required.
+
+**Patch:** `patches/src/main/kotlin/app/revanced/patches/gamehub/misc/analytics/DisableMobPushPatch.kt`. Single user-facing patch ("Disable Mob Push tracking") with two layers:
+
+- **Layer B — `disableMobPushManifestPatch` (private `resourcePatch`)**: scans `<application>` for `<provider>/<service>/<receiver>/<activity>` whose `android:name` starts with `com.mob.` or `cn.fly.` and sets `android:enabled="false"`. Removes Mob/cn.fly `<meta-data>` outright (no enabled attribute supported).
+- **Layer A — `disableMobPushPatch` (`bytecodePatch`, depends on the manifest patch)**: removes the 3 init invocations in reverse-index order, verifier-safe because all three are void-returning singles with no `move-result`. `BaseAndroidApp.onCreate` is anchored by stable class name. The nt5 helper is anchored **structurally** (single-arg `Context` parameter, void return, contains a `submitPolicyGrantResult` invoke, NOT `BaseAndroidApp`) so the patch survives R8 reshuffles on future minor bumps.
+- Downstream calls in `nt5.N` (`setClickNotificationToLaunchMainActivity`, `getRegistrationId`, `restartPush` x2) intentionally left in place — without the policy grant the SDK stays dormant and these calls either no-op or throw the kind of NPE the existing `:try_start_0/.catchall` already eats. Surgically removing them mid-method would break the try-catch label structure for no functional gain.
+
+**Expected behavior:** Mob Push delivery dies (no inbound notifications from XiaoJi). MobID device-ID collection dies. Mob's `cn.fly` analytics dies. FCM (used by Mob as a delivery layer) is also disabled at the `FCMFirebaseInstanceIdService` registration — pure Firebase FCM is untouched if anything else uses it, but XiaoJi doesn't appear to. No user-facing UI change.
+
+**Verification plan:** post-patch device test should show `adb logcat | grep -iE 'mob|pushsdk'` empty on cold launch, and `tcpdump` should show zero egress to Mob endpoints.
 
 ### 2026-05-13 — feature/disable-firebase-analytics — Plan 4 of the privacy hardening list
 

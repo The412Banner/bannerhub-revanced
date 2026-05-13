@@ -759,3 +759,194 @@ Investigation angles to check on the next pass (recorded at top of the patch sou
 - Has `mci.a(RepoCategory, Continuation)` itself changed shape beyond the `:goto_2` sentinel? Walk the full method body and compare against the 6.0.2 `eci.a` body the patch was designed around.
 - Did `xxo`'s field layout / `xxo.c` `ConcurrentHashMap` type change? `PickerCacheFallback.fromXxo` uses single-letter field lookups (`a`, `c`) plus a runtime type sanity check; if `c`'s declared type is no longer assignable to `Map`, the sanity check returns the empty ArrayList silently — visible only via `DebugTrace`.
 - Is `u6o.<init>` still the disk-hydrator? If 6.0.4 renamed/restructured the hydrator the map could simply be empty at the time the picker consults it, in which case the patch IS firing but has nothing to return.
+
+## Vibration port to 6.0.4 — feature/vibration branch (2026-05-12)
+
+User requested porting BannerHub PR #80 (TideGear's PC-accurate XInput rumble support, shipped in BannerHub v3.7.0 stable on 5.3.5) as a ReVanced patch for our 6.0.4 build. TideGear had already done the legwork to port it to GameHub 6.0.2 at https://github.com/TideGear/GameHub-Vibration-Fix — only 4 smali hooks on 6.0.2 (vs 5 on 5.3.5; 6.0 fixed the lazy-attach issue natively so the GamepadManager.B0 wake-up hook is unnecessary).
+
+### Feasibility verification
+
+Verified each of TideGear's 4 smali anchors against the 6.0.4 decompile. Trap caught: the 6.0.2 letters `Lza8;` (Physical) and `Ldg5;` (EnvBuilder) both still exist as class names in 6.0.4, but R8 reassigned them to completely unrelated classes (an empty marker interface and a coroutine continuation respectively). Naive name matching would have patched the wrong code; structural matching by method shapes + field layouts found the true 6.0.4 equivalents.
+
+### 6.0.2 → 6.0.4 vibration-anchor delta
+
+| Symbol | 6.0.2 (TideGear) | 6.0.4 (re-derived) | Recipe |
+|---|---|---|---|
+| `GamepadServerManager.onRumble(III)V` | same | same | Annotated `@Keep`, `:cond_4` label preserved |
+| Physical class | `Lza8;` | `Lab8;` | `public final` extends `Lcb8;`, `g(II)V`/`f()V` shapes preserved |
+| Physical.k field type | `Llrl;` | `Lxrl;` | Motor manager |
+| EnvBuilder class | `Ldg5;` | `Lbg5;` | `a(...)V` `.locals 35`, anchor block lines 458-465 byte-identical |
+| Join helper class | `Lns2;` | `Lps2;` | CollectionsKt joinToString$default |
+| Join method name | `I0` | `I0` | **survived R8** |
+| Function1 lambda type | `Low6;` | `Lpw6;` | |
+
+### Branch state
+
+`feature/vibration` cut off `gamehub-604-build` head `65e6902` 2026-05-12. Head: `4b25858`.
+
+### Stage 1 — bytecode hooks + manifest registration (commit `0ae2228` → `248f7bd`)
+
+- `extensions/gamehub/.../com/xj/winemu/vibration/BhVibrationController.java` (1106 lines, TideGear's package preserved verbatim — only Android SDK imports, no host references)
+- `extensions/gamehub/.../com/xj/winemu/vibration/BhVibrationSettingsActivity.java` (266 lines)
+- `patches/.../gamehub/vibration/VibrationPatch.kt` — 4 bytecode hooks with the 6.0.4 letters above
+- `patches/.../gamehub/vibration/VibrationManifestPatch.kt` — registers BhVibrationSettingsActivity (exported=false, translucent theme)
+- `extensions/gamehub/build.gradle.kts` — added lint suppression for `MissingPermission` / `NewApi` / `WrongConstant` (false positives — host APK declares VIBRATE permission and host targets Android 14, but extension lint runs in isolation against compile-only stubs).
+
+CI run [`25761322965`](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25761322965) green on commit `248f7bd`. Bytecode patches all applied across the 9 variants — but the LD_PRELOAD inject was inert (no .so to find at runtime).
+
+### Stage 2 — NDK build + native-shim injection (commit `d9b9c96` → `4b25858`)
+
+- `native/evshim/evshim.c` + `CMakeLists.txt` (TideGear's source copied verbatim — 698 lines of C, patches `winebus.so`'s `pSDL_JoystickRumble` + `pSDL_JoystickClose` .bss pointers via `LD_PRELOAD`)
+- `patches/.../gamehub/vibration/VibrationLibPatch.kt` — resource patch that reads `libevshim.so` from the .rvp's classloader resources and writes it into the staged APK's `lib/arm64-v8a/`. Sentinel class (`private object VibrationLibResources`) used as classloader anchor to dodge Kotlin's self-referential type inference (can't reference `vibrationLibPatch::class` inside its own initializer body).
+- `.github/workflows/release.yml` — new "Build libevshim.so" step inserted before the gradle build: locates the runner's NDK, builds via cmake/ninja for arm64-v8a android-29, drops the output under `patches/src/main/resources/lib/arm64-v8a/` so gradle bakes it into the .rvp.
+
+CI run [`25761713424`](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25761713424) green on commit `4b25858`. Now end-to-end: NDK builds .so → gradle bakes it into .rvp → revanced-cli applies → resource patch copies .so into APK's lib dir → bytecode hook injects LD_PRELOAD at runtime → libevshim re-issues SDL rumble every 500ms to defeat the 1s auto-stop.
+
+### Pending
+
+**Device test.** Pull any variant from run 25761713424 artifacts (14-day retention) or trigger a fresh run with a named tag. Install on a phone with at least one Bluetooth rumble-capable controller (DualSense / DS4 / 8BitDo Pro 2 in XInput mode). Launch any Wine PC game that uses XInput rumble (Brawlhalla, Diablo, etc.). Expected: heavy/light motors driven independently, sustained holds last as long as the in-game rumble effect, instant release on let-go.
+
+If the device test passes, merge `feature/vibration` → `gamehub-604-build` and cut a follow-up release (e.g. `v1.1.0-604` for the feature bump).
+
+### Stage 3 — Hook 4 VerifyError fix (2026-05-12)
+
+**Device crash on first game launch.** User installed a variant from run 25761713424, opened a game, and `banner.hub:wine` immediately died at `WineActivity.onCreate` with:
+
+```
+java.lang.VerifyError: Verifier rejected class bg5:
+  void bg5.a(eco, java.lang.String, boolean):
+  [0x1F2] target dex pc 0x28 is not at instruction start.
+```
+
+Logcat: `/data/data/com.termux/files/home/log_2026_05_12_19_54_05.log`.
+
+**Root cause.** Hook 4 (the EnvBuilder LD_PRELOAD inject) used `addInstructions` with a label `:bh_skip_evshim_preload` placed at the END of the inserted block:
+
+```smali
+if-eqz v15, :bh_skip_evshim_preload
+const/4 v15, 0x0
+invoke-virtual {v12, v15, v13}, Ljava/util/ArrayList;->add(ILjava/lang/Object;)V
+:bh_skip_evshim_preload
+```
+
+When `addInstructions` parses the snippet, smali assigns the trailing label an offset of *block-length-in-bytes* relative to the snippet start. The inserted block is exactly 18 instructions = 40 bytes = **0x28** — matching the verifier error target verbatim. The patcher embeds that absolute 0x28 in the resulting method, instead of resolving it to the original `invoke-static/range` that follows the injection. The `if-eqz` then branches to absolute offset 0x28 of `bg5.a`, which lands mid-instruction in the original prologue → VerifyError.
+
+**Why Hooks 1 + 2 didn't crash with the same shape.** They insert at index 0. Snippet-relative offset *equals* absolute offset in the destination method when the shift is zero, so the bug doesn't surface. Hook 3 has no labels at all.
+
+**Fix.** Switched Hook 4 to `addInstructionsWithLabels` + `ExternalLabel`, capturing the original `invoke-static/range` instruction at `joinIdx` *before* insertion. The patcher resolves the label by Instruction identity and tracks it correctly after insertion shifts the target index down by 18. Trailing `:bh_skip_evshim_preload` line removed from the snippet.
+
+**Imports added.** `ExternalLabel`, `addInstructionsWithLabels` (both from `app.revanced.patcher.extensions`).
+
+**Lesson for future bytecode patches.** When inserting at index > 0 with a forward branch that needs to skip past the inserted block, always use ExternalLabel pointing to the original instruction at the insertion index. Trailing-label-in-snippet is a footgun that only surfaces when insertion shifts > 0.
+
+### Stage 3b — Hook 4 v14-type-mismatch fix (2026-05-12, after pre2)
+
+**Second device crash.** v1.1.0-604-pre2 installed and the VerifyError shape changed:
+
+```
+java.lang.VerifyError: Verifier rejected class bg5:
+  void bg5.a(eco, java.lang.String, boolean):
+  [0x1F8] register v14 has type Reference: java.io.File
+  but expected Reference: java.lang.String
+```
+
+Crash log at `/data/data/com.termux/files/home/log_2026_05_12_20_07_32_crash.log` (PID 19846, `banner.hub:wine`).
+
+**Root cause.** Hook 4 inserts at `joinIdx` = the `invoke-static/range` of `JOIN_HELPER->I0`. The 5 instructions immediately preceding the invoke are Kotlin's joinToString$default arg setup:
+
+```
+const/16 v16, 0x0
+const/16 v17, 0x3e
+const-string v13, ":"
+const/4 v14, 0x0       ← v14 set to ConstZero (null CharSequence)
+const/4 v15, 0x0
+invoke-static/range {v12..v17}, JOIN_HELPER->I0(...)
+```
+
+So inserting AT joinIdx places our File-path code *after* the setup. Our `new-instance v14, Ljava/io/File;` then overwrites v14 with `File`, and the verifier rejects the subsequent invoke with `expected Reference: java.lang.String`.
+
+**Fix.** Move the insertion point 5 instructions earlier, to the start of the setup block (`setupStartIdx = joinIdx - 5`). Now both the fall-through and branch-taken paths from our `if-eqz` flow into the setup, which cleanly re-initializes v13..v17 to the types `invoke-static/range` expects. ExternalLabel target updated to the original `const/16 v16` instruction at `setupStartIdx`. Added a `require()` for the setup-block lookback in case a future R8 reshuffle inlines or reorders the setup.
+
+Insertion ordering matters: when inserting `addInstructionsWithLabels` at an index, our snippet is placed *before* the existing instruction at that index. So `setupStartIdx` (= joinIdx - 5) puts our injection just before the setup; the setup then runs after our injection, before the invoke.
+
+### Stage 3b device test — DOOMBLADE clean launch, no rumble triggered (2026-05-12 ~21:46)
+
+v1.1.0-604-pre3 (`9681b60`) installed as `banner.hub` (Normal variant). User launched **DOOMBLADE** via DirectLaunch (Wine Proton 10 arm64x-2, FEX Game Presets, Turnip v25.0.0 R1). Wine session ran clean 21:46:12 → 21:48:36, no VerifyError, no crash. Stage 3b fix verified at the verifier level.
+
+Initial verdict from logcat: zero `BhVibration` log lines, zero gamepad-source InputDevice events. Hooks didn't fire during this session. Hypotheses recorded at the time: either no real controller was paired, or DOOMBLADE didn't issue rumble during the playthrough (2D metroidvania, rumble fires only on specific hits).
+
+Hook insertion verified correct in the installed APK by apktool-decompiling `/data/app/~~8kz5yy-HOJCA8DhNk4duGQ==/banner.hub-JC7NoskjYKMoBofYk4cZ7g==/base.apk`:
+- Hook 1: `smali_classes7/com/winemu/core/gamepad/GamepadServerManager.smali:298` — `invoke-static {p1, p2, p3}, Lcom/xj/winemu/vibration/BhVibrationController;->onRumble(III)Z` ✅
+- Hook 2: `smali_classes2/ab8.smali:511` — `dispatchToController(III)Z` ✅
+- Hook 3: `smali_classes2/ab8.smali:438` — `onStop(I)V` ✅
+- Hook 4: `smali_classes8/bg5.smali:985,993` — `nativeLibraryDir` + `/libevshim.so` injection ✅
+- `lib/arm64-v8a/libevshim.so` shipped, 41,384 bytes ✅
+
+### Stage 3b — GTA 5 Enhanced device test: VIBRATION CONFIRMED (2026-05-12)
+
+User retested v1.1.0-604-pre3 (`9681b60`) with **GTA 5 Enhanced** and a real controller. **Rumble works.** Device-confirmed end-to-end:
+
+- `GamepadServerManager.onRumble` → `BhVibrationController.onRumble` invoke path active
+- Per-controller dispatch via Hook 2 (`ab8.g(II)V`) firing
+- libevshim.so LD_PRELOAD keepalive holding rumble past SDL2's 1s auto-stop
+- Stop hook (Hook 3, `ab8.f()V`) releasing cleanly
+
+This unblocks the merge: `feature/vibration` ready to land on `gamehub-604-build`.
+
+### Per-game hamburger-menu Vibration Settings option — NOT in this build
+
+User asked whether the per-game hamburger-menu "Vibration Settings" item from BannerHub 3.7.2 stable also ships in the ReVanced build. **No.** The ReVanced patch set only registers `com.xj.winemu.vibration.BhVibrationSettingsActivity` in the manifest with `exported="false"` and no `<intent-filter>` (`VibrationManifestPatch.kt:32-37`). There is no patch under `patches/.../gamehub/` that injects a menu item into the XJ Java/XML UI to launch that activity — that would be a separate bytecode patch (find the per-game menu adapter R8 class, inject a row that fires an explicit Intent to `BhVibrationSettingsActivity --es gameId <gid>`).
+
+Functionally rumble still works without the UI: `BhVibrationController.java:98-99` defaults to `MODE_CONTROLLER` at intensity 100. The settings activity only adjusts per-game mode/intensity overrides.
+
+Follow-up task (after rumble is confirmed working in GTA 5): port the menu-item injection as a new bytecode patch.
+
+## 2026-05-12 — Stable release pipeline spec approved (NOT executed yet)
+
+User-approved spec for the next-but-one release cycle. Execution is **gated on**: (1) GTA 5 + real-controller retest of `feature/vibration` head `9681b60` confirming rumble, (2) merging `feature/vibration` → `gamehub-604-build`, (3) cutting `v1.1.0-604` stable on the **old ephemeral key** (final release before the cert switch). Only after that do we branch `feature/stable-release-pipeline` off the updated `gamehub-604-build` and apply the changes below.
+
+### Goal
+
+Replace revanced-cli's per-run ephemeral keystore with a checked-in test keystore so the signing cert is stable across releases. After a one-time uninstall break for users on the v1.0.0-604 ephemeral-key build, every future stable updates in-place (no uninstall, no `INSTALL_FAILED_UPDATE_INCOMPATIBLE`).
+
+### Spec
+
+- **Tag format:** `vX.Y.Z-{branch-base#}` — e.g. `v1.1.0-604`. `604` derived from `patches/.../gamehub/Constants.kt:GAMEHUB_VERSION = "6.0.4"` and the `base-apk-604` GitHub release. Pre-releases: `vX.Y.Z-{branch-base#}-preN`.
+
+- **APK filename:** `BannerHub-V6-{version}-Patched-{variant}.apk` where `version = ${GITHUB_REF_NAME#v}`. Drops the hardcoded `variant.file:` column from the matrix; computed at workflow level.
+
+- **App labels (9-variant table):** three variants share the bare "BannerHub v6" label (Normal, Normal-GHL, Original) and install side-by-side via different package names — same pattern as the two AnTuTu variants which share "BannerHub v6 AnTuTu".
+
+  | variant.name | variant.pkg | variant.label |
+  |---|---|---|
+  | Normal | banner.hub | BannerHub v6 |
+  | Normal-GHL | gamehub.lite | BannerHub v6 |
+  | PuBG | com.tencent.ig | BannerHub v6 PuBG |
+  | AnTuTu | com.antutu.ABenchMark | BannerHub v6 AnTuTu |
+  | alt-AnTuTu | com.antutu.benchmark.full | BannerHub v6 AnTuTu |
+  | PuBG-CrossFire | com.tencent.tmgp.cf | BannerHub v6 PuBG CrossFire |
+  | Ludashi | com.ludashi.aibench | BannerHub v6 Ludashi |
+  | Genshin | com.miHoYo.GenshinImpact | BannerHub v6 Genshin |
+  | Original | com.xiaoji.egggame | BannerHub v6 |
+
+- **Test keystore at `keystore/bannerhub.keystore`** (RSA 2048, 100-year validity, alias `bannerhub`, store and key password both `bannerhub`, DN `CN=BannerHub, OU=ReVanced, O=The412Banner, C=US`). Public test key — committed to repo, documented in `keystore/README.md` alongside cert SHA-256.
+
+- **apksigner post-sign step** with `--v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --v4-signing-enabled false`, runs after revanced-cli `--out`. Followed by `apksigner verify --print-certs` so CI logs surface the cert SHA-256 every run for eyeball verification.
+
+- **`build_pull_request.yml`** untouched — PR test artifacts continue with revanced-cli's ephemeral keystore.
+
+### Sequencing checklist
+
+1. ☐ GTA 5 + real controller retest of `feature/vibration` head `9681b60`
+2. ☐ Merge `feature/vibration` → `gamehub-604-build` if green
+3. ☐ Cut `v1.1.0-604` stable on the **old ephemeral key** (final release before cert switch)
+4. ☐ Branch `feature/stable-release-pipeline` off updated `gamehub-604-build`
+5. ☐ Generate + commit keystore at `keystore/bannerhub.keystore`, write `keystore/README.md`
+6. ☐ Update `release.yml` (matrix, filename template, label table, apksigner step)
+7. ☐ Update README "Signing" section + release-notes copy
+8. ☐ Validate via non-stable `workflow_dispatch`; inspect filenames + cert SHA-256 in logs
+9. ☐ Merge `feature/stable-release-pipeline` → `gamehub-604-build`
+10. ☐ Tag `v1.1.1-604` (or `v1.2.0-604`) — **new-cert anchor**; release notes call out the one-time uninstall
+11. ☐ Lock cert SHA-256 into memory + README for permanent verification reference
+
+Full spec in `[[project_bannerhub_revanced_stable_release_pipeline]]` memory file.

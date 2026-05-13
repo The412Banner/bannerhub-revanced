@@ -42,6 +42,38 @@ jobs:
       - name: Cache Gradle
         uses: burrunan/gradle-cache-action@v3
 
+      - name: Build libevshim.so (guest-side SDL rumble keepalive)
+        # Compiles the native LD_PRELOAD shim that re-issues SDL_JoystickRumble
+        # every 500ms so SDL2's 1s rumble_expiration auto-stop never fires.
+        # Output is staged into patches/src/main/resources/lib/arm64-v8a/ so
+        # the gradle build below bakes it into the .rvp, where the
+        # VibrationLibPatch resource patch reads it back out at patch time.
+        run: |
+          set -e
+          NDK_HOME="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}"
+          if [ -z "$NDK_HOME" ] || [ ! -d "$NDK_HOME" ]; then
+            NDK_HOME=$(ls -d "${ANDROID_SDK_ROOT}"/ndk/* 2>/dev/null | sort -V | tail -1)
+          fi
+          if [ -z "$NDK_HOME" ] || [ ! -d "$NDK_HOME" ]; then
+            NDK_HOME="${ANDROID_SDK_ROOT}/ndk-bundle"
+          fi
+          echo "Using NDK: $NDK_HOME"
+          if ! command -v ninja >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y ninja-build
+          fi
+          cmake -S native/evshim -B build/evshim \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK_HOME/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-29 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -G Ninja
+          ninja -C build/evshim
+          mkdir -p patches/src/main/resources/lib/arm64-v8a
+          cp build/evshim/libevshim.so patches/src/main/resources/lib/arm64-v8a/libevshim.so
+          chmod 0755 patches/src/main/resources/lib/arm64-v8a/libevshim.so
+          file patches/src/main/resources/lib/arm64-v8a/libevshim.so
+
       - name: Build patches bundle
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

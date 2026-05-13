@@ -30,6 +30,19 @@
 
 > ✅ **In-place updates** — from `v1.1.0-604` onward, BannerHub releases are signed with a stable test keystore ([`keystore/README.md`](keystore/README.md)) so every future stable installs on top of the previous one with no uninstall. **One-time migration**: if you're still on `v1.0.0-604` or older (those used per-run ephemeral keys), uninstall your current BannerHub-ReVanced variant once before installing `v1.1.0-604`. From there on, regular Android updates flow normally.
 
+## Table of contents
+
+1. [AI Disclaimer](#ai-disclaimer)
+2. [What's new in v1.1.0-604](#whats-new-in-v110-604)
+3. [What this is](#what-this-is)
+4. [Source](#source)
+5. [Variants](#variants)
+6. [Signing](#signing)
+7. [Patches applied](#patches-applied)
+8. [Build it yourself](#build-it-yourself)
+9. [Releases](#releases)
+10. [License](#license)
+
 ## AI Disclaimer
 
 This project has no source code — XiaoJi GameHub is closed-source and ships only the compiled APK. To work on it at all, every GameHub release has to be decompiled, mapped, and patched at the bytecode level. **Claude AI Sonnet 4.6** by Anthropic is used across that whole pipeline:
@@ -299,43 +312,6 @@ The release pipeline has two modes:
 
 - **Prerelease (default)** — every tag push and every `workflow_dispatch` run with `stable=false` produces the 9 variant APKs as Actions artifacts only (14-day retention). Useful for device-testing without cluttering the Releases page.
 - **Stable** — `workflow_dispatch` from `Actions → Run workflow` with the **`stable`** checkbox ticked and a version (e.g. `1.1.0-604`) populated. The matrix runs as normal, then a final `release` job creates a GitHub Release with the 9 APKs, `.rvp` bundle, `.rve` extension files, and the release notes (sourced verbatim from `release.yml`). All 9 APKs are re-signed with the BannerHub keystore (`v1`+`v2`+`v3` schemes) before upload so the cert is stable across releases.
-
-## Repo layout
-
-- `patches/src/main/kotlin/app/revanced/patches/` — patch sources. The active GameHub-6.0 patches live under `gamehub/`:
-  - `misc/login/BypassLoginPatch.kt` — the bypass-login bytecode rewrites.
-  - `misc/analytics/DisableCrashlyticsPatch.kt` — reverse-order Crashlytics removal.
-  - `misc/sound/MuteUiSoundsPatch.kt` — silent-PCM resource swap.
-  - `misc/apiredirect/RedirectCatalogApiPatch.kt` and `misc/apiredirect/PrefixApiPathPatch.kt` — Worker redirect + `/v6/` prefix.
-  - `misc/offlinecache/OfflineComponentCachePatch.kt` — per-game-picker offline cache fallback.
-  - `misc/debuglog/DebugLogPatch.kt` — debug-log probes.
-  - `misc/permissions/RewriteCustomPermissionsPatch.kt` — per-variant rewrite of `com.xiaoji.egggame.permission.*`.
-  - `filemanager/FileManagerAccessPatch.kt` — MTDataFiles provider patch.
-  - `vibration/VibrationPatch.kt` — 4 bytecode hooks for XInput rumble routing (new in v1.1.0-604).
-  - `vibration/VibrationManifestPatch.kt` — registers `BhVibrationSettingsActivity` (new in v1.1.0-604).
-  - `vibration/VibrationLibPatch.kt` — copies `libevshim.so` into the APK's `lib/arm64-v8a/` (new in v1.1.0-604).
-  - `vibration/VibrationMenuRowPatch.kt` — injects the PC Vibration Settings row into both per-game popups + the `Lxd3.l1` resolver short-circuit (new in v1.1.0-604).
-  - `vibration/VibrationMenuLabelPatch.kt` — appends the menu-row label string to the `features.home` Compose resource bundle (new in v1.1.0-604).
-  - `icon/ChangeAppIconPatch.kt` — replaces 5 in-APK drawables with BannerHub branding (new in v1.1.0-604).
-  - `misc/extension/` — internal shared dependency that wires the `.rve` extension dex into the patched APK.
-  - `all/misc/` — upstream ReVanced disabled-by-default patches (`appname`, `customcertificates`, `debugging`, `network`, `packagename`); the per-variant `Change app name` and `Change package name` are explicitly enabled by the workflow.
-- `extensions/gamehub/src/main/java/app/revanced/extension/gamehub/` — Java extension classes compiled into the `.rve` and injected into the patched APK at build time:
-  - `login/FakeAuthToken.java`, `login/FakeUserAccount.java`, `login/FakeStateFlow.java` — reflective constructors used by `Bypass login`.
-  - `api/V6PathPrefix.java` — the `Prefix API path with /v6` runtime helper.
-  - `winemu/PickerCacheFallback.java` — the offline cache reader called by `Offline component cache fallback` (unreleased).
-  - `debug/DebugTrace.java` — the `Log.i` helper used by `Debug logging` and the offline-cache patch.
-  - `util/GHLog.java` — categorized `Log` tag helper (`GHL/Token`, `GHL/Net`, etc.) for selective debug logging.
-  - `filemanager/MTDataFilesProvider.java`, `filemanager/MTDataFilesWakeUpActivity.java` — the file-manager content provider plus the immediate-finish activity that pre-creates the data dir.
-- `extensions/gamehub/src/main/java/com/xj/winemu/vibration/` — vibration extension classes (new in v1.1.0-604):
-  - `BhVibrationController.java` — the dispatcher state machine; per-slot motor amplitudes, keepalive worker, mode/intensity policy.
-  - `BhVibrationSettingsActivity.java` — the per-game mode/intensity dialog.
-  - `BhMenuRowClick.java` — reflective row constructors for both popup menus + resolver short-circuit + click handler.
-- `native/evshim/` — the LD_PRELOAD shim that defeats SDL2's 1 s rumble auto-stop (new in v1.1.0-604). `evshim.c` (~700 lines C) + `CMakeLists.txt`; CI builds it via the runner's NDK before gradle.
-- `keystore/` — checked-in public test keystore + README documenting alias, passwords, cert SHA-256/SHA-1, and the security model (new in v1.1.0-604).
-- `assets/` — README assets (logo image).
-- `extensions/gamehub/stub/` — compile-only host stubs (`com.winemu.openapi.WinUIBridge`, `com.xj.pcvirtualbtn.inputcontrols.InputControlsView`, `com.blankj.utilcode.util.Utils`, `com.winemu.core.server.XServer`) so the extension module type-checks against host symbols without packaging them into the `.rve`.
-- `.github/workflows/release.yml` — the 3-job CI pipeline (`build` → 9-way `patch` matrix → `release`). The `patch` job re-signs every variant with the BannerHub keystore via `apksigner` (v1+v2+v3 schemes) so the cert is stable across releases. `.github/workflows/build_pull_request.yml` mirrors the build job for PRs.
-- `PROGRESS_LOG.md` — chronological notes from the 6.0 port: every CI run, every patched smali method, every device-test result, every dead-end. The full investigation that produced this build.
 
 ## License
 

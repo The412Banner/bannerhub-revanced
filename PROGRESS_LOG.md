@@ -1345,6 +1345,13 @@ Per user: "add the discord server badge and ai disclaimer at the top also please
 1. **Discord shield badge** — centered `<p>` with a Shields.io for-the-badge style discord badge (`https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white&style=for-the-badge`) linking to `discord.gg/n8S4G2WZQ4` (the The412Banner community invite, per `feedback_discord_link_new_repos.md`). Placed between the subtitle paragraph and the existing in-page nav bar.
 2. **AI Disclaimer section** — new `## AI Disclaimer` H2 inserted right after the in-place-updates callout and before `## What's new in v1.1.0-604`. Two paragraphs verbatim from the user, with the model name bolded and `logcat` set as inline code. Also added an `· AI disclaimer` entry to the in-page nav bar so readers can jump straight to it from the top.
 
+### 2026-05-13 — README Repo layout removed, Table of contents added at top
+
+Per user: "can the repo layout section be removed and replaced at the top with a table of contents?"
+
+- Dropped the entire `## Repo layout` section (~36 lines of per-file annotations under `patches/`, `extensions/`, `native/`, `keystore/`, `assets/`, `.github/workflows/`). The same info is reachable via `git ls-files` + the per-patch source comments and is one more thing to keep in lockstep with reality on every feature add — better not to claim it from the README.
+- New `## Table of contents` section inserted between the in-place-updates callout and `## AI Disclaimer`. 10 entries with GitHub auto-generated anchors: `#ai-disclaimer`, `#whats-new-in-v110-604`, `#what-this-is`, `#source`, `#variants`, `#signing`, `#patches-applied`, `#build-it-yourself`, `#releases`, `#license`. The existing quick-jump nav bar at the very top (Discord badge + Patches/Signing/Build/AI-disclaimer chips) is unchanged — TOC is the full structured index, nav bar is the discovery shortcut for the most popular sections.
+
 ### 2026-05-13 — README AI Disclaimer expanded with pipeline detail
 
 Per user: "rewrite the disclaimer to explain it is used to help decompile and analyze Game Hub release apks using termux and termux package tool, the map out the apk contents and help write/rewrite new/old revanced patches from Gamehub 5.3.5 revanced project. I am sure anything in that disclaimer you can correct for me I missed"

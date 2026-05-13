@@ -1012,12 +1012,24 @@ Intentionally left alone. Adaptive-icon backgrounds are mostly masked away by la
 
 R.drawable.wine_logo (resource ID `0x7f080180`, declared in `res/values/public.xml:1273`) is referenced from one place in code: `smali_classes2/ego.smali:1218` via `sget v0, Lyqh;->wine_logo:I` — looks like a Wine-container header/splash logo. Replacing the bitmap content keeps the resource ID stable, so no smali edit is needed.
 
+### Validated 2026-05-13
+
+- Branch + commit: `feature/app-icon` @ `022f10f`, pushed to origin
+- Validation run [`25776533760`](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25776533760) on `feature/app-icon` with `version=1.1.0-604-pre3 stable=false` — all 9 patch jobs green, release job correctly skipped
+- Confirmed per-job:
+  - `"Change app icon" succeeded` log line on every variant
+  - Output filename `BannerHub-V6-1.1.0-604-pre3-Patched-{variant}.apk` (icon patch did not break the stable-release-pipeline naming)
+  - apksigner cert SHA-256 = `10895a311fe04f95f82e4da5c9a6c041ba9282bf211f1b578fe1cbeb894ce0ba` on every variant — byte-for-byte identical to pre1 (run 25775495418) and pre2 (run 25775755966), so an in-place upgrade install of pre3 over pre2 should be accepted by Android without uninstall
+- Artifacts live 14 days under run 25776533760
+
 ### Pending
 
-- ☐ Commit + push `feature/app-icon`
-- ☐ Validation: `gh workflow run release.yml --ref feature/app-icon -f version=1.1.0-604-pre3 -f stable=false`
-- ☐ User device-tests the Normal variant — launcher tile + any in-app wine_logo display
-- ☐ If green, merge → `gamehub-604-build` (recommended before cutting v1.1.0-604 stable so the rebrand ships with the first new-cert release)
+- ☐ User device-tests pre3 Normal installed on top of pre2 Normal:
+  1. Android accepts the upgrade with no uninstall prompt (verifies the keystore pipeline holds across patch-set changes)
+  2. Launcher tile shows BannerHub icon (verifies the adaptive-icon foreground swap + vector-delete worked at every density)
+  3. Wherever wine_logo appears in-app, it shows the new asset (verifies the in-app drawable swap)
+- ☐ If all three pass, merge `feature/app-icon` → `gamehub-604-build` (recommended `--no-ff` to preserve the single-commit feature history)
+- ☐ When ready, cut `v1.1.0-604` stable on the updated gamehub-604-build — first stable on the new cert, with vibration + new naming/labels/signing + new icon all shipping together
 
 ### Per-game hamburger-menu Vibration Settings option — NOT in this build
 

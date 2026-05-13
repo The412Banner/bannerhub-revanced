@@ -1345,6 +1345,12 @@ Per user: "add the discord server badge and ai disclaimer at the top also please
 1. **Discord shield badge** — centered `<p>` with a Shields.io for-the-badge style discord badge (`https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white&style=for-the-badge`) linking to `discord.gg/n8S4G2WZQ4` (the The412Banner community invite, per `feedback_discord_link_new_repos.md`). Placed between the subtitle paragraph and the existing in-page nav bar.
 2. **AI Disclaimer section** — new `## AI Disclaimer` H2 inserted right after the in-place-updates callout and before `## What's new in v1.1.0-604`. Two paragraphs verbatim from the user, with the model name bolded and `logcat` set as inline code. Also added an `· AI disclaimer` entry to the in-page nav bar so readers can jump straight to it from the top.
 
+### 2026-05-13 — Branch 1 MERGED to `gamehub-604-build` (Plans 8a + 8b)
+
+`feature/strip-privacy-permissions-ota` (head `7302aae`) merged into `gamehub-604-build` at merge commit `6817568` (`--no-ff` so the patch-add history stays under the merge). Post-merge sanity build queued as run 25830638192.
+
+Status after this merge: Plans 4 + 5 + 8a + 8b all live on `gamehub-604-build`. Remaining: Plan 8c (heartbeat strip, recon done — Branch 2 next), Plans 1+7 (analytics-event redirect via Worker), Plan 9 (PRIVACY.md). Plans 2 + 3 + 6 deliberately skipped. Privacy series inventory: `project_bannerhub_revanced_privacy_hardening.md`.
+
 ### 2026-05-13 — feature/strip-privacy-permissions-ota — Branch 1 of Plan 8 ports
 
 User: "begin" — kicking off Branch 1 (Plan 8a + 8b together) after the Plan 6 N/A finding and Plan 8 inventory.

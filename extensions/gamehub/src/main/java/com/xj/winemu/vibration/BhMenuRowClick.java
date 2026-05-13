@@ -167,6 +167,78 @@ public final class BhMenuRowClick implements Function1<Object, Object> {
         }
     }
 
+    /**
+     * Library-tile popup variant. The library tile's 3-dot popup is rendered
+     * by a different Composable than the game-details More Menu: rows use
+     * {@code Lscd(String actionId, Lo05 icon, String label, Lnw6 onClick)}
+     * with a Function0 click handler (no args), and the 4 rows are
+     * collected into an immutable {@code List<Lscd>} via Arrays.asList
+     * before being iterated for the focus tree.
+     *
+     * The smali injection replaces that list with a new ArrayList that
+     * contains the original 4 rows plus our PC Vibration Settings row.
+     * Returns the new list (the smali injection captures the return value
+     * and re-assigns it to the list register).
+     */
+    public static java.util.List<Object> appendScdRowToTedList(Object original) {
+        try {
+            if (!(original instanceof java.util.List)) return safeReturn(original);
+            java.util.List<?> origList = (java.util.List<?>) original;
+            java.util.ArrayList<Object> augmented = new java.util.ArrayList<>(origList);
+
+            Class<?> scdCls = Class.forName("scd");
+            Class<?> o05Cls = Class.forName("o05");
+            Class<?> nw6Cls = Class.forName("nw6");
+            Class<?> zz4Cls = Class.forName("zz4");
+
+            Field iconField = zz4Cls.getDeclaredField("k");
+            iconField.setAccessible(true);
+            Object xrlWrapper = iconField.get(null);
+            if (xrlWrapper == null) return safeReturn(original);
+            Object iconValue = xrlWrapper.getClass().getMethod("getValue").invoke(xrlWrapper);
+            if (!o05Cls.isInstance(iconValue)) return safeReturn(original);
+
+            // Function0 onClick via Proxy that implements Lnw6;
+            final BhMenuRowClick handler = new BhMenuRowClick();
+            Object click = java.lang.reflect.Proxy.newProxyInstance(
+                nw6Cls.getClassLoader(),
+                new Class<?>[]{ nw6Cls },
+                (proxy, method, args) -> {
+                    if ("invoke".equals(method.getName()) && method.getParameterCount() == 0) {
+                        return handler.invoke(null);
+                    }
+                    if ("equals".equals(method.getName())) return proxy == args[0];
+                    if ("hashCode".equals(method.getName())) return System.identityHashCode(proxy);
+                    if ("toString".equals(method.getName())) return "BhMenuRowClickProxy0";
+                    return null;
+                }
+            );
+
+            java.lang.reflect.Constructor<?> ctor =
+                scdCls.getDeclaredConstructor(String.class, o05Cls, String.class, nw6Cls);
+            ctor.setAccessible(true);
+
+            Object row = ctor.newInstance(
+                "local_detail_menu_pc_vibration",
+                iconValue,
+                "PC Vibration Settings",
+                click
+            );
+            augmented.add(row);
+            return augmented;
+        } catch (Throwable t) {
+            Log.w(TAG, "appendScdRowToTedList failed", t);
+            return safeReturn(original);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static java.util.List<Object> safeReturn(Object o) {
+        // Fall back to original list (cast) — silently skip our row if anything broke.
+        if (o instanceof java.util.List) return (java.util.List<Object>) o;
+        return new java.util.ArrayList<>();
+    }
+
     /** If a WineActivity is in the stack, grab its gameId Intent extra. */
     private static String sniffGameIdFromStack() {
         try {

@@ -49,6 +49,13 @@ private const val LHEO = "Lheo;"
 private const val LAEO = "Laeo;"
 private const val LSE7 = "Lse7;"
 
+// Lo55; is a sealed Kotlin class used as the response wrapper for all suspend
+// methods on Lie7 / Lse7. Subclasses: Lm55; (failure — calling .a() returns null)
+// and Ln55; (success — calling .a() returns the wrapped data Object). pre1
+// returned a bare ArrayList from getUserPlayTimeList which the caller cast to
+// Lo55, producing a fatal ClassCastException on launch. pre2 wraps in Ln55.
+private const val LN55_SUCCESS = "Ln55;"
+
 private const val EXT = "Lapp/revanced/extension/gamehub/playtime/BhPlayTimeTracker;"
 private const val UNIT = "Lkotlin/Unit;"
 private const val STR = "Ljava/lang/String;"
@@ -141,7 +148,9 @@ val disableHeartbeatLocalTrackerPatch = bytecodePatch(
             addInstructions(0, """
                 invoke-static {}, $EXT->getPcEntityList()Ljava/lang/Object;
                 move-result-object v0
-                return-object v0
+                new-instance v1, $LN55_SUCCESS
+                invoke-direct {v1, v0}, $LN55_SUCCESS-><init>(Ljava/lang/Object;)V
+                return-object v1
             """.trimIndent())
         }
     }

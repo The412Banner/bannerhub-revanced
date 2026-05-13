@@ -1345,6 +1345,18 @@ Per user: "add the discord server badge and ai disclaimer at the top also please
 1. **Discord shield badge** — centered `<p>` with a Shields.io for-the-badge style discord badge (`https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white&style=for-the-badge`) linking to `discord.gg/n8S4G2WZQ4` (the The412Banner community invite, per `feedback_discord_link_new_repos.md`). Placed between the subtitle paragraph and the existing in-page nav bar.
 2. **AI Disclaimer section** — new `## AI Disclaimer` H2 inserted right after the in-place-updates callout and before `## What's new in v1.1.0-604`. Two paragraphs verbatim from the user, with the model name bolded and `logcat` set as inline code. Also added an `· AI disclaimer` entry to the in-page nav bar so readers can jump straight to it from the top.
 
+### 2026-05-13 — README Credits section added at bottom
+
+Per user: "now we need to add a credit section at the bottom, listing developers for dxvk, vkd3d, mesa turnip drivers, box64, fexcore, The Gamehub Team, Revanced project to start, if you do not have links I will provide them later we just need a section laid out to start"
+
+New `## Credits` section inserted between `## Releases` and `## License`, plus `10. Credits` entry added to TOC (License bumped to 11). Section is grouped into five sub-headings — Translation & emulation layers (DXVK, VKD3D-Proton, Box64, FEX-Emu/FEXCore), Graphics drivers (Mesa Turnip + Banners-Turnip/StevenMXZ/whitebelyash forks), Host app (XiaoJi GameHub), Patching framework (ReVanced), BannerHub-specific upstream (TideGear/GameHub-Vibration-Fix). Each entry has the project name, a one-line role description, the maintainer(s), and a GitHub / project link.
+
+Confidence on the links I baked in:
+- HIGH: doitsujin/dxvk, HansKristian-Work/vkd3d-proton, ptitSeb/box64, FEX-Emu/FEX, FEX-Emu/FEX-ppa, mesa3d.org, gitlab.freedesktop.org/mesa/mesa, revanced.app, github.com/revanced, gamehubglobal.com (already linked elsewhere in README), TideGear/GameHub-Vibration-Fix (also already linked).
+- The412Banner-internal: Banners-Turnip, StevenMXZ, whitebelyash GH org links pulled from memory `feedback_bannerhub_api_driver_prefixes.md` — confident but the user can correct if any are wrong.
+
+Opening paragraph keeps tone humble ("almost nothing under the hood here is our work"); closing italic line invites corrections; Discord invite callout invites people to ask to be added/corrected/removed. Designed to be extensible — user will provide more names/links in future turns and they slot into the existing sub-headings.
+
 ### 2026-05-13 — README Repo layout removed, Table of contents added at top
 
 Per user: "can the repo layout section be removed and replaced at the top with a table of contents?"

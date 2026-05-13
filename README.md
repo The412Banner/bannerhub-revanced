@@ -41,7 +41,8 @@
 7. [Patches applied](#patches-applied)
 8. [Build it yourself](#build-it-yourself)
 9. [Releases](#releases)
-10. [License](#license)
+10. [Credits](#credits)
+11. [License](#license)
 
 ## AI Disclaimer
 
@@ -312,6 +313,38 @@ The release pipeline has two modes:
 
 - **Prerelease (default)** — every tag push and every `workflow_dispatch` run with `stable=false` produces the 9 variant APKs as Actions artifacts only (14-day retention). Useful for device-testing without cluttering the Releases page.
 - **Stable** — `workflow_dispatch` from `Actions → Run workflow` with the **`stable`** checkbox ticked and a version (e.g. `1.1.0-604`) populated. The matrix runs as normal, then a final `release` job creates a GitHub Release with the 9 APKs, `.rvp` bundle, `.rve` extension files, and the release notes (sourced verbatim from `release.yml`). All 9 APKs are re-signed with the BannerHub keystore (`v1`+`v2`+`v3` schemes) before upload so the cert is stable across releases.
+
+## Credits
+
+BannerHub v6 for ReVanced is a patch bundle — almost nothing under the hood here is our work. Every game launch under this APK is standing on the shoulders of an enormous amount of upstream open-source code. Huge thanks to all of the projects and teams below.
+
+> 💬 Want to be added, corrected, or removed from this list? Open an issue or ping us in [Discord](https://discord.gg/n8S4G2WZQ4) — we'll fix it on the next push.
+
+### Translation & emulation layers
+
+- **DXVK** — Direct3D 9 / 10 / 11 → Vulkan translation layer. Maintained by Philip Rebohle ([@doitsujin](https://github.com/doitsujin)) and contributors. Source: [doitsujin/dxvk](https://github.com/doitsujin/dxvk).
+- **VKD3D-Proton** — Direct3D 12 → Vulkan translation layer (the Proton fork used by GameHub). Maintained by Hans-Kristian Arntzen and the Valve / VKD3D-Proton contributors. Source: [HansKristian-Work/vkd3d-proton](https://github.com/HansKristian-Work/vkd3d-proton).
+- **Box64** — x86-64 → AArch64 dynamic recompiler used for running native Linux x86-64 binaries on ARM. Created by Sébastien Chevalier ([@ptitSeb](https://github.com/ptitSeb)) and contributors. Source: [ptitSeb/box64](https://github.com/ptitSeb/box64).
+- **FEX-Emu (FEXCore)** — x86 / x86-64 → AArch64 emulator with Wine + JIT integration. Maintained by the FEX-Emu team. Source: [FEX-Emu/FEX](https://github.com/FEX-Emu/FEX). The PPA-flavoured nightlies BannerHub ships are downstream of [FEX-Emu/FEX-ppa](https://github.com/FEX-Emu/FEX-ppa).
+
+### Graphics drivers
+
+- **Mesa Turnip** — the open-source Vulkan driver for Qualcomm Adreno GPUs that lets GameHub run modern Vulkan workloads on Android. Part of [Mesa 3D](https://www.mesa3d.org/). Source: [mesa/mesa on freedesktop.org](https://gitlab.freedesktop.org/mesa/mesa). Driver work led by Rob Clark, Connor Abbott, Danylo Piliaiev, and a long list of contributors. The Turnip variants BannerHub serves include builds maintained by [Banners-Turnip](https://github.com/The412Banner/Banners-Turnip), [StevenMXZ](https://github.com/StevenMXZ), and [whitebelyash](https://github.com/whitebelyash) — see the BannerHub API GPU-driver catalog for the full list.
+
+### Host app
+
+- **XiaoJi GameHub** — the base APK we patch. Built and maintained by the XiaoJi GameHub team. Website: [gamehubglobal.com](https://www.gamehubglobal.com/). All patches in this repo are applied non-destructively against an unmodified XiaoJi release — uninstall any BannerHub variant and the upstream GameHub still works as shipped.
+
+### Patching framework
+
+- **ReVanced** — the patcher framework, CLI, and patch SDK that BannerHub builds on. Source: [revanced](https://github.com/revanced). Website: [revanced.app](https://revanced.app/).
+
+### BannerHub-specific upstream
+
+- **TideGear/GameHub-Vibration-Fix** — the 6.0.2-targeted port of BannerHub PR #80 that the `PC-accurate vibration` patch in v1.1.0-604 is adapted from. Source: [TideGear/GameHub-Vibration-Fix](https://github.com/TideGear/GameHub-Vibration-Fix).
+- Anyone else whose name should be here — please open an issue and we'll add you.
+
+*If any attribution above is wrong, missing, or under the wrong licence header, please let us know.*
 
 ## License
 

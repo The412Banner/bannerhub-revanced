@@ -950,13 +950,20 @@ Passwords (`bannerhub`/`bannerhub`) and full security model documented in `keyst
 - README banner rewritten from "fresh install required" to "In-place updates — from v1.1.0-604 onward". Variant table updated with new filenames + labels. New `## Signing` section after `## Variants` with cert SHA-256 + SHA-1 fingerprints.
 - `keystore/README.md` written: full security model (public test key, anyone can re-sign), keystore fields table, fingerprints, generation command, CI usage, one-time migration note.
 
+### Validated 2026-05-13
+
+- Branch pushed at `67b65ed` (commit `feat(release): stable test-keystore signing + BannerHub-V6 naming`)
+- Validation run [`25775495418`](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25775495418) — all 9 patch jobs green, release job correctly skipped (stable=false)
+- Verified all 9 artifacts:
+  - Filename pattern `BannerHub-V6-1.1.0-604-pre1-Patched-{variant}.apk` rendered correctly for every variant (Normal-GHL uses the hyphen form; no parentheses needed)
+  - apksigner cert SHA-256 = `10895a311fe04f95f82e4da5c9a6c041ba9282bf211f1b578fe1cbeb894ce0ba` for every variant — matches `keystore/README.md` byte-for-byte
+  - apksigner found at `/usr/local/lib/android/sdk/build-tools/37.0.0/apksigner` (auto-discovered via the `ls -d "${ANDROID_HOME}/build-tools"/* | sort -V | tail -1` lookup)
+- Artifacts available for 14 days under run 25775495418's artifacts tab
+
 ### Pending
 
-8. ☐ Commit + push `feature/stable-release-pipeline`
-9. ☐ `gh workflow run release.yml --ref feature/stable-release-pipeline -f version=1.1.0-604-pre1 -f stable=false`
-10. ☐ Confirm artifact filenames + cert SHA-256 in CI logs
-11. ☐ Merge → `gamehub-604-build`
-12. ☐ When ready: stable cut at `v1.1.0-604` via `gh workflow run release.yml -f version=1.1.0-604 -f stable=true`
+- ☐ Merge `feature/stable-release-pipeline` → `gamehub-604-build` (--no-ff to preserve the feature commit)
+- ☐ When ready, cut `v1.1.0-604` stable: `gh workflow run release.yml --ref gamehub-604-build -f version=1.1.0-604 -f stable=true` (or push tag first, then run workflow_dispatch). Will create the v1.1.0-604 GitHub Release with all 9 APKs attached. Note: release notes should explicitly call out the one-time uninstall requirement for users on v1.0.0-604 or older.
 
 ### Per-game hamburger-menu Vibration Settings option — NOT in this build
 

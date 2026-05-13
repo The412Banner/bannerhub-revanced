@@ -4,7 +4,7 @@ A ReVanced patch bundle and pre-built APKs for [XiaoJi GameHub](https://www.game
 
 **Latest stable release:** [`v1.0.0-604` — Gamehub 6.0.4 - BannerHub API - Patched](https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.0.0-604) — 9 ready-to-install APK variants + the `.rvp` patch bundle and `.rve` extension files for use with `revanced-cli`.
 
-> ⚠ **A fresh install is required if a previous release is still installed.** Each release run generates a new debug keystore, so the signing certificate differs between releases and Android refuses the upgrade with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Uninstall the previous version of the same variant first, then install the new one. (Within a single release, all 9 variants are signed with the same cert.)
+> ✅ **In-place updates** — from `v1.1.0-604` onward, BannerHub releases are signed with a stable test keystore ([`keystore/README.md`](keystore/README.md)) so every future stable installs on top of the previous one with no uninstall. **One-time migration**: if you're still on `v1.0.0-604` or older (those used per-run ephemeral keys), uninstall your current BannerHub-ReVanced variant once before installing `v1.1.0-604`. From there on, regular Android updates flow normally.
 
 ## What's new in v1.0.0-604
 
@@ -82,15 +82,30 @@ The same patch bundle is applied to the same base APK 9 times, each time with a 
 
 | Variant | APK file | Package | Launcher label |
 | --- | --- | --- | --- |
-| Normal | `GameHub-6.0.4-Patched-Normal.apk` | `banner.hub` | GameHub |
-| Normal (GHL) | `GameHub-6.0.4-Patched-Normal.GHL.apk` *(GitHub strips parentheses from `Normal(GHL)`)* | `gamehub.lite` | GameHub |
-| PuBG | `GameHub-6.0.4-Patched-PuBG.apk` | `com.tencent.ig` | GameHub PuBG |
-| AnTuTu | `GameHub-6.0.4-Patched-AnTuTu.apk` | `com.antutu.ABenchMark` | GameHub AnTuTu |
-| alt-AnTuTu | `GameHub-6.0.4-Patched-alt-AnTuTu.apk` | `com.antutu.benchmark.full` | GameHub AnTuTu |
-| PuBG-CrossFire | `GameHub-6.0.4-Patched-PuBG-CrossFire.apk` | `com.tencent.tmgp.cf` | GameHub PuBG CrossFire |
-| Ludashi | `GameHub-6.0.4-Patched-Ludashi.apk` | `com.ludashi.aibench` | GameHub Ludashi |
-| Genshin | `GameHub-6.0.4-Patched-Genshin.apk` | `com.miHoYo.GenshinImpact` | GameHub Genshin |
-| Original | `GameHub-6.0.4-Patched-Original.apk` | `com.xiaoji.egggame` | GameHub |
+| Normal | `BannerHub-V6-<version>-Patched-Normal.apk` | `banner.hub` | BannerHub v6 |
+| Normal-GHL | `BannerHub-V6-<version>-Patched-Normal-GHL.apk` | `gamehub.lite` | BannerHub v6 |
+| PuBG | `BannerHub-V6-<version>-Patched-PuBG.apk` | `com.tencent.ig` | BannerHub v6 PuBG |
+| AnTuTu | `BannerHub-V6-<version>-Patched-AnTuTu.apk` | `com.antutu.ABenchMark` | BannerHub v6 AnTuTu |
+| alt-AnTuTu | `BannerHub-V6-<version>-Patched-alt-AnTuTu.apk` | `com.antutu.benchmark.full` | BannerHub v6 AnTuTu |
+| PuBG-CrossFire | `BannerHub-V6-<version>-Patched-PuBG-CrossFire.apk` | `com.tencent.tmgp.cf` | BannerHub v6 PuBG CrossFire |
+| Ludashi | `BannerHub-V6-<version>-Patched-Ludashi.apk` | `com.ludashi.aibench` | BannerHub v6 Ludashi |
+| Genshin | `BannerHub-V6-<version>-Patched-Genshin.apk` | `com.miHoYo.GenshinImpact` | BannerHub v6 Genshin |
+| Original | `BannerHub-V6-<version>-Patched-Original.apk` | `com.xiaoji.egggame` | BannerHub v6 |
+
+Three variants (Normal, Normal-GHL, Original) share the bare "BannerHub v6" launcher label and the two AnTuTu variants share "BannerHub v6 AnTuTu" — they install side-by-side via different package names, so the shared labels are intentional.
+
+## Signing
+
+From `v1.1.0-604` onward, every release is signed with the **public test keystore** at [`keystore/bannerhub.keystore`](keystore/bannerhub.keystore). The keystore + passwords are intentionally committed to the repo so the signing cert is reproducible across releases — that's what enables in-place Android updates between BannerHub stables.
+
+- **Alias:** `bannerhub`
+- **Store/key password:** `bannerhub`
+- **Cert SHA-256:** `10:89:5A:31:1F:E0:4F:95:F8:2E:4D:A5:C9:A6:C0:41:BA:92:82:BF:21:1F:1B:57:8F:E1:CB:EB:89:4C:E0:BA`
+- **Cert SHA-1:** `1F:51:B2:5E:5C:9F:58:08:E0:CF:45:17:4F:CC:B3:8D:67:CA:6D:E5`
+- **Schemes:** v1 + v2 + v3 (v4 disabled — needs a `.idsig` sidecar we don't ship)
+- **Validity:** 100 years (until 2126-04-19)
+
+Every CI release run prints the cert SHA-256 via `apksigner verify --print-certs` so the same fingerprint can be cross-checked against this README. See [`keystore/README.md`](keystore/README.md) for the full security model + the one-time migration note from `v1.0.0-604`-or-older.
 
 ## Patches applied
 

@@ -232,6 +232,75 @@ public final class BhMenuRowClick implements Function1<Object, Object> {
         }
     }
 
+    /**
+     * Library-tile popup variant #2 — the actual library list popup
+     * rendered by Lpzc;->j0(). Uses a third row data class:
+     *   Lz4e(Lell label, Lnw6 onClick, int)  [synthetic 3-arg ctor]
+     *     - Lell extends Ltdi(String key, Set<String> locales) — a Compose
+     *       Multiplatform string-resource descriptor; resolved at render
+     *       time by Lxd3.l1.
+     *     - Lnw6 is Function0 (no-arg lambda), R8-renamed kotlin Function0.
+     *
+     * Our label key "bh_pc_vibration_label" is added to features.home's
+     * CVR resource bundle via VibrationMenuLabelPatch; here we construct
+     * an Lell that points at that key, plus an Lnw6 proxy delegating to
+     * BhMenuRowClick.invoke.
+     */
+    public static java.util.List<Object> appendLibraryPopupRow(Object original) {
+        try {
+            if (!(original instanceof java.util.List)) return safeReturn(original);
+            java.util.List<?> origList = (java.util.List<?>) original;
+            java.util.ArrayList<Object> augmented = new java.util.ArrayList<>(origList);
+
+            Class<?> z4eCls = Class.forName("z4e");
+            Class<?> ellCls = Class.forName("ell");
+            Class<?> tdiCls = Class.forName("tdi");
+            Class<?> nw6Cls = Class.forName("nw6");
+
+            // Construct the Lell label. Lell inherits Ltdi's ctor
+            // (String key, Set<String> locales). Use the key we added
+            // to the Compose resource bundle.
+            java.lang.reflect.Constructor<?> ellCtor =
+                ellCls.getDeclaredConstructor(String.class, java.util.Set.class);
+            ellCtor.setAccessible(true);
+            Object label = ellCtor.newInstance(
+                "string:bh_pc_vibration_label",
+                java.util.Collections.emptySet()
+            );
+
+            // Function0 onClick via Proxy implementing Lnw6;
+            final BhMenuRowClick handler = new BhMenuRowClick();
+            Object click = java.lang.reflect.Proxy.newProxyInstance(
+                nw6Cls.getClassLoader(),
+                new Class<?>[]{ nw6Cls },
+                (proxy, method, args) -> {
+                    if ("invoke".equals(method.getName()) && method.getParameterCount() == 0) {
+                        return handler.invoke(null);
+                    }
+                    if ("equals".equals(method.getName())) return proxy == args[0];
+                    if ("hashCode".equals(method.getName())) return System.identityHashCode(proxy);
+                    if ("toString".equals(method.getName())) return "BhLibPopupRowClick";
+                    return null;
+                }
+            );
+
+            // Use the synthetic 3-arg ctor: Lz4e(Lell;Lnw6;I)V
+            // Pass int=0 — exact meaning is "category/group" or similar
+            // marker; 0 should be a safe default that doesn't conflict
+            // with reserved values for the existing rows.
+            java.lang.reflect.Constructor<?> z4eCtor =
+                z4eCls.getDeclaredConstructor(ellCls, nw6Cls, int.class);
+            z4eCtor.setAccessible(true);
+            Object row = z4eCtor.newInstance(label, click, 0);
+
+            augmented.add(row);
+            return augmented;
+        } catch (Throwable t) {
+            Log.w(TAG, "appendLibraryPopupRow failed", t);
+            return safeReturn(original);
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private static java.util.List<Object> safeReturn(Object o) {
         // Fall back to original list (cast) — silently skip our row if anything broke.

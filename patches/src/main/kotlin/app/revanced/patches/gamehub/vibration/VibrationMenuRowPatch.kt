@@ -52,6 +52,11 @@ val vibrationMenuRowPatch = bytecodePatch(
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
 
+    // The library-tile popup injection (injection 3) needs the
+    // bh_pc_vibration_label Compose-resource entry so Lell.<init> can
+    // produce a key Lxd3.l1 can resolve to "PC Vibration Settings".
+    dependsOn(vibrationMenuLabelPatch)
+
     apply {
         // Find the menu Composable structurally via firstMethod (returns
         // a MutableMethod ready for addInstructions). Predicate:
@@ -189,6 +194,77 @@ val vibrationMenuRowPatch = bytecodePatch(
             """
                 $callSmali
                 move-result-object v$listReg
+            """.trimIndent(),
+        )
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Injection 3: library-tile popup (pzc.smali method j0())
+        //
+        // The library tile's 3-dot popup is rendered from
+        //   Lpzc;->j0(Laub;ZLlvc;Llvc;Lmob;Lmob;Lz9;Ljn9;Lmvc;Lmvc;Ljvc;)Ljava/util/List;
+        // which builds rows as Lz4e(Lell label, Lnw6 onClick, int) and
+        // collects them into an Lx9d list builder, then finalizes via
+        //   invoke-virtual {v0}, Lx9d;->i()Lx9d;
+        // and `return-object pN`.
+        //
+        // We inject right before the return: append our row to the list
+        // via a Java helper (appendLibraryPopupRow). Helper constructs the
+        // Lz4e via reflection using a Compose-resource label key added by
+        // VibrationMenuLabelPatch ("bh_pc_vibration_label").
+        // ─────────────────────────────────────────────────────────────────────
+        val pzcMethod = firstMethod {
+            parameterTypes == listOf(
+                "Laub;", "Z", "Llvc;", "Llvc;", "Lmob;", "Lmob;",
+                "Lz9;", "Ljn9;", "Lmvc;", "Lmvc;", "Ljvc;"
+            ) &&
+                returnType == "Ljava/util/List;" &&
+                (implementation?.instructions?.any { ins ->
+                    ins.opcode == Opcode.INVOKE_VIRTUAL &&
+                        (ins as? ReferenceInstruction)?.getReference<MethodReference>()
+                            ?.let {
+                                it.definingClass == "Lx9d;" && it.name == "i" &&
+                                    it.returnType == "Lx9d;"
+                            } == true
+                } ?: false)
+        }
+
+        // Inject right before the LAST `return-object` in this method.
+        // Multiple return paths exist (early-bail branches return p0 with
+        // the input game info — irrelevant); we want the post-build path
+        // that returns the list built via Lx9d. That return follows the
+        // Lx9d;->i() finalization.
+        val pzcInstructions = pzcMethod.implementation!!.instructions.toList()
+        val finalizeIdx = pzcInstructions.indexOfLast { ins ->
+            ins.opcode == Opcode.INVOKE_VIRTUAL &&
+                (ins as? ReferenceInstruction)?.getReference<MethodReference>()
+                    ?.let { it.definingClass == "Lx9d;" && it.name == "i" } == true
+        }
+        require(finalizeIdx >= 0) {
+            "VibrationMenuRowPatch: no Lx9d;->i() finalize call in pzc.j0()"
+        }
+        // After Lx9d;->i() there's a move-result-object capturing the list
+        // into the same register that gets returned. Find the next return-
+        // object after the finalize, inject just before that return.
+        val returnIdx = (finalizeIdx until pzcInstructions.size).firstOrNull { i ->
+            pzcInstructions[i].opcode == Opcode.RETURN_OBJECT
+        }
+        require(returnIdx != null && returnIdx > finalizeIdx) {
+            "VibrationMenuRowPatch: no return-object after Lx9d;->i() in pzc.j0()"
+        }
+        val returnIns = pzcInstructions[returnIdx]
+        val returnReg =
+            (returnIns as com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction)
+                .registerA
+        val pzcCallSmali = if (returnReg <= 15) {
+            "invoke-static {v$returnReg}, $CLICK_HANDLER->appendLibraryPopupRow(Ljava/lang/Object;)Ljava/util/List;"
+        } else {
+            "invoke-static/range {v$returnReg .. v$returnReg}, $CLICK_HANDLER->appendLibraryPopupRow(Ljava/lang/Object;)Ljava/util/List;"
+        }
+        pzcMethod.addInstructions(
+            returnIdx,
+            """
+                $pzcCallSmali
+                move-result-object v$returnReg
             """.trimIndent(),
         )
     }

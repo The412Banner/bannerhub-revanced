@@ -971,6 +971,90 @@ Passwords (`bannerhub`/`bannerhub`) and full security model documented in `keyst
 - ☐ Pre2 rebuild on `gamehub-604-build` to verify in-place updates: `gh workflow run release.yml --ref gamehub-604-build -f version=1.1.0-604-pre2 -f stable=false`. Expected: same cert SHA-256 `10895a311fe04f95f82e4da5c9a6c041ba9282bf211f1b578fe1cbeb894ce0ba`. User will install pre1 (from run 25775495418 artifacts), then install pre2 on top to confirm Android accepts the upgrade with no uninstall.
 - ☐ When ready, cut `v1.1.0-604` stable: `gh workflow run release.yml --ref gamehub-604-build -f version=1.1.0-604 -f stable=true`. Release notes should call out the one-time uninstall for users on v1.0.0-604 or older.
 
+## 2026-05-13 — feature/app-icon: launcher icon + wine_logo rebrand
+
+New branch `feature/app-icon` off `gamehub-604-build`. Single resource patch (`ChangeAppIconPatch`) that swaps two drawables in the staged APK without touching bytecode.
+
+### Source
+
+`/storage/emulated/0/Download/BannerHub v6_icon.png` — user-provided, 918×903 RGBA with alpha. Centered logo content, transparent surround.
+
+### Generated patch resources
+
+Both checked in to `patches/src/main/resources/bannerhub-icon/`:
+
+| File | Dimensions | Purpose |
+| --- | --- | --- |
+| `ic_launcher_foreground.png` | 432×432 RGBA | Adaptive-icon foreground at xxxhdpi (108 dp). BannerHub logo content fit to the inner 288×288 safe zone, outer 18 dp margin reserved for launcher masking + parallax. |
+| `wine_logo.png` | 240×72 RGBA | Drop-in replacement for the original `drawable-xxhdpi/wine_logo.png`. Square BannerHub icon resized to 72×72 and centered with transparent left/right padding so the 80×24 dp intrinsic measure stays identical and no ImageView layouts regress. |
+
+Generated via ImageMagick:
+```
+magick "$SRC" -resize "288x288" -gravity center -background transparent -extent "432x432" ic_launcher_foreground.png
+magick "$SRC" -resize "72x72" -gravity center -background transparent -extent "240x72" wine_logo.png
+```
+
+### Patch source
+
+`patches/src/main/kotlin/app/revanced/patches/gamehub/icon/ChangeAppIconPatch.kt`. Resource patch only (no bytecode, no manifest). Apply block:
+
+1. Stream `bannerhub-icon/ic_launcher_foreground.png` → `res/drawable-xxxhdpi/ic_launcher_foreground.png` (creates the file)
+2. **Delete** `res/drawable/ic_launcher_foreground.xml` — the stock GameHub vector. Without this delete, aapt2 keeps both definitions and lower-density devices fall back to the vector (= still GameHub). Deleting forces every density bucket to use the xxxhdpi raster.
+3. Stream `bannerhub-icon/wine_logo.png` → `res/drawable-xxhdpi/wine_logo.png` (overwrites stock)
+
+Uses the same sentinel-object classloader pattern as `VibrationLibPatch` (Kotlin's self-referential type-inference snag).
+
+### Background drawable
+
+Intentionally left alone. Adaptive-icon backgrounds are mostly masked away by launcher shapes (circle/squircle/rounded-rect); only a sliver shows at the edge of the foreground. The default GameHub background works fine behind the new foreground content.
+
+### wine_logo usage
+
+R.drawable.wine_logo (resource ID `0x7f080180`, declared in `res/values/public.xml:1273`) is referenced from one place in code: `smali_classes2/ego.smali:1218` via `sget v0, Lyqh;->wine_logo:I` — looks like a Wine-container header/splash logo. Replacing the bitmap content keeps the resource ID stable, so no smali edit is needed.
+
+### Validated 2026-05-13
+
+- Branch + commit: `feature/app-icon` @ `022f10f`, pushed to origin
+- Validation run [`25776533760`](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25776533760) on `feature/app-icon` with `version=1.1.0-604-pre3 stable=false` — all 9 patch jobs green, release job correctly skipped
+- Confirmed per-job:
+  - `"Change app icon" succeeded` log line on every variant
+  - Output filename `BannerHub-V6-1.1.0-604-pre3-Patched-{variant}.apk` (icon patch did not break the stable-release-pipeline naming)
+  - apksigner cert SHA-256 = `10895a311fe04f95f82e4da5c9a6c041ba9282bf211f1b578fe1cbeb894ce0ba` on every variant — byte-for-byte identical to pre1 (run 25775495418) and pre2 (run 25775755966), so an in-place upgrade install of pre3 over pre2 should be accepted by Android without uninstall
+- Artifacts live 14 days under run 25776533760
+
+### Pre4 — added 2 Compose Multiplatform auth-screen logos to same patch (2026-05-13)
+
+User asked to additionally rebrand:
+- `assets/composeResources/com.xiaoji.egggame.features.auth/drawable/features_auth_ic_logo_landscape.png` (stock 96×96 square — "landscape" refers to auth-screen orientation, not image aspect) — replaced with BannerHub icon scaled to 96×96 with transparent padding
+- `assets/composeResources/com.xiaoji.egggame.features.auth/drawable/features_auth_ic_logo_overseas.png` (stock 366×72, 5.08:1 wide) — replaced with user-supplied 2277×448 RGB source `/storage/emulated/0/Download/ADM/features_auth_ic_logo_overseas.png` direct-downscaled (aspect ratio matched exactly, no padding). RGB→RGB transition acceptable since auth screen has opaque background.
+
+Extended `ChangeAppIconPatch` (still ONE patch, one entry in `revanced-cli list-patches`) with two more `copy()` calls. Refactored apply block to factor out the classloader-load + parent-mkdirs + stream-copy pattern into a local helper, eliminating four near-identical blocks.
+
+CN-locale auth logo (`features_auth_ic_logo_cn.png`, 270×72) intentionally left alone — not shown on overseas builds.
+
+Branch head: `718d241`. Validation [run 25777014627](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25777014627) all 9 patch jobs green, `"Change app icon" succeeded` on every variant, apksigner cert SHA-256 = `10895a311fe04f95f82e4da5c9a6c041ba9282bf211f1b578fe1cbeb894ce0ba` (unchanged across pre1 → pre2 → pre3 → pre4 → upgrades between any pair should be in-place).
+
+### Pre5 — added splash_logo to same patch (2026-05-13)
+
+User asked to additionally rebrand `assets/composeResources/com.xiaoji.egggame.features.splash/drawable/splash_logo.png` (stock 996×200, 4.98:1 aspect, RGBA) using the same overseas-banner artwork source. Same 5.08:1 aspect on the source; resolved by resizing to 996×196 to preserve proportions exactly, then `-extent 996x200` to pad 2 px of transparency top + bottom. Output is RGBA so a future splash background change (e.g. dark mode) can bleed through cleanly.
+
+ImageMagick produces RGBA automatically when an RGB input is `-extent`'d with a transparent background — useful pattern.
+
+ChangeAppIconPatch (still ONE patch) now ships **five** drawables in its apply block: launcher foreground (+ vector delete), wine_logo, auth landscape, auth overseas, splash. CN-locale `drawable-zh-rCN/splash_logo.png` left alone — same policy as `features_auth_ic_logo_cn.png` (not displayed on overseas builds).
+
+Branch head: `0d55adf`. Validation [run 25777391685](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25777391685) all 9 patch jobs green, `"Change app icon" succeeded` on every variant, cert SHA-256 = `10895a311fe04f95f82e4da5c9a6c041ba9282bf211f1b578fe1cbeb894ce0ba` (unchanged pre1 → pre5).
+
+### Pending
+
+- ☐ User device-tests pre5 Normal installed on top of any earlier new-cert build (pre2/pre3/pre4):
+  1. Android accepts the upgrade with no uninstall (keystore pipeline holds across patch additions)
+  2. Launcher tile shows BannerHub icon
+  3. wine_logo rebrand visible somewhere in-app (Wine flow)
+  4. Auth-screen logos (landscape + overseas) show BannerHub branding on login
+  5. Splash screen on app launch shows BannerHub banner
+- ☐ If green, merge `feature/app-icon` → `gamehub-604-build` (`--no-ff`, preserves the 4-commit feature history)
+- ☐ When ready, cut `v1.1.0-604` stable — first new-cert release shipping vibration + new naming/labels/signing + full 5-drawable icon rebrand together
+
 ### Per-game hamburger-menu Vibration Settings option — NOT in this build
 
 User asked whether the per-game hamburger-menu "Vibration Settings" item from BannerHub 3.7.2 stable also ships in the ReVanced build. **No.** The ReVanced patch set only registers `com.xj.winemu.vibration.BhVibrationSettingsActivity` in the manifest with `exported="false"` and no `<intent-filter>` (`VibrationManifestPatch.kt:32-37`). There is no patch under `patches/.../gamehub/` that injects a menu item into the XJ Java/XML UI to launch that activity — that would be a separate bytecode patch (find the per-game menu adapter R8 class, inject a row that fires an explicit Intent to `BhVibrationSettingsActivity --es gameId <gid>`).

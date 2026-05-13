@@ -329,7 +329,8 @@ jobs:
             | Genshin | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Genshin.apk` | `com.miHoYo.GenshinImpact` | BannerHub v6 Genshin |
             | Original | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Original.apk` | `com.xiaoji.egggame` | BannerHub v6 |
 
-            ### Patches applied
+            <details>
+            <summary><strong>📦 Patches applied (click to expand)</strong></summary>
 
             | Patch | What it does |
             | --- | --- |
@@ -352,6 +353,8 @@ jobs:
             | **Change app name** *(per variant)* | Renames the launcher label per variant. |
 
             *Per-patch mechanics, smali edits, structural anchors, and version-by-version letter maps live in the [README's Patches applied section](https://github.com/${{ github.repository }}/blob/gamehub-604-build/README.md#patches-applied) and the patch source comments under [`patches/src/main/kotlin/app/revanced/patches/gamehub/`](https://github.com/${{ github.repository }}/tree/gamehub-604-build/patches/src/main/kotlin/app/revanced/patches/gamehub).*
+
+            </details>
 
             ### Notes
 

@@ -1269,6 +1269,54 @@ invoke-static {v4}, Lcom/xj/winemu/vibration/BhMenuRowClick;->appendVibrationRow
 ```
 Helper reflectively constructs `Liae(icon, "PC Vibration Settings", Proxy<Lpw6>)` and appends to list builder `Lx9d` at `v4`. Renders as 5th item in the game-details screen "More Menu" popup. Device-confirmed via screenshot 2026-05-13 08:04.
 
-### Pending: library tile popup
+## 2026-05-13 — BOTH menus working at pre17 🎉
 
-Still searching for the Composable that renders the library tile's text-only 3-dot popup. Recon notes in memory file. Pre11 ships with both injections (no harm in keeping the unused one) so the row is reachable via game-details until we find the library popup.
+After 10 iterations (pre7 → pre17), the library tile popup row now ALSO works.
+
+### What got it across the line
+
+Pre15-16 silently had a `PatchException: classDef is null` in the resolver short-circuit's `addInstructionsWithLabels`-via-`ExternalLabel` path. revanced-cli reported the OVERALL job as success because the per-patch SEVERE error doesn't fail the CI run. The 3 other injections landed but the resolver patch silently no-op'd, leaving rows in pzc.j0's output pointing at unresolvable Lell keys that crashed at render time.
+
+Pre17 switched to plain `addInstructions` (no labels) at index 0 — works because the trailing-label-in-snippet footgun only applies mid-method. Index 0 lets the snippet-relative offset equal the absolute offset.
+
+### Final injection pattern (3 sites + 1 resolver patch)
+
+1. **Game-details "More Menu"** (`Lx57.a()`): `addInstructions(lastAddIdx+1, "invoke-static {v4}, ...->appendVibrationRowTo(Object)V")` → Java helper builds `Liae(icon, label-as-String, Proxy<Lpw6>)` and `list.add()`s.
+2. **Library tile popup** (`Lpzc.j0()`): hook the return — `addInstructions(returnIdx, "invoke-static {vN}, ...->appendLibraryPopupRow(Object)List; \n move-result-object vN")` → Java helper builds `Lz4e(Lell-via-Unsafe, Proxy<Lnw6>, 0)` and returns augmented ArrayList.
+3. **Resolver short-circuit** (`Lxd3.l1()`): `addInstructions(0, "invoke-static {p0}, ...->maybeResolveCustomLabel(Object)String; \n move-result-object v0 \n if-eqz v0, :tail \n return-object v0 \n :tail")` → Java helper returns "PC Vibration Settings" for our sentinel key, null for everything else.
+4. **Compose resource entry** (`VibrationMenuLabelPatch`): appends to `assets/composeResources/com.xiaoji.egggame.features.home/values*/strings.commonMain.cvr` for documentation/future-use (actual mechanism is #3 since Compose Multiplatform's runtime needs a manifest registration the bare .cvr doesn't provide).
+
+### Three architectural challenges solved
+
+- **R8 renamed kotlin.jvm.functions.Function0/1** to `Lnw6;`/`Lpw6;`. Extension's `implements Function1` doesn't satisfy `pw6Cls.isInstance()`. Fix: `java.lang.reflect.Proxy.newProxyInstance` implementing the renamed interface.
+- **Lell is an empty Kotlin subclass** of abstract `Ltdi(String, Set)`. Lell.smali has NO `.method`, NO `.field`. JVM-level the host does `new-instance + invoke-direct Ltdi.<init>`. `Lell.class.getDeclaredConstructor` returns nothing. Fix: `sun.misc.Unsafe.allocateInstance` + reflect-set the inherited fields `Ltdi.a` (key) and `Ltdi.b` (Set).
+- **Compose resource keys** for library popup labels go through `Lxd3.l1` resolver which throws on unknown keys. Just appending to the .cvr isn't enough — runtime needs a manifest. Fix: bytecode short-circuit the resolver at its head.
+
+### Full engineering reference
+
+The reusable playbook (with smali patterns, register conventions, common pitfalls, full code snippets) lives in `project_bannerhub_revanced_menu_injection_playbook.md`. Future menu-row additions should start there.
+
+### Critical CI anti-pattern caught
+
+`revanced-cli` reports per-patch failures as `SEVERE:` log lines but the OVERALL CI job exits 0. Always grep CI logs for SEVERE after every iteration — wasted pre15 and pre16 by assuming "all 9 variants green" meant all patches landed.
+
+```bash
+gh run view --log --job <id> | grep -E "SEVERE|INFO.*<patch name>"
+```
+
+### Device confirmation 2026-05-13 12:51
+
+Library tile 3-dot popup screenshot shows 5 rows in vertical text-only list:
+- PC Game Settings
+- Add to Desktop
+- Remove from Library
+- Edit Cover
+- **PC Vibration Settings** ← OUR row
+
+Game-details "More Menu" still has its own PC Vibration row from pre10. Both surfaces working independently.
+
+### Pending
+
+- ☐ Tap-test "PC Vibration Settings" in the library popup → confirm it opens BhVibrationSettingsActivity dialog (haven't device-tested the click yet, just the row rendering)
+- ☐ Merge `feature/menu-vibration-row` → `gamehub-604-build`
+- ☐ When ready, cut `v1.1.0-604` stable — first release with full menu integration

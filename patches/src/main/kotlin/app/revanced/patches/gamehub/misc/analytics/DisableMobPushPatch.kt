@@ -113,9 +113,19 @@ val disableMobPushPatch = bytecodePatch(
     dependsOn(disableMobPushManifestPatch)
 
     apply {
-        // 1. BaseAndroidApp.onCreate — stable class name.
+        // 1. BaseAndroidApp init helper. The actual Mob calls live in an
+        //    initializer method (`a()V` in 6.0.4) called from onCreate, NOT
+        //    in onCreate itself — onCreate just delegates. Anchor structurally
+        //    on "method on BaseAndroidApp that contains the submitPolicyGrantResult
+        //    invoke" so the helper name doesn't matter (it changes across
+        //    minor versions).
         firstMethod {
-            definingClass == "Lcom/xiaoji/egggame/BaseAndroidApp;" && name == "onCreate"
+            definingClass == "Lcom/xiaoji/egggame/BaseAndroidApp;" &&
+                implementation?.instructions?.any { ins ->
+                    ins.opcode == Opcode.INVOKE_STATIC &&
+                        (ins as? ReferenceInstruction)?.reference?.toString()
+                            ?.startsWith(MOB_SDK_PREFIX) == true
+                } == true
         }.apply {
             val policyGrantIdx = indexOfFirstInstructionOrThrow {
                 opcode == Opcode.INVOKE_STATIC &&

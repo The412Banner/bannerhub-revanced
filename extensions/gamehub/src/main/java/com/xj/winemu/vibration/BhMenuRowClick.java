@@ -257,16 +257,27 @@ public final class BhMenuRowClick implements Function1<Object, Object> {
             Class<?> tdiCls = Class.forName("tdi");
             Class<?> nw6Cls = Class.forName("nw6");
 
-            // Construct the Lell label. Lell inherits Ltdi's ctor
-            // (String key, Set<String> locales). Use the key we added
-            // to the Compose resource bundle.
-            java.lang.reflect.Constructor<?> ellCtor =
-                ellCls.getDeclaredConstructor(String.class, java.util.Set.class);
-            ellCtor.setAccessible(true);
-            Object label = ellCtor.newInstance(
-                "string:bh_pc_vibration_label",
-                java.util.Collections.emptySet()
-            );
+            // Construct the Lell label. Lell is a Kotlin empty subclass of
+            // abstract Ltdi(String key, Set<String> locales) — at bytecode
+            // level the host does `new-instance Lell; invoke Ltdi.<init>`,
+            // but `Lell.class.getDeclaredConstructor(String.class, Set.class)`
+            // returns nothing because Lell declares no constructors itself.
+            // Workaround: allocate Lell via sun.misc.Unsafe.allocateInstance
+            // (skips ctor entirely) and reflect-set the inherited Ltdi fields
+            // a (key) and b (locales).
+            Class<?> unsafeCls = Class.forName("sun.misc.Unsafe");
+            Field theUnsafe = unsafeCls.getDeclaredField("theUnsafe");
+            theUnsafe.setAccessible(true);
+            Object unsafe = theUnsafe.get(null);
+            Object label = unsafeCls.getMethod("allocateInstance", Class.class)
+                .invoke(unsafe, ellCls);
+            // Ltdi.a holds the resource key, Ltdi.b holds the locale Set.
+            Field aField = tdiCls.getDeclaredField("a");
+            aField.setAccessible(true);
+            aField.set(label, "string:bh_pc_vibration_label");
+            Field bField = tdiCls.getDeclaredField("b");
+            bField.setAccessible(true);
+            bField.set(label, java.util.Collections.emptySet());
 
             // Function0 onClick via Proxy implementing Lnw6;
             final BhMenuRowClick handler = new BhMenuRowClick();

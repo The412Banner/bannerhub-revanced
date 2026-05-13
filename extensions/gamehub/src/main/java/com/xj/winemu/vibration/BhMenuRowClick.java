@@ -127,21 +127,33 @@ public final class BhMenuRowClick implements Function1<Object, Object> {
                 Log.w(TAG, "zz4.m is null; cannot resolve icon");
                 return;
             }
-            // Lxrl has getValue() returning Object
             Object iconValue = xrlWrapper.getClass().getMethod("getValue").invoke(xrlWrapper);
             if (!o05Cls.isInstance(iconValue)) {
                 Log.w(TAG, "zz4.m.getValue() did not return Lo05");
                 return;
             }
 
-            // Construct the click handler (this class implements Function1 = Lpw6)
-            BhMenuRowClick click = new BhMenuRowClick();
-            if (!pw6Cls.isInstance(click)) {
-                // Shouldn't happen — Function1 IS pw6 at the JVM level — but
-                // guard so the cast doesn't silently fail.
-                Log.w(TAG, "BhMenuRowClick is not assignable to Lpw6");
-                return;
-            }
+            // R8 renamed kotlin.jvm.functions.Function1 to Lpw6; in the host
+            // APK, so our Java `implements Function1<Object, Object>` IS a
+            // different JVM class from the host's Lpw6;. Iae's constructor
+            // requires Lpw6; specifically — direct Java implements doesn't
+            // satisfy the type check. Fix: create a Proxy that actually
+            // implements Lpw6; at runtime, delegating its single invoke
+            // method to our BhMenuRowClick.invoke().
+            final BhMenuRowClick handler = new BhMenuRowClick();
+            Object click = java.lang.reflect.Proxy.newProxyInstance(
+                pw6Cls.getClassLoader(),
+                new Class<?>[]{ pw6Cls },
+                (proxy, method, args) -> {
+                    if ("invoke".equals(method.getName()) && method.getParameterCount() == 1) {
+                        return handler.invoke(args != null && args.length > 0 ? args[0] : null);
+                    }
+                    if ("equals".equals(method.getName())) return proxy == args[0];
+                    if ("hashCode".equals(method.getName())) return System.identityHashCode(proxy);
+                    if ("toString".equals(method.getName())) return "BhMenuRowClickProxy";
+                    return null;
+                }
+            );
 
             // Find the Iae 3-arg ctor: Iae(o05, String, pw6)
             java.lang.reflect.Constructor<?> ctor =

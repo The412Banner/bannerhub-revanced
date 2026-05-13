@@ -1345,6 +1345,20 @@ Per user: "add the discord server badge and ai disclaimer at the top also please
 1. **Discord shield badge** — centered `<p>` with a Shields.io for-the-badge style discord badge (`https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white&style=for-the-badge`) linking to `discord.gg/n8S4G2WZQ4` (the The412Banner community invite, per `feedback_discord_link_new_repos.md`). Placed between the subtitle paragraph and the existing in-page nav bar.
 2. **AI Disclaimer section** — new `## AI Disclaimer` H2 inserted right after the in-place-updates callout and before `## What's new in v1.1.0-604`. Two paragraphs verbatim from the user, with the model name bolded and `logcat` set as inline code. Also added an `· AI disclaimer` entry to the in-page nav bar so readers can jump straight to it from the top.
 
+### 2026-05-13 — Plan 4 artifact-grep verification (post-merge sanity)
+
+Downloaded `apk-Normal` artifact from CI run 25821952000 (the original `feature/disable-firebase-analytics` artifact build), decoded with apktool, grepped `AndroidManifest.xml`. All three injected `<meta-data>` entries confirmed present under `<application>`:
+
+- `firebase_analytics_collection_deactivated = "true"`
+- `google_analytics_adid_collection_enabled = "false"`
+- `google_analytics_ssaid_collection_enabled = "false"`
+
+Plan 4 verification chain now complete: source → CI green → device-verified by user → merge sanity build green (run 25822790159) → artifact manifest-grep confirmed patch landed.
+
+### 2026-05-13 — Plan 5 status (`feature/disable-mob-push`)
+
+Plan 5 work landed on its own branch (`feature/disable-mob-push`, head `29c1e5b`) per the branch-per-patch workflow. Full recon + patch details captured on that branch's PROGRESS_LOG. Not merged to `gamehub-604-build` yet — awaiting CI run 25823321334 to finish + user device test. Cross-cutting plan inventory + decisions log lives in auto-memory at `project_bannerhub_revanced_privacy_hardening.md`.
+
 ### 2026-05-13 — feature/disable-firebase-analytics — Plan 4 of the privacy hardening list
 
 User asked for the privacy hardening plan; Plan 4 (Disable Firebase Analytics manifest kill-switch) selected as first action because it's the highest ROI per hour.

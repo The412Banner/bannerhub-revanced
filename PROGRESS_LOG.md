@@ -1337,3 +1337,10 @@ Per user: "remove the known limitatiin section." Dropped the `## ⚠ Known limit
 ### 2026-05-13 — README "Patches applied" wrapped in collapsible `<details>`
 
 Per user: "make the patches applied collapsed with a button/link to expand." Kept the `## Patches applied` header (so the `#patches-applied` anchor referenced from the top-of-README nav still resolves) and wrapped the entire body (intro paragraph through "Disabled-by-default options") in a `<details><summary><strong>📦 Click to expand the full patch list (17 patches + disabled-by-default options)</strong></summary>` block. Closing `</details>` sits immediately before `## Build it yourself` to keep section boundaries clean. Matches the same collapsible pattern used in `release.yml`'s release-notes template.
+
+### 2026-05-13 — README Discord badge + AI Disclaimer added
+
+Per user: "add the discord server badge and ai disclaimer at the top also please" + verbatim disclaimer text. Two README changes:
+
+1. **Discord shield badge** — centered `<p>` with a Shields.io for-the-badge style discord badge (`https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white&style=for-the-badge`) linking to `discord.gg/n8S4G2WZQ4` (the The412Banner community invite, per `feedback_discord_link_new_repos.md`). Placed between the subtitle paragraph and the existing in-page nav bar.
+2. **AI Disclaimer section** — new `## AI Disclaimer` H2 inserted right after the in-place-updates callout and before `## What's new in v1.1.0-604`. Two paragraphs verbatim from the user, with the model name bolded and `logcat` set as inline code. Also added an `· AI disclaimer` entry to the in-page nav bar so readers can jump straight to it from the top.

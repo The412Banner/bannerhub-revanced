@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  <a href="https://discord.gg/n8S4G2WZQ4"><img src="https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white&style=for-the-badge" alt="Join the The412Banner Discord"/></a>
+</p>
+
+<p align="center">
   <a href="https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.1.0-604"><strong>📥 Latest stable: v1.1.0-604</strong></a>
   ·
   <a href="#patches-applied">Patches</a>
@@ -16,6 +20,8 @@
   <a href="#signing">Signing</a>
   ·
   <a href="#build-it-yourself">Build it yourself</a>
+  ·
+  <a href="#ai-disclaimer">AI disclaimer</a>
 </p>
 
 ---
@@ -23,6 +29,12 @@
 **What it does** — removes the login requirement, redirects the catalog API to the BannerHub Cloudflare Worker, ships PC-accurate XInput rumble for Wine games (with a per-game settings dialog injected into both popup menus), mutes the UI feedback sounds, and rebrands the launcher icon + in-app artwork as BannerHub v6. Nine APK variants install side-by-side on the same device.
 
 > ✅ **In-place updates** — from `v1.1.0-604` onward, BannerHub releases are signed with a stable test keystore ([`keystore/README.md`](keystore/README.md)) so every future stable installs on top of the previous one with no uninstall. **One-time migration**: if you're still on `v1.0.0-604` or older (those used per-run ephemeral keys), uninstall your current BannerHub-ReVanced variant once before installing `v1.1.0-604`. From there on, regular Android updates flow normally.
+
+## AI Disclaimer
+
+All smali edits, patches, and code changes in this project are developed with the assistance of **Claude AI Sonnet 4.6** by Anthropic. Claude is used to write, review, and modify smali bytecode and Java extension code since this project has no source code to work from — all changes are applied directly to the decompiled APK via [apktool](https://apktool.org/).
+
+Before any stable release is published, all changes are **manually debugged and tested by me across multiple devices — both rooted and unrooted**. Debugging is done using `logcat` output and in-app debug log files to diagnose and verify behavior before changes are finalized.
 
 ## What's new in v1.1.0-604
 

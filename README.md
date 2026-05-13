@@ -1,12 +1,43 @@
-# BannerHub for ReVanced — GameHub 6.0
+<p align="center">
+  <img src="assets/bannerhub-v6-logo.png" alt="BannerHub v6" width="180"/>
+</p>
 
-A ReVanced patch bundle and pre-built APKs for [XiaoJi GameHub](https://www.gamehubglobal.com/) 6.0.4 (`com.xiaoji.egggame`) that **remove the login requirement, redirect the catalog API to the BannerHub Cloudflare Worker, fall back to a cached component list when offline, mute UI sound feedback, and ship a debug-logging probe**, plus build-side variants that install side-by-side on the same device.
+<h1 align="center">BannerHub v6 for ReVanced</h1>
 
-**Latest stable release:** [`v1.0.0-604` — Gamehub 6.0.4 - BannerHub API - Patched](https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.0.0-604) — 9 ready-to-install APK variants + the `.rvp` patch bundle and `.rve` extension files for use with `revanced-cli`.
+<p align="center">
+  Pre-built APKs and the patch bundle that produces them — built on top of <a href="https://www.gamehubglobal.com/">XiaoJi GameHub</a> 6.0.4 (<code>com.xiaoji.egggame</code>).
+</p>
+
+<p align="center">
+  <a href="https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.1.0-604"><strong>📥 Latest stable: v1.1.0-604</strong></a>
+  ·
+  <a href="#patches-applied">Patches</a>
+  ·
+  <a href="#signing">Signing</a>
+  ·
+  <a href="#build-it-yourself">Build it yourself</a>
+</p>
+
+---
+
+**What it does** — removes the login requirement, redirects the catalog API to the BannerHub Cloudflare Worker, ships PC-accurate XInput rumble for Wine games (with a per-game settings dialog injected into both popup menus), mutes the UI feedback sounds, and rebrands the launcher icon + in-app artwork as BannerHub v6. Nine APK variants install side-by-side on the same device.
 
 > ✅ **In-place updates** — from `v1.1.0-604` onward, BannerHub releases are signed with a stable test keystore ([`keystore/README.md`](keystore/README.md)) so every future stable installs on top of the previous one with no uninstall. **One-time migration**: if you're still on `v1.0.0-604` or older (those used per-run ephemeral keys), uninstall your current BannerHub-ReVanced variant once before installing `v1.1.0-604`. From there on, regular Android updates flow normally.
 
-## What's new in v1.0.0-604
+## What's new in v1.1.0-604
+
+The **first BannerHub v6 stable** on the new build pipeline. Four headline changes vs `v1.0.0-604`:
+
+- **🎮 PC-accurate XInput rumble for Wine games** — ported from [TideGear/GameHub-Vibration-Fix](https://github.com/TideGear/GameHub-Vibration-Fix) (itself a 6.0.2 port of BannerHub PR #80). Dual-motor independent dispatch on multi-motor controllers, sustained rumble past SDL2's 1 s auto-stop (via the guest-side `libevshim.so` LD_PRELOAD shim that re-issues `SDL_JoystickRumble` every 500 ms with a 2 s duration), and instant release on let-go. **On by default** — `MODE_CONTROLLER` at 100% intensity, no UI tweaking required. Confirmed working on GTA 5 Enhanced with a physical controller.
+- **🎛 PC Vibration Settings menu row in both per-game popups** — a new 5th row labelled **PC Vibration Settings** in both (1) the game-details "More Menu" (3-dot from inside a game's detail screen) and (2) the library-tile 3-dot popup. Tapping launches a per-game mode/intensity dialog (off / device / controller / both); global defaults apply to games without per-game overrides.
+- **🎨 BannerHub v6 visual rebrand** — new launcher icon (adaptive-icon foreground, masked-shape friendly on every launcher), refreshed in-app `wine_logo`, and rebranded auth-screen + splash-screen banners. Five drawables touched; per-variant package names + side-by-side install behaviour unchanged.
+- **🔐 Stable signing — in-place updates from now on** — first release signed with a stable test keystore (cert SHA-256 `10:89:5A:31:1F:E0:4F:95:F8:2E:4D:A5:C9:A6:C0:41:BA:92:82:BF:21:1F:1B:57:8F:E1:CB:EB:89:4C:E0:BA`). Future BannerHub v6 stables update in-place — no more uninstall-between-versions. One-time migration required if you're on `v1.0.0-604` or older (different cert). See the [signing section](#signing) for the full keystore details.
+
+The patch source is in `patches/.../gamehub/vibration/` (4 patches: bytecode, manifest, native lib, menu row, label resource). The engineering deep-dive on injecting custom rows into either popup is in [`project_bannerhub_revanced_menu_injection_playbook.md`](../bannerhub-revanced/PROGRESS_LOG.md) (memory store; not in-repo).
+
+For the full release-note style breakdown of every patch + per-variant filenames + cert fingerprints, see the [v1.1.0-604 release page](https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.1.0-604).
+
+## What's new in v1.0.0-604 (historical)
 
 - **Base APK refresh: GameHub 6.0.2 → 6.0.4** (versionCode 112 → 114). The 6.0.2 → 6.0.4 bump triggered another sweeping R8 letter reshuffle (new r8-map-id `6a5cde6143fc…57b`). Every anchor was re-derived against the new base via the structural-anchor recipes in the patch sources; all 9 variants applied cleanly on the first patcher run — second consecutive base bump where the structural anchors caught everything first try, no .0 → .1 hotfix needed.
 - **`Bypass login` re-anchored** — `AUTH_IMPL` `Lit0;` → `Ljt0;`, `AUTH_INTERFACE` `Lct0;` → `Ldt0;`, `AUTH_TOKEN` `Lkpm;` → `Lwpm;`, `GAME_LIB_REPO` `Luu7;` → `Lvu7;` (userId-getter still `e()`), `NAVIGATOR` `Lxle;` → `Lgme;` (Login intent class `Lsa0;` → `Lta0;`; screen-route enum `Lgi0;` → `Lhi0;`). The reflective `FakeStateFlow` wrap targets the 6.0.4 trio: `STATE_FLOW_IMPL` `tjk` → `akk`, `STATE_FLOW_WRAPPER` `hzh` → `ozh`, `STATE_FLOW_HOLDER_INTERFACE` `vfe` → `dge`; abstract StateFlow interface `Lrjk;` → `Lyjk;`. `FakeAuthToken` follows `Lkpm;` → `Lwpm;` and `FakeUserAccount` follows `Lfpm;` → `Lrpm;` (both ctor signatures byte-identical to 6.0.2).
@@ -132,6 +163,49 @@ Removes the Firebase Crashlytics initialisation block. Without this, GameHub 6.0
 
 Replaces the bundled UI feedback sounds (`assets/composeResources/com.xiaoji.egggame.core/files/sound/*.wav`) with silent PCM. Menu navigation and button taps stop clicking. The patch substitutes the resource at packaging time — no runtime audio routing is changed, so game audio is unaffected. The patch's resource lookup is anchored on a Kotlin `object {}` to give the classloader a stable handle (the alternative — anchoring on the patch class itself — fails when ReVanced's class loader can't see the patches module's resources from inside the runner JVM).
 
+### `PC-accurate vibration` ⭐ *new in v1.1.0-604*
+
+Four bytecode hooks (`GamepadServerManager.onRumble` entry + per-controller dispatch + stop + Wine env-builder LD_PRELOAD inject) route XInput rumble from Wine games into Android's `VibratorManager` with dual-motor independent dispatch on multi-motor pads, intensity blending on single-motor pads, sustained-hold keepalive, and instant release on let-go. The `BhVibrationController` Java extension owns the state machine (per-slot motor amplitudes, keepalive worker thread refreshing controller rumble every 1.5 s before SDL2's internal 2 s expiry, mode dispatch: off/device/controller/both, per-game intensity scaling). Adapted verbatim from [TideGear/GameHub-Vibration-Fix](https://github.com/TideGear/GameHub-Vibration-Fix) (BannerHub PR #80 ported to 6.0.2) with the class-letter map re-derived for 6.0.4.
+
+### `Vibration native shim` ⭐ *new in v1.1.0-604*
+
+Ships an `arm64-v8a` `libevshim.so` (~41 KB) into the APK's `lib/` directory; loaded into Wine via the LD_PRELOAD inject of `PC-accurate vibration` Hook 4. The shim (`native/evshim/evshim.c`, ~700 lines of C) intercepts Wine's `winebus.so` calls to `pSDL_JoystickRumble` and `pSDL_JoystickClose` and re-issues the rumble every 500 ms with a 2 s duration so SDL2's internal `rumble_expiration` timer never fires during sustained holds. The CI workflow builds the `.so` via the runner's NDK (cmake + ninja, android-29 ABI level) before the gradle patch build, so the binary ships in the same `.rvp` bundle as the bytecode patches.
+
+### `Vibration settings activity` ⭐ *new in v1.1.0-604*
+
+Registers `com.xj.winemu.vibration.BhVibrationSettingsActivity` in the patched manifest (`exported="false"`, translucent theme). The activity hosts a programmatic dialog (mode picker: off / device / controller / both + intensity slider 0–100%) that writes to `bh_vibration_prefs` SharedPreferences (global defaults) and to the per-game `pc_g_setting<gameId>` JSON file when scoped to a specific game. Internal-only — no `<intent-filter>` — launched only by the menu-row patch below via explicit `Intent`.
+
+### `PC Vibration Settings menu row` ⭐ *new in v1.1.0-604*
+
+Injects a 5th row labelled **PC Vibration Settings** into both per-game popup menus in GameHub 6.0.4:
+
+- **Game-details "More Menu"** — patched in `Lx57.a()` at the tail of the row-list builder. Each row is an `Iae(icon, label, onClick)` with `Lpw6;` (`Function1`) onClick.
+- **Library-tile 3-dot popup** — patched in `Lpzc.j0()` by hooking the list's return. Each row is a `Lz4e(Lell label, Lnw6 onClick, int)` — different row class, different click-handler interface (`Lnw6;` = `Function0`), and the label is a Compose Multiplatform resource descriptor (`Lell`) not a raw String.
+
+Both injections route through a single Java helper (`BhMenuRowClick`) that walks `ActivityThread.mActivities` to find the current top Activity and fires `startActivity(BhVibrationSettingsActivity, gameId)` — gameId sniffed from any running `WineActivity`'s Intent extras so the settings dialog scopes per-game when possible. Three architectural curiosities solved along the way:
+
+- **R8 renamed `kotlin.jvm.functions.Function0/Function1`** to `Lnw6;` / `Lpw6;` everywhere in the host APK. The extension's own `implements Function1` is a different JVM class at runtime — fails `pw6Cls.isInstance()`. Fix: wrap each click handler in a `java.lang.reflect.Proxy` that actually implements the renamed interface.
+- **`Lell` is a Kotlin empty subclass** of abstract `Ltdi(String key, Set<String> locales)` and declares zero constructors of its own. `getDeclaredConstructor(...)` returns nothing. Fix: `sun.misc.Unsafe.allocateInstance` skips ctor invocation; then reflect-set the inherited `Ltdi.a` (key) and `Ltdi.b` (locale set) fields.
+- **`Lxd3.l1` resolver throws on unknown Compose resource keys** — and the runtime requires a manifest registration the bare `.cvr` append doesn't provide. Fix: a third bytecode injection at the head of `Lxd3.l1` short-circuits our sentinel key `bh_pc_vibration_label` and returns the literal string `"PC Vibration Settings"` before the stock resource lookup runs.
+
+The 10-iteration debugging trail behind landing this patch is recorded in `project_bannerhub_revanced_menu_injection_playbook.md` (auto-memory) and `PROGRESS_LOG.md`. Future menu-row additions should start there.
+
+### `PC Vibration Settings label resource` ⭐ *new in v1.1.0-604*
+
+Appends a `bh_pc_vibration_label = "PC Vibration Settings"` entry to `features.home`'s Compose Multiplatform resource bundle (`.cvr` file). Documentation patch — the runtime resolution actually goes through the `Lxd3.l1` short-circuit described above because Compose's resource manifest needs entries the bare `.cvr` doesn't register. Kept anyway so the resource is reachable by any future patch that goes through the proper manifest registration path.
+
+### `Change app icon` ⭐ *new in v1.1.0-604*
+
+Replaces five in-APK drawables with BannerHub v6 branding:
+
+- **Launcher adaptive-icon foreground** (`res/drawable-xxxhdpi/ic_launcher_foreground.png`) — 432×432 raster with BannerHub logo content in the inner 288×288 safe zone. The stock GameHub vector at `res/drawable/ic_launcher_foreground.xml` is *deleted* so the new raster wins on every device density (Android downsamples from xxxhdpi for lower buckets — imperceptible at icon sizes; without the delete, lower-density devices would silently fall back to the stock vector).
+- **In-app `wine_logo`** (`res/drawable-xxhdpi/wine_logo.png`) — 240×72 rebrand, dimensions matching stock so any `wrap_content` ImageView measuring against the resource keeps its 80×24 dp intrinsic size.
+- **Auth-screen landscape logo** (`assets/composeResources/com.xiaoji.egggame.features.auth/drawable/features_auth_ic_logo_landscape.png`) — 96×96 square (the "landscape" in the name refers to auth-screen orientation, not image aspect).
+- **Auth-screen overseas logo** (`.../features_auth_ic_logo_overseas.png`) — 366×72 wide rectangle.
+- **Splash-screen banner** (`assets/composeResources/com.xiaoji.egggame.features.splash/drawable/splash_logo.png`) — 996×200 with 2 px transparent top/bottom pad for aspect preservation; RGBA so a future splash-background change can bleed through cleanly.
+
+Background drawable (`res/drawable/ic_launcher_background.xml`) and CN-locale variants are left untouched — most launchers mask the adaptive icon's foreground so the background only shows at the masked edge, and the CN drawables aren't displayed on overseas builds.
+
 ### `Redirect catalog API`
 
 Patches the `xrj` environment enum's `Online` value so the catalog API's `cnHost` and `overseaHost` both point at the BannerHub Cloudflare Worker (`bannerhub-api.the412banner.workers.dev`) instead of `landscape-api-{cn,oversea}.vgabc.com`. The Worker:
@@ -237,10 +311,22 @@ java -jar revanced-cli.jar patch GameHub_6.0.4.apk \
 
 ## Releases
 
+### Naming & versioning scheme
+
+APK files follow the pattern **`BannerHub-V6-{version}-Patched-{variant}.apk`** — e.g. `BannerHub-V6-1.1.0-604-Patched-Normal.apk`. The version string has three parts:
+
+- **BannerHub v6** — product name. Fixed; aligned with GameHub's 6.x series and stays put across upstream patch-version bumps.
+- **`1.1.0`** — BannerHub-side semver (`major.minor.patch`). Tracks our own changes: new patches, infrastructure work, bug fixes. Bumps on every release.
+- **`-604`** — GameHub base version with the dots stripped (`6.0.4` → `604`). Tells you which upstream GameHub APK was patched. When GameHub releases `6.0.5`, the suffix becomes `-605` and the same patch set can be retargeted (e.g. `v1.1.0-605`) without otherwise changing.
+
+The release tag (`v1.1.0-604`) is the version string with a leading `v`. The `{variant}` slot in the filename identifies which of the 9 side-by-side packagings you grabbed.
+
+### Pipeline modes
+
 The release pipeline has two modes:
 
-- **Prerelease (default)** — every tag push and every `workflow_dispatch` run produces the 9 variant APKs as Actions artifacts only. Useful for testing without cluttering the Releases page.
-- **Stable** — `workflow_dispatch` from `Actions → Run workflow` with the **`stable`** checkbox ticked and a tag (e.g. `v1.0.0-604`) populated. The matrix runs as normal, then a final `release` job creates a GitHub Release with the 9 APKs, `.rvp` bundle, `.rve` extension files, and the release notes (sourced verbatim from `release.yml`).
+- **Prerelease (default)** — every tag push and every `workflow_dispatch` run with `stable=false` produces the 9 variant APKs as Actions artifacts only (14-day retention). Useful for device-testing without cluttering the Releases page.
+- **Stable** — `workflow_dispatch` from `Actions → Run workflow` with the **`stable`** checkbox ticked and a version (e.g. `1.1.0-604`) populated. The matrix runs as normal, then a final `release` job creates a GitHub Release with the 9 APKs, `.rvp` bundle, `.rve` extension files, and the release notes (sourced verbatim from `release.yml`). All 9 APKs are re-signed with the BannerHub keystore (`v1`+`v2`+`v3` schemes) before upload so the cert is stable across releases.
 
 ## Repo layout
 
@@ -253,6 +339,12 @@ The release pipeline has two modes:
   - `misc/debuglog/DebugLogPatch.kt` — debug-log probes.
   - `misc/permissions/RewriteCustomPermissionsPatch.kt` — per-variant rewrite of `com.xiaoji.egggame.permission.*`.
   - `filemanager/FileManagerAccessPatch.kt` — MTDataFiles provider patch.
+  - `vibration/VibrationPatch.kt` — 4 bytecode hooks for XInput rumble routing (new in v1.1.0-604).
+  - `vibration/VibrationManifestPatch.kt` — registers `BhVibrationSettingsActivity` (new in v1.1.0-604).
+  - `vibration/VibrationLibPatch.kt` — copies `libevshim.so` into the APK's `lib/arm64-v8a/` (new in v1.1.0-604).
+  - `vibration/VibrationMenuRowPatch.kt` — injects the PC Vibration Settings row into both per-game popups + the `Lxd3.l1` resolver short-circuit (new in v1.1.0-604).
+  - `vibration/VibrationMenuLabelPatch.kt` — appends the menu-row label string to the `features.home` Compose resource bundle (new in v1.1.0-604).
+  - `icon/ChangeAppIconPatch.kt` — replaces 5 in-APK drawables with BannerHub branding (new in v1.1.0-604).
   - `misc/extension/` — internal shared dependency that wires the `.rve` extension dex into the patched APK.
   - `all/misc/` — upstream ReVanced disabled-by-default patches (`appname`, `customcertificates`, `debugging`, `network`, `packagename`); the per-variant `Change app name` and `Change package name` are explicitly enabled by the workflow.
 - `extensions/gamehub/src/main/java/app/revanced/extension/gamehub/` — Java extension classes compiled into the `.rve` and injected into the patched APK at build time:
@@ -262,8 +354,15 @@ The release pipeline has two modes:
   - `debug/DebugTrace.java` — the `Log.i` helper used by `Debug logging` and the offline-cache patch.
   - `util/GHLog.java` — categorized `Log` tag helper (`GHL/Token`, `GHL/Net`, etc.) for selective debug logging.
   - `filemanager/MTDataFilesProvider.java`, `filemanager/MTDataFilesWakeUpActivity.java` — the file-manager content provider plus the immediate-finish activity that pre-creates the data dir.
+- `extensions/gamehub/src/main/java/com/xj/winemu/vibration/` — vibration extension classes (new in v1.1.0-604):
+  - `BhVibrationController.java` — the dispatcher state machine; per-slot motor amplitudes, keepalive worker, mode/intensity policy.
+  - `BhVibrationSettingsActivity.java` — the per-game mode/intensity dialog.
+  - `BhMenuRowClick.java` — reflective row constructors for both popup menus + resolver short-circuit + click handler.
+- `native/evshim/` — the LD_PRELOAD shim that defeats SDL2's 1 s rumble auto-stop (new in v1.1.0-604). `evshim.c` (~700 lines C) + `CMakeLists.txt`; CI builds it via the runner's NDK before gradle.
+- `keystore/` — checked-in public test keystore + README documenting alias, passwords, cert SHA-256/SHA-1, and the security model (new in v1.1.0-604).
+- `assets/` — README assets (logo image).
 - `extensions/gamehub/stub/` — compile-only host stubs (`com.winemu.openapi.WinUIBridge`, `com.xj.pcvirtualbtn.inputcontrols.InputControlsView`, `com.blankj.utilcode.util.Utils`, `com.winemu.core.server.XServer`) so the extension module type-checks against host symbols without packaging them into the `.rve`.
-- `.github/workflows/release.yml` — the 3-job CI pipeline (`build` → 9-way `patch` matrix → `release`). `.github/workflows/build_pull_request.yml` mirrors the build job for PRs.
+- `.github/workflows/release.yml` — the 3-job CI pipeline (`build` → 9-way `patch` matrix → `release`). The `patch` job re-signs every variant with the BannerHub keystore via `apksigner` (v1+v2+v3 schemes) so the cert is stable across releases. `.github/workflows/build_pull_request.yml` mirrors the build job for PRs.
 - `PROGRESS_LOG.md` — chronological notes from the 6.0 port: every CI run, every patched smali method, every device-test result, every dead-end. The full investigation that produced this build.
 
 ## License

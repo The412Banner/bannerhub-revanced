@@ -1345,6 +1345,33 @@ Per user: "add the discord server badge and ai disclaimer at the top also please
 1. **Discord shield badge** — centered `<p>` with a Shields.io for-the-badge style discord badge (`https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white&style=for-the-badge`) linking to `discord.gg/n8S4G2WZQ4` (the The412Banner community invite, per `feedback_discord_link_new_repos.md`). Placed between the subtitle paragraph and the existing in-page nav bar.
 2. **AI Disclaimer section** — new `## AI Disclaimer` H2 inserted right after the in-place-updates callout and before `## What's new in v1.1.0-604`. Two paragraphs verbatim from the user, with the model name bolded and `logcat` set as inline code. Also added an `· AI disclaimer` entry to the in-page nav bar so readers can jump straight to it from the top.
 
+### 2026-05-13 — Plan 6 N/A + Plan 8 inventory complete (3 portable findings)
+
+**Plan 6 (Bugly) is not applicable to 6.0.4.** Recon against `gamehub_604_decompile/`: no `com/tencent/bugly/` smali tree, no Bugly manifest entries, no `initCrashReport` call sites. XiaoJi appears to rely entirely on Firebase Crashlytics for crash reporting (already neutralized by the existing `DisableCrashlyticsPatch`). My earlier "Bugly is likely bundled" was a guess from the typical "Chinese app bundles Bugly" assumption — recon refuted it. Plan 6 is now marked N/A in the privacy-hardening memory file.
+
+**Plan 8 inventory complete.** Diff of `origin/playday-build` (5.3.5, 51 patches) vs `origin/gamehub-604-build` (6.0.4, 31 patches) showed **34 patches not carried forward**. Walked through the 5 most privacy-flavored candidates and verified each against the 6.0.4 decompile:
+
+| 5.3.5 patch | 6.0.4 verdict |
+|---|---|
+| `DisableAnalyticsPatch` (native-lib stripping for Umeng/Alibaba crash/Alibaba phone-auth + Ad-ID perm strip) | ❌ Native libs `libumeng-spy.so` / `libucrash*.so` / `libumonitor.so` / `libalicomphonenumberauthsdk_core.so` all gone in 6.0.4 (XiaoJi swapped analytics backends in KMP rewrite). ✅ But the 3 `<uses-permission>` declarations for `AD_ID` / `ACCESS_ADSERVICES_ATTRIBUTION` / `ACCESS_ADSERVICES_AD_ID` are STILL declared in 6.0.4 manifest — strip subset is **directly portable** and strengthens Plan 4. |
+| `DisableHeartbeatPatch` (returns `WineGameUsageTracker.start/update/end Heartbeat` early) | ⚠️ `WineGameUsageTracker` class gone, BUT the heartbeat code was split into 4-5 obfuscated single-purpose classes in 6.0.4: `smali_classes4/feo.smali` carries `"heartbeat/game/start"`, `heo.smali` carries `"heartbeat/game/update"`, `aeo.smali` carries `"heartbeat/game/end"`, `se7.smali` carries `"heartbeat/game/getUserPlayTimeList"`, plus `smali_classes5/b30.smali` (probable cloud-game variant). **Heartbeat-string anchor still resolves** — can rewrite the patch with structural body-contains-`heartbeat/game/*`-string anchor. **High-value privacy port** (kills periodic per-game telemetry beacons during gameplay). |
+| `DisablePushPatch` (strips JPush — `cn.jpush.*`) | ❌ JPush not bundled in 6.0.4 (XiaoJi switched from JPush to Mob Push in the 5.x → 6.x rewrite). Already killed by Plan 5. Naturally obsolete. |
+| `DisableCloudTimerPatch` (cloud-gaming timer check skip) | ⚠️ Not privacy-relevant — out of scope. |
+| `DisableOtaUpdatesPatch` (replaces OTA URL register with `http://127.0.0.1`) | ✅ URL `https://www.xiaoji.com/firmware/update/x1` still present at `smali_classes4/ki4.smali:6451` inside `ki4.d(String, String, I, ci3)Ljava/lang/Object;` (suspending fn). **Direct port viable** with one caveat: 5.3.5 anchor used trailing slash (`...update/x1/`), 6.0.4 string omits it — port needs `firstMethod("https://www.xiaoji.com/firmware/update/x1")` with no trailing slash. Also surfaced gamepad-firmware OTA path (`smali_classes4/ej3.smali` / `GamepadOtaIntent`) for optional separate neutralization. |
+
+**Net result: 3 portable findings** (Ad-ID strip, OTA URL kill, heartbeat strip), grouped into 2 branches:
+
+- **Branch 1 — `feature/strip-privacy-permissions-ota`** (8a + 8b together) — both fast direct ports, ~60 min total.
+  - 8a `StripAdIdPermissionsPatch.kt` (resourcePatch) — removes 3 ad-ID `<uses-permission>` declarations.
+  - 8b `DisableOtaUpdatesPatch.kt` (bytecodePatch) — port of 5.3.5 patch with prefix-without-slash fix.
+- **Branch 2 — `feature/disable-heartbeat`** (8c) — recon de-risked it from 1-3h to ~60-90 min since all 5 target classes are mapped. Port pending.
+
+After both: Plans 1+7 (analytics-event redirect through Worker) → Plan 9 (`PRIVACY.md`).
+
+Plans 2 + 3 still skipped (low value vs. effort).
+
+Detailed plan inventory, methodology, and the full 34-patch missing list (including non-privacy QoL patches for future workstreams) lives in auto-memory at `project_bannerhub_revanced_privacy_hardening.md`.
+
 ### 2026-05-13 — Plan 5 MERGED to `gamehub-604-build`
 
 `feature/disable-mob-push` (head `503204a`) merged into `gamehub-604-build` at merge commit `282c9ea` (`--no-ff` so the pre1 → pre2 anchor-fix history is preserved under the merge). Post-merge sanity build queued as run 25825313855.

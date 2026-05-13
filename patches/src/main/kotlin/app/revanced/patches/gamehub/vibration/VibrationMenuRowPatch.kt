@@ -1,6 +1,7 @@
 package app.revanced.patches.gamehub.vibration
 
 import app.revanced.patcher.extensions.addInstructions
+import app.revanced.patcher.extensions.addInstructionsWithLabels
 import app.revanced.patcher.firstMethod
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
@@ -266,6 +267,46 @@ val vibrationMenuRowPatch = bytecodePatch(
                 $pzcCallSmali
                 move-result-object v$returnReg
             """.trimIndent(),
+        )
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Patch the resolver Lxd3.l1 to short-circuit our sentinel key.
+        //
+        // pre14 device-tested with the Unsafe-allocated Lell + appended CVR
+        // resource entry, but crashed:
+        //   IllegalStateException: Resource with ID='string:bh_pc_vibration_label' not found
+        //     at fef.k -> aei.a -> xd3.V0 -> ... -> xd3.l1
+        //
+        // The Compose Multiplatform resource runtime requires a manifest /
+        // index registration alongside the .cvr file — just appending to
+        // the .cvr isn't enough. Rather than fight the resource system,
+        // patch the resolver Lxd3.l1 at its head to detect our key and
+        // return our hardcoded string before the normal lookup runs.
+        //
+        // Smali injection is 3 instructions at index 0:
+        //   invoke-static {p0}, BhMenuRowClick.maybeResolveCustomLabel(Lell;)String
+        //   move-result-object v0
+        //   if-nez v0, :short_circuit_return  (return v0)
+        //   ... original code runs unchanged ...
+        // ─────────────────────────────────────────────────────────────────────
+        val resolverMethod = firstMethod {
+            definingClass == "Lxd3;" && name == "l1" &&
+                parameterTypes == listOf("Lell;", "Lv83;", "I") &&
+                returnType == "Ljava/lang/String;"
+        }
+        resolverMethod.addInstructionsWithLabels(
+            0,
+            """
+                invoke-static {p0}, $CLICK_HANDLER->maybeResolveCustomLabel(Ljava/lang/Object;)Ljava/lang/String;
+                move-result-object v0
+                if-eqz v0, :bh_resolve_fallthrough
+                return-object v0
+                :bh_resolve_fallthrough
+            """.trimIndent(),
+            app.revanced.patcher.extensions.ExternalLabel(
+                "bh_resolve_fallthrough",
+                resolverMethod.implementation!!.instructions.first()
+            ),
         )
 
         // ─────────────────────────────────────────────────────────────────────

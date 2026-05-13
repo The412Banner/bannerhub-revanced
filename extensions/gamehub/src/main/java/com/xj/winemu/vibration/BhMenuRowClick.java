@@ -325,6 +325,28 @@ public final class BhMenuRowClick implements Function1<Object, Object> {
      * library tile popup's row builder fires. Removable once the menu
      * extension lands on joc-based rows.
      */
+    /**
+     * Patched into the resolver Lxd3.l1 to short-circuit our sentinel key
+     * BEFORE it hits the Compose Multiplatform resource lookup (which
+     * throws "Resource with ID='string:bh_pc_vibration_label' not found"
+     * because the runtime expects a manifest registration alongside the
+     * .cvr entry — and just appending to the .cvr isn't enough).
+     *
+     * Returns "PC Vibration Settings" when the key matches; returns null
+     * otherwise so the stock resolver path runs unchanged.
+     */
+    public static String maybeResolveCustomLabel(Object ell) {
+        try {
+            Field aField = Class.forName("tdi").getDeclaredField("a");
+            aField.setAccessible(true);
+            Object key = aField.get(ell);
+            if ("string:bh_pc_vibration_label".equals(key)) {
+                return "PC Vibration Settings";
+            }
+        } catch (Throwable ignored) { }
+        return null;
+    }
+
     public static void probeJocInvoke(Object self) {
         try {
             Log.i(TAG, "probeJocInvoke fired class=" + (self == null ? "null" : self.getClass().getName())

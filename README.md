@@ -26,6 +26,20 @@
 
 ---
 
+> ## ⚠️ Important — please read before installing
+>
+> **BannerHub v6 does NOT replace BannerHub 3.7.x or BannerHub Lite — they are SEPARATE projects.**
+>
+> - **BannerHub** 3.7.x — built from the GameHub 5.3.5 ReVanced project by **PlayDay**.
+> - **BannerHub Lite** — built from GameHub Lite 5.1.4 by **Producdevity**.
+> - **BannerHub v6** *(this repo)* — built from XiaoJi GameHub 6.0.x on a brand-new pipeline.
+>
+> **None of the three are to be updated over by any of the others.** Each ships with its own package names, its own keystore, and its own component / Steam-client backend — Android won't accept an in-place update between them, and forcing one will leave you with a broken install. Uninstall first, then install the new project if you want to switch.
+>
+> Keep in mind **BannerHub v6 is still a work in progress** and will re-release frequently as new base GameHub versions come out from XiaoJi upstream. **Compatibility is different** — don't expect every game that works on BannerHub 3.7.x or Lite to work on v6, and vice versa. v6 uses a **new component system and new Steam clients** and, thus far, has been **barely tested in general**.
+>
+> **USE AT YOUR OWN RISK.**
+
 **What it does** — removes the login requirement, redirects the catalog API to the BannerHub Cloudflare Worker, ships PC-accurate XInput rumble for Wine games (with a per-game settings dialog injected into both popup menus), mutes the UI feedback sounds, and rebrands the launcher icon + in-app artwork as BannerHub v6. Nine APK variants install side-by-side on the same device.
 
 > ✅ **In-place updates** — from `v1.1.0-604` onward, BannerHub releases are signed with a stable test keystore ([`keystore/README.md`](keystore/README.md)) so every future stable installs on top of the previous one with no uninstall. **One-time migration**: if you're still on `v1.0.0-604` or older (those used per-run ephemeral keys), uninstall your current BannerHub-ReVanced variant once before installing `v1.1.0-604`. From there on, regular Android updates flow normally.

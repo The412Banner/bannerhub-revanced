@@ -1345,6 +1345,20 @@ Per user: "add the discord server badge and ai disclaimer at the top also please
 1. **Discord shield badge** — centered `<p>` with a Shields.io for-the-badge style discord badge (`https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white&style=for-the-badge`) linking to `discord.gg/n8S4G2WZQ4` (the The412Banner community invite, per `feedback_discord_link_new_repos.md`). Placed between the subtitle paragraph and the existing in-page nav bar.
 2. **AI Disclaimer section** — new `## AI Disclaimer` H2 inserted right after the in-place-updates callout and before `## What's new in v1.1.0-604`. Two paragraphs verbatim from the user, with the model name bolded and `logcat` set as inline code. Also added an `· AI disclaimer` entry to the in-page nav bar so readers can jump straight to it from the top.
 
+### 2026-05-13 — README top-of-page "separate projects + use at own risk" disclaimer
+
+Per user: warning text covering "Does not replace current Bannerhub 3.7.x (built from Gamehub revanced 5.3.5 by PlayDay) or Bannerhub Lite (built from Gamehub Lite 5.1.4 by Producdevity); Bannerhub, Bannerhub Lite and Bannerhub v6 are SEPARATE projects! NOT to be updated over by any of the other projects! Keep in mind Bannerhub v6 is still a work in progress and will frequently re-release as new base Gamehub versions come out from the original developers. Compatibility is different, so don't expect all games that work on one to work on v6, it uses a new component system and steam clients, thus far, barely tested in general! USE AT YOUR OWN RISK!"
+
+Rendered as a prominent `> ## ⚠️ Important — please read before installing` blockquote with an embedded H2 header inside the quote so the warning is impossible to miss. Structure:
+
+1. Lead sentence — "BannerHub v6 does NOT replace BannerHub 3.7.x or BannerHub Lite — they are SEPARATE projects."
+2. 3-row bullet list — BannerHub 3.7.x (PlayDay / 5.3.5), BannerHub Lite (Producdevity / Lite 5.1.4), BannerHub v6 (this repo / 6.0.x).
+3. Update-incompatibility paragraph — each ships its own package names + keystore + component/Steam backend; Android rejects in-place updates between them; uninstall first.
+4. Work-in-progress paragraph — frequent re-releases as XiaoJi pushes new bases; new component system + Steam clients; barely tested in general.
+5. Closing **USE AT YOUR OWN RISK.**
+
+Placed between the `---` separator (line 27) and the `**What it does**` paragraph so it's the first body content readers hit after the hero (logo + title + Discord + nav). Preserved user's emphatic capitalisation (SEPARATE, NOT, USE AT YOUR OWN RISK) and brand-name spelling (PlayDay, Producdevity).
+
 ### 2026-05-13 — README Credits flattened into a single table
 
 Per user: "Tighten up the credits as a table, neat and tidy."

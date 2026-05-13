@@ -1345,6 +1345,36 @@ Per user: "add the discord server badge and ai disclaimer at the top also please
 1. **Discord shield badge** — centered `<p>` with a Shields.io for-the-badge style discord badge (`https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white&style=for-the-badge`) linking to `discord.gg/n8S4G2WZQ4` (the The412Banner community invite, per `feedback_discord_link_new_repos.md`). Placed between the subtitle paragraph and the existing in-page nav bar.
 2. **AI Disclaimer section** — new `## AI Disclaimer` H2 inserted right after the in-place-updates callout and before `## What's new in v1.1.0-604`. Two paragraphs verbatim from the user, with the model name bolded and `logcat` set as inline code. Also added an `· AI disclaimer` entry to the in-page nav bar so readers can jump straight to it from the top.
 
+### 2026-05-13 — feature/disable-heartbeat-local-tracker — Plan 8c Path 1 (full local tracker)
+
+Branch 2 of the Plan 8 ports. User picked Path 1 (full local tracker, the more ambitious option vs simple return-early).
+
+**Architecture** — single user-facing patch ("Local playtime tracker") that combines bytecode hooks + Java extension to provide a privacy-preserving replacement for XiaoJi's WineGameUsageTracker server-side playtime path.
+
+**Java extension** (`extensions/.../playtime/BhPlayTimeTracker.java`):
+- `SharedPreferences`-backed (`bh_playtime_prefs`).
+- One JSON entry per game keyed on whatever string from Lieo's a-e fields is integer-parseable (gameId heuristic), with fallback to first non-empty string.
+- `recordStart(a,b,c,d,e)`, `tick(a,b,c,d,e)`, `recordEnd(a,b,c,d,e)` write to local prefs.
+- `tick()` increments totalSeconds and rolling 14-day-window playtime by computing `(now - sessionStart)` in seconds.
+- `getPcEntityList()` reflectively constructs `com.xiaoji.egggame.game.data.remote.PcGamePlayTimeEntity` instances via its documented 10-arg `<init>(I String x6 J x3)` and returns them as an `ArrayList<Object>` for the UI consumer.
+- Context obtained via `ActivityThread.currentApplication()` (same recipe as `BhMenuRowClick`).
+
+**Bytecode patch** (`patches/.../misc/playtime/DisableHeartbeatLocalTrackerPatch.kt`):
+- 4 hooks, each `addInstructions(0, …)` to prepend a small smali block that reads `this.this$0:Lieo` then `Lieo.a..e:String`, invokes the relevant extension method, and returns `Kotlin.Unit.INSTANCE`. Original method body becomes unreachable; ART verifier OK with dead code.
+- Methods anchored structurally: `name + definingClass + body-contains-const-string` for `heartbeat/game/{start,update,end}` on `Lfeo`/`Lheo`/`Laeo` invokeSuspend, and `name=="c" + definingClass==Lse7 + body-contains heartbeat/game/getUserPlayTimeList`.
+- ⚠ The smali field refs are **hard-coded against 6.0.4 class letters** (Lieo, Lfeo, Lheo, Laeo, Lse7). On any minor base bump, expect SEVERE on apply with "Field not found" — re-derive the 5 class letters from a fresh decompile and update the constants block. Justification: dynamic discovery of these refs would require traversing dexlib's ClassDef graph at patch time which the existing repo doesn't have helpers for; structural anchors find the *methods* but the field refs inside the smali body are static.
+- Cloud variant (`Lb30;` with `heartbeat/game/start`, CloudGamePlayTimeEntity) intentionally not covered — cloud users will see zero playtime, can be added in a follow-up patch once PC path is verified working.
+
+**Risks / verification checklist:**
+
+1. **Reflective `PcGamePlayTimeEntity` constructor invocation** — pinned on the documented 10-arg `<init>(I,String,String,String,String,String,String,J,J,J)`. If kotlinx-serializer regenerates the data class with a `@Serializable(with=...)` custom annotation that changes the constructor sig, `getPcEntityList` throws `NoSuchMethodException`, falls into the try/catch, returns an empty list. UI shows blank but no crash.
+2. **Field-mapping heuristic** — `Lieo.a-e` Strings → which-is-which is not directly known. Heuristic: first integer-parseable is gameId; rest fill PcGamePlayTimeEntity strings in declared order. Worst case: wrong-slot display per game (e.g., the cover URL ends up in gameName slot). Playtime *numbers* are correct regardless.
+3. **R8 reshuffle on next minor bump** — class letters (Lieo/Lfeo/Lheo/Laeo/Lse7) will change. Patch will SEVERE on apply at that point with a clear "Field not found" error pointing at the specific class. Single-file maintenance burden documented inline.
+4. **First-launch UI shows 0 hours** — local tracker has no historical data. Users will see playtime accumulate from install onward.
+5. **Steam playtime unaffected** — Steam tracks its own playtime inside the Wine container; our patch doesn't intercept Steam's HTTP traffic.
+
+**CI run + verification pending.** Same recipe as Plans 4/5/8a/8b: CI green → SEVERE=0 → 9/9 succeeded → manifest+smali grep on apk-Normal → user device test.
+
 ### 2026-05-13 — Branch 1 MERGED to `gamehub-604-build` (Plans 8a + 8b)
 
 `feature/strip-privacy-permissions-ota` (head `7302aae`) merged into `gamehub-604-build` at merge commit `6817568` (`--no-ff` so the patch-add history stays under the merge). Post-merge sanity build queued as run 25830638192.

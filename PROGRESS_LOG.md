@@ -907,6 +907,64 @@ Merge commit: **`222730a`** (`Merge feature/vibration into gamehub-604-build`). 
 
 `gamehub-604-build` head 65e6902 → 222730a on origin. `feature/vibration` left at `7d149f1` on origin (not deleted — kept as a reference for the verifier-fix post-mortem).
 
+## 2026-05-13 — Stable release pipeline implemented on feature/stable-release-pipeline
+
+User chose option (a): make `v1.1.0-604` itself the new-cert anchor instead of shipping it on the old ephemeral key first. **One uninstall, ever.**
+
+### Keystore
+
+Generated `keystore/bannerhub.keystore` via:
+
+```bash
+keytool -genkeypair -v \
+  -keystore keystore/bannerhub.keystore \
+  -alias bannerhub \
+  -keyalg RSA -keysize 2048 \
+  -validity 36500 \
+  -storepass bannerhub -keypass bannerhub \
+  -dname "CN=BannerHub, OU=ReVanced, O=The412Banner, C=US"
+```
+
+Cert fingerprints (LOCKED IN — CI must print this SHA-256 on every release):
+
+- **SHA-256:** `10:89:5A:31:1F:E0:4F:95:F8:2E:4D:A5:C9:A6:C0:41:BA:92:82:BF:21:1F:1B:57:8F:E1:CB:EB:89:4C:E0:BA`
+- **SHA-1:** `1F:51:B2:5E:5C:9F:58:08:E0:CF:45:17:4F:CC:B3:8D:67:CA:6D:E5`
+- **Serial:** `5ee03b1e340fd1ac`
+- **Validity:** 2026-05-13 → 2126-04-19 (100 years)
+- **Signature algorithm:** SHA384withRSA
+- **Schemes used at sign time:** v1 + v2 + v3 (v4 disabled — no `.idsig` sidecar)
+
+Passwords (`bannerhub`/`bannerhub`) and full security model documented in `keystore/README.md`.
+
+### release.yml changes
+
+- **Hybrid trigger**: kept `push: tags: ["v*", "GameHub-*"]`; replaced the `tag` workflow_dispatch input with a `version` input (e.g. `1.1.0-604-pre1`, strip leading `v`). The workflow derives `version` (and `tag` = `v${version}`) from whichever source fired, in a new build-job step `Derive version` that exposes job-level outputs.
+- **Filename**: drop the hardcoded `variant.file:` matrix column; compute filename as `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-${{ matrix.variant.name }}.apk` in both the patch step and the artifact upload path.
+- **Labels**: matrix `variant.label:` rewritten to "BannerHub v6 …" — three variants share the bare "BannerHub v6" label (Normal, Normal-GHL, Original); AnTuTu and alt-AnTuTu share "BannerHub v6 AnTuTu"; rest are unique.
+- **Patch job checkout**: added `actions/checkout@v5` to the patch job so apksigner can read the keystore from the repo.
+- **Re-sign step**: new step right after `Apply patches`. Uses `${ANDROID_HOME}/build-tools/<latest>/apksigner` with `--ks keystore/bannerhub.keystore --ks-pass pass:bannerhub --ks-key-alias bannerhub --key-pass pass:bannerhub --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --v4-signing-enabled false`. Followed by `apksigner verify --print-certs` so the cert SHA-256 surfaces in CI logs each run.
+- **Release job**: now needs both `build` and `patch`; dropped the standalone "Get tag name" step (was reading `inputs.tag`); uses `${{ needs.build.outputs.tag }}` for the release tag and `${{ needs.build.outputs.version }}` for body interpolation; release body rewritten — title is now `BannerHub v6 ${{ version }}`, replaced the 6.0.2→6.0.4 base-bump section with a "Stable signing — in-place updates from this release onward" section, updated variant table with new filenames + labels, updated migration note, file glob changed `GameHub-6.0.4-Patched-*.apk` → `BannerHub-V6-*.apk`.
+
+### README + keystore/README.md
+
+- README banner rewritten from "fresh install required" to "In-place updates — from v1.1.0-604 onward". Variant table updated with new filenames + labels. New `## Signing` section after `## Variants` with cert SHA-256 + SHA-1 fingerprints.
+- `keystore/README.md` written: full security model (public test key, anyone can re-sign), keystore fields table, fingerprints, generation command, CI usage, one-time migration note.
+
+### Validated 2026-05-13
+
+- Branch pushed at `67b65ed` (commit `feat(release): stable test-keystore signing + BannerHub-V6 naming`)
+- Validation run [`25775495418`](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25775495418) — all 9 patch jobs green, release job correctly skipped (stable=false)
+- Verified all 9 artifacts:
+  - Filename pattern `BannerHub-V6-1.1.0-604-pre1-Patched-{variant}.apk` rendered correctly for every variant (Normal-GHL uses the hyphen form; no parentheses needed)
+  - apksigner cert SHA-256 = `10895a311fe04f95f82e4da5c9a6c041ba9282bf211f1b578fe1cbeb894ce0ba` for every variant — matches `keystore/README.md` byte-for-byte
+  - apksigner found at `/usr/local/lib/android/sdk/build-tools/37.0.0/apksigner` (auto-discovered via the `ls -d "${ANDROID_HOME}/build-tools"/* | sort -V | tail -1` lookup)
+- Artifacts available for 14 days under run 25775495418's artifacts tab
+
+### Pending
+
+- ☐ Merge `feature/stable-release-pipeline` → `gamehub-604-build` (--no-ff to preserve the feature commit)
+- ☐ When ready, cut `v1.1.0-604` stable: `gh workflow run release.yml --ref gamehub-604-build -f version=1.1.0-604 -f stable=true` (or push tag first, then run workflow_dispatch). Will create the v1.1.0-604 GitHub Release with all 9 APKs attached. Note: release notes should explicitly call out the one-time uninstall requirement for users on v1.0.0-604 or older.
+
 ### Per-game hamburger-menu Vibration Settings option — NOT in this build
 
 User asked whether the per-game hamburger-menu "Vibration Settings" item from BannerHub 3.7.2 stable also ships in the ReVanced build. **No.** The ReVanced patch set only registers `com.xj.winemu.vibration.BhVibrationSettingsActivity` in the manifest with `exported="false"` and no `<intent-filter>` (`VibrationManifestPatch.kt:32-37`). There is no patch under `patches/.../gamehub/` that injects a menu item into the XJ Java/XML UI to launch that activity — that would be a separate bytecode patch (find the per-game menu adapter R8 class, inject a row that fires an explicit Intent to `BhVibrationSettingsActivity --es gameId <gid>`).

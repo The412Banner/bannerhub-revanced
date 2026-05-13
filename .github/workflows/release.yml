@@ -5,6 +5,12 @@ name: Release
 # GitHub Release, run the workflow manually via Actions → Run workflow with
 # the `stable` checkbox ticked. Tag-push triggers always run in prerelease
 # (artifacts-only) mode.
+#
+# Version is derived in the build job's "Derive version" step:
+#   - workflow_dispatch: from inputs.version (e.g. "1.1.0-604-pre1")
+#   - push: tags: from GITHUB_REF_NAME stripped of leading "v"
+# All downstream jobs reference needs.build.outputs.version (no leading "v")
+# and needs.build.outputs.tag ("v" + version).
 on:
   push:
     tags:
@@ -12,11 +18,11 @@ on:
       - "GameHub-*"
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Tag to release (e.g. v1.0.0 or GameHub-6.0). Required when stable=true."
+      version:
+        description: 'Version string for APK filenames + release tag (e.g. "1.1.0-604-pre1" or "1.1.0-604"). Strip leading v; the workflow re-adds it for the git tag. Required for workflow_dispatch.'
         required: false
       stable:
-        description: "Cut a stable GitHub Release (default: artifact-only prerelease)"
+        description: "Cut a stable GitHub Release (default: artifact-only prerelease). Stable requires version to be set."
         type: boolean
         default: false
 
@@ -27,11 +33,36 @@ jobs:
     permissions:
       contents: read
       packages: read
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+      tag: ${{ steps.ver.outputs.tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
+
+      - name: Derive version
+        id: ver
+        # Single source of truth for the version string used in APK filenames
+        # AND the GitHub release tag. Stripped of any leading "v" so the patch
+        # job can interpolate it directly into "BannerHub-V6-${version}-…".
+        # The release job re-adds "v" when creating the git tag.
+        run: |
+          set -e
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            RAW="${{ github.event.inputs.version }}"
+            if [ -z "$RAW" ]; then
+              echo "::error::version input is required for workflow_dispatch. Example: 1.1.0-604-pre1"
+              exit 1
+            fi
+          else
+            RAW="${GITHUB_REF_NAME}"
+          fi
+          VERSION="${RAW#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Derived version=${VERSION} tag=v${VERSION}"
 
       - name: Setup Java
         uses: actions/setup-java@v5
@@ -120,17 +151,26 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # APK filename is computed in "Apply patches" from needs.build.outputs.version
+        # + matrix.variant.name, so no per-variant `file:` column. Three labels share
+        # the bare "BannerHub v6" tag (Normal, Normal-GHL, Original) — they install
+        # side-by-side via different package names, same pattern as the two AnTuTu
+        # variants which share "BannerHub v6 AnTuTu".
         variant:
-          - { name: Normal,         file: "GameHub-6.0.4-Patched-Normal.apk",          pkg: "banner.hub",                 label: "GameHub" }
-          - { name: Normal-GHL,     file: "GameHub-6.0.4-Patched-Normal(GHL).apk",     pkg: "gamehub.lite",               label: "GameHub" }
-          - { name: PuBG,           file: "GameHub-6.0.4-Patched-PuBG.apk",            pkg: "com.tencent.ig",             label: "GameHub PuBG" }
-          - { name: AnTuTu,         file: "GameHub-6.0.4-Patched-AnTuTu.apk",          pkg: "com.antutu.ABenchMark",      label: "GameHub AnTuTu" }
-          - { name: alt-AnTuTu,     file: "GameHub-6.0.4-Patched-alt-AnTuTu.apk",      pkg: "com.antutu.benchmark.full",  label: "GameHub AnTuTu" }
-          - { name: PuBG-CrossFire, file: "GameHub-6.0.4-Patched-PuBG-CrossFire.apk",  pkg: "com.tencent.tmgp.cf",        label: "GameHub PuBG CrossFire" }
-          - { name: Ludashi,        file: "GameHub-6.0.4-Patched-Ludashi.apk",         pkg: "com.ludashi.aibench",        label: "GameHub Ludashi" }
-          - { name: Genshin,        file: "GameHub-6.0.4-Patched-Genshin.apk",         pkg: "com.miHoYo.GenshinImpact",   label: "GameHub Genshin" }
-          - { name: Original,       file: "GameHub-6.0.4-Patched-Original.apk",        pkg: "com.xiaoji.egggame",         label: "GameHub" }
+          - { name: Normal,         pkg: "banner.hub",                 label: "BannerHub v6" }
+          - { name: Normal-GHL,     pkg: "gamehub.lite",               label: "BannerHub v6" }
+          - { name: PuBG,           pkg: "com.tencent.ig",             label: "BannerHub v6 PuBG" }
+          - { name: AnTuTu,         pkg: "com.antutu.ABenchMark",      label: "BannerHub v6 AnTuTu" }
+          - { name: alt-AnTuTu,     pkg: "com.antutu.benchmark.full",  label: "BannerHub v6 AnTuTu" }
+          - { name: PuBG-CrossFire, pkg: "com.tencent.tmgp.cf",        label: "BannerHub v6 PuBG CrossFire" }
+          - { name: Ludashi,        pkg: "com.ludashi.aibench",        label: "BannerHub v6 Ludashi" }
+          - { name: Genshin,        pkg: "com.miHoYo.GenshinImpact",   label: "BannerHub v6 Genshin" }
+          - { name: Original,       pkg: "com.xiaoji.egggame",         label: "BannerHub v6" }
     steps:
+      - name: Checkout
+        # Needed so the apksigner step can read keystore/bannerhub.keystore.
+        uses: actions/checkout@v5
+
       - name: Setup Java
         uses: actions/setup-java@v5
         with:
@@ -144,6 +184,8 @@ jobs:
           path: shared/
 
       - name: Apply patches
+        env:
+          FILENAME: BannerHub-V6-${{ needs.build.outputs.version }}-Patched-${{ matrix.variant.name }}.apk
         run: |
           set -e
           mkdir -p out
@@ -152,7 +194,7 @@ jobs:
           # numbers (e.g. "com.tencent.tmgp.cf" — the trailing 'f' is
           # parsed as a Java float suffix and triggers NumberFormatException
           # before the patch ever runs). The quotes also make values with
-          # spaces (e.g. "GameHub PuBG CrossFire") a non-issue.
+          # spaces (e.g. "BannerHub v6 PuBG CrossFire") a non-issue.
           java -jar shared/revanced-cli.jar patch shared/GameHub_6.0.4.apk \
             --patches shared/patches.rvp \
             --bypass-verification \
@@ -161,20 +203,47 @@ jobs:
               -O 'updatePermissions=true' \
               -O 'updateProviders=true' \
             -e "Change app name" -O 'appName="${{ matrix.variant.label }}"' \
-            --out "out/${{ matrix.variant.file }}"
-          ls -la "out/${{ matrix.variant.file }}"
+            --out "out/${FILENAME}"
+          ls -la "out/${FILENAME}"
+
+      - name: Re-sign with BannerHub test key (v1+v2+v3)
+        # Replaces revanced-cli's per-run ephemeral signature with the
+        # checked-in BannerHub test keystore so the signing cert is stable
+        # across releases. v1+v2+v3 enabled for maximum device coverage;
+        # v4 disabled (would need a sidecar .idsig sibling for each APK).
+        # Cert SHA-256 is printed to logs so we can eyeball-confirm the
+        # cert never changed between runs (= in-place updates guaranteed).
+        env:
+          FILENAME: BannerHub-V6-${{ needs.build.outputs.version }}-Patched-${{ matrix.variant.name }}.apk
+        run: |
+          set -e
+          BUILD_TOOLS="$(ls -d "${ANDROID_HOME}/build-tools"/* | sort -V | tail -1)"
+          APKSIGNER="${BUILD_TOOLS}/apksigner"
+          echo "Using apksigner at ${APKSIGNER}"
+          "${APKSIGNER}" sign \
+            --ks keystore/bannerhub.keystore \
+            --ks-pass pass:bannerhub \
+            --ks-key-alias bannerhub \
+            --key-pass pass:bannerhub \
+            --v1-signing-enabled true \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --v4-signing-enabled false \
+            "out/${FILENAME}"
+          echo "=== signature verification ==="
+          "${APKSIGNER}" verify --print-certs "out/${FILENAME}"
 
       - name: Upload variant APK
         uses: actions/upload-artifact@v4
         with:
           name: apk-${{ matrix.variant.name }}
-          path: out/${{ matrix.variant.file }}
+          path: out/BannerHub-V6-${{ needs.build.outputs.version }}-Patched-${{ matrix.variant.name }}.apk
           # 14 days so prerelease APKs are downloadable for testing
           retention-days: 14
 
   release:
     name: Create GitHub Release
-    needs: patch
+    needs: [build, patch]
     # Only runs when explicitly opted in via workflow_dispatch with stable=true.
     # Every other trigger (tag push, workflow_dispatch with stable=false) ends
     # at the patch matrix and leaves the APKs as Actions artifacts.
@@ -196,15 +265,6 @@ jobs:
           path: apks/
           merge-multiple: true
 
-      - name: Get tag name
-        id: tag
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
-          else
-            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-          fi
-
       - name: List release files
         run: |
           echo "=== APKs ==="
@@ -217,22 +277,22 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: Gamehub 6.0.4 - BannerHub API - Patched
+          tag_name: ${{ needs.build.outputs.tag }}
+          name: BannerHub v6 ${{ needs.build.outputs.version }}
           body: |
-            ## Gamehub 6.0.4 - BannerHub API - Patched
+            ## BannerHub v6 ${{ needs.build.outputs.version }}
 
             A patched build of XiaoJi GameHub 6.0.4 (`com.xiaoji.egggame`, versionCode 114) that removes the login requirement so games can be imported and used without an account, redirects the catalog API to the BannerHub Cloudflare Worker, and ships **9 variants that install side-by-side on the same device**.
 
-            ### 🔄 Base APK refresh from 6.0.2 → 6.0.4
+            ### 🔐 Stable signing — in-place updates from this release onward
 
-            Bumps the base APK from 6.0.2 (versionCode 112) to 6.0.4 (versionCode 114) and re-anchors every bytecode-keyed patch against the new build's R8-renamed class names. New on this base: the **`Offline component cache fallback`** patch (per-game pickers now show your cached components when offline) ships in a stable for the first time. All 9 variants patched cleanly on the first run — no .0 → .1 hotfix needed.
+            BannerHub releases are now signed with a **stable test keystore** ([`keystore/bannerhub.keystore`](https://github.com/${{ github.repository }}/blob/gamehub-604-build/keystore/README.md)) instead of a fresh per-run ephemeral key. From this release forward, every future BannerHub v6 stable installs **on top of the previous one** with no uninstall — Android sees them as the same app.
 
-            *Curious about the patcher-side details?* The full 6.0.2 → 6.0.4 R8 letter delta + the NAV_INTERCEPTOR coroutine-continuation note live in [`gamehub_reports/GH604_LETTER_MAP.md`](https://github.com/${{ github.repository }}/blob/gamehub-604-build/gamehub_reports/GH604_LETTER_MAP.md) and in the patch source comments under [`patches/src/main/kotlin/app/revanced/patches/gamehub/`](https://github.com/${{ github.repository }}/tree/gamehub-604-build/patches/src/main/kotlin/app/revanced/patches/gamehub).
+            **One-time migration from any earlier `v1.0.0-604`-or-older release:** the old builds were signed with revanced-cli's per-run ephemeral key, so the cert differs. Uninstall your current BannerHub-ReVanced variant once, then install the matching variant from this release. From here on out you can update in place.
 
-            **Migrating from any earlier release:** uninstall the previously-installed BannerHub-ReVanced variant of the same name first — release-to-release the signing keystore changes (CI generates a fresh debug keystore each run), so Android refuses cross-release upgrades with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Within v1.0.0-604 itself, all 9 variants share signing and install side-by-side.
+            Cert fingerprints (SHA-256 / SHA-1) are documented in [`keystore/README.md`](https://github.com/${{ github.repository }}/blob/gamehub-604-build/keystore/README.md) and printed in every CI run's `apksigner verify --print-certs` log lines so you can cross-check.
 
-            ### ✅ Steam game launches now work end-to-end
+            ### ✅ Steam game launches work end-to-end
 
             v1.0.0-602's release notes carried a warning that the **standard Steam client** wouldn't launch games under the BannerHub catalog redirect — the workaround was to switch to the **Lightweight Steam client** in the per-game settings. **That warning no longer applies.** The BannerHub API Worker has been fixed server-side to serve a Steam-launch-compatible payload for both client variants, so the standard Steam client launches games successfully on this build (and on existing patched builds — the fix is server-side and retroactive). Pick whichever Steam client suits your title; both work.
 
@@ -250,15 +310,15 @@ jobs:
 
             | Variant | APK | Package | Launcher label |
             | --- | --- | --- | --- |
-            | Normal | `GameHub-6.0.4-Patched-Normal.apk` | `banner.hub` | GameHub |
-            | Normal (GHL) | `GameHub-6.0.4-Patched-Normal(GHL).apk` | `gamehub.lite` | GameHub |
-            | PuBG | `GameHub-6.0.4-Patched-PuBG.apk` | `com.tencent.ig` | GameHub PuBG |
-            | AnTuTu | `GameHub-6.0.4-Patched-AnTuTu.apk` | `com.antutu.ABenchMark` | GameHub AnTuTu |
-            | alt-AnTuTu | `GameHub-6.0.4-Patched-alt-AnTuTu.apk` | `com.antutu.benchmark.full` | GameHub AnTuTu |
-            | PuBG-CrossFire | `GameHub-6.0.4-Patched-PuBG-CrossFire.apk` | `com.tencent.tmgp.cf` | GameHub PuBG CrossFire |
-            | Ludashi | `GameHub-6.0.4-Patched-Ludashi.apk` | `com.ludashi.aibench` | GameHub Ludashi |
-            | Genshin | `GameHub-6.0.4-Patched-Genshin.apk` | `com.miHoYo.GenshinImpact` | GameHub Genshin |
-            | Original | `GameHub-6.0.4-Patched-Original.apk` | `com.xiaoji.egggame` | GameHub |
+            | Normal | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Normal.apk` | `banner.hub` | BannerHub v6 |
+            | Normal-GHL | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Normal-GHL.apk` | `gamehub.lite` | BannerHub v6 |
+            | PuBG | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-PuBG.apk` | `com.tencent.ig` | BannerHub v6 PuBG |
+            | AnTuTu | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-AnTuTu.apk` | `com.antutu.ABenchMark` | BannerHub v6 AnTuTu |
+            | alt-AnTuTu | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-alt-AnTuTu.apk` | `com.antutu.benchmark.full` | BannerHub v6 AnTuTu |
+            | PuBG-CrossFire | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-PuBG-CrossFire.apk` | `com.tencent.tmgp.cf` | BannerHub v6 PuBG CrossFire |
+            | Ludashi | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Ludashi.apk` | `com.ludashi.aibench` | BannerHub v6 Ludashi |
+            | Genshin | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Genshin.apk` | `com.miHoYo.GenshinImpact` | BannerHub v6 Genshin |
+            | Original | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Original.apk` | `com.xiaoji.egggame` | BannerHub v6 |
 
             ### Patches applied
 
@@ -281,10 +341,10 @@ jobs:
             ### Notes
 
             - The base APK is unmodified XiaoJi GameHub 6.0.4; only the bytecode/resources required by the patches above are touched.
-            - **A fresh install is required if a previous release is still installed.** Each release run generates a new debug keystore, so the signing certificate differs between releases and Android refuses the upgrade with `INSTALL_FAILED_UPDATE_INCOMPATIBLE` (signature mismatch). Uninstall the previous version of the same variant first, then install the new one. Within a single release, all 9 variants are signed with the same cert.
+            - **Signing**: signed with the stable BannerHub test keystore (`keystore/bannerhub.keystore`). One-time uninstall required if upgrading from `v1.0.0-604` or older (different cert). From this release onward, all future BannerHub v6 stables install in place. Cert fingerprints: see [`keystore/README.md`](https://github.com/${{ github.repository }}/blob/gamehub-604-build/keystore/README.md).
             - Cover-art-on-import was fixed server-side in the BannerHub Worker on 2026-05-11 (worker deploy `5fd6c6a7…`) and applies retroactively to every existing patched build — no APK rebuild needed.
             - The `.rvp` patch bundle and `.rve` extension files are also attached for use with `revanced-cli` directly.
           files: |
-            apks/GameHub-6.0.4-Patched-*.apk
+            apks/BannerHub-V6-*.apk
             shared/*.rvp
             shared/rve/*.rve

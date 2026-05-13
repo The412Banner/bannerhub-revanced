@@ -1345,6 +1345,12 @@ Per user: "add the discord server badge and ai disclaimer at the top also please
 1. **Discord shield badge** — centered `<p>` with a Shields.io for-the-badge style discord badge (`https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white&style=for-the-badge`) linking to `discord.gg/n8S4G2WZQ4` (the The412Banner community invite, per `feedback_discord_link_new_repos.md`). Placed between the subtitle paragraph and the existing in-page nav bar.
 2. **AI Disclaimer section** — new `## AI Disclaimer` H2 inserted right after the in-place-updates callout and before `## What's new in v1.1.0-604`. Two paragraphs verbatim from the user, with the model name bolded and `logcat` set as inline code. Also added an `· AI disclaimer` entry to the in-page nav bar so readers can jump straight to it from the top.
 
+### 2026-05-13 — README Credits flattened into a single table
+
+Per user: "Tighten up the credits as a table, neat and tidy."
+
+Collapsed the five sub-sections (Translation & emulation layers, Graphics drivers, Host app, Patching framework, BannerHub-specific upstream) into one flat 3-column markdown table — columns: **Project** (linked) | **Role** | **Maintainer(s)**. Same 8 entries (DXVK, VKD3D-Proton, Box64, FEX-Emu/FEXCore, Mesa Turnip, XiaoJi GameHub, ReVanced, TideGear vibration fix). Mesa Turnip row also lists the three Adreno forks BannerHub serves (Banners-Turnip, StevenMXZ, whitebelyash) inline rather than in a separate paragraph. Lead-in shortened to 1 paragraph; Discord callout retained; closing italic correction-request line retained.
+
 ### 2026-05-13 — README Credits section added at bottom
 
 Per user: "now we need to add a credit section at the bottom, listing developers for dxvk, vkd3d, mesa turnip drivers, box64, fexcore, The Gamehub Team, Revanced project to start, if you do not have links I will provide them later we just need a section laid out to start"

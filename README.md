@@ -316,33 +316,20 @@ The release pipeline has two modes:
 
 ## Credits
 
-BannerHub v6 for ReVanced is a patch bundle — almost nothing under the hood here is our work. Every game launch under this APK is standing on the shoulders of an enormous amount of upstream open-source code. Huge thanks to all of the projects and teams below.
+BannerHub v6 is a patch bundle — almost nothing under the hood is our work. Every game launch under this APK rides on years of upstream open-source code. Huge thanks to everyone below.
 
-> 💬 Want to be added, corrected, or removed from this list? Open an issue or ping us in [Discord](https://discord.gg/n8S4G2WZQ4) — we'll fix it on the next push.
+> 💬 Want to be added, corrected, or removed? Open an issue or ping us in [Discord](https://discord.gg/n8S4G2WZQ4).
 
-### Translation & emulation layers
-
-- **DXVK** — Direct3D 9 / 10 / 11 → Vulkan translation layer. Maintained by Philip Rebohle ([@doitsujin](https://github.com/doitsujin)) and contributors. Source: [doitsujin/dxvk](https://github.com/doitsujin/dxvk).
-- **VKD3D-Proton** — Direct3D 12 → Vulkan translation layer (the Proton fork used by GameHub). Maintained by Hans-Kristian Arntzen and the Valve / VKD3D-Proton contributors. Source: [HansKristian-Work/vkd3d-proton](https://github.com/HansKristian-Work/vkd3d-proton).
-- **Box64** — x86-64 → AArch64 dynamic recompiler used for running native Linux x86-64 binaries on ARM. Created by Sébastien Chevalier ([@ptitSeb](https://github.com/ptitSeb)) and contributors. Source: [ptitSeb/box64](https://github.com/ptitSeb/box64).
-- **FEX-Emu (FEXCore)** — x86 / x86-64 → AArch64 emulator with Wine + JIT integration. Maintained by the FEX-Emu team. Source: [FEX-Emu/FEX](https://github.com/FEX-Emu/FEX). The PPA-flavoured nightlies BannerHub ships are downstream of [FEX-Emu/FEX-ppa](https://github.com/FEX-Emu/FEX-ppa).
-
-### Graphics drivers
-
-- **Mesa Turnip** — the open-source Vulkan driver for Qualcomm Adreno GPUs that lets GameHub run modern Vulkan workloads on Android. Part of [Mesa 3D](https://www.mesa3d.org/). Source: [mesa/mesa on freedesktop.org](https://gitlab.freedesktop.org/mesa/mesa). Driver work led by Rob Clark, Connor Abbott, Danylo Piliaiev, and a long list of contributors. The Turnip variants BannerHub serves include builds maintained by [Banners-Turnip](https://github.com/The412Banner/Banners-Turnip), [StevenMXZ](https://github.com/StevenMXZ), and [whitebelyash](https://github.com/whitebelyash) — see the BannerHub API GPU-driver catalog for the full list.
-
-### Host app
-
-- **XiaoJi GameHub** — the base APK we patch. Built and maintained by the XiaoJi GameHub team. Website: [gamehubglobal.com](https://www.gamehubglobal.com/). All patches in this repo are applied non-destructively against an unmodified XiaoJi release — uninstall any BannerHub variant and the upstream GameHub still works as shipped.
-
-### Patching framework
-
-- **ReVanced** — the patcher framework, CLI, and patch SDK that BannerHub builds on. Source: [revanced](https://github.com/revanced). Website: [revanced.app](https://revanced.app/).
-
-### BannerHub-specific upstream
-
-- **TideGear/GameHub-Vibration-Fix** — the 6.0.2-targeted port of BannerHub PR #80 that the `PC-accurate vibration` patch in v1.1.0-604 is adapted from. Source: [TideGear/GameHub-Vibration-Fix](https://github.com/TideGear/GameHub-Vibration-Fix).
-- Anyone else whose name should be here — please open an issue and we'll add you.
+| Project | Role | Maintainer(s) |
+| --- | --- | --- |
+| [DXVK](https://github.com/doitsujin/dxvk) | Direct3D 9 / 10 / 11 → Vulkan translation | Philip Rebohle ([@doitsujin](https://github.com/doitsujin)) and contributors |
+| [VKD3D-Proton](https://github.com/HansKristian-Work/vkd3d-proton) | Direct3D 12 → Vulkan translation (Proton fork) | Hans-Kristian Arntzen and Valve / VKD3D-Proton contributors |
+| [Box64](https://github.com/ptitSeb/box64) | x86-64 → AArch64 dynamic recompiler | Sébastien Chevalier ([@ptitSeb](https://github.com/ptitSeb)) and contributors |
+| [FEX-Emu (FEXCore)](https://github.com/FEX-Emu/FEX) | x86 / x86-64 → AArch64 emulator with Wine + JIT integration | FEX-Emu team — PPA flavour downstream of [FEX-Emu/FEX-ppa](https://github.com/FEX-Emu/FEX-ppa) |
+| [Mesa Turnip](https://gitlab.freedesktop.org/mesa/mesa) | Open-source Vulkan driver for Qualcomm Adreno GPUs (part of [Mesa 3D](https://www.mesa3d.org/)) | Rob Clark, Connor Abbott, Danylo Piliaiev, and many contributors. Adreno forks BannerHub serves: [Banners-Turnip](https://github.com/The412Banner/Banners-Turnip), [StevenMXZ](https://github.com/StevenMXZ), [whitebelyash](https://github.com/whitebelyash). |
+| [XiaoJi GameHub](https://www.gamehubglobal.com/) | The closed-source host APK we patch | XiaoJi GameHub Team |
+| [ReVanced](https://revanced.app/) | Patcher framework, CLI, and patch SDK | ReVanced team — source at [github.com/revanced](https://github.com/revanced) |
+| [TideGear / GameHub-Vibration-Fix](https://github.com/TideGear/GameHub-Vibration-Fix) | 6.0.2 port of BannerHub PR #80 — basis of our `PC-accurate vibration` patch | [@TideGear](https://github.com/TideGear) |
 
 *If any attribution above is wrong, missing, or under the wrong licence header, please let us know.*
 

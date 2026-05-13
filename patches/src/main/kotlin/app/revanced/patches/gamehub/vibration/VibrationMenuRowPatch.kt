@@ -294,7 +294,17 @@ val vibrationMenuRowPatch = bytecodePatch(
                 parameterTypes == listOf("Lell;", "Lv83;", "I") &&
                 returnType == "Ljava/lang/String;"
         }
-        resolverMethod.addInstructionsWithLabels(
+        // Avoid addInstructionsWithLabels + ExternalLabel — pre15 hit
+        //   PatchException: classDef is null  at InstructionKt.toInstructions
+        //   at MethodKt.addInstructionsWithLabels
+        // Reason still unclear (patcher bug or class-bind timing). Use the
+        // label-at-end-of-snippet workaround at index 0 instead. Per the
+        // existing feedback note, this works at index 0 because the snippet-
+        // relative offset of the trailing label EQUALS the absolute offset
+        // in the destination method when the shift is zero. The label then
+        // resolves to the first original instruction. The footgun only
+        // applies at non-zero injection indices.
+        resolverMethod.addInstructions(
             0,
             """
                 invoke-static {p0}, $CLICK_HANDLER->maybeResolveCustomLabel(Ljava/lang/Object;)Ljava/lang/String;
@@ -303,10 +313,6 @@ val vibrationMenuRowPatch = bytecodePatch(
                 return-object v0
                 :bh_resolve_fallthrough
             """.trimIndent(),
-            app.revanced.patcher.extensions.ExternalLabel(
-                "bh_resolve_fallthrough",
-                resolverMethod.implementation!!.instructions.first()
-            ),
         )
 
         // ─────────────────────────────────────────────────────────────────────

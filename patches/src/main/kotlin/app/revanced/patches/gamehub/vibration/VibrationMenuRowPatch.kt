@@ -267,5 +267,34 @@ val vibrationMenuRowPatch = bytecodePatch(
                 move-result-object v$returnReg
             """.trimIndent(),
         )
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Probe 4: joc.invoke() — diagnostic
+        //
+        // joc is a `Function0`-implementing synthetic with `invoke()Object;`.
+        // It reads Lpjl;->{a, b, c, d, e} (library popup labels) and
+        // constructs Lb5d(actionId, label). 4 distinct constructors and ~30
+        // return-paths suggest it's used as a multi-variant row builder.
+        //
+        // We probe by logging at the start of invoke(). On the next device
+        // test, opening the library tile popup should print probeJocInvoke
+        // calls — telling us (a) whether joc IS the popup's row builder,
+        // (b) what actionId values come in (so we know which branch to
+        // extend if we add a "PC Vibration" row variant).
+        //
+        // Probe is one smali line and touches no working registers — pure
+        // diagnostic, removable in the next iteration.
+        // ─────────────────────────────────────────────────────────────────────
+        val jocInvoke = firstMethod {
+            definingClass == "Ljoc;" && name == "invoke" &&
+                parameterTypes.isEmpty() &&
+                returnType == "Ljava/lang/Object;"
+        }
+        jocInvoke.addInstructions(
+            0,
+            """
+                invoke-static {p0}, $CLICK_HANDLER->probeJocInvoke(Ljava/lang/Object;)V
+            """.trimIndent(),
+        )
     }
 }

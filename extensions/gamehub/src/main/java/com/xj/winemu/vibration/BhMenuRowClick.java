@@ -308,6 +308,19 @@ public final class BhMenuRowClick implements Function1<Object, Object> {
         return new java.util.ArrayList<>();
     }
 
+    /**
+     * Diagnostic probe — logs an actionId when a row builder is called.
+     * Wired into joc.invoke() to identify when (and with what input) the
+     * library tile popup's row builder fires. Removable once the menu
+     * extension lands on joc-based rows.
+     */
+    public static void probeJocInvoke(Object self) {
+        try {
+            Log.i(TAG, "probeJocInvoke fired class=" + (self == null ? "null" : self.getClass().getName())
+                + " hash=" + System.identityHashCode(self));
+        } catch (Throwable ignored) { }
+    }
+
     /** If a WineActivity is in the stack, grab its gameId Intent extra. */
     private static String sniffGameIdFromStack() {
         try {

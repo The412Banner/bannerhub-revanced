@@ -1044,16 +1044,21 @@ ChangeAppIconPatch (still ONE patch) now ships **five** drawables in its apply b
 
 Branch head: `0d55adf`. Validation [run 25777391685](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25777391685) all 9 patch jobs green, `"Change app icon" succeeded` on every variant, cert SHA-256 = `10895a311fe04f95f82e4da5c9a6c041ba9282bf211f1b578fe1cbeb894ce0ba` (unchanged pre1 → pre5).
 
+### Merged 2026-05-13
+
+`feature/app-icon` (head `46a1a6e`, 6 commits — 3 feat + 3 docs) merged into `gamehub-604-build` at **merge commit `bf2882e`** with `--no-ff` so the per-pre stages stay readable in `git log --graph`. Pushed to origin. **No CI triggered** by the branch push — `release.yml` fires on tag push or workflow_dispatch only.
+
+`gamehub-604-build` head e3c708a → bf2882e. `feature/app-icon` left at `46a1a6e` on origin as a reference branch.
+
 ### Pending
 
-- ☐ User device-tests pre5 Normal installed on top of any earlier new-cert build (pre2/pre3/pre4):
-  1. Android accepts the upgrade with no uninstall (keystore pipeline holds across patch additions)
+- ☐ User device-tests pre5 (or pre4) Normal installed on top of any earlier new-cert build:
+  1. Android accepts the upgrade with no uninstall
   2. Launcher tile shows BannerHub icon
-  3. wine_logo rebrand visible somewhere in-app (Wine flow)
-  4. Auth-screen logos (landscape + overseas) show BannerHub branding on login
+  3. wine_logo rebrand visible somewhere in-app
+  4. Auth-screen logos rebranded on login flow
   5. Splash screen on app launch shows BannerHub banner
-- ☐ If green, merge `feature/app-icon` → `gamehub-604-build` (`--no-ff`, preserves the 4-commit feature history)
-- ☐ When ready, cut `v1.1.0-604` stable — first new-cert release shipping vibration + new naming/labels/signing + full 5-drawable icon rebrand together
+- ☐ When user gives the go-ahead, cut `v1.1.0-604` stable: `gh workflow run release.yml --ref gamehub-604-build -f version=1.1.0-604 -f stable=true`. First new-cert release; release notes should call out the one-time uninstall for users on v1.0.0-604 or older.
 
 ### Per-game hamburger-menu Vibration Settings option — NOT in this build
 

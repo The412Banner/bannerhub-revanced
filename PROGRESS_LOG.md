@@ -868,3 +868,85 @@ So inserting AT joinIdx places our File-path code *after* the setup. Our `new-in
 **Fix.** Move the insertion point 5 instructions earlier, to the start of the setup block (`setupStartIdx = joinIdx - 5`). Now both the fall-through and branch-taken paths from our `if-eqz` flow into the setup, which cleanly re-initializes v13..v17 to the types `invoke-static/range` expects. ExternalLabel target updated to the original `const/16 v16` instruction at `setupStartIdx`. Added a `require()` for the setup-block lookback in case a future R8 reshuffle inlines or reorders the setup.
 
 Insertion ordering matters: when inserting `addInstructionsWithLabels` at an index, our snippet is placed *before* the existing instruction at that index. So `setupStartIdx` (= joinIdx - 5) puts our injection just before the setup; the setup then runs after our injection, before the invoke.
+
+### Stage 3b device test — DOOMBLADE clean launch, no rumble triggered (2026-05-12 ~21:46)
+
+v1.1.0-604-pre3 (`9681b60`) installed as `banner.hub` (Normal variant). User launched **DOOMBLADE** via DirectLaunch (Wine Proton 10 arm64x-2, FEX Game Presets, Turnip v25.0.0 R1). Wine session ran clean 21:46:12 → 21:48:36, no VerifyError, no crash. Stage 3b fix verified at the verifier level.
+
+Initial verdict from logcat: zero `BhVibration` log lines, zero gamepad-source InputDevice events. Hooks didn't fire during this session. Hypotheses recorded at the time: either no real controller was paired, or DOOMBLADE didn't issue rumble during the playthrough (2D metroidvania, rumble fires only on specific hits).
+
+Hook insertion verified correct in the installed APK by apktool-decompiling `/data/app/~~8kz5yy-HOJCA8DhNk4duGQ==/banner.hub-JC7NoskjYKMoBofYk4cZ7g==/base.apk`:
+- Hook 1: `smali_classes7/com/winemu/core/gamepad/GamepadServerManager.smali:298` — `invoke-static {p1, p2, p3}, Lcom/xj/winemu/vibration/BhVibrationController;->onRumble(III)Z` ✅
+- Hook 2: `smali_classes2/ab8.smali:511` — `dispatchToController(III)Z` ✅
+- Hook 3: `smali_classes2/ab8.smali:438` — `onStop(I)V` ✅
+- Hook 4: `smali_classes8/bg5.smali:985,993` — `nativeLibraryDir` + `/libevshim.so` injection ✅
+- `lib/arm64-v8a/libevshim.so` shipped, 41,384 bytes ✅
+
+### Stage 3b — GTA 5 Enhanced device test: VIBRATION CONFIRMED (2026-05-12)
+
+User retested v1.1.0-604-pre3 (`9681b60`) with **GTA 5 Enhanced** and a real controller. **Rumble works.** Device-confirmed end-to-end:
+
+- `GamepadServerManager.onRumble` → `BhVibrationController.onRumble` invoke path active
+- Per-controller dispatch via Hook 2 (`ab8.g(II)V`) firing
+- libevshim.so LD_PRELOAD keepalive holding rumble past SDL2's 1s auto-stop
+- Stop hook (Hook 3, `ab8.f()V`) releasing cleanly
+
+This unblocks the merge: `feature/vibration` ready to land on `gamehub-604-build`.
+
+### Per-game hamburger-menu Vibration Settings option — NOT in this build
+
+User asked whether the per-game hamburger-menu "Vibration Settings" item from BannerHub 3.7.2 stable also ships in the ReVanced build. **No.** The ReVanced patch set only registers `com.xj.winemu.vibration.BhVibrationSettingsActivity` in the manifest with `exported="false"` and no `<intent-filter>` (`VibrationManifestPatch.kt:32-37`). There is no patch under `patches/.../gamehub/` that injects a menu item into the XJ Java/XML UI to launch that activity — that would be a separate bytecode patch (find the per-game menu adapter R8 class, inject a row that fires an explicit Intent to `BhVibrationSettingsActivity --es gameId <gid>`).
+
+Functionally rumble still works without the UI: `BhVibrationController.java:98-99` defaults to `MODE_CONTROLLER` at intensity 100. The settings activity only adjusts per-game mode/intensity overrides.
+
+Follow-up task (after rumble is confirmed working in GTA 5): port the menu-item injection as a new bytecode patch.
+
+## 2026-05-12 — Stable release pipeline spec approved (NOT executed yet)
+
+User-approved spec for the next-but-one release cycle. Execution is **gated on**: (1) GTA 5 + real-controller retest of `feature/vibration` head `9681b60` confirming rumble, (2) merging `feature/vibration` → `gamehub-604-build`, (3) cutting `v1.1.0-604` stable on the **old ephemeral key** (final release before the cert switch). Only after that do we branch `feature/stable-release-pipeline` off the updated `gamehub-604-build` and apply the changes below.
+
+### Goal
+
+Replace revanced-cli's per-run ephemeral keystore with a checked-in test keystore so the signing cert is stable across releases. After a one-time uninstall break for users on the v1.0.0-604 ephemeral-key build, every future stable updates in-place (no uninstall, no `INSTALL_FAILED_UPDATE_INCOMPATIBLE`).
+
+### Spec
+
+- **Tag format:** `vX.Y.Z-{branch-base#}` — e.g. `v1.1.0-604`. `604` derived from `patches/.../gamehub/Constants.kt:GAMEHUB_VERSION = "6.0.4"` and the `base-apk-604` GitHub release. Pre-releases: `vX.Y.Z-{branch-base#}-preN`.
+
+- **APK filename:** `BannerHub-V6-{version}-Patched-{variant}.apk` where `version = ${GITHUB_REF_NAME#v}`. Drops the hardcoded `variant.file:` column from the matrix; computed at workflow level.
+
+- **App labels (9-variant table):** three variants share the bare "BannerHub v6" label (Normal, Normal-GHL, Original) and install side-by-side via different package names — same pattern as the two AnTuTu variants which share "BannerHub v6 AnTuTu".
+
+  | variant.name | variant.pkg | variant.label |
+  |---|---|---|
+  | Normal | banner.hub | BannerHub v6 |
+  | Normal-GHL | gamehub.lite | BannerHub v6 |
+  | PuBG | com.tencent.ig | BannerHub v6 PuBG |
+  | AnTuTu | com.antutu.ABenchMark | BannerHub v6 AnTuTu |
+  | alt-AnTuTu | com.antutu.benchmark.full | BannerHub v6 AnTuTu |
+  | PuBG-CrossFire | com.tencent.tmgp.cf | BannerHub v6 PuBG CrossFire |
+  | Ludashi | com.ludashi.aibench | BannerHub v6 Ludashi |
+  | Genshin | com.miHoYo.GenshinImpact | BannerHub v6 Genshin |
+  | Original | com.xiaoji.egggame | BannerHub v6 |
+
+- **Test keystore at `keystore/bannerhub.keystore`** (RSA 2048, 100-year validity, alias `bannerhub`, store and key password both `bannerhub`, DN `CN=BannerHub, OU=ReVanced, O=The412Banner, C=US`). Public test key — committed to repo, documented in `keystore/README.md` alongside cert SHA-256.
+
+- **apksigner post-sign step** with `--v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true --v4-signing-enabled false`, runs after revanced-cli `--out`. Followed by `apksigner verify --print-certs` so CI logs surface the cert SHA-256 every run for eyeball verification.
+
+- **`build_pull_request.yml`** untouched — PR test artifacts continue with revanced-cli's ephemeral keystore.
+
+### Sequencing checklist
+
+1. ☐ GTA 5 + real controller retest of `feature/vibration` head `9681b60`
+2. ☐ Merge `feature/vibration` → `gamehub-604-build` if green
+3. ☐ Cut `v1.1.0-604` stable on the **old ephemeral key** (final release before cert switch)
+4. ☐ Branch `feature/stable-release-pipeline` off updated `gamehub-604-build`
+5. ☐ Generate + commit keystore at `keystore/bannerhub.keystore`, write `keystore/README.md`
+6. ☐ Update `release.yml` (matrix, filename template, label table, apksigner step)
+7. ☐ Update README "Signing" section + release-notes copy
+8. ☐ Validate via non-stable `workflow_dispatch`; inspect filenames + cert SHA-256 in logs
+9. ☐ Merge `feature/stable-release-pipeline` → `gamehub-604-build`
+10. ☐ Tag `v1.1.1-604` (or `v1.2.0-604`) — **new-cert anchor**; release notes call out the one-time uninstall
+11. ☐ Lock cert SHA-256 into memory + README for permanent verification reference
+
+Full spec in `[[project_bannerhub_revanced_stable_release_pipeline]]` memory file.

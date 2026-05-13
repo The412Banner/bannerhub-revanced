@@ -1,6 +1,7 @@
 package app.revanced.patches.gamehub.vibration
 
 import app.revanced.patcher.extensions.addInstructions
+import app.revanced.patcher.firstMethod
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
 import app.revanced.patches.gamehub.GAMEHUB_VERSION
@@ -52,33 +53,31 @@ val vibrationMenuRowPatch = bytecodePatch(
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
 
     apply {
-        // Find the menu Composable structurally:
+        // Find the menu Composable structurally via firstMethod (returns
+        // a MutableMethod ready for addInstructions). Predicate:
         //   - 4 params (Lf37;Lpo7;Lv83;I), returns void
         //   - body constructs an Liae with the canonical 3-arg ctor
         //   - body references the Remove-from-Library label (Lwhl;->S:Lxrl;)
-        val menu = classes.flatMap { cls -> cls.methods.map { cls to it } }
-            .firstOrNull { (_, m) ->
-                m.parameterTypes.toList() == listOf("Lf37;", "Lpo7;", "Lv83;", "I") &&
-                    m.returnType == "V" &&
-                    (m.implementation?.instructions?.any { ins ->
-                        ins.opcode == Opcode.INVOKE_DIRECT &&
-                            (ins as? ReferenceInstruction)?.reference
-                                ?.let { it is MethodReference &&
-                                        it.definingClass == ROW_DATA &&
-                                        it.name == "<init>" &&
-                                        it.parameterTypes.toList() == listOf(
-                                            "Lo05;", "Ljava/lang/String;", "Lpw6;"
-                                        )
-                                } == true
-                    } ?: false) &&
-                    (m.implementation?.instructions?.any { ins ->
-                        ins.opcode == Opcode.SGET_OBJECT &&
-                            (ins as? ReferenceInstruction)?.reference?.toString()
-                                ?.contains("Lwhl;->S:Lxrl;") == true
-                    } ?: false)
-            } ?: error("VibrationMenuRowPatch: menu Composable not found")
-
-        val (_, menuMethod) = menu
+        val menuMethod = firstMethod {
+            parameterTypes == listOf("Lf37;", "Lpo7;", "Lv83;", "I") &&
+                returnType == "V" &&
+                (implementation?.instructions?.any { ins ->
+                    ins.opcode == Opcode.INVOKE_DIRECT &&
+                        (ins as? ReferenceInstruction)?.reference
+                            ?.let { it is MethodReference &&
+                                    it.definingClass == ROW_DATA &&
+                                    it.name == "<init>" &&
+                                    it.parameterTypes.toList() == listOf(
+                                        "Lo05;", "Ljava/lang/String;", "Lpw6;"
+                                    )
+                            } == true
+                } ?: false) &&
+                (implementation?.instructions?.any { ins ->
+                    ins.opcode == Opcode.SGET_OBJECT &&
+                        (ins as? ReferenceInstruction)?.reference?.toString()
+                            ?.contains("Lwhl;->S:Lxrl;") == true
+                } ?: false)
+        }
 
         // Find the index right after the LAST invoke-virtual to Lx9d.add(Object)Z.
         val instructions = menuMethod.implementation!!.instructions.toList()

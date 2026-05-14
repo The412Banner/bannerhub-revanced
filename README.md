@@ -19,6 +19,8 @@
   ·
   <a href="#patches-applied">Patches</a>
   ·
+  <a href="PRIVACY.md">Privacy</a>
+  ·
   <a href="#signing">Signing</a>
   ·
   <a href="#build-it-yourself">Build it yourself</a>

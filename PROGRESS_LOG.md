@@ -1926,3 +1926,32 @@ User did a clean install of pre2 APK then ran a full session: launch app, launch
 **Merge commit:** `b043f8c` (`--no-ff` of `feature/stub-analytics-events` into `gamehub-604-build`).
 
 `gamehub-604-build` HEAD now `b043f8c`. **Privacy plans 4 + 5 + 8a + 8b + 8c-pure-stub + 10 + 1 ALL SHIPPED.** Only Plan 9 (PRIVACY.md) remains — write-up against the actually-shipped state including bigeyes.com / GOG-telemetry / Steam-CDN / Firebase-Settings honesty notes.
+
+
+## 2026-05-14 — Plan 9 SHIPPED: PRIVACY.md + README link
+
+### What landed
+
+- `PRIVACY.md` at repo root — the public-facing privacy doc covering the full hardening stack.
+- `README.md` header — added `Privacy` link to the centered navigation row between `Patches` and `Signing`.
+
+### Structure
+
+1. **What we kill** — table of 8 telemetry channels (Firebase Analytics, Mob Push, AD-ID perms, OTA URL, heartbeat tracker, GMS Measurement, `/events`, `/events/device-performance-config`) with one-line mechanism + merge-commit link per row. All commit hashes verified against `git log --merges` before citing per [[always-verify-never-assume-hard-rule]].
+2. **What we deliberately did NOT touch** — `bigeyes.com` (image CDN, Plan 3 deliberately skipped for cost), `firebase-settings.crashlytics.com` (Crashlytics config-fetch leftover, no events upload), `firebaselogging-pa.googleapis.com` (separate logging path; suggested future Plan 11), GOG telemetry, Steam CDN, BannerHub Cloudflare Worker. Each with explicit "what it does / what it leaks / why we kept it" paragraph.
+3. **Trust-shift acknowledgement** — explicitly calls out that catalog API still flows through the Worker (so users see CF+The412Banner instead of XiaoJi for that surface), and that Plan 1's redesign closed the analytics half so telemetry has zero trust shift now.
+4. **Out of scope** — Steam Cloud, GOG online, EOS, anti-cheat, user save data, Windows games themselves.
+5. **Verification recipe** — DNS recorder + logcat + decoded manifest + smali head checks. The same recipe used internally during dev, exposed publicly so users can reproduce.
+6. **Issues link** — explicit invitation to report disclosure gaps as bugs.
+
+### Empirical claim cited
+
+The DNS-recorder evidence captured during the Plan 1 device test (full 6.5-min session, zero queries for `statistic-gamehub-api.vgabc.com` or dev2/beta variants) is cited as the empirical confirmation that the table's claims hold on a real device.
+
+### Doc lives directly on `gamehub-604-build`
+
+No feature branch — doc-only changes follow the precedent of `970fa12` (README badges) landing directly on the active branch.
+
+### Privacy hardening series — COMPLETE
+
+All 8 plans done: 4, 5, 8a, 8b, 8c-pure-stub, 10, 1, 9. Plan 7 dropped at Plan 1 redesign. Plan 6 N/A. Plan 8c local-tracker shelved+preserved at `archive/plan8c-local-tracker-pre3`.

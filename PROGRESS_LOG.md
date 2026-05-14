@@ -1532,3 +1532,28 @@ Rewrote the disclaimer into a lead-in paragraph + three bulleted pipeline stages
 - **Manual verification (closing paragraph):** rooted + unrooted devices; logcat via the `getlog` Magisk helper (linked to The412Banner/logcat-bridge) on rooted, `adb logcat` on unrooted, plus in-app debug log files from the `Debug logging` patch. No stable cut until verified on hardware.
 
 Kept the user's first-person voice ("by me", "my Android phone") and preserved "Claude AI Sonnet 4.6" verbatim from the user's disclaimer text (the model the user specified — not autocorrected to the runtime model).
+
+### 2026-05-13 — Plan 8c local-tracker SHELVED → pure-stub variant on feature/disable-heartbeat
+
+User reported in-game perf cost from pre3 local tracker even though privacy goal was met. Path-1 (local tracker) preserves the in-app playtime UI by recording sessions to `bh_playtime_prefs.xml` with reflection-based `Lekf;` construction; that's per-tick JSON encode + SharedPreferences disk write + a warm reflection cache. Path-2 (pure stub) throws the UI feature away in exchange for zero per-tick cost.
+
+**Archive:** tagged `archive/plan8c-local-tracker-pre3` at `975c4b1` (push acknowledged by origin). Branch `feature/disable-heartbeat-local-tracker` left in place; the tag is the durable anchor.
+
+**New patch:** `patches/src/main/kotlin/app/revanced/patches/gamehub/misc/analytics/DisableHeartbeatPatch.kt` on fresh branch `feature/disable-heartbeat` off `gamehub-604-build` @ `2d4e779`. Sibling to other privacy patches (matches Plans 4/5/8a/8b convention). Four `firstMethod {}` blocks reuse the body-contains-string anchors from the recon (`heartbeat/game/start`, `…/update`, `…/end`, `…/getUserPlayTimeList`) so anchor stability across R8 reshuffles is preserved. Smali snippets:
+
+```smali
+# invokeSuspend bodies (Lfeo / Lheo / Laeo)
+sget-object v0, Lkotlin/Unit;->INSTANCE:Lkotlin/Unit;
+return-object v0
+
+# Lse7;->c  (getUserPlayTimeList)
+new-instance v0, Ljava/util/ArrayList;
+invoke-direct {v0}, Ljava/util/ArrayList;-><init>()V
+new-instance v1, Ln55;
+invoke-direct {v1, v0}, Ln55;-><init>(Ljava/lang/Object;)V
+return-object v1
+```
+
+No extension classes, no resource patch, no dependencies on `sharedGamehubExtensionPatch`. UI iterator over the empty list runs zero passes → no ClassCastException risk (the failure mode that bit pre1/pre2 of the local-tracker variant).
+
+Trade-off accepted by user: in-app playtime display will be empty. Local-tracker tag stays available for revival if users request the feature back.

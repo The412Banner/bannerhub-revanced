@@ -1914,3 +1914,15 @@ APK SHA-256: `83f52c597faccbdc0f5d2e5d3d36e11811a330247ad0690db23510399b973cda`.
 5. Verify GMS prefs frozen: `getlog --cat /data/data/banner.hub/shared_prefs/com.google.android.gms.measurement.prefs.xml` — `last_pause_time` should still be 1778692645533 (yesterday).
 6. If both green → merge `feature/stub-analytics-events` → `gamehub-604-build` with `--no-ff`, push, update memory + progress log + MEMORY.md privacy hook line.
 7. Privacy series state post-merge: Plans 4 + 5 + 8a + 8b + 8c-pure-stub + 10 + 1 all shipped. Only Plan 9 (PRIVACY.md) left.
+
+### Plan 1 — device test result + merge (2026-05-14 ~19:35 EDT)
+
+User did a clean install of pre2 APK then ran a full session: launch app, launch a game, play, quit game, exit app. Captured a DNS recorder trace (started before opening the app, stopped after quit) plus a logcat dump in `log_2026_05_14_19_32_26.log` (1029 lines, spans 19:25:56 → 19:32:17 = ~6.5 minutes of post-install activity).
+
+**DNS recorder evidence** (screenshot `Screenshot_20260514-193241.png`): 12 hosts resolved during the session. **`statistic-gamehub-api.vgabc.com` did NOT appear**, nor did the dev2/beta variants. Hosts that did resolve are all expected non-XiaoJi: `firebase-settings.crashlytics.com` (Crashlytics config fetch — its own DNS path, not analytics), `firebaselogging-pa.googleapis.com` (🚫 blocked marker, not from us), `galaxy-log.gog.com` (GOG), `shared.akamai.steamstatic.com` (Steam image CDN), `play.googleapis.com` + `android.apis.google.com` + `firebaseinstallations.googleapis.com` (Play Services + install ID), plus a few system/browser/Claude-side hosts unrelated to BannerHub. Cleanest possible signal — the stub returns before any URL string is allocated, so the HTTP client never asks DNS to resolve those hosts.
+
+**Logcat evidence**: 0 grep hits for `vgabc.com`/`statistic-gamehub`/`/events` across all 1029 log lines. 0 crashes (no FATAL / AndroidRuntime / ClassCastException / ClassNotFound). 414 banner.hub-tagged lines = real heavy in-app activity. `Lazi`'s `check-cast Lyw5;` succeeded silently (our stub-allocated Lyw5 instance accepted); all 5+ callers of `Loh4;->b` got their expected `Lxnm;` back without cast crashes.
+
+**Merge commit:** `b043f8c` (`--no-ff` of `feature/stub-analytics-events` into `gamehub-604-build`).
+
+`gamehub-604-build` HEAD now `b043f8c`. **Privacy plans 4 + 5 + 8a + 8b + 8c-pure-stub + 10 + 1 ALL SHIPPED.** Only Plan 9 (PRIVACY.md) remains — write-up against the actually-shipped state including bigeyes.com / GOG-telemetry / Steam-CDN / Firebase-Settings honesty notes.

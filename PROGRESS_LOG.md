@@ -1843,3 +1843,74 @@ All three flipped at the same line numbers as pre-patch. Surgical edit, no other
 **Merge commit:** `d4675ec` (`--no-ff` of `feature/disable-gms-measurement` into `gamehub-604-build`), 2026-05-14.
 
 `gamehub-604-build` HEAD now `d4675ec`. Privacy plans 4 + 5 + 8a + 8b + 8c-pure-stub + **10** all shipped. Plans 1+7 (analytics-event Worker redirect) next — recon already complete from yesterday.
+
+
+## 2026-05-14 — Plan 1 reframed as pure client-side stub (Plan 7 dropped)
+
+### Design pivot
+
+Original Plan 1+7 design (yesterday's recon) was to redirect `statistic-gamehub-api.vgabc.com/events*` to the BannerHub Cloudflare Worker and 204 it. User asked whether a simpler local stub would work — the answer is yes, and it's strictly better:
+
+| | Worker redirect (original) | Local stub (chosen) |
+| --- | --- | --- |
+| Repos to touch | 2 (revanced + bannerhub-api) | 1 |
+| Trust shift | XiaoJi → CF+Me | none |
+| Worker invocations | every event burns one | zero |
+| Battery / radio wake | one failed connection per event | zero |
+| Deploy coordination | yes | none |
+
+The 5.3.5 `DisableOtaUpdatesPatch` (shipped as Plan 8b) already uses a similar `127.0.0.1` URL-rewrite technique, but going one level deeper — stubbing the entire send method to early-return — eliminates even the connection attempt. Plan 7 (Worker `/events/*` route) deleted from the inventory.
+
+### Recon (Lcx5; / Lnh4; / Loh4;)
+
+**Lcx5; (general events `/events`)**
+- Single public method: `Lcx5;->a(Ljava/util/Collection;Lci3;)Ljava/lang/Object;` (suspend send-batch).
+- Sole external caller: `Lazi;` at smali line 444 — does `check-cast … Lyw5;` on the result.
+- Return contract: caller expects `Lyw5;` data class — `(boolean success, Integer code, String msg, Throwable err, int defaultMask)` constructor.
+- URLs in body: 3 const-strings (dev2/beta/production); production string is `"https://statistic-gamehub-api.vgabc.com/events"` (no trailing path) — unique enough to anchor on.
+
+**Loh4; (device-performance-config `/events/device-performance-config`)**
+- Public method: `Loh4;->b(IJLci3;)Ljava/lang/Object;` — called by 5+ classes (lh4 zz3 xz3 uz3 b04).
+- `Loh4;->b` calls `Loh4;->c` which constructs `Lnh4;` (the lambda body) which holds the actual URL strings + HTTP send.
+- Caller of `b` (e.g. zz3) does `check-cast … Lxnm;` — `(int, LinkedHashSet)` constructor.
+- URLs not directly in `b`'s body — must anchor by class + name + signature `(IJLci3;)Object`.
+
+**Why stub at public methods, not at the URL-containing lambda body** — callers' `check-cast` contracts force a specific concrete return type. Returning Unit.INSTANCE from `Lnh4;->invokeSuspend` would propagate up to `Loh4;->b` which would then crash trying to build a `Lxnm` from a Unit.
+
+### Patch — `StubAnalyticsEventsPatch.kt`
+
+**Branch:** `feature/stub-analytics-events` off `gamehub-604-build@d4675ec`.
+
+Both methods get an `addInstructions(0, …)` prefix that allocates the expected return type and returns immediately. Hardcoded class letters (`Lcx5`, `Loh4`, `Lyw5`, `Lxnm`) with structural anchors (URL-string-in-body for cx5; class+name+signature for oh4). Recipes for re-deriving each letter on a future base bump are in the patch source header comment.
+
+### pre1 — silent assembly bug
+
+CI run [25890397139](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25890397139) reported 0 SEVERE and `"Stub analytics events" succeeded` 9/9. **But the decoded APK revealed only 5 of the 7 stub instructions landed for Lcx5;->a** — the `invoke-direct` constructor call and `return-object v0` were silently dropped.
+
+**Root cause:** Dalvik's `invoke-direct` standard form (format 35c) is capped at **5 registers**. The Lyw5 constructor takes 6 args (Z, Integer, String, Throwable, I + implicit `this` = 6 regs). The smali assembler bailed on the bad instruction at assembly time without raising a SEVERE, and dropped both that line and the subsequent `return-object`. Net result: v0 was left half-initialized (new-instance only, no ctor call) before the original method body's `move-object/from16 v0, p0` clobbered it — so the entire original send path executed.
+
+**Fix in commit `1a2b588`:** swap to `invoke-direct/range {v0 .. v5}` (format 3rc, range form, no register cap). The Lxnm stub on Loh4;->b was correctly assembled in pre1 because that constructor only uses 3 registers — within the format-35c cap.
+
+### pre2 — clean
+
+CI run [25890683302](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25890683302). 0 SEVERE, 9/9 succeeded.
+
+APK SHA-256: `83f52c597faccbdc0f5d2e5d3d36e11811a330247ad0690db23510399b973cda`. Both stubs landed complete in the decoded smali — `new-instance` → const loads → `invoke-direct[/range]` → `return-object v0`, followed by the now-unreachable original method body.
+
+### Active state (2026-05-14 19:17 EDT — checkpoint)
+
+- Branch `feature/stub-analytics-events` at `1a2b588`, pushed.
+- pre2 APK installed on banner.hub at 19:12 EDT (`profileinstaller_profileWrittenFor_lastUpdateTime.dat` mtime).
+- App not yet exercised — `banner.hub` not running, logcat empty (`getlog -n 10000 banner.hub` returns 0 lines from the app process).
+- Awaiting device test: open app, launch a game, browse Steam cards / leaderboards / online topics for ≥5 minutes. Success signal = zero hits for `statistic-gamehub-api.vgabc.com` or `vgabc.com/events` in logcat during the active session.
+- Side observation (Plan 10 territory, not Plan 1): `com.google.android.gms.measurement.prefs.xml` mtime advanced from yesterday's 16:51 → today 19:17, even with app not running. Likely GMS system process touching the file. Need to check if values actually changed or just mtime — pending fresh `getlog --cat` after device test.
+
+### Resume checklist if session is lost mid-test
+
+1. Pull latest: `cd /data/data/com.termux/files/home/bannerhub-revanced && git pull && git checkout feature/stub-analytics-events`.
+2. APK already installed; if user lost it, re-download via `gh run download 25890683302 --repo The412Banner/bannerhub-revanced --name apk-Normal` (artifacts expire 2026-05-28).
+3. Pull a fresh logcat trace: `getlog -n 20000 banner.hub` → output goes to `/home/claude-user/logcat-banner.hub-<timestamp>.txt`.
+4. Verify: `grep -c "vgabc.com\|statistic-gamehub\|/events" <logfile>` must be 0.
+5. Verify GMS prefs frozen: `getlog --cat /data/data/banner.hub/shared_prefs/com.google.android.gms.measurement.prefs.xml` — `last_pause_time` should still be 1778692645533 (yesterday).
+6. If both green → merge `feature/stub-analytics-events` → `gamehub-604-build` with `--no-ff`, push, update memory + progress log + MEMORY.md privacy hook line.
+7. Privacy series state post-merge: Plans 4 + 5 + 8a + 8b + 8c-pure-stub + 10 + 1 all shipped. Only Plan 9 (PRIVACY.md) left.

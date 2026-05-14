@@ -10,6 +10,8 @@
 
 <p align="center">
   <a href="https://discord.gg/n8S4G2WZQ4"><img src="https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white&style=for-the-badge" alt="Join the The412Banner Discord"/></a>
+  <a href="https://github.com/The412Banner/bannerhub-revanced/releases"><img src="https://img.shields.io/github/downloads/The412Banner/bannerhub-revanced/total.svg?logo=github&label=Downloads&color=blue&style=for-the-badge" alt="Total downloads"/></a>
+  <a href="https://github.com/The412Banner/bannerhub-revanced/releases/latest"><img src="https://img.shields.io/github/downloads/The412Banner/bannerhub-revanced/latest/total.svg?logo=github&label=Latest%20Release&color=brightgreen&style=for-the-badge" alt="Latest release downloads"/></a>
 </p>
 
 <p align="center">

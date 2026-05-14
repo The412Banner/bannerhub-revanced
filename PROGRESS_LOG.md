@@ -1764,3 +1764,41 @@ State to resume from tomorrow:
 **Commit:** `970fa12` on `gamehub-604-build`
 
 Added GitHub downloads badges (total + latest-release) alongside the existing Discord badge in the centered header block. All three badges already in `for-the-badge` style — this was the visual reference used to standardize BannerHub and Bannerhub-Lite the same day. No code changes.
+
+
+## 2026-05-14 — Privacy series resumes: Plan 4 re-verified, Plan 10 implemented
+
+### Plan 4 re-verification (cleared yesterday's blocker)
+
+Pulled the device-confirmed Plan 8c Path 2 APK from CI run [25837778671](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25837778671) artifact `apk-Normal`. SHA-256 `5df7f80f09b83ad70a0c41d76c494997430ca98ef591f691b6a06b80726b2018` matches the merge-time hash in memory — same APK that was sitting on banner.hub yesterday.
+
+Decoded with `apktool d` and grepped `AndroidManifest.xml`:
+
+| Plan 4 meta-data | Manifest line | Result |
+| --- | --- | --- |
+| `firebase_analytics_collection_deactivated="true"` | 324 | present |
+| `google_analytics_adid_collection_enabled="false"` | 325 | present |
+| `google_analytics_ssaid_collection_enabled="false"` | 326 | present |
+
+All three entries land correctly. CI log confirms `"Disable Firebase Analytics" succeeded` on all 9 variants, zero `SEVERE`. Yesterday's "Plan 4 missing" reading was a false negative — most likely a stale decode dir (the user grepped `pre2-decoded/` which was an older artifact decode, not the freshly-built Path 2 APK).
+
+**Bonus spot-checks on the same APK:**
+- Plan 5 (Mob Push) — 13 `enabled="false"` entries in manifest, matches expected count for Layer B.
+- Plan 8a (Ad-ID perms) — 0 `AD_ID`/`ADSERVICES` permissions present, stripped.
+- Plan 10 confirmed needed — lines 252–254 still show `AppMeasurementReceiver`/`Service`/`JobService` with `android:enabled="true"`. GMS is genuinely a separate kill path.
+
+### Plan 10 — Disable GMS Measurement (implementation)
+
+**Branch:** `feature/disable-gms-measurement` off `gamehub-604-build@9e1930e`.
+
+**Patch:** `patches/src/main/kotlin/app/revanced/patches/gamehub/misc/analytics/DisableGmsMeasurementPatch.kt` (57 lines).
+
+Pure resource patch, no bytecode. Walks `<application>` and sets `android:enabled="false"` on exactly three FQCN-matched components:
+
+- `<receiver android:name="com.google.android.gms.measurement.AppMeasurementReceiver">`
+- `<service  android:name="com.google.android.gms.measurement.AppMeasurementService">`
+- `<service  android:name="com.google.android.gms.measurement.AppMeasurementJobService">`
+
+Shape modeled on Plan 5's `disableMobPushManifestPatch` Layer B, but FQCN-exact instead of prefix-based since the GMS Measurement surface is a fixed three-component set, not an arbitrarily-nested SDK namespace.
+
+**Why pure manifest is sufficient (no bytecode layer):** Unlike Mob Push, GMS Measurement does NOT auto-init via a `<provider>`. The two services are bound on demand by other GMS code (PackageManager registration query); the receiver fires on broadcasts. `android:enabled="false"` makes PackageManager treat each as not-present, so the bound-service lookups return null and broadcasts are filtered out before delivery. No call-site removal needed.

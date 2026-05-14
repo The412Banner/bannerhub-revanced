@@ -1532,3 +1532,78 @@ Rewrote the disclaimer into a lead-in paragraph + three bulleted pipeline stages
 - **Manual verification (closing paragraph):** rooted + unrooted devices; logcat via the `getlog` Magisk helper (linked to The412Banner/logcat-bridge) on rooted, `adb logcat` on unrooted, plus in-app debug log files from the `Debug logging` patch. No stable cut until verified on hardware.
 
 Kept the user's first-person voice ("by me", "my Android phone") and preserved "Claude AI Sonnet 4.6" verbatim from the user's disclaimer text (the model the user specified — not autocorrected to the runtime model).
+
+### 2026-05-13 — Plan 8c local-tracker SHELVED → pure-stub variant on feature/disable-heartbeat
+
+User reported in-game perf cost from pre3 local tracker even though privacy goal was met. Path-1 (local tracker) preserves the in-app playtime UI by recording sessions to `bh_playtime_prefs.xml` with reflection-based `Lekf;` construction; that's per-tick JSON encode + SharedPreferences disk write + a warm reflection cache. Path-2 (pure stub) throws the UI feature away in exchange for zero per-tick cost.
+
+**Archive:** tagged `archive/plan8c-local-tracker-pre3` at `975c4b1` (push acknowledged by origin). Branch `feature/disable-heartbeat-local-tracker` left in place; the tag is the durable anchor.
+
+**New patch:** `patches/src/main/kotlin/app/revanced/patches/gamehub/misc/analytics/DisableHeartbeatPatch.kt` on fresh branch `feature/disable-heartbeat` off `gamehub-604-build` @ `2d4e779`. Sibling to other privacy patches (matches Plans 4/5/8a/8b convention). Four `firstMethod {}` blocks reuse the body-contains-string anchors from the recon (`heartbeat/game/start`, `…/update`, `…/end`, `…/getUserPlayTimeList`) so anchor stability across R8 reshuffles is preserved. Smali snippets:
+
+```smali
+# invokeSuspend bodies (Lfeo / Lheo / Laeo)
+sget-object v0, Lkotlin/Unit;->INSTANCE:Lkotlin/Unit;
+return-object v0
+
+# Lse7;->c  (getUserPlayTimeList)
+new-instance v0, Ljava/util/ArrayList;
+invoke-direct {v0}, Ljava/util/ArrayList;-><init>()V
+new-instance v1, Ln55;
+invoke-direct {v1, v0}, Ln55;-><init>(Ljava/lang/Object;)V
+return-object v1
+```
+
+No extension classes, no resource patch, no dependencies on `sharedGamehubExtensionPatch`. UI iterator over the empty list runs zero passes → no ClassCastException risk (the failure mode that bit pre1/pre2 of the local-tracker variant).
+
+Trade-off accepted by user: in-app playtime display will be empty. Local-tracker tag stays available for revival if users request the feature back.
+
+### 2026-05-13 — Plan 8c Path 2 (pure stub) installed on device; verification in progress
+
+User installed `BannerHub-V6-1.1.0-604-stub-pre1-Patched-Normal.apk` (pre1 from `feature/disable-heartbeat` @ `a050b33`, [run 25837778671](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25837778671)) **over** the existing Path 1 local-tracker install (`1.3.0-604-playtime-pre2`). APK is in `/storage/emulated/0/Download/apk-Normal (2)/`, SHA-256 `5df7f80f09b83ad70a0c41d76c494997430ca98ef591f691b6a06b80726b2018`.
+
+**Install evidence (without root-side `/data/app` access):**
+- `/data/data/banner.hub/files/profileinstaller_profileWrittenFor_lastUpdateTime.dat` mtime → `2026-05-13 22:24` — ProfileInstaller writes this once per APK install/update, so it's a reliable install timestamp.
+- `bh_playtime_prefs.xml` last mtime → `2026-05-13 22:05` (DOOMBLADE session `dur:517`, started before update). **Frozen** since the Path 2 install; no further heartbeats written.
+- Post-update launch at 22:26 wrote `pc_g_setting63362.xml`, `sp_winemu_unified_resources.xml`, `com.google.android.gms.measurement.prefs.xml` — but **NOT** `bh_playtime_prefs.xml`. First positive signal.
+
+**Cross-check on the APK on disk** (Downloads copy, assumed identical to installed):
+- All 9 classesN.dex scanned — **zero hits** for `BhPlayTimeTracker` or `bh_playtime_prefs` strings, confirming Path 1's extension class is gone.
+- Compare against Path 1 pre2 APK on the same device: 4 dex files contain `Lapp/revanced/extension/gamehub/playtime/BhPlayTimeTracker;`. Clear delta.
+
+**Pending definitive test** (cannot complete from PRoot side):
+1. User launches a Wine game from BannerHub.
+2. Plays for ≥60s (Path 1 ticked heartbeat every 30s; Path 2 should tick zero).
+3. Re-check `getlog --ls /data/data/banner.hub/shared_prefs/bh_playtime_prefs.xml` mtime.
+4. **Pass:** mtime still `2026-05-13 22:05`. **Fail:** mtime advances (would mean Path 1 still resident somehow).
+
+**Why root-side `/data/app/.../base.apk` isn't readable**: logcat-bridge allowlist excludes `/data/app/`. The Downloads copy + ProfileInstaller timestamp + prefs-mtime delta are the workable triangulation when the installed APK itself is out of reach. Recording this as the reference recipe for future "what's installed?" checks.
+
+Branch state unchanged: `feature/disable-heartbeat` @ `a050b33` still the head. Once verification passes, the merge to `gamehub-604-build` is the only remaining step before this plan ships.
+
+### 2026-05-13 — Plan 8c Path 2 (pure stub) DEVICE-CONFIRMED + merging to gamehub-604-build
+
+User ran DOOMBLADE for several minutes after the 22:24 install. Re-checked `bh_playtime_prefs.xml` at ~23:02:
+
+- **mtime: `2026-05-13 22:05`** — unchanged from pre-install. Stale Path 1 data preserved (last session `dur:517`), zero new writes during gameplay.
+- Meanwhile the rest of the app was clearly active:
+  - `pc_g_setting63362.xml` (DOOMBLADE config) → 22:26 (2 min after install)
+  - `sp_winemu_unified_resources.xml` (Winlator registry) → 22:59
+  - `com.google.android.gms.measurement.prefs.xml` → 23:02
+  - Directory `.` mtime → 23:02
+
+That's the definitive signal: heartbeat start/update/end paths produce zero side effects during a real gameplay session. Pure stub fully neutralizes the telemetry without the per-tick JSON encode + SharedPreferences write + reflection cost of Path 1.
+
+**Merging `feature/disable-heartbeat` → `gamehub-604-build` (--no-ff).**
+
+#### Path 1 (local tracker) — preserved for future revival
+
+The Path 1 variant (which keeps the in-app playtime UI working by routing heartbeat ticks into a local `BhPlayTimeTracker` instead of the XiaoJi network call) is **NOT being deleted**. It remains fully recoverable:
+
+- **Branch:** `feature/disable-heartbeat-local-tracker` @ `975c4b1` (local + origin)
+- **Tag:** `archive/plan8c-local-tracker-pre3` (durable anchor — branches can be force-pushed, tags shouldn't be)
+- **Files it ships** (entirely separate from Path 2's filenames, so the two never collide on the filesystem):
+  - `extensions/.../gamehub/playtime/BhPlayTimeTracker.java` (300 lines — the runtime tracker)
+  - `patches/.../gamehub/playtime/DisableHeartbeatLocalTrackerPatch.kt` (162 lines — the patch wiring it in)
+
+If a user (or batch of users) later requests the in-app playtime UI back, the path is: revert the Path 2 merge, then merge `feature/disable-heartbeat-local-tracker`. Or cherry-pick its two source files onto a fresh branch if we want both variants offered as separate patches users can toggle in `revanced-cli --include`. Either way, no rebuild from scratch needed.

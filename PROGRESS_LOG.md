@@ -1562,3 +1562,23 @@ Rewrote the disclaimer into a lead-in paragraph + three bulleted pipeline stages
 - **Manual verification (closing paragraph):** rooted + unrooted devices; logcat via the `getlog` Magisk helper (linked to The412Banner/logcat-bridge) on rooted, `adb logcat` on unrooted, plus in-app debug log files from the `Debug logging` patch. No stable cut until verified on hardware.
 
 Kept the user's first-person voice ("by me", "my Android phone") and preserved "Claude AI Sonnet 4.6" verbatim from the user's disclaimer text (the model the user specified — not autocorrected to the runtime model).
+
+### 2026-05-13 — Plan 8c pre3: fix Lekf cast + rebuild tracker hot path
+
+User device-tested pre2 (Ln55 wrapper fix). Two follow-on issues:
+
+1. **Crash on launch — wrong entity class.** Crash buffer surfaced `ClassCastException: com.xiaoji.egggame.game.data.remote.PcGamePlayTimeEntity cannot be cast to ekf` at `f4d.invokeSuspend:83`. The Ln55 wrap from pre2 fixed the outer `Lo55` cast (`:51`), but the inner per-element cast was crashing because `Lse7;->c` returns `List<Lekf;>` (UI domain model), not `List<PcGamePlayTimeEntity>` (the upstream network DTO). We built the wrong shape.
+
+   Decompiled `smali_classes2/ekf.smali`: ctor is `(I, S, S, S, S, S, S, J, J, J)V` — same shape as PcGamePlayTimeEntity, but at the R8-renamed top-level class `Lekf;`. Filter at `f4d:83` reads `Lekf;->d:Ljava/lang/String;` and only keeps rows where `d.equals("2")` — so `d` is mandatory `"2"`.
+
+2. **Horrible in-game performance.** Pre2's `tick` ran on every heartbeat (typically every few seconds during gameplay) and on each call did: reflection-driven `appContext()`, SharedPreferences read, `new JSONObject(raw)` parse of the full per-game blob, append to an unbounded `sessions` JSONArray, full re-serialize, disk write. Original network heartbeat was a fire-and-forget POST on the IO dispatcher — we replaced it with synchronous disk I/O + GC pressure that contended with the game.
+
+**Fix in `BhPlayTimeTracker.java`:**
+- Cache `appContext` and the reflective `Lekf` ctor in `volatile` static fields — reflection only once per process.
+- In-memory `Map<String, ActiveSession>` holds the running game's strings + `sessionStartMillis` + `persistedSeconds`. `tick` updates this in memory and only flushes to prefs if >= 60s since last flush, so disk writes happen at most once per minute per game (instead of once per ~5s).
+- `sessions` JSONArray only grows on `recordEnd` (one row per completed session, not per tick). `pruneAndCap` enforces the 14-day window AND a hard cap of 32 sessions per game.
+- `getPcEntityList` constructs `Lekf` instances reflectively with `d = "2"` hard-coded so the UI filter passes, plus a "live-session top-up" so the currently-running game's playtime is reflected even before its first flush.
+
+**Patch source unchanged in shape** — the smali hooks still call `recordStart/tick/recordEnd` and `getPcEntityList` then wrap in `Ln55`. Only the Java extension changed. Comment block updated with `Lekf;` + `Lo55;` entries for future-bump re-derivation.
+
+**Per-bump fragility:** `LEKF_CLASS_NAME = "ekf"` is hardcoded in BhPlayTimeTracker.java alongside the existing `Lieo/Lfeo/Lheo/Laeo/Lse7` constants in the patch source. On each minor base bump, re-derive by finding the class with `(I, String x6, J, J, J)V` ctor whose field `d` the UI filters against `"2"`.

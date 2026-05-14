@@ -26,6 +26,11 @@ import com.android.tools.smali.dexlib2.iface.reference.StringReference
 //   - Laeo;          ← SuspendLambda for heartbeat/game/end
 //   - Lse7;          ← Retrofit-impl wrapper. Method c(Lci3;)Object is
 //                       getUserPlayTimeList — the GET the UI consumes.
+//   - Lekf;          ← UI domain entity for a playtime row. Ctor (I, S×6, J, J, J)V.
+//                       The UI iterator in f4d.invokeSuspend filters by field
+//                       `d == "2"`, so BhPlayTimeTracker hard-codes that.
+//   - Lo55;          ← Sealed wrapper: Ln55 (success, .a() unwraps) /
+//                       Lm55 (failure, .a() returns null).
 //
 // Each SuspendLambda holds a `final synthetic this$0:Lieo;` field pointing
 // at the outer Lieo tracker. We read Lieo's a-e Strings via this$0, hand them
@@ -38,8 +43,8 @@ import com.android.tools.smali.dexlib2.iface.reference.StringReference
 // strings stay the same (they have for every minor version so far), the
 // methods are still findable — but the iget refs below WILL need re-derivation
 // against the new letters. On a minor bump, expect SEVERE on apply with
-// "Field not found" — re-derive Lieo / Lfeo / Lheo / Laeo / Lse7 from a fresh
-// decompile and update the constants here.
+// "Field not found" — re-derive Lieo / Lfeo / Lheo / Laeo / Lse7 / Lekf from a
+// fresh decompile and update the constants here AND in BhPlayTimeTracker.
 // =============================================================================
 
 // Hard-coded against 6.0.4 — re-derive on minor bumps.

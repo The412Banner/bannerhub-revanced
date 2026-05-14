@@ -1802,3 +1802,44 @@ Pure resource patch, no bytecode. Walks `<application>` and sets `android:enable
 Shape modeled on Plan 5's `disableMobPushManifestPatch` Layer B, but FQCN-exact instead of prefix-based since the GMS Measurement surface is a fixed three-component set, not an arbitrarily-nested SDK namespace.
 
 **Why pure manifest is sufficient (no bytecode layer):** Unlike Mob Push, GMS Measurement does NOT auto-init via a `<provider>`. The two services are bound on demand by other GMS code (PackageManager registration query); the receiver fires on broadcasts. `android:enabled="false"` makes PackageManager treat each as not-present, so the bound-service lookups return null and broadcasts are filtered out before delivery. No call-site removal needed.
+
+### Plan 10 — pre1 verification + device test
+
+**CI run [25881040284](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25881040284)** — 3m17s, conclusion=success, 0 SEVERE, `"Disable GMS Measurement"` succeeded on all 9 variants, Plan 4 still succeeding (no cross-patch regression). APK SHA-256: `4b330e12261c710f0ded068b2421618fa7809af9a3dfde021b18e2a2c6402d6c`.
+
+Manifest grep on decoded `apk-Normal` (lines 252-254):
+
+```
+<receiver android:enabled="false" ... AppMeasurementReceiver/>
+<service  android:enabled="false" ... AppMeasurementService/>
+<service  android:enabled="false" ... AppMeasurementJobService ... permission=BIND_JOB_SERVICE/>
+```
+
+All three flipped at the same line numbers as pre-patch. Surgical edit, no other manifest churn. Plan 4 entries still at 324-326.
+
+### Plan 10 — device test (banner.hub)
+
+**Install:** 2026-05-14 16:19 (`profileinstaller_profileWrittenFor_lastUpdateTime.dat`).
+
+**Usage between baseline and post-test:** game launched + quit (Wine container exercised), app backgrounded for work session, reopened, cycled tabs (home/library), browsed Steam games, online topics, leaderboards. ~30+ minutes of mixed activity including foreground/background cycles.
+
+**Result — `/data/data/banner.hub/shared_prefs/com.google.android.gms.measurement.prefs.xml`:**
+
+| Metric | Baseline | Post-test | Note |
+| --- | --- | --- | --- |
+| `session_id` | 1778690101 | 1778690101 | frozen |
+| `last_pause_time` | 1778692645533 | 1778692645533 | **frozen — decodes to 2026-05-13 22:37 UTC (yesterday's pause)** |
+| `health_monitor:start` | 1778748219665 | 1778748219665 | frozen |
+| `app_instance_id` | 6db38be8…472c | 6db38be8…472c | unchanged |
+
+**The decisive signal:** `last_pause_time` would normally advance on every pause if GMS Measurement were alive. It hasn't moved despite real pause/resume activity today. **GMS Measurement is no longer recording session events.** ✅
+
+**One mtime curiosity:** file mtime is 16:51 (~30 min after install), but all values are unchanged from baseline. Almost certainly a no-op `SharedPreferences.apply()` during the install transition that touched mtime without changing data. Worth noting but not a failure — data isn't advancing.
+
+**Side-effect check:** game launch, online topics, leaderboards, Steam cards, tab navigation all worked normally. No GMS consumer broke.
+
+### Plan 10 — MERGED to gamehub-604-build
+
+**Merge commit:** `d4675ec` (`--no-ff` of `feature/disable-gms-measurement` into `gamehub-604-build`), 2026-05-14.
+
+`gamehub-604-build` HEAD now `d4675ec`. Privacy plans 4 + 5 + 8a + 8b + 8c-pure-stub + **10** all shipped. Plans 1+7 (analytics-event Worker redirect) next — recon already complete from yesterday.

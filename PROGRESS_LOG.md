@@ -1748,3 +1748,13 @@ Tomorrow: re-decode the freshly-installed Plan 8c Path 2 APK (downloaded today) 
 2. Plan 1 + Plan 7 together — they're coupled (Plan 1 alone would let the Worker proxy events to XiaoJi via its catch-all; Plan 7 alone has nothing pointed at it). Branch `feature/disable-analytics-events` for the APK side; Worker change pushed to `bannerhub-api` separately. Coordinated deploy.
 3. Plan 10 (GMS Measurement) — separate branch `feature/disable-gms-measurement`. Pure resource patch, no bytecode.
 4. Then Plan 9 (PRIVACY.md) — written against the actually-shipped state, including the bigeyes.com image CDN honesty note discussed today.
+
+#### EOD checkpoint — session ends 2026-05-13 evening
+
+State to resume from tomorrow:
+
+- `gamehub-604-build` HEAD = `7f2f851` (this recon commit, pushed).
+- Last merged feature = `feature/disable-heartbeat` → merge commit `519ba65` (Plan 8c Path 2, device-confirmed).
+- No open branches in flight — all recon lives on `gamehub-604-build` itself.
+- **First action tomorrow:** decode `/storage/emulated/0/Download/apk-Normal (2)/BannerHub-V6-1.1.0-604-stub-pre1-Patched-Normal.apk` and grep its `AndroidManifest.xml` for `firebase_analytics_collection_deactivated`. If present → Plan 4 is good, start Plans 1+7. If absent → Plan 4 silently failed in build, fix it first before anything else lands.
+- Both Plans 1+7 and Plan 10 have full recon notes above; tomorrow is implementation, not investigation.

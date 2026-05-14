@@ -65,6 +65,11 @@ private const val LOH4 = "Loh4;"
 private const val LYW5 = "Lyw5;"
 private const val LXNM = "Lxnm;"
 
+// NOTE: invoke-direct's standard form (Dalvik format 35c) is capped at 5
+// registers. The Lyw5 constructor takes 6 args (Z, Integer, String, Throwable,
+// I + the implicit `this` = 6 total registers), so we use invoke-direct/range.
+// (Format 35c silently drops the instruction at assembly time without raising
+// SEVERE — first attempt hit this exact pitfall.)
 private val returnYw5Success = """
     new-instance v0, $LYW5
     const/4 v1, 0x1
@@ -72,7 +77,7 @@ private val returnYw5Success = """
     const/4 v3, 0x0
     const/4 v4, 0x0
     const/4 v5, 0x0
-    invoke-direct {v0, v1, v2, v3, v4, v5}, $LYW5-><init>(ZLjava/lang/Integer;Ljava/lang/String;Ljava/lang/Throwable;I)V
+    invoke-direct/range {v0 .. v5}, $LYW5-><init>(ZLjava/lang/Integer;Ljava/lang/String;Ljava/lang/Throwable;I)V
     return-object v0
 """.trimIndent()
 

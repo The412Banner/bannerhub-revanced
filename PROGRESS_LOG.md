@@ -1607,3 +1607,144 @@ The Path 1 variant (which keeps the in-app playtime UI working by routing heartb
   - `patches/.../gamehub/playtime/DisableHeartbeatLocalTrackerPatch.kt` (162 lines — the patch wiring it in)
 
 If a user (or batch of users) later requests the in-app playtime UI back, the path is: revert the Path 2 merge, then merge `feature/disable-heartbeat-local-tracker`. Or cherry-pick its two source files onto a fresh branch if we want both variants offered as separate patches users can toggle in `revanced-cli --include`. Either way, no rebuild from scratch needed.
+
+### 2026-05-13 — Legacy GLES2 renderer toggle — DRAFTED, NOT STARTED (shelved pending perf data)
+
+User asked whether a ReVanced patch could re-implement GameHub 6.0.2's GLES2 renderer as a toggle in 6.0.4, after we walked through the byte-level renderer rewrite documented in `gamehub_reports/GAMEHUB_600_MASTER_MAP.md` § 26.23. Scoping captured here so we can pick it back up later.
+
+**Background.** 6.0.2 ran an OpenGL ES 2.0 + EGL renderer in `libxserver.so` with an `ASurfaceTransaction` plane compositor for the cursor in `libwinemu.so`. 6.0.4 replaced both with a Vulkan compositor (four backends registered: `winemu-xserver`, `winemu-flip`, `winemu-vk`, `lorie-vk`; cursor folded into the Vulkan path under `g.cursor.ds`). The Vulkan path is what makes AI frame-gen and the libGameScopeVK ICD chain work — the SPIR-V HDR tone-map shaders shipped as dead-weight assets in 6.0.2 and only went live in 6.0.4 once the consumer existed.
+
+**Architectural verdict: feasible.** Every individual technique required has shipped on `gamehub-604-build` already:
+
+| Step | Existing precedent |
+|---|---|
+| Bundle additional `.so` files in `lib/arm64-v8a/` | Vibration patch ships `libevshim.so` |
+| Smali `System.loadLibrary` hook to route by SharedPreferences flag | Standard smali patching |
+| Restore deleted `DirectRendering` Java class as smali stubs | Unsafe.allocateInstance + Proxy patterns from menu-injection playbook (pre7→pre17 trail) |
+| Conditionally short-circuit `XServer.setFlipEnabled(Z)V` + `onFlipStateChanged(Z)V` | Standard smali branch insertion |
+| Settings UI row for the toggle | Menu-injection playbook (`Lx57.a()` + `Lpzc.j0()`) |
+
+**Real blockers (technical, not patcher-side).**
+
+1. **libwinemu pairing.** The 6.0.2 GLES2 path depends on the `ASurfaceTransaction*` plane-compositor symbols that live in 6.0.2's `libwinemu.so` — but that libwinemu also contains unrelated 6.0.3/6.0.4 fixes (input, audio, controller, etc.). Running it may regress those. **Unanswered until a load-test build runs.**
+2. **JNI symbol drift.** Restored `DirectRendering` smali stubs must match the exact JNI signatures the 6.0.2 libxserver expects to call back into. Each missing method = crash class.
+3. **Frame-gen + libGameScopeVK + HDR tone-mapping go inert** in legacy mode. Release notes would need to explain the trade-off; users opting in lose the Vulkan-only features.
+4. **APK size +~5 MB** for the two bundled libs.
+5. **revanced-cli SEVERE-doesn't-fail-CI anti-pattern.** Per menu-injection playbook — CI step would need explicit log scanning so a partial patch failure can't ship green.
+
+**Proposed first milestone if/when this resumes.**
+
+Before building the toggle, prove the 6.0.2 lib pair even loads under 6.0.4's Kotlin/runtime:
+
+- Branch: `feature/legacy-gles2-renderer` off `gamehub-604-build` (per branch-per-patch workflow).
+- Patch class: `LegacyGles2RendererPatch.kt`.
+- Asset drop + smali loadLibrary hook with a **hardcoded "always legacy" flag** (no SharedPreferences, no UI).
+- CI build → device install → does it launch? Does any game render?
+- If it crashes on launch or every game black-screens → toggle work is moot, close the branch.
+- Only if step above passes: add SharedPreferences toggle + Settings UI row + per-game override.
+
+**Why it's on the shelf.** No perf data yet showing GLES2 would actually win on any device class. Vulkan-on-Adreno is generally lower-overhead; the legitimate revisit triggers are (a) a device class reports clear Vulkan-renderer regressions (Mali-G57-class, pre-Adreno-6xx, Helio-G99 territory), or (b) a specific game family demonstrably runs better under GLES2.
+
+**Fallback if the toggle isn't worth the effort.** Ship a separate "BannerHub Legacy GLES2" variant built off the 6.0.2 APK base — same pattern as the PuBG variant pinned at 5.3.5. No dual-lib bundling, no JNI shim work, no toggle UI. Trade-off: separate install, not a setting.
+
+**Status.** No branch created. No code written. Memory entry at `project_bannerhub_revanced_legacy_gles2_renderer.md` carries the same scope so the concept survives across sessions.
+
+### 2026-05-13 — Plans 1+7+GMS Measurement recon (work scheduled for tomorrow)
+
+After merging Plan 8c Path 2, ran recon for the three remaining privacy items so tomorrow's session opens with concrete patch shapes.
+
+#### Plan 1 — analytics-event host redirect (APK side)
+
+Source of the host list: `RedirectCatalogApiPatch.kt:51-53` already documents what it deliberately left untouched. The analytics-event hosts are `landscape-api-*-*.vgabc.com/events`. Grepped the 6.0.4 decompile at `/data/data/com.termux/files/home/gamehub_604_decompile/` and found **two** smali files with these strings:
+
+**File 1: `smali_classes4/cx5.smali`** — general analytics events. Standard if-eqz environment switch:
+
+```
+if (BuildConfig.DEBUG)               host = "https://dev2-gamehub-api.vgabc.com/events"               (line 630)
+else if (Lz40;->b == Lesj;->d /*Beta*/)
+                                     host = "https://landscape-api-beta.vgabc.com/events"             (line 650)
+else                                 host = "https://statistic-gamehub-api.vgabc.com/events"          (line 658)  ← PRODUCTION
+```
+
+**File 2: `smali_classes4/nh4.smali`** — device-performance-config sub-endpoint. Same switch shape:
+
+```
+                                     "https://dev2-gamehub-api.vgabc.com/events/device-performance-config"               (line 183)
+                                     "https://landscape-api-beta.vgabc.com/events/device-performance-config"             (line 203)
+                                     "https://statistic-gamehub-api.vgabc.com/events/device-performance-config"          (line 211)  ← PRODUCTION
+```
+
+**The production analytics host is `statistic-gamehub-api.vgabc.com`** — distinct from the catalog hosts (`landscape-api-{cn,oversea}.vgabc.com`) that the existing catalog redirect already swapped. So this is genuinely new traffic; not double-covered.
+
+**Patch shape.** Two `bytecodePatch { ... }` blocks (one per file), each using the same `indexOfFirstInstructionOrThrow { CONST_STRING && StringReference == X }` find-and-replace as `RedirectCatalogApiPatch`. Belt-and-braces option: swap all 6 const-strings (3 in each file) — that way even if a future Beta-flag flip occurred, traffic stays inside the Worker. Cheap; recommended.
+
+R8 letters to track for future base bumps: `Lcx5;` and `Lnh4;` will rename. Anchor by string content (`statistic-gamehub-api.vgabc.com/events`), not by class letter — same pattern as the privacy-hardening playbook.
+
+#### Plan 7 — Worker `/events/*` route (Cloudflare Worker side)
+
+Inspected `/data/data/com.termux/files/home/bannerhub-api/bannerhub-worker.js` (1203 lines).
+
+- Entry point: `async fetch(request, env, ctx)` at line 495.
+- 6.0 client gate strips `/v6/` prefix to `is60=true` (line 505-508).
+- OPTIONS preflight handler at line 521.
+- Routes follow `if (url.pathname === '/foo') return handleFoo(...)` early-return pattern.
+- Catch-all fallback at line 1167: `fetch(${GAMEHUB_API}${url.pathname}${url.search}, ...)` — this is the layer that would forward analytics events to XiaoJi if we did nothing.
+
+**Insertion point.** Between line 525 (OPTIONS return) and line 528 (`const time = ...`). Insert:
+
+```js
+// Analytics events — Plan 7. Patched APK redirects statistic-gamehub-api.vgabc.com
+// here; silently drop with 204 to keep the app's fire-and-forget call from
+// retrying. Matches /events and /events/<anything> for current + future paths.
+if (url.pathname === '/events' || url.pathname.startsWith('/events/')) {
+  return new Response(null, { status: 204, headers: corsHeaders })
+}
+```
+
+Place BEFORE the catch-all so the path never reaches the GAMEHUB_API forward. corsHeaders is in scope at the insertion point.
+
+**Deploy mechanics.** Per [[project_bannerhub_api_worker]] there's a no-wrangler deploy recipe. Doc cross-link will go into the Plan 7 commit message.
+
+#### Plan 10 — GMS Measurement kill (NEW finding, was not in original plan list)
+
+Pulled `/data/data/banner.hub/shared_prefs/com.google.android.gms.measurement.prefs.xml` via getlog. **Active and writing locally** despite Plan 4 having shipped (Plan 4 disables Firebase Analytics SDK init, but GMS Measurement is a separate Google Play Services component):
+
+```
+measurement_enabled_from_api=true
+measurement_enabled=true
+deferred_analytics_collection=false
+session_id=1778690101
+app_instance_id=6db38be8b76e59c8d22db2e059ee472c   ← persistent per-install identifier
+gmp_app_id=1:304891727788:android:e27ed4a7a22bdbc9adb409
+non_personalized_ads=true
+consent_settings=G101
+dma_consent_settings=-20:0
+use_service=true                                     ← routes via AppMeasurementService
+```
+
+`use_service=true` means the SDK ships data out via the system-level `AppMeasurementService`. AndroidManifest declares three components (all currently `android:enabled="true"`):
+
+```xml
+<receiver android:enabled="true" android:exported="false"
+          android:name="com.google.android.gms.measurement.AppMeasurementReceiver"/>
+<service  android:enabled="true" android:exported="false"
+          android:name="com.google.android.gms.measurement.AppMeasurementService"/>
+<service  android:enabled="true" android:exported="false"
+          android:name="com.google.android.gms.measurement.AppMeasurementJobService"
+          android:permission="android.permission.BIND_JOB_SERVICE"/>
+```
+
+**Patch shape (analogous to Plan 5's manifest Layer B).** Resource patch that walks `<application>` and sets `android:enabled="false"` on every `<receiver>`/`<service>` whose name starts with `com.google.android.gms.measurement.`. Three components total in 6.0.4. Same DOM-walk pattern as `DisableMobPushPatch.kt`'s manifest companion.
+
+**Side-finding to verify tomorrow before writing Plan 10.** Grepping `pre2-decoded/AndroidManifest.xml` (last installed APK before today's Path 2) shows **none** of Plan 4's three meta-data entries (`firebase_analytics_collection_deactivated`, `google_analytics_adid_collection_enabled`, `google_analytics_ssaid_collection_enabled`) actually present. Two possibilities:
+1. `feature/disable-heartbeat-local-tracker` (the source branch for pre2) branched off `gamehub-604-build` *before* Plan 4's merge `178c5ec` landed, so Plan 4's manifest changes simply weren't carried into this build.
+2. Plan 4 silently failed in the build pipeline (the revanced-cli `SEVERE`-without-failure anti-pattern from the menu-injection playbook).
+
+Tomorrow: re-decode the freshly-installed Plan 8c Path 2 APK (downloaded today) and re-check. If still missing, Plan 4 needs a re-verification pass before Plan 10 lands so we don't ship "Plan 10 kills GMS" without confirming Plan 4 actually killed Firebase Analytics.
+
+#### Suggested order tomorrow
+
+1. Verify Plan 4 manifest entries in the freshly-built Path 2 APK (decode `BannerHub-V6-1.1.0-604-stub-pre1-Patched-Normal.apk` from Downloads, grep manifest). If absent → fix Plan 4 first; if present → proceed.
+2. Plan 1 + Plan 7 together — they're coupled (Plan 1 alone would let the Worker proxy events to XiaoJi via its catch-all; Plan 7 alone has nothing pointed at it). Branch `feature/disable-analytics-events` for the APK side; Worker change pushed to `bannerhub-api` separately. Coordinated deploy.
+3. Plan 10 (GMS Measurement) — separate branch `feature/disable-gms-measurement`. Pure resource patch, no bytecode.
+4. Then Plan 9 (PRIVACY.md) — written against the actually-shipped state, including the bigeyes.com image CDN honesty note discussed today.

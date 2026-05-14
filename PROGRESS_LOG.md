@@ -1758,3 +1758,9 @@ State to resume from tomorrow:
 - No open branches in flight — all recon lives on `gamehub-604-build` itself.
 - **First action tomorrow:** decode `/storage/emulated/0/Download/apk-Normal (2)/BannerHub-V6-1.1.0-604-stub-pre1-Patched-Normal.apk` and grep its `AndroidManifest.xml` for `firebase_analytics_collection_deactivated`. If present → Plan 4 is good, start Plans 1+7. If absent → Plan 4 silently failed in build, fix it first before anything else lands.
 - Both Plans 1+7 and Plan 10 have full recon notes above; tomorrow is implementation, not investigation.
+
+
+### [docs] — README badges expansion (2026-05-14)
+**Commit:** `970fa12` on `gamehub-604-build`
+
+Added GitHub downloads badges (total + latest-release) alongside the existing Discord badge in the centered header block. All three badges already in `for-the-badge` style — this was the visual reference used to standardize BannerHub and Bannerhub-Lite the same day. No code changes.

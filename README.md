@@ -5,7 +5,7 @@
 <h1 align="center">BannerHub v6 for ReVanced</h1>
 
 <p align="center">
-  Pre-built APKs and the patch bundle that produces them — built on top of <a href="https://www.gamehubglobal.com/">XiaoJi GameHub</a> 6.0.4 (<code>com.xiaoji.egggame</code>).
+  Pre-built APKs and the patch bundle that produces them — built on top of <a href="https://gamehub.xiaoji.com/">XiaoJi GameHub</a> 6.0.4 (<code>com.xiaoji.egggame</code>).
 </p>
 
 <p align="center">
@@ -366,7 +366,7 @@ BannerHub v6 is a patch bundle — almost nothing under the hood is our work. Ev
 | [Box64](https://github.com/ptitSeb/box64) | x86-64 → AArch64 dynamic recompiler | Sébastien Chevalier ([@ptitSeb](https://github.com/ptitSeb)) and contributors |
 | [FEX-Emu (FEXCore)](https://github.com/FEX-Emu/FEX) | x86 / x86-64 → AArch64 emulator with Wine + JIT integration | FEX-Emu team — PPA flavour downstream of [FEX-Emu/FEX-ppa](https://github.com/FEX-Emu/FEX-ppa) |
 | [Mesa Turnip](https://gitlab.freedesktop.org/mesa/mesa) | Open-source Vulkan driver for Qualcomm Adreno GPUs (part of [Mesa 3D](https://www.mesa3d.org/)) | Rob Clark, Connor Abbott, Danylo Piliaiev, and many contributors. Adreno forks BannerHub serves: [Banners-Turnip](https://github.com/The412Banner/Banners-Turnip), [StevenMXZ](https://github.com/StevenMXZ), [whitebelyash](https://github.com/whitebelyash). |
-| [XiaoJi GameHub](https://www.gamehubglobal.com/) | The closed-source host APK we patch | XiaoJi GameHub Team |
+| [XiaoJi GameHub](https://gamehub.xiaoji.com/) | The closed-source host APK we patch | XiaoJi GameHub Team |
 | [ReVanced](https://revanced.app/) | Patcher framework, CLI, and patch SDK | ReVanced team — source at [github.com/revanced](https://github.com/revanced) |
 | [TideGear / GameHub-Vibration-Fix](https://github.com/TideGear/GameHub-Vibration-Fix) | 6.0.2 port of BannerHub PR #80 — basis of our `PC-accurate vibration` patch | [@TideGear](https://github.com/TideGear) |
 

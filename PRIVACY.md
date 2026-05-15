@@ -2,7 +2,7 @@
 
 This document tells you what BannerHub v6 actually does to your data flow — both what it **kills** and what it **leaves in place**. The honest list of both matters: anyone running a DNS recorder against this APK can verify both halves, and we'd rather disclose the leftovers up-front than have you discover them yourself.
 
-It only covers the **BannerHub-side patches**. It does not cover GameHub's upstream behavior (refer to [XiaoJi's docs](https://www.gamehubglobal.com/)), the Wine / Box64 stack, or the individual Windows games you run inside it.
+It only covers the **BannerHub-side patches**. It does not cover GameHub's upstream behavior (refer to [XiaoJi's GameHub site](https://gamehub.xiaoji.com/)), the Wine / Box64 stack, or the individual Windows games you run inside it.
 
 ---
 

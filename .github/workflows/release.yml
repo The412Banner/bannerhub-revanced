@@ -165,7 +165,7 @@ jobs:
         # never apply to any variant that doesn't explicitly -e them.
         variant:
           - { name: Normal,         pkg: "banner.hub",                 label: "BannerHub v6",               extra: "" }
-          - { name: Lite,           pkg: "gamehub.lite",               label: "BannerHub v6 Lite",          extra: '-e "Strip duplicate font" -e "Disable Aliyun NumberAuth" -e "Strip cloud gaming"' }
+          - { name: Lite,           pkg: "gamehub.lite",               label: "BannerHub v6 Lite",          extra: '-e "Strip duplicate font" -e "Disable Aliyun NumberAuth" -e "Strip cloud gaming" -e "Strip AVIF/HEIC codecs"' }
           - { name: PuBG,           pkg: "com.tencent.ig",             label: "BannerHub v6 PuBG",          extra: "" }
           - { name: AnTuTu,         pkg: "com.antutu.ABenchMark",      label: "BannerHub v6 AnTuTu",        extra: "" }
           - { name: alt-AnTuTu,     pkg: "com.antutu.benchmark.full",  label: "BannerHub v6 AnTuTu",        extra: "" }
@@ -333,7 +333,7 @@ jobs:
 
             ### Variants
 
-            Nine APKs are produced, each with a different package name + launcher label so they install side-by-side. Eight share one patch bundle; the **Lite** variant additionally strips a verified-dead duplicate 20 MB font, the Aliyun carrier-login native lib, and the Haima cloud-gaming stack (~28 MB smaller on disk; cloud gaming — non-functional under the BannerHub catalog redirect — is the only removed feature). The `Original` variant **replaces** an installed GameHub; the rest install **alongside** the original.
+            Nine APKs are produced, each with a different package name + launcher label so they install side-by-side. Eight share one patch bundle; the **Lite** variant additionally strips a verified-dead duplicate 20 MB font, the Aliyun carrier-login native lib, the Haima cloud-gaming stack, and the avif-coil AVIF/HEIC image-codec stack (~42 MB smaller on disk). Removed features: cloud gaming (non-functional under the BannerHub catalog redirect anyway) and the bundled AVIF/HEIC decoder — modern Android still renders HEIF/AVIF via the platform decoder, JPEG/PNG/WebP unaffected. The `Original` variant **replaces** an installed GameHub; the rest install **alongside** the original.
 
             | Variant | APK | Package | Launcher label |
             | --- | --- | --- | --- |

@@ -2223,3 +2223,33 @@ render (JPEG/PNG/WebP/GIF fine). Prevalence of AVIF/HEIC in BannerHub
 cover/avatar art is unknown — recommend settling empirically via a Tier-4
 pre3 device test rather than analysis. Product trade-off, needs user
 decision (Tiers 1+3 already bank ~29 MB; T4 adds ~12.7 MB).
+
+---
+
+## 2026-05-15 — Tier 4 implemented (avif-coil AVIF/HEIC codec strip)
+
+User chose: implement + device-test pre3.
+
+### Patch (StripImageCodecsPatch.kt, use=false, "Strip AVIF/HEIC codecs")
+- Gate: both avif-coil Coil Decoder.Factory impls expose the (non-R8-mangled)
+  `create(Ljfk;Lk3f;Lkda;)Lzx3;`. Stub each →
+  `const/4 v0,0x0; return-object v0`. Coil treats null as "factory declines"
+  → falls through to its default BitmapFactory decoder, which on Android
+  API28+ decodes HEIF/HEIC and API31+ decodes AVIF via the *platform*.
+  Anchor classes (`com.github.awxkee.avifcoil`, `com.radzivon.bartoshyk`)
+  are NOT R8-renamed → stable across base bumps. firstMethod×2.
+- Verified HeifCoder is referenced ONLY by the avif-coil path, so with the
+  factories declining, libcoder + the 5 codecs are fully unreachable — no
+  loadLibrary stub needed; no UnsatisfiedLinkError possible at startup or
+  decode.
+- Layer C (resourcePatch dep): delete libcoder + libheif/libaom/libx265/
+  libde265/libdav1d per ABI (~12.7 MB, near-incompressible).
+- release.yml Lite `extra` += `-e "Strip AVIF/HEIC codecs"`. README +
+  release-notes blurb updated (~42 MB on disk; removed features = cloud
+  gaming + bundled AVIF/HEIC decoder; platform still covers HEIF/AVIF on
+  modern Android).
+
+Expected Lite vs Normal ≈ −42 MB on disk (29.37 + ~12.7). **Empirical
+device test on pre3**: do cover art / banners / avatars still render? If
+clean → keep; if widespread broken art on the test device → revert Tier 4
+(Tiers 1+3 keep ~29 MB).

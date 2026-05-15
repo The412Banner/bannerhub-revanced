@@ -1955,3 +1955,39 @@ No feature branch — doc-only changes follow the precedent of `970fa12` (README
 ### Privacy hardening series — COMPLETE
 
 All 8 plans done: 4, 5, 8a, 8b, 8c-pure-stub, 10, 1, 9. Plan 7 dropped at Plan 1 redesign. Plan 6 N/A. Plan 8c local-tracker shelved+preserved at `archive/plan8c-local-tracker-pre3`.
+
+
+## 2026-05-14 — Investigation: missing "PC Game Settings" in Explorer-view More Menu for Steam games
+
+### User report
+
+In Explorer view (not Handheld), opening the game-detail page's More Menu for a Steam-linked game (Doomblade screenshot `Screenshot_20260514-195135.png` shows DOOMBLADE detail page with the bottom-sheet "More Menu"). Visible rows: Add to Desktop / Remove from Libr… / Edit Cover / PC Vibration… **PC Game Settings is missing.** Our injected PC Vibration row IS present.
+
+### Trace
+
+The More Menu Composable is `Lx57;->a(Lf37;Lpo7;Lv83;I)V` (already structurally anchored in `VibrationMenuRowPatch.kt` injection 1). Tracing the rows:
+
+| Row | Smali line | Label source |
+| --- | --- | --- |
+| **PC Game Settings** (FIRST row in the original list) | 2421-2531 (gated `if-eqz v17, :cond_50` at line 2421) | `Lmil;->U:Lxrl;` → `Lggl(15)` → packed-switch `:pswitch_d` (line 4848) → const-string `"string:features_game_pc_settings"` (line 5134) → CVR-resolved to "PC Game Settings" |
+| Other rows | 2526, 2648, 2738, 2821, 2939, 3021, 3109, 3203, 3294, 3503 (10 total `Lx9d;->add` calls in the method) | various Lwhl;/Lmil; label refs |
+
+### Why PC Game Settings is hidden
+
+`if-eqz v17, :cond_50` at line 2421 skips the entire row block when `v17 == 0`. `v17` is set at line 2055 (`move/from16 v17, v2`) from `v2`, which carries the AND-combined result of an 8-deep stacked check at lines 2200-2299 — each step does `invoke-interface ... Lxjk;->getValue()` (Compose-state reads), check-casts to Boolean/`Lj67;`/`Lg67;`, and `if-nez ... :cond_4b` short-circuit on mismatch.
+
+Practical meaning: XiaoJi designed the More Menu's row visibility to filter out items that don't apply to the current launch method. PC Game Settings only makes sense for **plain Wine PC executables** — Steam-launched games go through Steam Lightweight Client (which has its own settings panel), so the raw DXVK/VKD3D/Box64/Wine prefix dialog would be a no-op for them. The 8 state reads are functionally "this game uses the direct PC pipeline" — at least one returns false for Steam-linked games, so v17 = 0, so the row is skipped.
+
+This is **GameHub-native UX safety filtering**, not a BannerHub regression. Our Plan 1/4/5/8/10 patches don't touch this code path.
+
+### Why our PC Vibration row IS visible
+
+`VibrationMenuRowPatch.kt` injection 1 appends a Java-helper `appendVibrationRowTo(...)` call AFTER the LAST existing `Lx9d;->add` (per the patch comment, "after the last existing add() call"), so it sits OUTSIDE every gating block. It runs unconditionally for every game and every view. (PC Vibration actually works for Steam games via our `libevshim.so` shim, so showing it is appropriate.)
+
+### Why this varies by view
+
+Explorer view (game-detail page) uses `Lx57;->a()`. Handheld view (library tile popup) uses `Lpzc;->j0()` and `ted.smali::f()` per the menu-injection playbook. Different composables, different filter rules — so the same game can show PC Game Settings in one view but not the other.
+
+### Decision
+
+User direction: **remove all option gating in both menus** so every option shows for every game type and every view. UX safety filtering off. Implementing as a new bytecode patch — see next PROGRESS_LOG entry.

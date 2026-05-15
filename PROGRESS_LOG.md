@@ -1991,3 +1991,27 @@ Explorer view (game-detail page) uses `Lx57;->a()`. Handheld view (library tile 
 ### Decision
 
 User direction: **remove all option gating in both menus** so every option shows for every game type and every view. UX safety filtering off. Implementing as a new bytecode patch — see next PROGRESS_LOG entry.
+
+### Scope narrowed during planning
+
+User narrowed the ask: "all I really care about is PC Game Settings, let the rest do whatever whenever". Only the PC Game Settings row in `Lx57;->a` (Explorer view) gets ungated. Other rows (PC Uninstall, Online Update, Instant Settings, Version Switch) keep their native gating. The Handheld-view `Lpzc;->j0` doesn't need patching since PC Game Settings already shows there.
+
+## 2026-05-14 — `ShowPcGameSettingsRowPatch` shipped
+
+### Patch
+
+- File: `patches/src/main/kotlin/app/revanced/patches/gamehub/misc/ShowPcGameSettingsRowPatch.kt` (139 lines).
+- Mechanism: single bytecode patch that finds the `Lmil;->U:Lxrl;` sget in `Lx57;->a()` (the PC Game Settings label load), scans backward up to 40 instructions for the nearest `if-eqz`/`if-nez`, and removes it. Control then falls through unconditionally into the row's `new-instance Liae` / ctor / `Lx9d;->add` sequence.
+- Anchor fully structural — reuses `VibrationMenuRowPatch`'s menu-method predicate (`(Lf37;Lpo7;Lv83;I)V` + body constructs Liae rows + references Lwhl;->S). Then `sget Lmil;->U:Lxrl;` (single occurrence in the method) + backward scan for the gate. No hardcoded line numbers. Re-derivation recipe for future base bumps in the patch header.
+
+### pre1 verification
+
+- CI run [25895440581](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25895440581): 0 SEVERE, `"Show PC Game Settings row" succeeded` 9/9 variants.
+- APK SHA-256: `1479a034e6235cd328462fdacf6b5123ff5b34ff741483863bd3a4ffbf44de41`.
+- Decoded smali confirms: control now flows from `Lqs2;->y()` (line 2417) → `move-result-object v4` → `const v5, -0x3fa8c8e6` (line 2421, was line 2423 pre-patch). The `if-eqz v17, :cond_50` at the original line 2421 is gone.
+
+### Merge
+
+**Merge commit:** `656736e` (`--no-ff` of `feature/show-pc-game-settings` into `gamehub-604-build`).
+
+`gamehub-604-build` HEAD now `656736e`. Artifact-only build triggered at run [25895723303](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25895723303) with version label `1.1.0-604-pcgs-merged-pre1`. No device-test gate before merge per user direction — patch is single-instruction-removal, low risk, CI + smali verified.

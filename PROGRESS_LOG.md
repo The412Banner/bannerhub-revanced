@@ -2015,3 +2015,33 @@ User narrowed the ask: "all I really care about is PC Game Settings, let the res
 **Merge commit:** `656736e` (`--no-ff` of `feature/show-pc-game-settings` into `gamehub-604-build`).
 
 `gamehub-604-build` HEAD now `656736e`. Artifact-only build triggered at run [25895723303](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25895723303) with version label `1.1.0-604-pcgs-merged-pre1`. No device-test gate before merge per user direction — patch is single-instruction-removal, low risk, CI + smali verified.
+
+
+## 2026-05-14 — v1.2.0-604 STABLE shipped
+
+### Release
+
+- **Tag:** [`v1.2.0-604`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.2.0-604)
+- **CI run:** [25896000438](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25896000438) (workflow_dispatch with `stable=true`, `version=1.2.0-604`). 0 SEVERE; 45/45 key-patch successes (5 new patches × 9 variants). 9 APKs + `.rvp` + `.rve` attached.
+- **Cert SHA-256:** `10895a311fe04f95f82e4da5c9a6c041ba9282bf211f1b578fe1cbeb894ce0ba` (unchanged from v1.1.0-604 — installs in place on top of v1.1.0-604).
+
+### Headline changes vs `v1.1.0-604`
+
+- **Privacy hardening stack** — 7 functional patches (Plans 4/5/8a/8b/8c/10/1) + 1 public doc (Plan 9 `PRIVACY.md`). Empirically verified: zero DNS queries to `statistic-gamehub-api.vgabc.com` during a 6.5-min full session.
+- **PC Game Settings always visible in Explorer view** — single-instruction bytecode patch removes the if-eqz gate before the row.
+
+### Device-test status at cut time
+
+- ✅ Plan 1 (analytics-event stub) — DNS-recorder verified 2026-05-14
+- ✅ Plan 10 (GMS Measurement) — `last_pause_time` frozen verified 2026-05-13
+- ✅ ShowPcGameSettingsRowPatch — user-confirmed "PC Game Settings option works"
+- ✅ Plans 4 / 5 / 8a / 8b / 8c / 9 — manifest/smali grep verified; standard CI verification sufficient
+
+### Post-cut steps completed
+
+- README.md: header version `v1.1.0-604` → `v1.2.0-604`, TOC link updated, "What's new" section rewritten for the privacy stack + PC Game Settings ungate.
+- Release description: rewrote auto-generated body (stale "v1.1.0-604" content from previous template) with curated v1.2.0-604 notes via `gh release edit --notes-file`. 8 new patches added to the per-patch table with ⭐ markers.
+- Privacy series memory + menu-gating memory + MEMORY.md index hook all in sync from earlier commits.
+- Pre-release policy [[bannerhub-prerelease]] re-engages: from this point until the user says "stable" again, all builds default to artifact-only with `stable=false`.
+
+`gamehub-604-build` HEAD at v1.2.0-604 cut: `195fbbd` (README docs commit prior to triggering the workflow). Tag points at the same commit per release.yml workflow behavior.

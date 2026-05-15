@@ -2122,3 +2122,50 @@ corrected number going forward: ~14 MB per-tier-1 on-disk APK reduction.)
 
 Remaining gate before Tier 3: **user device test** — Lite variant installs,
 launches, login-bypass still works, fonts render correctly. Not yet done.
+
+---
+
+## 2026-05-15 — M1 device-confirmed; Tier 3 (drop Haima cloud gaming) implemented
+
+**M1 (Tier 1+2) device test: PASS** — user confirmed Lite variant installs,
+launches, login-bypass intact, fonts render correctly. Greenlit Tier 3.
+
+### Tier 3 recon (grep-verified against gamehub_604_decompile)
+- Targets all present in shipping patched APK: `libhaima_rtc_so.so` (7.9 MB),
+  `libIjkffmpeg_haima.so` (1.82), `libIjksdl_haima.so` (0.44),
+  `libIjkplayer_haima.so` (0.43) + `features.cloud` Compose module (33 files,
+  10.92 MB, ~all in idle_bg/peak_bg/full_bg PNGs) ≈ 21.5 MB uncompressed.
+- 6.0.4 has none of gamehub-lite's other 5.1.0 cloud libs (libjingle/librtmp/
+  libsnproxy/libstreaming-core) — only the Haima+Ijk set.
+- Native load sites (stable non-R8 SDK names → robust anchors):
+  - `tv/haima/ijk/media/player/IjkMediaPlayer.smali:707`
+    `loadLibrariesOnce(Ltv/haima/ijk/media/player/IjkLibLoader;)V` (synchronized,
+    returns V) — loads Ijkffmpeg/Ijksdl/Ijkplayer_haima.
+  - `org/hmwebrtc/NativeLibrary$DefaultLoader.smali:79`
+    `load(Ljava/lang/String;)Z` — real `System.loadLibrary("haima_rtc_so")`;
+    already has a try/catch returning false on UnsatisfiedLinkError, so the SDK
+    tolerates a missing lib at this layer by design.
+- Cloud nav: 6 sealed keys under `com/xiaoji/egggame/core/navigation/AppNavKey$`
+  (CloudGameDetail/CloudSetting/CloudControlSetting/CloudNormalSetting/
+  CloudOrderCenter/CloudRechargeCenterSheet); `NavigateToCloudGameDetail`
+  emitted from ≥5 UI classes. `bvk:2005 "cloudenabled"` = Steam-save .ini red
+  herring, unrelated.
+
+### Tier 3 patch (StripCloudGamingPatch.kt, use=false, name "Strip cloud gaming")
+- Layer B (crash-safety stubs, exact class+method anchors):
+  - `IjkMediaPlayer.loadLibrariesOnce` → `return-void` at idx 0 (valid: returns
+    before monitor-enter, no monitor acquired).
+  - `NativeLibrary$DefaultLoader.load(String)Z` → `const/4 v0,0x0; return v0`
+    at idx 0 (the SDK's own already-handled "lib unavailable" outcome — never
+    calls System.loadLibrary).
+- Layer C (resourcePatch dep): deletes the 4 Haima libs per-ABI + walks and
+  deletes the entire `assets/composeResources/com.xiaoji.egggame.features.cloud`
+  tree.
+- Layer A (cosmetic dead-button hiding) intentionally NOT done — Layer B makes
+  the strip crash-safe regardless of nav reachability; cloud is non-functional
+  under the catalog redirect anyway. Can be layered later if dead tiles annoy.
+- release.yml Lite `extra` += `-e "Strip cloud gaming"`. README + release-notes
+  blurb updated (~28 MB smaller on disk; cloud gaming = only removed feature).
+
+Expected Lite delta vs Normal ≈ −28 MB on disk (Tier 1 ~14 + Tier 3 ~21.5
+near-incompressible). Pending CI verification + user device test.

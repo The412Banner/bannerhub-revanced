@@ -143,7 +143,7 @@ The same patch bundle is applied to the same base APK 9 times, each time with a 
 | Genshin | `BannerHub-V6-<version>-Patched-Genshin.apk` | `com.miHoYo.GenshinImpact` | BannerHub v6 Genshin |
 | Original | `BannerHub-V6-<version>-Patched-Original.apk` | `com.xiaoji.egggame` | BannerHub v6 |
 
-Normal and Original share the bare "BannerHub v6" launcher label and the two AnTuTu variants share "BannerHub v6 AnTuTu" — they install side-by-side via different package names, so the shared labels are intentional. The **Lite** variant (`gamehub.lite`) is the same patch bundle minus a verified-dead duplicate 20 MB font and the Aliyun carrier-login native lib — ~20.5 MB smaller with no feature loss; first milestone of an incremental size-reduction track.
+Normal and Original share the bare "BannerHub v6" launcher label and the two AnTuTu variants share "BannerHub v6 AnTuTu" — they install side-by-side via different package names, so the shared labels are intentional. The **Lite** variant (`gamehub.lite`) is the same patch bundle minus a verified-dead duplicate 20 MB font, the Aliyun carrier-login native lib, and the Haima cloud-gaming stack — ~28 MB smaller on disk. Cloud gaming (non-functional under the BannerHub catalog redirect) is the only removed feature; everything else is byte-identical to Normal. Part of an incremental size-reduction track.
 
 ## Signing
 

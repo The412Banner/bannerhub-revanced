@@ -2193,3 +2193,33 @@ any cloud-gaming tile/entry does NOT crash (expected: no-op / no native load).
 
 User confirmed Lite pre2 (Tier 1+2+3) installs, launches, login-bypass intact,
 fonts render, cloud-gaming entries no longer crash. Greenlit Tier 4 recon.
+
+---
+
+## 2026-05-15 — Tier 4 codec recon (ELF + grep verified)
+
+The 5 codec libs are NOT independent and have ZERO Java loadLibrary sites —
+they are the native backend of awxkee `avif-coil` (AVIF/HEIC/HEIF decoder
+for Coil):
+
+- `libcoder.so` (2.17 MB, survives in Lite) hard-NEEDEDs libheif/libaom/
+  libde265/libdav1d/libx265; libheif also NEEDEDs libx265+libde265. Nothing
+  else references them; Tier 3's stripped Haima/Ijk libs never needed them.
+- Java loaders: `com/radzivon/bartoshyk/avif/coder/HeifCoder` +
+  `AvifAnimatedDecoder` → `System.loadLibrary("coder")` (3 sites).
+- Live Coil registration: `pra.smali:25216` `new HeifDecoder$Factory()` +
+  `:25180` `AnimatedAvifDecoder$Factory` → app ImageLoader.components.
+- `e7e.smali:163 "heif"` = MIME map, red herring.
+
+Hard constraint: ELF NEEDED resolves at dlopen, so partial strip is
+impossible — keeping libcoder while deleting libheif/etc. ⇒
+UnsatisfiedLinkError on `loadLibrary("coder")`. Tier 4 = strip all 6
+(libcoder + 5 codecs ≈ ~12.7 MB on disk) + stub the 3 loadLibrary sites +
+neutralize the Coil heif/animated-avif factory registration to decline
+gracefully (non-AVIF images keep flowing through Coil/platform defaults).
+
+**First tier with a real functional cost:** AVIF/HEIC/HEIF images won't
+render (JPEG/PNG/WebP/GIF fine). Prevalence of AVIF/HEIC in BannerHub
+cover/avatar art is unknown — recommend settling empirically via a Tier-4
+pre3 device test rather than analysis. Product trade-off, needs user
+decision (Tiers 1+3 already bank ~29 MB; T4 adds ~12.7 MB).

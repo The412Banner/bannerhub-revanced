@@ -2188,3 +2188,8 @@ APK copied to /storage/emulated/0/Download for device test.
 
 Device-test checklist: launches; login-bypass intact; fonts render; tapping
 any cloud-gaming tile/entry does NOT crash (expected: no-op / no native load).
+
+### Tier 3 device test — PASS (2026-05-15)
+
+User confirmed Lite pre2 (Tier 1+2+3) installs, launches, login-bypass intact,
+fonts render, cloud-gaming entries no longer crash. Greenlit Tier 4 recon.

@@ -2045,3 +2045,58 @@ User narrowed the ask: "all I really care about is PC Game Settings, let the res
 - Pre-release policy [[bannerhub-prerelease]] re-engages: from this point until the user says "stable" again, all builds default to artifact-only with `stable=false`.
 
 `gamehub-604-build` HEAD at v1.2.0-604 cut: `195fbbd` (README docs commit prior to triggering the workflow). Tag points at the same commit per release.yml workflow behavior.
+
+---
+
+## 2026-05-15 — "BannerHub V6 Lite" variant, Tier 1+2 (milestone 1)
+
+### Goal
+First milestone of an incremental APK size-reduction track, delivered as a
+separate **Lite** variant (`gamehub.lite`). Tier 1+2 = zero-feature-loss strips
+only; Tiers 3/4 (cloud-gaming / heavy-codec amputation) deferred until this
+build is CI-green and device-confirmed functional.
+
+### Investigation (verified, not assumed)
+- 6.0.4 APK 141 MB. `assets/composeResources` = ~71.5 MB; `lib/arm64-v8a` = 50 MB.
+- **Duplicate font**: `composeResources/com.xiaoji.egggame.core/font/misans_vf.ttf`
+  and `.cardsystem/font/misans_vf.ttf` are byte-identical (MD5
+  `579ce9d39b6ebc71a0522c95ab85b17f`, 20,000,736 B each). Full smali decompile:
+  the ONLY `misans_vf.ttf` reference is the `.cardsystem` literal at
+  `oj6.smali:427` (`font:misans_vf` FontFamily). `.core` module referenced 245×
+  — drawables/values only, never the font. No path concatenation anywhere. The
+  `.core` copy is unreferenced dead weight → safe outright delete (~20 MB).
+- **libpns**: `libpns-2.14.17-LogOnlineStandardCuumRelease_alijtca_plus.so`
+  (~0.5 MB) loaded only by `k7e.smali:60` → called only from
+  `com.mobile.auth.gatewayauth.*` (Aliyun carrier one-tap login + its
+  CheckRoot/EmulatorDetector/CheckHook defensive inits). Dead under BypassLogin.
+  gamehub-lite deletes the 5.1.0 sibling outright; we harden by stubbing the
+  load site to `return-void` first, so the .so delete cannot raise
+  UnsatisfiedLinkError regardless of defensive static-init reachability.
+- gamehub-lite (Producdevity/gamehub-lite) recipe: apktool-based,
+  `files_to_delete.txt` (13,268 entries, mostly tiny res PNGs) + smali diffs;
+  5.1.0 → 52 MB. 5.1.0 had **no** composeResources (pre-Compose-MP rewrite), so
+  the duplicate-font win is unique to 6.0.x and is our biggest single lever.
+- 6.0.4 has **no** `libumeng-spy`/`libcrashsdk` (those are the 5.1.0 stack); the
+  rewrite uses Firebase Crashlytics (already disabled). So Tier 2 collapses into
+  Tier 1 on 6.0.4 — libpns is the only native-telemetry strip available.
+
+### Changes
+- New `patches/.../gamehub/misc/lite/StripDuplicateFontPatch.kt` —
+  `resourcePatch`, `use = false`, name "Strip duplicate font". Deletes the dead
+  `.core` font only if the live `.cardsystem` copy is present (base-bump guard).
+- New `patches/.../gamehub/misc/lite/DisableNumberAuthPatch.kt` —
+  `bytecodePatch`, `use = false`, name "Disable Aliyun NumberAuth". Structural
+  anchor = unique method holding a `const-string` starting `pns-` AND a
+  `System.loadLibrary` call; body → `return-void`. Private `resourcePatch`
+  dependency strips every `lib/*/libpns-*alijtca_plus.so`.
+- `release.yml`: added per-variant `extra` column (empty for all but Lite, so
+  the other 8 build byte-identically). Repurposed the redundant `Normal-GHL`
+  rename into the real **Lite** variant (`gamehub.lite`, label "BannerHub v6
+  Lite", `extra` = `-e "Strip duplicate font" -e "Disable Aliyun NumberAuth"`).
+  Updated release-notes table + comment.
+- README.md: variant table row + shared-label paragraph updated.
+
+### Expected result
+Lite variant ≈ 141 MB → ~120 MB (~20.5 MB off), no feature loss. Other 8
+variants unchanged. Pending: CI prerelease build (SEVERE-grep + apply-count +
+artifact size/grep verification) then user device test before any Tier 3/4 work.

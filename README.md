@@ -134,7 +134,7 @@ The same patch bundle is applied to the same base APK 9 times, each time with a 
 | Variant | APK file | Package | Launcher label |
 | --- | --- | --- | --- |
 | Normal | `BannerHub-V6-<version>-Patched-Normal.apk` | `banner.hub` | BannerHub v6 |
-| Normal-GHL | `BannerHub-V6-<version>-Patched-Normal-GHL.apk` | `gamehub.lite` | BannerHub v6 |
+| Lite | `BannerHub-V6-<version>-Patched-Lite.apk` | `gamehub.lite` | BannerHub v6 Lite |
 | PuBG | `BannerHub-V6-<version>-Patched-PuBG.apk` | `com.tencent.ig` | BannerHub v6 PuBG |
 | AnTuTu | `BannerHub-V6-<version>-Patched-AnTuTu.apk` | `com.antutu.ABenchMark` | BannerHub v6 AnTuTu |
 | alt-AnTuTu | `BannerHub-V6-<version>-Patched-alt-AnTuTu.apk` | `com.antutu.benchmark.full` | BannerHub v6 AnTuTu |
@@ -143,7 +143,7 @@ The same patch bundle is applied to the same base APK 9 times, each time with a 
 | Genshin | `BannerHub-V6-<version>-Patched-Genshin.apk` | `com.miHoYo.GenshinImpact` | BannerHub v6 Genshin |
 | Original | `BannerHub-V6-<version>-Patched-Original.apk` | `com.xiaoji.egggame` | BannerHub v6 |
 
-Three variants (Normal, Normal-GHL, Original) share the bare "BannerHub v6" launcher label and the two AnTuTu variants share "BannerHub v6 AnTuTu" — they install side-by-side via different package names, so the shared labels are intentional.
+Normal and Original share the bare "BannerHub v6" launcher label and the two AnTuTu variants share "BannerHub v6 AnTuTu" — they install side-by-side via different package names, so the shared labels are intentional. The **Lite** variant (`gamehub.lite`) is the same patch bundle minus a verified-dead duplicate 20 MB font and the Aliyun carrier-login native lib — ~20.5 MB smaller with no feature loss; first milestone of an incremental size-reduction track.
 
 ## Signing
 

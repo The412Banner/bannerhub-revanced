@@ -2100,3 +2100,25 @@ build is CI-green and device-confirmed functional.
 Lite variant ≈ 141 MB → ~120 MB (~20.5 MB off), no feature loss. Other 8
 variants unchanged. Pending: CI prerelease build (SEVERE-grep + apply-count +
 artifact size/grep verification) then user device test before any Tier 3/4 work.
+
+### M1 CI verification — PASS (run 25927796369, 2026-05-15)
+
+CI `success`, **SEVERE=0**. Both Lite patches applied on the Lite leg:
+`"Strip duplicate font" succeeded` + `"Disable Aliyun NumberAuth" succeeded`;
+"Patch Lite" job `success`. Artifact grep:
+
+| Entry | Lite | Normal (control) |
+|---|---|---|
+| `.core/font/misans_vf.ttf` (dead) | **absent** ✓ | present |
+| `.cardsystem/font/misans_vf.ttf` (live) | **present** ✓ | present |
+| `libpns-*alijtca_plus.so` | **absent** ✓ | present |
+
+Other variants byte-unaffected (Normal still carries all three).
+
+**Size:** Normal 114,551,119 B → Lite 99,997,800 B = **−13.88 MB on disk**.
+(The ~20.5 MB figure is the *uncompressed* saving; the duplicate font is a
+deflate-compressible .ttf so its zip contribution is ~13.4 MB. Honest
+corrected number going forward: ~14 MB per-tier-1 on-disk APK reduction.)
+
+Remaining gate before Tier 3: **user device test** — Lite variant installs,
+launches, login-bypass still works, fonts render correctly. Not yet done.

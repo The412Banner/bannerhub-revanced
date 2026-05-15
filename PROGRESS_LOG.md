@@ -2169,3 +2169,22 @@ launches, login-bypass intact, fonts render correctly. Greenlit Tier 3.
 
 Expected Lite delta vs Normal ≈ −28 MB on disk (Tier 1 ~14 + Tier 3 ~21.5
 near-incompressible). Pending CI verification + user device test.
+
+### Tier 3 CI verification — PASS (run 25928965970, pre2, 2026-05-15)
+
+CI `success`, SEVERE=0, all 3 Lite patches succeeded ("Strip duplicate font",
+"Disable Aliyun NumberAuth", "Strip cloud gaming"). Artifact grep:
+
+| Entry | Lite | Normal (control) |
+|---|---|---|
+| 4 Haima libs (haima_rtc/Ijk*_haima) | **absent** ✓ | present |
+| features.cloud module (33 files) | **absent** ✓ | present (33) |
+| Tier1: dead .core font / libpns | absent ✓ | present |
+| live .cardsystem font | present ✓ | present |
+
+**Size:** Normal 114,592,079 B → Lite 83,793,310 B = **−29.37 MB on disk**
+(beat the ~28 MB estimate; Tier-3 payload is .so/.png so near-1:1 on disk).
+APK copied to /storage/emulated/0/Download for device test.
+
+Device-test checklist: launches; login-bypass intact; fonts render; tapping
+any cloud-gaming tile/entry does NOT crash (expected: no-op / no native load).

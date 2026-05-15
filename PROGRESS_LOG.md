@@ -2253,3 +2253,19 @@ Expected Lite vs Normal ≈ −42 MB on disk (29.37 + ~12.7). **Empirical
 device test on pre3**: do cover art / banners / avatars still render? If
 clean → keep; if widespread broken art on the test device → revert Tier 4
 (Tiers 1+3 keep ~29 MB).
+
+### Tier 4 CI verification — PASS (run 25930640305, pre3, 2026-05-15)
+
+CI success, SEVERE=0, all 4 Lite patches succeeded. Artifact grep: all 6
+libs (libcoder/libheif/libaom/libx265/libde265/libdav1d) ABSENT in Lite,
+present in Normal control; Tier1+3 strips still clean; live cardsystem
+font present.
+
+**Size: Normal 114,538,831 B -> Lite 78,345,208 B = -34.52 MB (-31.6%).**
+
+Correction: estimated ~42 MB, actual ~34.5. I was wrong that .so are
+"near-incompressible" — the APK zip DOES deflate native libs ~45-60%, so
+on-disk delta ≈ 0.5-0.7x the uncompressed listing for .so/.ttf. Only
+already-compressed PNGs track ~1:1. Use 0.5-0.6x for .so when sizing
+future tiers. pre3 copied to /storage/emulated/0/Download for the
+empirical cover-art device test.

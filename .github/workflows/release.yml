@@ -333,7 +333,7 @@ jobs:
 
             ### Variants
 
-            Nine APKs are produced, each with a different package name + launcher label so they install side-by-side. Eight share one patch bundle; the **Lite** variant additionally strips a verified-dead duplicate 20 MB font, the Aliyun carrier-login native lib, the Haima cloud-gaming stack, and the avif-coil AVIF/HEIC image-codec stack (~42 MB smaller on disk). Removed features: cloud gaming (non-functional under the BannerHub catalog redirect anyway) and the bundled AVIF/HEIC decoder — modern Android still renders HEIF/AVIF via the platform decoder, JPEG/PNG/WebP unaffected. The `Original` variant **replaces** an installed GameHub; the rest install **alongside** the original.
+            Nine APKs are produced, each with a different package name + launcher label so they install side-by-side. Eight share one patch bundle; the **Lite** variant additionally strips a verified-dead duplicate 20 MB font, the Aliyun carrier-login native lib, the Haima cloud-gaming stack, and the avif-coil AVIF/HEIC image-codec stack (~34.5 MB smaller on disk, ≈32%: 114.5 → 78.3 MB). Removed features: cloud gaming (non-functional under the BannerHub catalog redirect anyway) and the bundled AVIF/HEIC decoder — modern Android still renders HEIF/AVIF via the platform decoder, JPEG/PNG/WebP unaffected. The `Original` variant **replaces** an installed GameHub; the rest install **alongside** the original.
 
             | Variant | APK | Package | Launcher label |
             | --- | --- | --- | --- |

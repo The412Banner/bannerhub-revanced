@@ -2202,3 +2202,10 @@ Long investigation chain, resolved end-to-end. For a future session, the state i
 **KNOWN SEPARATE — Problem 2 (NOT addressed, NOT this fix):** DiRT 3 self-exits ~10 s after it renders — reproduces on **stock GameHub 6.0.4 too** (a GH-6.0.x-generation issue; only the 5.x-lineage BannerHub 3.7.x sustains DiRT 3). The preload-free fix brings `banner.hub.lite` to stock-6.0.4 parity (launch+render), not full DiRT 3 playability. Pursue separately if needed (suspect GFWL/xlive or 6.0 engine/window handling).
 
 Memory updated: `bannerhub-revanced-vibration-port-feature-vibration-branch` (CURRENT STATE block prepended), `tidegear-...-preload-free...` (IMPLEMENTED), `bannerhub-revanced-lite-variant`, MEMORY.md index.
+
+
+## 2026-05-16 — MERGED to gamehub-604-build
+
+Device test PASSED (user-confirmed: DiRT 3 boots, no c000007b; rumble incl. sustained hold works). `fix/vibration-preload-free` (`dc30275`) merged into `gamehub-604-build` via **`--no-ff` merge commit `72bb018`** (identity The412Banner, no Claude trailer), pushed `9fa3c53..72bb018`. Brought: preload-free `VibrationPatch` Hook 4 + ported winebus disk-patcher in `BhVibrationController.java`; deletions of `VibrationLibPatch.kt`, `native/evshim/{evshim.c,CMakeLists.txt}`, CI libevshim step; README/release-notes refreshed. Clean merge (604-build was ancestor of the fix branch; no conflicts). `fix/vibration-preload-free` retained on origin as history. Post-merge branch-compile CI triggered for sanity.
+
+**FOLLOW-UP REQUIRED (user-flagged):** `feature/lite-variant-tier1` was branched off gamehub-604-build BEFORE this rework → still carries the old libevshim LD_PRELOAD VibrationPatch and will hit the same c000007b. Must bring `72bb018` into the Lite branch (merge/rebase gamehub-604-build → feature/lite-variant-tier1) and rebuild the Lite variant before any new `banner.hub.lite` Lite build. Until then Lite builds still have the broken vibration patch.

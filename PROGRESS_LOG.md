@@ -2184,3 +2184,21 @@ Net: ONE working `PC-accurate vibration` patch, preload-free, rumble retained, n
 **CI branch-compile GREEN** — run [25974552956](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25974552956) `Build pull request` on `fix/vibration-preload-free` = success. Confirms the ported TideGear disk-patcher Java + reworked VibrationPatch.kt compile, and that deleting VibrationLibPatch/native/evshim + the release.yml edits didn't break the patch bundle. NEXT (user-driven): trigger a Release build off this branch for a testable `banner.hub.lite` APK → device-test DiRT 3 + other x86_64/32-bit titles (expect Problem 1 cleared, rumble retained). Not yet merged to gamehub-604-build (per branch-per-patch + await device confirmation).
 
 **Release build GREEN (artifact-only)** — run [25974755558](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25974755558), `version=1.1.0-604-vibpf-pre1`, all 9 variants patched success, `Create GitHub Release` skipped (pre-release policy). Confirms edited `release.yml` builds end-to-end without the libevshim NDK step and the preload-free VibrationPatch + ported extension apply cleanly to the real GH-6.0.4 base across every variant. APK pulled to device: `/storage/emulated/0/Download/BannerHub-vibpf-pre1-Normal-GHL.apk` (114,551,047 B; Normal-GHL variant — branch is off gamehub-604-build so NO Lite size-strips, but FULL preload-free vibration fix). Awaiting user device test: DiRT 3 + other x86_64/32-bit titles boot (no c000007b) + rumble incl. sustained hold; then merge `fix/vibration-preload-free`→`gamehub-604-build`.
+
+
+## 2026-05-16 — SESSION STATE SUMMARY (consolidated checkpoint)
+
+Long investigation chain, resolved end-to-end. For a future session, the state in one place:
+
+**Reported symptom:** DiRT 3 (and x86_64/32-bit titles) fail to launch on `banner.hub.lite` (BannerHub V6 Lite), bounce to library.
+
+**Resolution chain (all root-caused, not guessed):**
+1. **BannerHub-API packaging bug (FIXED, shipped):** custom Box64/FEX `.tzst` were repackaged from `.wcp` with `./`+`profile.json` layout → extracted EMPTY on v6. Repacked flat (3 Box64 + 2 FEXCore), re-uploaded, catalog bumped, `npm run build`; converter+validator+docs added. Commit `983fd47` on `bannerhub-api` main+master. Device-verified: components now extract, Wine boots.
+2. **Residual `c000007b` root cause (root-caused):** with box64 fixed, DiRT 3 still died `experimental wow64`→`err:wow:load_64bit_module c000007b` pre-Wine. Proved NOT box64/Proton/config/packaging/FEX, NOT upstream — **stock GH-6.0.4 (`com.miHoYo.GenshinImpact`, unmodified) launches DiRT 3 fine** on the byte-identical stack. Patch-culprit diff → **`VibrationPatch.kt` Hook 4 (libevshim.so → LD_PRELOAD)** = the v3.7.0 evshim regression, unported to the ReVanced line.
+3. **Preload-free rework (IMPLEMENTED, CI+Release green, awaiting device test):** branch `fix/vibration-preload-free` off `gamehub-604-build`@`9fa3c53`. Ported TideGear's on-disk winebus duration patcher into `BhVibrationController.java`; Hook 4 → `ensureWinebusDurationPatchOnce(ctx)`; deleted `VibrationLibPatch.kt`+`native/evshim/`+CI libevshim step; README/release-notes refreshed. ONE coherent patch, rumble retained, settings/menu API untouched. Commits `5fe95a8`/`2d2b5a0`/`72630f5`. CI branch-compile `25974552956` ✅; Release `25974755558` ✅ (artifact-only, 9 variants). Test APK: `/storage/emulated/0/Download/BannerHub-vibpf-pre1-Normal-GHL.apk`.
+
+**NEXT:** device-test that APK → DiRT 3 + another x86_64/32-bit title boot (no c000007b) + controller rumble incl. sustained hold. If green → merge `fix/vibration-preload-free`→`gamehub-604-build` (branch-per-patch). 
+
+**KNOWN SEPARATE — Problem 2 (NOT addressed, NOT this fix):** DiRT 3 self-exits ~10 s after it renders — reproduces on **stock GameHub 6.0.4 too** (a GH-6.0.x-generation issue; only the 5.x-lineage BannerHub 3.7.x sustains DiRT 3). The preload-free fix brings `banner.hub.lite` to stock-6.0.4 parity (launch+render), not full DiRT 3 playability. Pursue separately if needed (suspect GFWL/xlive or 6.0 engine/window handling).
+
+Memory updated: `bannerhub-revanced-vibration-port-feature-vibration-branch` (CURRENT STATE block prepended), `tidegear-...-preload-free...` (IMPLEMENTED), `bannerhub-revanced-lite-variant`, MEMORY.md index.

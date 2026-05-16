@@ -1,9 +1,6 @@
 package app.revanced.patches.gamehub.vibration
 
-import app.revanced.patcher.extensions.ExternalLabel
 import app.revanced.patcher.extensions.addInstructions
-import app.revanced.patcher.extensions.addInstructionsWithLabels
-import app.revanced.patcher.extensions.getInstruction
 import app.revanced.patcher.firstMethod
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
@@ -64,13 +61,15 @@ val vibrationPatch = bytecodePatch(
     name = "PC-accurate vibration",
     description = "Routes Wine XInput rumble (low, high) into Android's " +
         "VibratorManager with dual-motor independent dispatch on multi-motor " +
-        "controllers, sustained holds (via guest-side libevshim.so LD_PRELOAD " +
-        "shim re-issuing SDL_JoystickRumble every 500ms so SDL2's 1s " +
-        "auto-stop never fires), and instant release. Adapted from " +
-        "TideGear/GameHub-Vibration-Fix (BannerHub PR #80).",
+        "controllers, sustained holds (preload-free: an in-process hook " +
+        "patches every winebus.so on disk so SDL2's ~1s rumble_expiration " +
+        "never fires — no libevshim.so, no LD_PRELOAD, no extra mapping in " +
+        "the Wine subprocess), and instant release. Adapted from " +
+        "TideGear/GameHub-Vibration-Fix (GameNative PR #1214 lineage) with " +
+        "the author's permission.",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
-    dependsOn(sharedGamehubExtensionPatch, vibrationManifestPatch, vibrationLibPatch)
+    dependsOn(sharedGamehubExtensionPatch, vibrationManifestPatch)
 
     apply {
         // -----------------------------------------------------------------
@@ -152,30 +151,30 @@ val vibrationPatch = bytecodePatch(
         }
 
         // -----------------------------------------------------------------
-        // Hook 4: ENV_BUILDER.a(...)V — prepend libevshim.so to LD_PRELOAD.
+        // Hook 4: ENV_BUILDER.a(...)V — preload-free winebus disk-patch.
         //
-        // The method builds an ArrayList<String> in v12 then calls
-        // joinToString$default with ":" separator. We inject just before
-        // that join: resolve nativeLibraryDir + "/libevshim.so", verify
-        // the file exists (so the build still works without the .so),
-        // and add it as index 0 of the ArrayList. Registers v13..v15 are
-        // clobbered by the join setup that immediately follows, so safe
-        // to reuse here.
+        // Replaces the former libevshim.so LD_PRELOAD injection. Mapping an
+        // extra .so into the Wine subprocess destabilises box64 under
+        // new-WoW64 and silently exits a class of games (DiRT 3 →
+        // STATUS_INVALID_IMAGE_FORMAT c000007b; Shotgun King ~700ms). Instead
+        // we call BhVibrationController.ensureWinebusDurationPatchOnce(ctx)
+        // once per app process, right before the env builder hands the env
+        // list to the Wine launcher. The Java side scans the app files tree
+        // and rewrites every winebus.so's two non-zero SDL_JoystickRumble
+        // duration loads to 0xffffffff on disk (aarch64 + x86_64) so SDL2's
+        // ~1s rumble_expiration never fires; an AtomicBoolean gates repeat
+        // scans. No LD_PRELOAD, no extra mapping.
         //
-        // The original anchor block (lines 458-465 in 6.0.2 AND 6.0.4 — XJ
-        // didn't touch the method between versions, only R8 renamed) is:
+        // Anchor: the joinToString$default arg-setup block (const/16 v16,0x0;
+        // const/16 v17,0x3e; const-string v13,":"; const/4 v14,0x0; const/4
+        // v15,0x0) immediately preceding the JOIN_HELPER->I0 invoke-static/
+        // range. We insert our 2-instruction call just BEFORE that setup.
+        // v0 is `this` (the env builder); v13 holds the Context only until
+        // the setup block (which runs immediately after) re-initialises it
+        // for the join, so the reuse is safe with no branch/label needed.
         //
-        //     const/16 v16, 0x0
-        //     const/16 v17, 0x3e
-        //     const-string v13, ":"
-        //     const/4 v14, 0x0
-        //     const/4 v15, 0x0
-        //     invoke-static/range {v12 .. v17}, JOIN_HELPER->I0(...)
-        //
-        // We can't do a unique-line-anchored injection through the
-        // patcher API easily, so we walk the method to find the
-        // invoke-static/range whose method ref is JOIN_HELPER->I0(...)
-        // and inject 13 instructions just before it.
+        // Ported from TideGear/GameHub-Vibration-Fix Patch 4 (GameNative
+        // PR #1214 lineage) with the author's permission.
         // -----------------------------------------------------------------
         firstMethod {
             definingClass == ENV_BUILDER && name == "a" && returnType == "V"
@@ -187,65 +186,18 @@ val vibrationPatch = bytecodePatch(
                     } == true
             }
 
-            // Walk back to the start of the joinToString$default arg-setup
-            // block — the 5 instructions immediately preceding the
-            // invoke-static/range:
-            //
-            //   const/16 v16, 0x0
-            //   const/16 v17, 0x3e
-            //   const-string v13, ":"
-            //   const/4 v14, 0x0
-            //   const/4 v15, 0x0
-            //
-            // We insert BEFORE this setup (not after, as v1.1.0-pre1+pre2
-            // did). The setup re-initializes v13..v17 to the types
-            // invoke-static/range expects (`null` ConstZero for the
-            // CharSequence prefix/postfix slots, `:` String for the
-            // separator, int for the limit + mask).
-            //
-            // v1.1.0-pre2 inserted AT joinIdx (after setup, before invoke),
-            // so our File path-builder clobbered v14 with `File` and the
-            // verifier rejected the invoke with
-            // `register v14 has type Reference: java.io.File
-            //  but expected Reference: java.lang.String`.
-            // By moving the insertion 5 instructions earlier, both the
-            // fall-through and branch-taken paths from our `if-eqz` flow
-            // into the setup block, which restores the join args cleanly.
-            //
-            // The ExternalLabel target is the original instruction at
-            // setupStartIdx (the const/16 v16); after insertion shifts it
-            // down by 18, the patcher tracks the new position via
-            // Instruction identity.
             val setupStartIdx = joinIdx - 5
             require(setupStartIdx >= 0) {
                 "ENV_BUILDER.a join setup block not found (joinIdx=$joinIdx); " +
                     "expected ≥5 instructions of arg setup before invoke-static/range"
             }
-            val setupStartInstruction = getInstruction(setupStartIdx)
 
-            addInstructionsWithLabels(
+            addInstructions(
                 setupStartIdx,
                 """
                     iget-object v13, v0, $ENV_BUILDER->a:Landroid/content/Context;
-                    invoke-virtual {v13}, Landroid/content/Context;->getApplicationInfo()Landroid/content/pm/ApplicationInfo;
-                    move-result-object v13
-                    iget-object v13, v13, Landroid/content/pm/ApplicationInfo;->nativeLibraryDir:Ljava/lang/String;
-                    new-instance v14, Ljava/lang/StringBuilder;
-                    invoke-direct {v14}, Ljava/lang/StringBuilder;-><init>()V
-                    invoke-virtual {v14, v13}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
-                    const-string v13, "/libevshim.so"
-                    invoke-virtual {v14, v13}, Ljava/lang/StringBuilder;->append(Ljava/lang/String;)Ljava/lang/StringBuilder;
-                    invoke-virtual {v14}, Ljava/lang/StringBuilder;->toString()Ljava/lang/String;
-                    move-result-object v13
-                    new-instance v14, Ljava/io/File;
-                    invoke-direct {v14, v13}, Ljava/io/File;-><init>(Ljava/lang/String;)V
-                    invoke-virtual {v14}, Ljava/io/File;->exists()Z
-                    move-result v15
-                    if-eqz v15, :bh_skip_evshim_preload
-                    const/4 v15, 0x0
-                    invoke-virtual {v12, v15, v13}, Ljava/util/ArrayList;->add(ILjava/lang/Object;)V
+                    invoke-static {v13}, $VIB_HANDLER->ensureWinebusDurationPatchOnce(Landroid/content/Context;)V
                 """.trimIndent(),
-                ExternalLabel("bh_skip_evshim_preload", setupStartInstruction),
             )
         }
     }

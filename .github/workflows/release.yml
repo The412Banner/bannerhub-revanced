@@ -73,37 +73,10 @@ jobs:
       - name: Cache Gradle
         uses: burrunan/gradle-cache-action@v3
 
-      - name: Build libevshim.so (guest-side SDL rumble keepalive)
-        # Compiles the native LD_PRELOAD shim that re-issues SDL_JoystickRumble
-        # every 500ms so SDL2's 1s rumble_expiration auto-stop never fires.
-        # Output is staged into patches/src/main/resources/lib/arm64-v8a/ so
-        # the gradle build below bakes it into the .rvp, where the
-        # VibrationLibPatch resource patch reads it back out at patch time.
-        run: |
-          set -e
-          NDK_HOME="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}"
-          if [ -z "$NDK_HOME" ] || [ ! -d "$NDK_HOME" ]; then
-            NDK_HOME=$(ls -d "${ANDROID_SDK_ROOT}"/ndk/* 2>/dev/null | sort -V | tail -1)
-          fi
-          if [ -z "$NDK_HOME" ] || [ ! -d "$NDK_HOME" ]; then
-            NDK_HOME="${ANDROID_SDK_ROOT}/ndk-bundle"
-          fi
-          echo "Using NDK: $NDK_HOME"
-          if ! command -v ninja >/dev/null 2>&1; then
-            sudo apt-get update -qq
-            sudo apt-get install -y ninja-build
-          fi
-          cmake -S native/evshim -B build/evshim \
-            -DCMAKE_TOOLCHAIN_FILE="$NDK_HOME/build/cmake/android.toolchain.cmake" \
-            -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-29 \
-            -DCMAKE_BUILD_TYPE=Release \
-            -G Ninja
-          ninja -C build/evshim
-          mkdir -p patches/src/main/resources/lib/arm64-v8a
-          cp build/evshim/libevshim.so patches/src/main/resources/lib/arm64-v8a/libevshim.so
-          chmod 0755 patches/src/main/resources/lib/arm64-v8a/libevshim.so
-          file patches/src/main/resources/lib/arm64-v8a/libevshim.so
+      # libevshim.so build step removed — the vibration patch is now
+      # preload-free (in-process winebus.so disk patch via
+      # BhVibrationController.ensureWinebusDurationPatchOnce). No native
+      # shim is built or shipped; nothing is added to LD_PRELOAD.
 
       - name: Build patches bundle
         env:
@@ -296,7 +269,7 @@ jobs:
 
             This is the **first BannerHub v6 stable** on the new build pipeline. Compared to `v1.0.0-604`, this release ships four major changes:
 
-            - **🎮 PC-accurate XInput rumble for Wine games.** Ported from [TideGear/GameHub-Vibration-Fix](https://github.com/TideGear/GameHub-Vibration-Fix) (which itself ports BannerHub PR #80 from 5.3.5). Dual-motor independent dispatch on multi-motor controllers, sustained rumble that persists past SDL2's 1 s auto-stop (via a guest-side `libevshim.so` LD_PRELOAD shim that re-issues `SDL_JoystickRumble` every 500 ms), and instant release on let-go. Confirmed working on GTA 5 Enhanced with a physical controller. **On by default** — `MODE_CONTROLLER` at 100% intensity. Adjust per-game via the new **PC Vibration Settings** menu entry (see below).
+            - **🎮 PC-accurate XInput rumble for Wine games.** Ported from [TideGear/GameHub-Vibration-Fix](https://github.com/TideGear/GameHub-Vibration-Fix) (GameNative PR #1214 lineage) with the author's permission. Dual-motor independent dispatch on multi-motor controllers, sustained rumble that persists past SDL2's ~1 s auto-stop (**preload-free**: an in-process hook patches every `winebus.so` on disk so SDL2's `rumble_expiration` never fires — no `libevshim.so`, no `LD_PRELOAD`, no extra mapping in the Wine subprocess, so x86_64/box64 game launches are no longer destabilised), and instant release on let-go. **On by default** — `MODE_CONTROLLER` at 100% intensity. Adjust per-game via the new **PC Vibration Settings** menu entry (see below).
             - **🎛 PC Vibration Settings menu row in both per-game popups.** A new 5th row labelled **PC Vibration Settings** now appears in (1) the game-details "More Menu" (3-dot from inside a game's detail screen) and (2) the library-tile 3-dot popup. Tapping it opens a per-game mode/intensity dialog (off / device / controller / both). Per-game settings persist; global defaults apply to games without per-game overrides.
             - **🎨 BannerHub v6 visual rebrand.** New launcher icon (adaptive-icon foreground, masked-shape friendly on every launcher), refreshed in-app `wine_logo`, and rebranded auth-screen + splash-screen banners. Five drawables touched; per-variant package names + side-by-side install behaviour unchanged.
             - **🔐 Stable signing — in-place updates from now on.** This release is the first one signed with a stable test keystore (cert SHA-256 `10:89:5A:31:1F:E0:4F:95:F8:2E:4D:A5:C9:A6:C0:41:BA:92:82:BF:21:1F:1B:57:8F:E1:CB:EB:89:4C:E0:BA`). Future BannerHub v6 stables update in-place — no more uninstall-between-versions. **One-time migration required** if you're on `v1.0.0-604` or older (different cert) — see the migration note below.
@@ -361,8 +334,7 @@ jobs:
             | **Redirect catalog API** | Points the catalog API at the BannerHub Cloudflare Worker (`bannerhub-api.the412banner.workers.dev`) for curated component delivery. Side benefit: per-game PC settings now render in both landscape and portrait. |
             | **Prefix API path with /v6** | Prepends `v6/` to every relative API call so the Worker can serve 6.0-only response variants without affecting 5.x clients. |
             | **Offline component cache fallback** ⚠ *currently broken on 6.0.4* | *Intended to let per-game pickers show your cached components when the device is offline.* Online behavior is unchanged, so this caveat only matters when you're offline — pickers will still show only the embedded built-in versions instead of the cached entries the patch was meant to surface. Investigation pending; safe to ignore unless you specifically rely on offline picker contents. |
-            | **PC-accurate vibration** ⭐ *new in 1.1.0-604* | 4 bytecode hooks (GamepadServerManager.onRumble entry + per-controller dispatch + stop + Wine env-builder LD_PRELOAD) route XInput rumble into Android's VibratorManager with dual-motor independent dispatch on multi-motor pads. SDL2's 1 s auto-stop is defeated by a guest-side `libevshim.so` shim that re-issues `SDL_JoystickRumble` every 500 ms with a 2 s duration. Defaults to `MODE_CONTROLLER` at 100% intensity — works out of the box, no UI tweaking required. |
-            | **Vibration native shim** ⭐ *new in 1.1.0-604* | Ships an arm64-v8a `libevshim.so` (~41 KB) into the APK's native lib dir; loaded into Wine via the LD_PRELOAD inject above. Patches `winebus.so`'s `pSDL_JoystickRumble` / `pSDL_JoystickClose` pointers at runtime so SDL2's internal rumble timer can't expire during sustained holds. |
+            | **PC-accurate vibration** ⭐ *new in 1.1.0-604* | 4 bytecode hooks (GamepadServerManager.onRumble entry + per-controller dispatch + stop + Wine env-builder pre-launch trigger) route XInput rumble into Android's VibratorManager with dual-motor independent dispatch on multi-motor pads. SDL2's ~1 s auto-stop is defeated **preload-free**: `BhVibrationController.ensureWinebusDurationPatchOnce` rewrites every `winebus.so`'s two non-zero `SDL_JoystickRumble` duration loads to `0xffffffff` on disk (aarch64 + x86_64) once per app process — no `libevshim.so`, no `LD_PRELOAD`, no extra mapping in the Wine subprocess (fixes the x86_64/box64 launch-death regression). Defaults to `MODE_CONTROLLER` at 100% intensity — works out of the box. |
             | **Vibration settings activity** ⭐ *new in 1.1.0-604* | Registers `com.xj.winemu.vibration.BhVibrationSettingsActivity` in the manifest. Internal-only (exported=false); launched by the menu rows below via explicit Intent. Dialog lets you pick mode (off / device / controller / both) and intensity (0–100%) per-game, with global defaults. |
             | **PC Vibration Settings menu row** ⭐ *new in 1.1.0-604* | Injects a 5th menu row labelled **PC Vibration Settings** into both per-game popups (game-details "More Menu" + library-tile 3-dot popup). Tapping launches the vibration settings dialog scoped to the active game. Survives Compose Multiplatform's R8-renamed `Function0/Function1` interfaces (proxied at runtime) and the empty-Kotlin-subclass `Lell` resource descriptor (allocated via `Unsafe`). |
             | **PC Vibration Settings label resource** ⭐ *new in 1.1.0-604* | Appends a `bh_pc_vibration_label = "PC Vibration Settings"` entry to `features.home`'s Compose Multiplatform resource bundle (`.cvr` file). Used as documentation; the actual runtime resolution goes via a bytecode-patched short-circuit in `Lxd3.l1` because Compose's resource manifest needs entries the bare `.cvr` doesn't register. |

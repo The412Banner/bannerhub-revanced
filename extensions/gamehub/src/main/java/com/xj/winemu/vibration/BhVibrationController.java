@@ -17,6 +17,8 @@ import android.util.Log;
 import android.view.InputDevice;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -125,6 +127,84 @@ public final class BhVibrationController {
     private static final long RUMBLE_KEEPALIVE_MS = 1500L;     // refresh controller before 2s expiry
 
     private static volatile BhVibrationController INSTANCE;
+
+    private static final AtomicBoolean WINEBUS_DURATION_PATCH_ATTEMPTED = new AtomicBoolean(false);
+    private static final int WINEBUS_SCAN_MAX_DEPTH = 16;
+    private static final int WINEBUS_SCAN_MAX_FILES = 100000;
+    private static final long WINEBUS_PATCH_MAX_BYTES = 16L * 1024L * 1024L;
+    private static final byte[] WINEBUS_ELF_MAGIC = new byte[] {
+            0x7f, 0x45, 0x4c, 0x46
+    };
+    private static final byte[] WINEBUS_RUMBLE_STRING = new byte[] {
+            0x53, 0x44, 0x4c, 0x5f, 0x4a, 0x6f, 0x79, 0x73,
+            0x74, 0x69, 0x63, 0x6b, 0x52, 0x75, 0x6d, 0x62,
+            0x6c, 0x65
+    };
+    private static final byte[] WINEBUS_ORIGINAL_SITE = new byte[] {
+            (byte) 0xa3, (byte) 0xc3, 0x5e, (byte) 0xb8,  // ldur w3, [x29, #-0x14]
+            0x00, 0x01, 0x3f, (byte) 0xd6                 // blr x8
+    };
+    private static final byte[] WINEBUS_PATCHED_SITE = new byte[] {
+            0x03, 0x00, (byte) 0x80, 0x12,                // mov w3, #-1
+            0x00, 0x01, 0x3f, (byte) 0xd6                 // blr x8
+    };
+    private static final byte[] WINEBUS_PATCHED_LOAD = new byte[] {
+            0x03, 0x00, (byte) 0x80, 0x12
+    };
+
+    // ELF e_machine values at offset 0x12 (little-endian 16-bit).
+    private static final int ELF_MACHINE_AARCH64 = 0xb7;  // EM_AARCH64 (183)
+    private static final int ELF_MACHINE_X86_64  = 0x3e;  // EM_X86_64 (62)
+
+    // x86_64 SDL_JoystickRumble / SDL_JoystickRumbleTriggers call-site detection.
+    //
+    // Wine's bus_sdl.c sdl_device_haptics_start passes `duration_ms` as the
+    // 4th argument (ECX in System V x86_64) to both pSDL_JoystickRumble and
+    // pSDL_JoystickRumbleTriggers. The compiler clang/NDK r26 we observed in
+    // wine_proton9.0-x64-3 loads the function pointer into RAX first, then
+    // sets up args, then issues `call *%rax`. Each call site looks like:
+    //
+    //     8B 4D <disp8>     mov   ecx, DWORD PTR [rbp+disp8]   ; duration_ms
+    //     0F B7 F6          movzwl %si, %esi                    ; 2nd arg fixup
+    //     0F B7 D2          movzwl %dx, %edx                    ; 3rd arg fixup
+    //     FF D0             call  *%rax
+    //
+    // That's an 11-byte window where 10 bytes are fixed and only the disp8
+    // floats. The movzwl pair is the discriminator: the corresponding
+    // sdl_device_haptics_stop path is `xor ecx, ecx; mov esi, ecx; mov edx,
+    // ecx; call *%rax` which doesn't match this signature, so we won't touch
+    // the stop sites.
+    //
+    // Patch: replace the 3-byte `mov ecx, [rbp+disp8]` with `or ecx, -1`
+    // (83 C9 FF). ECX becomes 0xFFFFFFFF regardless of prior value; the rest
+    // of the 11-byte window is preserved, so the RIP-relative loads and the
+    // indirect call all stay valid.
+    //
+    // Heuristic: exactly 2 matches required. 0 or >2 → skip and dump the
+    // file under <externalFilesDir>/winebus_dump_x86_64.so for offline
+    // refinement (e.g. if a different proton build emits a reordered arg
+    // sequence or a different addressing mode).
+    private static final byte[] X86_64_PATCHED_LOAD = new byte[] {
+            (byte) 0x83, (byte) 0xc9, (byte) 0xff   // or ecx, -1
+    };
+    private static final byte[] X86_64_PATTERN = new byte[] {
+            (byte) 0x8b, (byte) 0x4d, 0x00,
+            (byte) 0x0f, (byte) 0xb7, (byte) 0xf6,
+            (byte) 0x0f, (byte) 0xb7, (byte) 0xd2,
+            (byte) 0xff, (byte) 0xd0
+    };
+    private static final boolean[] X86_64_PATTERN_FIXED = new boolean[] {
+            true,  true,  false,
+            true,  true,  true,
+            true,  true,  true,
+            true,  true
+    };
+    private static final byte[] X86_64_PATCHED_PATTERN = new byte[] {
+            (byte) 0x83, (byte) 0xc9, (byte) 0xff,
+            (byte) 0x0f, (byte) 0xb7, (byte) 0xf6,
+            (byte) 0x0f, (byte) 0xb7, (byte) 0xd2,
+            (byte) 0xff, (byte) 0xd0
+    };
 
     public static BhVibrationController getInstance() {
         BhVibrationController local = INSTANCE;
@@ -1103,4 +1183,247 @@ public final class BhVibrationController {
             Log.w(TAG, "ensureContext failed", t);
         }
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Preload-free SDL rumble keepalive — winebus.so on-disk duration patch.
+    // Ported verbatim from TideGear/GameHub-Vibration-Fix (GameNative PR
+    // #1214 lineage) with the author's explicit permission. Replaces the
+    // former libevshim.so LD_PRELOAD path, which silently exited a class of
+    // games (Shotgun King, DiRT 3) by adding an extra mapping to the Wine
+    // subprocess address space / destabilising box64 under new-WoW64.
+    // ─────────────────────────────────────────────────────────────────────
+    public static void ensureWinebusDurationPatchOnce(Context ctx) {
+        try {
+            if (ctx != null) ensureWinebusDurationPatch(ctx);
+        } catch (Throwable t) {
+            Log.w(TAG, "ensureWinebusDurationPatchOnce failed", t);
+        }
+    }
+
+    private static void ensureWinebusDurationPatch(Context ctx) {
+        if (!WINEBUS_DURATION_PATCH_ATTEMPTED.compareAndSet(false, true)) return;
+        try {
+            File root = ctx.getFilesDir();
+            if (root == null || !root.isDirectory()) {
+                Log.i(TAG, "winebus duration patch skipped: no files dir");
+                return;
+            }
+
+            int[] stats = new int[4]; // files visited, winebus found, patched, already patched
+            scanWinebusFiles(ctx, root, 0, stats);
+            Log.i(TAG, "winebus duration patch scan files=" + stats[0]
+                    + " winebus=" + stats[1]
+                    + " patched=" + stats[2]
+                    + " already=" + stats[3]);
+            if (stats[1] == 0) {
+                WINEBUS_DURATION_PATCH_ATTEMPTED.set(false);
+            }
+        } catch (Throwable t) {
+            WINEBUS_DURATION_PATCH_ATTEMPTED.set(false);
+            Log.w(TAG, "winebus duration patch scan failed", t);
+        }
+    }
+
+    private static void scanWinebusFiles(Context ctx, File file, int depth, int[] stats) {
+        if (file == null || depth > WINEBUS_SCAN_MAX_DEPTH || stats[0] >= WINEBUS_SCAN_MAX_FILES) {
+            return;
+        }
+
+        stats[0]++;
+        if (file.isDirectory()) {
+            if (shouldSkipWinebusScanDir(file)) return;
+            File[] children = file.listFiles();
+            if (children == null) return;
+            for (File child : children) {
+                if (stats[0] >= WINEBUS_SCAN_MAX_FILES) break;
+                scanWinebusFiles(ctx, child, depth + 1, stats);
+            }
+            return;
+        }
+
+        if (!"winebus.so".equals(file.getName())) return;
+        stats[1]++;
+        try {
+            int result = patchWinebusDurationFile(ctx, file);
+            if (result == 1) stats[2]++;
+            else if (result == 2) stats[3]++;
+        } catch (Throwable t) {
+            Log.w(TAG, "winebus duration patch failed for " + file.getAbsolutePath(), t);
+        }
+    }
+
+    private static boolean shouldSkipWinebusScanDir(File dir) {
+        String name = dir.getName();
+        return "Steam".equals(name)
+                || "steamapps".equals(name)
+                || "steam_data".equals(name)
+                || "virtual_containers".equals(name);
+    }
+
+    private static int patchWinebusDurationFile(Context ctx, File file) throws IOException {
+        long len = file.length();
+        if (len < WINEBUS_ORIGINAL_SITE.length || len > WINEBUS_PATCH_MAX_BYTES) {
+            Log.i(TAG, "winebus duration patch skipped unexpected size="
+                    + len + " path=" + file.getAbsolutePath());
+            return 0;
+        }
+
+        byte[] blob = new byte[(int) len];
+        try (RandomAccessFile raf = new RandomAccessFile(file, "rw")) {
+            raf.readFully(blob);
+            if (!startsWith(blob, WINEBUS_ELF_MAGIC) || indexOf(blob, WINEBUS_RUMBLE_STRING, 0) < 0) {
+                Log.i(TAG, "winebus duration patch skipped non-target path=" + file.getAbsolutePath());
+                return 0;
+            }
+
+            int machine = readElfMachine(blob);
+            if (machine == ELF_MACHINE_AARCH64) {
+                return patchAarch64Sites(file, blob, raf);
+            }
+            if (machine == ELF_MACHINE_X86_64) {
+                int result = patchX86_64Sites(file, blob, raf);
+                if (result == 0) {
+                    // Pattern didn't match — dump for offline pattern refinement.
+                    dumpForOfflineAnalysis(ctx, file, blob, "x86_64");
+                }
+                return result;
+            }
+
+            Log.i(TAG, "winebus duration patch skipped unknown e_machine=0x"
+                    + Integer.toHexString(machine) + " path=" + file.getAbsolutePath());
+            return 0;
+        }
+    }
+
+    private static int readElfMachine(byte[] blob) {
+        if (blob.length < 20) return -1;
+        return (blob[18] & 0xff) | ((blob[19] & 0xff) << 8);
+    }
+
+    private static int patchAarch64Sites(File file, byte[] blob, RandomAccessFile raf) throws IOException {
+        int[] originalHits = new int[4];
+        int originalCount = collectHits(blob, WINEBUS_ORIGINAL_SITE, originalHits);
+        int patchedCount = collectHits(blob, WINEBUS_PATCHED_SITE, null);
+
+        if (originalCount == 0 && patchedCount == 2) {
+            Log.i(TAG, "winebus duration patch already applied path=" + file.getAbsolutePath());
+            return 2;
+        }
+        if (originalCount != 2) {
+            Log.i(TAG, "winebus duration patch skipped pattern mismatch original="
+                    + originalCount + " patched=" + patchedCount
+                    + " path=" + file.getAbsolutePath());
+            return 0;
+        }
+
+        for (int i = 0; i < originalCount; i++) {
+            raf.seek(originalHits[i]);
+            raf.write(WINEBUS_PATCHED_LOAD);
+        }
+        Log.i(TAG, "winebus duration patch applied path=" + file.getAbsolutePath()
+                + " offsets=0x" + Integer.toHexString(originalHits[0])
+                + ",0x" + Integer.toHexString(originalHits[1]));
+        return 1;
+    }
+
+    private static int patchX86_64Sites(File file, byte[] blob, RandomAccessFile raf) throws IOException {
+        int[] hits = new int[8];
+        int originalCount = collectWildcardHits(blob, X86_64_PATTERN, X86_64_PATTERN_FIXED, hits);
+        int patchedCount = collectHits(blob, X86_64_PATCHED_PATTERN, null);
+
+        if (originalCount == 0 && patchedCount == 2) {
+            Log.i(TAG, "winebus duration patch already applied path=" + file.getAbsolutePath());
+            return 2;
+        }
+        if (originalCount != 2) {
+            Log.i(TAG, "winebus duration patch skipped pattern mismatch (x86_64)"
+                    + " original=" + originalCount + " patched=" + patchedCount
+                    + " path=" + file.getAbsolutePath());
+            return 0;
+        }
+
+        for (int i = 0; i < 2; i++) {
+            raf.seek(hits[i]);
+            raf.write(X86_64_PATCHED_LOAD);
+        }
+        Log.i(TAG, "winebus duration patch applied (x86_64) path=" + file.getAbsolutePath()
+                + " offsets=0x" + Integer.toHexString(hits[0])
+                + ",0x" + Integer.toHexString(hits[1]));
+        return 1;
+    }
+
+    private static int collectWildcardHits(byte[] blob, byte[] pattern, boolean[] fixed, int[] hits) {
+        int count = 0;
+        int max = blob.length - pattern.length;
+        for (int i = 0; i <= max; i++) {
+            boolean ok = true;
+            for (int j = 0; j < pattern.length; j++) {
+                if (fixed[j] && blob[i + j] != pattern[j]) {
+                    ok = false;
+                    break;
+                }
+            }
+            if (ok) {
+                if (hits != null && count < hits.length) hits[count] = i;
+                count++;
+            }
+        }
+        return count;
+    }
+
+    // Dumps `blob` to <externalFilesDir>/winebus_dump_<tag>.so once, so the
+    // unmatched binary can be pulled off the device with adb and disassembled
+    // offline to refine the byte-pattern heuristics. Idempotent: skips if
+    // the dump already exists.
+    private static void dumpForOfflineAnalysis(Context ctx, File source, byte[] blob, String tag) {
+        if (ctx == null) return;
+        try {
+            File dir = ctx.getExternalFilesDir(null);
+            if (dir == null) return;
+            File dump = new File(dir, "winebus_dump_" + tag + ".so");
+            if (dump.exists()) return;
+            java.io.FileOutputStream fos = new java.io.FileOutputStream(dump);
+            try {
+                fos.write(blob);
+            } finally {
+                fos.close();
+            }
+            Log.i(TAG, "winebus dump for offline analysis: "
+                    + source.getAbsolutePath() + " -> " + dump.getAbsolutePath());
+        } catch (Throwable t) {
+            Log.w(TAG, "winebus dump failed", t);
+        }
+    }
+
+    private static boolean startsWith(byte[] blob, byte[] prefix) {
+        if (blob.length < prefix.length) return false;
+        for (int i = 0; i < prefix.length; i++) {
+            if (blob[i] != prefix[i]) return false;
+        }
+        return true;
+    }
+
+    private static int collectHits(byte[] blob, byte[] needle, int[] offsets) {
+        int count = 0;
+        int start = 0;
+        while (true) {
+            int pos = indexOf(blob, needle, start);
+            if (pos < 0) return count;
+            if (offsets != null && count < offsets.length) offsets[count] = pos;
+            count++;
+            start = pos + 1;
+        }
+    }
+
+    private static int indexOf(byte[] blob, byte[] needle, int start) {
+        if (needle.length == 0) return start <= blob.length ? start : -1;
+        int max = blob.length - needle.length;
+        for (int i = Math.max(0, start); i <= max; i++) {
+            int j = 0;
+            while (j < needle.length && blob[i + j] == needle[j]) j++;
+            if (j == needle.length) return i;
+        }
+        return -1;
+    }
+
 }

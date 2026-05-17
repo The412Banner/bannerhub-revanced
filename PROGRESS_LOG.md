@@ -2330,3 +2330,11 @@ pre8 installed; user asked for smaller spinner *options* and a shorter dialog. T
 - **Shorter:** spoofBox/customBox top-margin `10→6`, height cap `0.85→0.78` of screen.
 
 No mode/preset/storage/anchor logic touched. Build = artifact-only `release.yml` pre9. Retest: spinner rows + dropdown list visibly smaller, dialog shorter, all 3 modes + cascading pickers still work.
+
+### 2026-05-17 — pre10: fix invisible Custom-mode input fields (screenshot-confirmed)
+
+pre9 device screenshot (`Screenshot_20260517-163400.png`): in **Custom** mode the 3 input fields (Vendor ID / Device ID / Adapter name) showed as blank white boxes. Root cause: the host theme renders `EditText` with a light/white background, but the dialog set white text + gray hint → **white-on-white, invisible**. `BhGpuSpoofSettingsActivity` only (pure ext Java, zero patcher/anchor):
+
+- **New `styleField(EditText)`** — `GradientDrawable` dark fill `0xFF2A2A2A`, `dp(6)` corner, `dp(1)`/`0xFF4A4A4A` border; white text, hint `0xFF8A8A8A`; `dp(10/8)` padding; `dp(6)` top-margin. Applied to all 3 Custom fields (`hexField()` now calls it; `nameIn` styled inline, its redundant color setters removed).
+
+No mode/preset/storage/anchor logic touched. Build = artifact-only `release.yml` pre10. Retest: Custom-mode fields legible (dark boxes, visible text/hint), spaced.

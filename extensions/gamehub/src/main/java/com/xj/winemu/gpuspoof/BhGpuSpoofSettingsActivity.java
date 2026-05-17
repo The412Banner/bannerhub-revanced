@@ -144,10 +144,9 @@ public class BhGpuSpoofSettingsActivity extends Activity {
         final EditText nameIn   = new EditText(this);
         nameIn.setHint("Adapter name (optional)");
         nameIn.setText(ctl.getName());
-        nameIn.setTextColor(Color.WHITE);
-        nameIn.setHintTextColor(0xFF777777);
         nameIn.setTextSize(12);
         nameIn.setSingleLine(true);
+        styleField(nameIn);
         customBox.addView(vendorIn);
         customBox.addView(deviceIn);
         customBox.addView(nameIn);
@@ -357,12 +356,32 @@ public class BhGpuSpoofSettingsActivity extends Activity {
         EditText e = new EditText(this);
         e.setHint(hint);
         e.setText(value);
-        e.setTextColor(Color.WHITE);
-        e.setHintTextColor(0xFF777777);
         e.setTextSize(12);
         e.setSingleLine(true);
         e.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        styleField(e);
         return e;
+    }
+
+    /**
+     * Dark rounded background + readable colors + padding for a Custom-mode
+     * input. The host theme gives EditText a light/white background, so the
+     * dialog's white text was white-on-white (invisible). This makes the
+     * fields legible and gives them breathing room.
+     */
+    private void styleField(EditText e) {
+        GradientDrawable g = new GradientDrawable();
+        g.setColor(0xFF2A2A2A);
+        g.setCornerRadius(dp(6));
+        g.setStroke(dp(1), 0xFF4A4A4A);
+        e.setBackground(g);
+        e.setTextColor(Color.WHITE);
+        e.setHintTextColor(0xFF8A8A8A);
+        e.setPadding(dp(10), dp(8), dp(10), dp(8));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(6);
+        e.setLayoutParams(lp);
     }
 
     private int clampMode(int v) {

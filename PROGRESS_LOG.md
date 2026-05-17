@@ -2489,3 +2489,16 @@ User decision: keep `feature/lite-variant-tier1` **permanently separate** from `
 - `### Variants` block in `release.yml` + the README variants table rewritten to the 9 Lite rows + replace-on-install semantics. js-yaml-validated; only `.github/workflows/release.yml` + `README.md` changed.
 
 Committed `d3f63f7` on `feature/lite-variant-tier1` (not pushed yet).
+
+
+## 2026-05-16 — v1.3.0-604 STABLE shipped: 18 APKs (9 full + 9 Lite)
+
+First release using the dual-build flow. Triggered `release.yml`:
+- `gamehub-604-build` · `version=1.3.0-604` · `stable=true` → run [25977976554](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25977976554) ✅ → 9 full APKs + GitHub Release `BannerHub v6 1.3.0-604` (tag `v1.3.0-604`).
+- `feature/lite-variant-tier1` · `version=1.3.0-604` · `stable=false` → run [25977995330](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25977995330) ✅ → 9 Lite APKs as Actions artifacts (release job auto-skipped by its `stable==true` gate).
+
+Manually attached the 9 Lite APKs to the release: `gh run download 25977995330 -p 'apk-*-Lite' -D lite-apks/` (gh auto-extracts artifact zips → real `.apk` files, one per artifact subdir) then `gh release upload v1.3.0-604 lite-apks/*/*.apk`. Each Lite ≈78.3 MB.
+
+**Release now carries 21 assets** = 9 full APKs + 9 Lite APKs + `patches.rvp` / `patches-1.0.0.rvp` / `patches-1.0.0-sources.rvp`.
+
+Release-description edit (user request): removed the dedicated `### ✨ What's new in 1.1.0-604` section from the notes (the workflow's notes template still carried the 1.1.0 section). Verified 0 occurrences remain. NOTE: the inline `⭐ *new in 1.1.0-604*` provenance markers in the patches table were left untouched (out of scope of the request).

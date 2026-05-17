@@ -15,6 +15,7 @@ import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -152,6 +153,15 @@ public class BhGpuSpoofSettingsActivity extends Activity {
         customBox.addView(nameIn);
         root.addView(customBox);
 
+        // Deep (DX12 / Vulkan) opt-in — visible whenever a spoof is on.
+        final CheckBox deepCheck = new CheckBox(this);
+        deepCheck.setText("Also spoof DX12 / Vulkan games (turns off frame-gen for this game)");
+        deepCheck.setTextColor(Color.WHITE);
+        deepCheck.setTextSize(11);
+        deepCheck.setChecked(ctl.getDeep());
+        deepCheck.setLayoutParams(topMargin(dp(8)));
+        root.addView(deepCheck);
+
         // One-line tip
         TextView desc = new TextView(this);
         desc.setText("Overrides the GPU vendor/device games see (DXVK). Fixes "
@@ -172,6 +182,7 @@ public class BhGpuSpoofSettingsActivity extends Activity {
             @Override public void onClick(View v) {
                 persistForMode(ctl, modeSpinner.getSelectedItemPosition(),
                         vendorSpinner, modelSpinner, vendorIn, deviceIn, nameIn);
+                ctl.setDeep(deepCheck.isChecked());
                 finish();
             }
         });
@@ -209,6 +220,8 @@ public class BhGpuSpoofSettingsActivity extends Activity {
                         ? View.VISIBLE : View.GONE);
                 customBox.setVisibility(pos == BhGpuSpoofController.MODE_CUSTOM
                         ? View.VISIBLE : View.GONE);
+                deepCheck.setVisibility(pos == BhGpuSpoofController.MODE_OFF
+                        ? View.GONE : View.VISIBLE);
                 if (!ready) return;
                 ctl.setMode(pos);
                 if (pos == BhGpuSpoofController.MODE_SPOOF) {
@@ -219,6 +232,15 @@ public class BhGpuSpoofSettingsActivity extends Activity {
                 }
             }
             @Override public void onNothingSelected(AdapterView<?> p) { }
+        });
+
+        // Deep checkbox: persist live (only once callbacks are armed).
+        deepCheck.setOnCheckedChangeListener(
+                new android.widget.CompoundButton.OnCheckedChangeListener() {
+            @Override public void onCheckedChanged(
+                    android.widget.CompoundButton b, boolean checked) {
+                if (ready) ctl.setDeep(checked);
+            }
         });
 
         // ── Restore persisted state, then arm callbacks ──────────────────
@@ -235,6 +257,8 @@ public class BhGpuSpoofSettingsActivity extends Activity {
                 ? View.VISIBLE : View.GONE);
         customBox.setVisibility(mode == BhGpuSpoofController.MODE_CUSTOM
                 ? View.VISIBLE : View.GONE);
+        deepCheck.setVisibility(mode == BhGpuSpoofController.MODE_OFF
+                ? View.GONE : View.VISIBLE);
         modeSpinner.setSelection(mode);
         modelSpinner.post(new Runnable() {
             @Override public void run() { ready = true; }

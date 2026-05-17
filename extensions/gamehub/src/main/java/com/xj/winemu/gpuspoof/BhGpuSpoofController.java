@@ -49,6 +49,20 @@ public final class BhGpuSpoofController {
     public static final String KEY_VENDOR = "bh_gpuspoof_vendor";
     public static final String KEY_DEVICE = "bh_gpuspoof_device";
     public static final String KEY_NAME   = "bh_gpuspoof_name";
+    /** Opt-in: also spoof DX12/VKD3D + native Vulkan via the libGameScopeV2
+     *  ICD. Disables AI frame-gen direct rendering for the game, so it is a
+     *  deliberate per-game choice rather than always-on. */
+    public static final String KEY_DEEP   = "bh_gpuspoof_deep";
+
+    // The app builds VK_ICD_FILENAMES as new File(<prefix>/usr, SUFFIX_VK)
+    // → libGameScopeVK.so (frame-gen / direct rendering). imagefs 1.4.1 also
+    // ships a same-named ICD json at <prefix>/usr/<SUFFIX_V2> pointing at
+    // libGameScopeV2.so, whose vkGetPhysicalDeviceProperties2 hook rewrites
+    // the adapter from the GAMESCOPE_SPOOF_* env vars. Swapping the suffix in
+    // whatever path the app already computed is base-agnostic.
+    private static final String SUFFIX_VK =
+            "home/steamuser/.config/vulkan/icd.d/GameScopeVK_icd.json";
+    private static final String SUFFIX_V2 = "share/vulkan/GameScopeVK_icd.json";
 
     private static final int DEFAULT_MODE = MODE_OFF;
 
@@ -57,10 +71,11 @@ public final class BhGpuSpoofController {
     private Context appContext;
     private String containerGameId;
 
-    private int    cachedMode   = DEFAULT_MODE;
-    private String cachedVendor = "";
-    private String cachedDevice = "";
-    private String cachedName   = "";
+    private int     cachedMode   = DEFAULT_MODE;
+    private String  cachedVendor = "";
+    private String  cachedDevice = "";
+    private String  cachedName   = "";
+    private boolean cachedDeep   = false;
 
     public static BhGpuSpoofController getInstance() {
         BhGpuSpoofController i = INSTANCE;
@@ -95,10 +110,17 @@ public final class BhGpuSpoofController {
                 + " mode=" + cachedMode + " vendor=" + cachedVendor + " device=" + cachedDevice);
     }
 
-    public int    getMode()   { return cachedMode; }
-    public String getVendor() { return cachedVendor; }
-    public String getDevice() { return cachedDevice; }
-    public String getName()   { return cachedName; }
+    public int     getMode()   { return cachedMode; }
+    public String  getVendor() { return cachedVendor; }
+    public String  getDevice() { return cachedDevice; }
+    public String  getName()   { return cachedName; }
+    public boolean getDeep()   { return cachedDeep; }
+
+    public void setDeep(boolean deep) {
+        this.cachedDeep = deep;
+        writeBoolGlobal(KEY_DEEP, deep);
+        if (containerGameId != null) writeBoolPerGame(containerGameId, KEY_DEEP, deep);
+    }
 
     public void setMode(int mode) {
         if (mode < 0 || mode > MODE_MAX) return;
@@ -244,6 +266,175 @@ public final class BhGpuSpoofController {
         } catch (Throwable t) {
             Log.w(TAG, "EnvVars#a reflection failed; spoof not applied", t);
         }
+
+        // ── Prong B: wined3d (D3D9/10/11 NOT on DXVK) via wine registry ──
+        // Harmless when the title uses DXVK (these keys only matter to
+        // wined3d). Applied whenever a spoof is active; no toggle.
+        try {
+            String prefix = readEnv(envVars, "WINEPREFIX");
+            if (prefix != null && !prefix.isEmpty()) {
+                upsertWineRegistry(new File(prefix, "user.reg"), vendor, device, desc);
+            } else {
+                Log.i(TAG, "WINEPREFIX not in env — skipping wined3d prong");
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "wined3d registry prong failed (non-fatal)", t);
+        }
+
+        // ── Prong C: DX12/VKD3D + native Vulkan via libGameScopeV2 ──
+        // Opt-in only (cachedDeep): swapping to V2 disables frame-gen direct
+        // rendering for this game.
+        if (cachedDeep) {
+            try {
+                applyVulkanSpoof(envVars, vendor, device, desc);
+            } catch (Throwable t) {
+                Log.w(TAG, "Vulkan (deep) spoof prong failed (non-fatal)", t);
+            }
+        }
+    }
+
+    /** Reads an already-set env value out of EnvVars' public LinkedHashMap a. */
+    private static String readEnv(Object envVars, String key) {
+        try {
+            Field f;
+            try { f = envVars.getClass().getField("a"); }
+            catch (NoSuchFieldException e) { f = envVars.getClass().getDeclaredField("a"); }
+            f.setAccessible(true);
+            Object m = f.get(envVars);
+            if (m instanceof Map) {
+                Object v = ((Map<?, ?>) m).get(key);
+                return v == null ? null : v.toString();
+            }
+        } catch (Throwable ignored) { }
+        return null;
+    }
+
+    private static void putEnv(Object envVars, String key, String val) throws Exception {
+        Method a = envVars.getClass().getMethod("a", String.class, Object.class);
+        a.setAccessible(true);
+        a.invoke(envVars, key, val);
+    }
+
+    /**
+     * DX12/VKD3D + native Vulkan: swap VK_ICD_FILENAMES from libGameScopeVK
+     * (frame-gen) to the libGameScopeV2 (device-spoof) ICD shipped in imagefs
+     * 1.4.1, and feed it the adapter via GAMESCOPE_SPOOF_*. V2 hooks
+     * vkGetPhysicalDeviceProperties2 so this covers every Vulkan-backed API
+     * (DX12/VKD3D, DXVK, native Vulkan) at once — at the cost of V2 dropping
+     * the DirectRendering compositor path (frame-gen) for this game.
+     */
+    private void applyVulkanSpoof(Object envVars, String vendor, String device, String desc)
+            throws Exception {
+        String cur = readEnv(envVars, "VK_ICD_FILENAMES");
+        if (cur == null || !cur.contains(SUFFIX_VK)) {
+            Log.w(TAG, "VK_ICD_FILENAMES missing/unexpected ('" + cur
+                    + "') — cannot swap to libGameScopeV2; deep spoof skipped");
+            return;
+        }
+        String swapped = cur.replace(SUFFIX_VK, SUFFIX_V2);
+        putEnv(envVars, "VK_ICD_FILENAMES", swapped);
+        // libGameScopeV2 parses these with strtoul (base 0) — the 0x prefix
+        // forces hex regardless of base.
+        putEnv(envVars, "GAMESCOPE_SPOOF_VENDOR_ID", "0x" + vendor);
+        putEnv(envVars, "GAMESCOPE_SPOOF_DEVICE_ID", "0x" + device);
+        if (desc != null && !desc.isEmpty()) {
+            putEnv(envVars, "GAMESCOPE_SPOOF_DEVICE_NAME", desc);
+        }
+        Log.i(TAG, "deep (DX12/Vulkan) spoof: ICD -> libGameScopeV2 [" + swapped
+                + "], GAMESCOPE_SPOOF 0x" + vendor + ":0x" + device
+                + " (frame-gen direct rendering disabled for this game)");
+    }
+
+    /**
+     * wined3d reads HKCU\Software\Wine\Direct3D VideoPciVendorID /
+     * VideoPciDeviceID (DWORD) + VideoDescription (string). Upserts those into
+     * user.reg in place, atomically, with a one-time backup. Wine loads
+     * user.reg at wineserver start (after this env builder runs) so the edit
+     * takes effect for this launch. Mirrors GameNative/Winlator ContainerUtils.
+     */
+    private void upsertWineRegistry(File userReg, String vendorHex, String deviceHex, String desc) {
+        try {
+            if (userReg == null || !userReg.isFile()) {
+                Log.i(TAG, "user.reg not found (" + userReg + ") — skipping wined3d prong");
+                return;
+            }
+            long vendorId = Long.parseLong(vendorHex, 16);
+            long deviceId = Long.parseLong(deviceHex, 16);
+            String vDword = String.format("dword:%08x", vendorId);
+            String dDword = String.format("dword:%08x", deviceId);
+            String descLine = (desc == null || desc.isEmpty()) ? null
+                    : "\"VideoDescription\"=\""
+                      + desc.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+
+            java.util.List<String> lines = new java.util.ArrayList<>();
+            java.io.BufferedReader br = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(new java.io.FileInputStream(userReg), "UTF-8"));
+            try {
+                String ln;
+                while ((ln = br.readLine()) != null) lines.add(ln);
+            } finally { br.close(); }
+
+            // Section name is stored with doubled backslashes in user.reg.
+            final String HDR = "[Software\\\\Wine\\\\Direct3D]";
+            int secStart = -1;
+            for (int i = 0; i < lines.size(); i++) {
+                if (lines.get(i).startsWith(HDR)) { secStart = i; break; }
+            }
+
+            boolean setV = false, setD = false, setDesc = (descLine == null);
+            if (secStart >= 0) {
+                int i = secStart + 1;
+                for (; i < lines.size(); i++) {
+                    String s = lines.get(i);
+                    if (s.startsWith("[")) break;                 // next section
+                    if (s.startsWith("\"VideoPciVendorID\"=")) {
+                        lines.set(i, "\"VideoPciVendorID\"=" + vDword); setV = true;
+                    } else if (s.startsWith("\"VideoPciDeviceID\"=")) {
+                        lines.set(i, "\"VideoPciDeviceID\"=" + dDword); setD = true;
+                    } else if (descLine != null && s.startsWith("\"VideoDescription\"=")) {
+                        lines.set(i, descLine); setDesc = true;
+                    }
+                }
+                int ins = i;
+                if (!setDesc && descLine != null) lines.add(ins++, descLine);
+                if (!setD) lines.add(ins++, "\"VideoPciDeviceID\"=" + dDword);
+                if (!setV) lines.add(ins++, "\"VideoPciVendorID\"=" + vDword);
+            } else {
+                lines.add("");
+                lines.add(HDR + " " + (System.currentTimeMillis() / 1000L));
+                lines.add("\"VideoPciVendorID\"=" + vDword);
+                lines.add("\"VideoPciDeviceID\"=" + dDword);
+                if (descLine != null) lines.add(descLine);
+            }
+
+            File bak = new File(userReg.getParentFile(), "user.reg.bhgpuspoof.bak");
+            if (!bak.exists()) copyFile(userReg, bak);
+
+            File tmp = new File(userReg.getParentFile(), "user.reg.bhtmp");
+            java.io.BufferedWriter bw = new java.io.BufferedWriter(
+                    new java.io.OutputStreamWriter(
+                            new java.io.FileOutputStream(tmp, false), "UTF-8"));
+            try {
+                for (String s : lines) { bw.write(s); bw.write("\n"); }
+            } finally { bw.close(); }
+            if (!tmp.renameTo(userReg)) { copyFile(tmp, userReg); tmp.delete(); }
+            Log.i(TAG, "wined3d registry: Software\\Wine\\Direct3D VideoPci{Vendor="
+                    + vDword + ",Device=" + dDword + "} in " + userReg);
+        } catch (Throwable t) {
+            Log.w(TAG, "upsertWineRegistry failed (non-fatal)", t);
+        }
+    }
+
+    private static void copyFile(File src, File dst) throws Exception {
+        java.io.FileInputStream in = new java.io.FileInputStream(src);
+        try {
+            java.io.FileOutputStream out = new java.io.FileOutputStream(dst, false);
+            try {
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            } finally { out.close(); }
+        } finally { in.close(); }
     }
 
     /** Appends "k = v;" — ';'-separated for the DXVK_CONFIG inline env var. */
@@ -261,13 +452,15 @@ public final class BhGpuSpoofController {
         if (ctx == null) return;
 
         SharedPreferences gp = ctx.getSharedPreferences(GLOBAL_PREFS_FILE, Context.MODE_PRIVATE);
-        int    gMode   = gp.getInt(KEY_MODE, DEFAULT_MODE);
-        String gVendor = gp.getString(KEY_VENDOR, "");
-        String gDevice = gp.getString(KEY_DEVICE, "");
-        String gName   = gp.getString(KEY_NAME, "");
+        int     gMode   = gp.getInt(KEY_MODE, DEFAULT_MODE);
+        String  gVendor = gp.getString(KEY_VENDOR, "");
+        String  gDevice = gp.getString(KEY_DEVICE, "");
+        String  gName   = gp.getString(KEY_NAME, "");
+        boolean gDeep   = gp.getBoolean(KEY_DEEP, false);
 
         if (containerGameId == null) {
-            cachedMode = gMode; cachedVendor = gVendor; cachedDevice = gDevice; cachedName = gName;
+            cachedMode = gMode; cachedVendor = gVendor; cachedDevice = gDevice;
+            cachedName = gName; cachedDeep = gDeep;
             return;
         }
 
@@ -277,6 +470,21 @@ public final class BhGpuSpoofController {
         cachedVendor = pgp.getString(KEY_VENDOR, gVendor);
         cachedDevice = pgp.getString(KEY_DEVICE, gDevice);
         cachedName   = pgp.getString(KEY_NAME, gName);
+        cachedDeep   = pgp.getBoolean(KEY_DEEP, gDeep);
+    }
+
+    private void writeBoolGlobal(String key, boolean val) {
+        Context ctx = ctxOrNull();
+        if (ctx == null) return;
+        ctx.getSharedPreferences(GLOBAL_PREFS_FILE, Context.MODE_PRIVATE)
+                .edit().putBoolean(key, val).apply();
+    }
+
+    private void writeBoolPerGame(String gameId, String key, boolean val) {
+        Context ctx = ctxOrNull();
+        if (ctx == null || gameId == null || gameId.isEmpty()) return;
+        ctx.getSharedPreferences(String.format(PER_GAME_PREFS_FMT, gameId), Context.MODE_PRIVATE)
+                .edit().putBoolean(key, val).apply();
     }
 
     private void writeIntGlobal(String key, int val) {

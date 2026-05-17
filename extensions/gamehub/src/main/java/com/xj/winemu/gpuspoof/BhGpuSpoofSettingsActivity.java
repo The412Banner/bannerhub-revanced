@@ -25,23 +25,30 @@ import android.widget.TextView;
 /**
  * BhGpuSpoofSettingsActivity — per-game GPU-identity spoof dialog.
  *
- * Mode: Off | GTX 1060 | GTX 1080 | RX 580 | UHD 630 | Custom.
- * When Custom is selected, vendor/device (hex) + an optional adapter-name
- * field become editable. Settings save immediately to this game's
- * {@code pc_g_setting<gameId>} file (export/import compatible), mirroring
- * {@code BhVibrationSettingsActivity}.
+ * Mode: Off | Spoof a GPU | Custom.
+ *
+ * "Spoof a GPU" shows two cascading spinners (Option 1 UX): a Vendor spinner
+ * (NVIDIA / AMD / Intel) and a Model spinner that repopulates with just that
+ * vendor's cards from {@link BhGpuCards} (313 entries, the GameNative/Winlator
+ * list + a modern RTX/RX/Arc set). Picking a model writes its vendor/device
+ * hex + name into the stock {@code pc_g_setting<gameId>} prefs via the same
+ * {@code bh_gpuspoof_*} keys Custom uses — so storage/export is unchanged and
+ * Spoof vs Custom differ only in which editor is shown.
+ *
+ * No ListView / no eager 313-view inflation — native Spinner popups only,
+ * keeping the dialog ANR-safe on slow devices.
  */
 public class BhGpuSpoofSettingsActivity extends Activity {
 
     public static final String EXTRA_GAME_ID   = "gameId";
     public static final String EXTRA_GAME_NAME = "gameName";
 
-    private static final String[] MODE_LABELS = {
-            "Off", "NVIDIA GTX 1060", "NVIDIA GTX 1080",
-            "AMD RX 580", "Intel UHD 630", "Custom",
-    };
+    private static final String[] MODE_LABELS = { "Off", "Spoof a GPU", "Custom" };
 
     private float density = 1f;
+
+    /** Suppresses spinner callbacks while we programmatically restore state. */
+    private boolean ready = false;
 
     public static void launch(Context ctx, String gameId, String gameName) {
         Intent it = new Intent(ctx, BhGpuSpoofSettingsActivity.class);
@@ -102,26 +109,37 @@ public class BhGpuSpoofSettingsActivity extends Activity {
         root.addView(titleRow);
 
         // Mode
-        TextView modeLabel = new TextView(this);
-        modeLabel.setText("Reported GPU");
-        modeLabel.setTextColor(Color.WHITE);
-        modeLabel.setTextSize(13);
-        modeLabel.setPadding(0, 0, 0, dp(4));
-        root.addView(modeLabel);
-
+        root.addView(label("Mode"));
         final Spinner modeSpinner = new Spinner(this);
         modeSpinner.setAdapter(new ArrayAdapter<>(this,
                 android.R.layout.simple_spinner_dropdown_item, MODE_LABELS));
-        modeSpinner.setSelection(clampMode(ctl.getMode()));
         root.addView(modeSpinner);
 
-        // Custom fields (vendor / device / name) — shown only for Custom.
+        // ── Spoof box: cascading Vendor → Model ──────────────────────────
+        final LinearLayout spoofBox = new LinearLayout(this);
+        spoofBox.setOrientation(LinearLayout.VERTICAL);
+        spoofBox.setLayoutParams(topMargin(dp(10)));
+
+        spoofBox.addView(label("Vendor"));
+        final Spinner vendorSpinner = new Spinner(this);
+        String[] vendorLabels = new String[BhGpuCards.VENDOR_LABEL.length];
+        for (int i = 0; i < vendorLabels.length; i++) {
+            vendorLabels[i] = BhGpuCards.VENDOR_LABEL[i]
+                    + "  (" + BhGpuCards.CARDS[i].length + " cards)";
+        }
+        vendorSpinner.setAdapter(new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_dropdown_item, vendorLabels));
+        spoofBox.addView(vendorSpinner);
+
+        spoofBox.addView(label("Model"));
+        final Spinner modelSpinner = new Spinner(this);
+        spoofBox.addView(modelSpinner);
+        root.addView(spoofBox);
+
+        // ── Custom box: vendor / device / name ───────────────────────────
         final LinearLayout customBox = new LinearLayout(this);
         customBox.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams cbLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        cbLp.topMargin = dp(10);
-        customBox.setLayoutParams(cbLp);
+        customBox.setLayoutParams(topMargin(dp(10)));
 
         final EditText vendorIn = hexField("Vendor ID (hex, e.g. 10de)", ctl.getVendor());
         final EditText deviceIn = hexField("Device ID (hex, e.g. 1c03)", ctl.getDevice());
@@ -132,13 +150,10 @@ public class BhGpuSpoofSettingsActivity extends Activity {
         nameIn.setHintTextColor(0xFF777777);
         nameIn.setTextSize(13);
         nameIn.setSingleLine(true);
-
         customBox.addView(vendorIn);
         customBox.addView(deviceIn);
         customBox.addView(nameIn);
         root.addView(customBox);
-        customBox.setVisibility(clampMode(ctl.getMode()) == BhGpuSpoofController.MODE_CUSTOM
-                ? View.VISIBLE : View.GONE);
 
         // One-line tip
         TextView desc = new TextView(this);
@@ -146,41 +161,86 @@ public class BhGpuSpoofSettingsActivity extends Activity {
                 + "CryEngine \"Unsupported video card\". Saves to this game's PC config.");
         desc.setTextColor(0xFF999999);
         desc.setTextSize(11);
-        LinearLayout.LayoutParams descLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        descLp.topMargin = dp(8);
-        desc.setLayoutParams(descLp);
+        desc.setLayoutParams(topMargin(dp(8)));
         root.addView(desc);
 
         // Close
         LinearLayout btnRow = new LinearLayout(this);
         btnRow.setOrientation(LinearLayout.HORIZONTAL);
         btnRow.setGravity(Gravity.END);
-        LinearLayout.LayoutParams btnRowLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        btnRowLp.topMargin = dp(8);
-        btnRow.setLayoutParams(btnRowLp);
+        btnRow.setLayoutParams(topMargin(dp(8)));
         Button close = new Button(this);
         close.setText("Close");
         close.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
-                persistCustom(ctl, vendorIn, deviceIn, nameIn);
+                persistForMode(ctl, modeSpinner.getSelectedItemPosition(),
+                        vendorSpinner, modelSpinner, vendorIn, deviceIn, nameIn);
                 finish();
             }
         });
         btnRow.addView(close);
         root.addView(btnRow);
 
+        // ── Wiring ───────────────────────────────────────────────────────
+
+        // Model spinner: on pick, persist the chosen card (Spoof mode only).
+        modelSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> p, View vw, int pos, long id) {
+                if (!ready || modeSpinner.getSelectedItemPosition()
+                        != BhGpuSpoofController.MODE_SPOOF) return;
+                writeCard(ctl, vendorSpinner.getSelectedItemPosition(), pos);
+            }
+            @Override public void onNothingSelected(AdapterView<?> p) { }
+        });
+
+        // Vendor spinner: rebuild Model list for that vendor, keep position 0.
+        vendorSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> p, View vw, int vIdx, long id) {
+                rebuildModels(modelSpinner, vIdx, 0);
+                if (ready && modeSpinner.getSelectedItemPosition()
+                        == BhGpuSpoofController.MODE_SPOOF) {
+                    writeCard(ctl, vIdx, modelSpinner.getSelectedItemPosition());
+                }
+            }
+            @Override public void onNothingSelected(AdapterView<?> p) { }
+        });
+
+        // Mode spinner: toggle the right editor + persist that mode's value.
         modeSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override public void onItemSelected(AdapterView<?> parent, View view, int pos, long id) {
-                ctl.setMode(pos);
+            @Override public void onItemSelected(AdapterView<?> p, View vw, int pos, long id) {
+                spoofBox.setVisibility(pos == BhGpuSpoofController.MODE_SPOOF
+                        ? View.VISIBLE : View.GONE);
                 customBox.setVisibility(pos == BhGpuSpoofController.MODE_CUSTOM
                         ? View.VISIBLE : View.GONE);
-                if (pos == BhGpuSpoofController.MODE_CUSTOM) {
+                if (!ready) return;
+                ctl.setMode(pos);
+                if (pos == BhGpuSpoofController.MODE_SPOOF) {
+                    writeCard(ctl, vendorSpinner.getSelectedItemPosition(),
+                            modelSpinner.getSelectedItemPosition());
+                } else if (pos == BhGpuSpoofController.MODE_CUSTOM) {
                     persistCustom(ctl, vendorIn, deviceIn, nameIn);
                 }
             }
-            @Override public void onNothingSelected(AdapterView<?> parent) { }
+            @Override public void onNothingSelected(AdapterView<?> p) { }
+        });
+
+        // ── Restore persisted state, then arm callbacks ──────────────────
+        int mode = clampMode(ctl.getMode());
+        int vSel = 0, mSel = 0;
+        int[] loc = BhGpuCards.locate(ctl.getVendor(), ctl.getDevice());
+        if (loc != null) {
+            vSel = loc[0];
+            mSel = loc[1] >= 0 ? loc[1] : 0;
+        }
+        rebuildModels(modelSpinner, vSel, mSel);
+        vendorSpinner.setSelection(vSel);
+        spoofBox.setVisibility(mode == BhGpuSpoofController.MODE_SPOOF
+                ? View.VISIBLE : View.GONE);
+        customBox.setVisibility(mode == BhGpuSpoofController.MODE_CUSTOM
+                ? View.VISIBLE : View.GONE);
+        modeSpinner.setSelection(mode);
+        modelSpinner.post(new Runnable() {
+            @Override public void run() { ready = true; }
         });
 
         ScrollView scroller = new ScrollView(this);
@@ -209,12 +269,60 @@ public class BhGpuSpoofSettingsActivity extends Activity {
         setContentView(wrapper);
     }
 
+    /** Repopulates the Model spinner for a vendor and selects {@code sel}. */
+    private void rebuildModels(Spinner modelSpinner, int vendorIdx, int sel) {
+        String[] models = BhGpuCards.modelNames(vendorIdx);
+        modelSpinner.setAdapter(new ArrayAdapter<>(this,
+                android.R.layout.simple_spinner_dropdown_item, models));
+        if (sel < 0 || sel >= models.length) sel = 0;
+        if (models.length > 0) modelSpinner.setSelection(sel);
+    }
+
+    /** Persists the picked card's vendor/device/name (Spoof mode). */
+    private void writeCard(BhGpuSpoofController ctl, int vendorIdx, int modelIdx) {
+        if (vendorIdx < 0 || vendorIdx >= BhGpuCards.CARDS.length) return;
+        String[][] list = BhGpuCards.CARDS[vendorIdx];
+        if (modelIdx < 0 || modelIdx >= list.length) return;
+        ctl.setCustom(
+                BhGpuCards.VENDOR_HEX[vendorIdx],
+                list[modelIdx][0],
+                list[modelIdx][1]);
+    }
+
+    private void persistForMode(BhGpuSpoofController ctl, int mode,
+                                Spinner vendorSpinner, Spinner modelSpinner,
+                                EditText vendorIn, EditText deviceIn, EditText nameIn) {
+        ctl.setMode(clampMode(mode));
+        if (mode == BhGpuSpoofController.MODE_SPOOF) {
+            writeCard(ctl, vendorSpinner.getSelectedItemPosition(),
+                    modelSpinner.getSelectedItemPosition());
+        } else if (mode == BhGpuSpoofController.MODE_CUSTOM) {
+            persistCustom(ctl, vendorIn, deviceIn, nameIn);
+        }
+    }
+
     private void persistCustom(BhGpuSpoofController ctl,
                                EditText vendor, EditText device, EditText name) {
         ctl.setCustom(
                 vendor.getText().toString(),
                 device.getText().toString(),
                 name.getText().toString());
+    }
+
+    private TextView label(String text) {
+        TextView t = new TextView(this);
+        t.setText(text);
+        t.setTextColor(Color.WHITE);
+        t.setTextSize(13);
+        t.setPadding(0, dp(6), 0, dp(4));
+        return t;
+    }
+
+    private LinearLayout.LayoutParams topMargin(int px) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = px;
+        return lp;
     }
 
     private EditText hexField(String hint, String value) {

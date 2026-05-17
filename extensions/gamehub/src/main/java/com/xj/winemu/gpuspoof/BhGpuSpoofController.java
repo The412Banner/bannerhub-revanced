@@ -34,14 +34,14 @@ public final class BhGpuSpoofController {
 
     private static final String TAG = "BhGpuSpoof";
 
-    // Mode 0 = off (no spoof, stock behaviour). 1..4 = presets. 5 = custom.
+    // Mode 0 = off (stock, zero regression). 1 = spoof a GPU picked from the
+    // cascading Vendor → Model list (BhGpuCards, 313 cards). 2 = custom hex.
+    // Modes 1 and 2 both just apply the stored vendor/device/name triplet —
+    // the only difference is which editor BhGpuSpoofSettingsActivity shows.
     public static final int MODE_OFF    = 0;
-    public static final int MODE_GTX1060 = 1;
-    public static final int MODE_GTX1080 = 2;
-    public static final int MODE_RX580   = 3;
-    public static final int MODE_UHD630  = 4;
-    public static final int MODE_CUSTOM  = 5;
-    public static final int MODE_MAX     = 5;
+    public static final int MODE_SPOOF  = 1;
+    public static final int MODE_CUSTOM = 2;
+    public static final int MODE_MAX    = 2;
 
     public static final String GLOBAL_PREFS_FILE = "bh_gpuspoof_prefs";
     public static final String PER_GAME_PREFS_FMT = "pc_g_setting%s";
@@ -51,14 +51,6 @@ public final class BhGpuSpoofController {
     public static final String KEY_NAME   = "bh_gpuspoof_name";
 
     private static final int DEFAULT_MODE = MODE_OFF;
-
-    // Preset table: { vendorHex, deviceHex, description }. Indexed by mode-1.
-    private static final String[][] PRESETS = {
-            { "10de", "1c03", "NVIDIA GeForce GTX 1060" }, // MODE_GTX1060
-            { "10de", "1b80", "NVIDIA GeForce GTX 1080" }, // MODE_GTX1080
-            { "1002", "67df", "AMD Radeon RX 580" },       // MODE_RX580
-            { "8086", "3e92", "Intel(R) UHD Graphics 630" }, // MODE_UHD630
-    };
 
     private static volatile BhGpuSpoofController INSTANCE;
 
@@ -174,17 +166,11 @@ public final class BhGpuSpoofController {
             return;
         }
 
-        String vendor, device, desc;
-        if (cachedMode == MODE_CUSTOM) {
-            vendor = sanitizeHex(cachedVendor);
-            device = sanitizeHex(cachedDevice);
-            desc   = cachedName == null ? "" : cachedName;
-        } else {
-            String[] p = PRESETS[cachedMode - 1];
-            vendor = p[0];
-            device = p[1];
-            desc   = p[2];
-        }
+        // MODE_SPOOF and MODE_CUSTOM both apply the stored triplet; SPOOF's
+        // was written by the Model spinner, CUSTOM's typed by the user.
+        String vendor = sanitizeHex(cachedVendor);
+        String device = sanitizeHex(cachedDevice);
+        String desc   = cachedName == null ? "" : cachedName;
         if (vendor.isEmpty() || device.isEmpty()) {
             Log.w(TAG, "spoof mode=" + cachedMode + " but vendor/device empty — skipping");
             return;

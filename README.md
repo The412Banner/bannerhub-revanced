@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.2.0-604"><strong>📥 Latest stable: v1.2.0-604</strong></a>
+  <a href="https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.3.0-604"><strong>📥 Latest stable: v1.3.0-604</strong></a>
   ·
   <a href="#patches-applied">Patches</a>
   ·
@@ -51,7 +51,7 @@
 ## Table of contents
 
 1. [AI Disclaimer](#ai-disclaimer)
-2. [What's new in v1.2.0-604](#whats-new-in-v120-604)
+2. [What's new in v1.3.0-604](#whats-new-in-v130-604)
 3. [What this is](#what-this-is)
 4. [Source](#source)
 5. [Variants](#variants)
@@ -72,41 +72,27 @@ This project has no source code — XiaoJi GameHub is closed-source and ships on
 
 Before any **stable release** is published, every change is **manually debugged and tested by me across multiple devices — both rooted and unrooted**. Debugging uses `logcat` output (captured with the [`getlog` Magisk helper](https://github.com/The412Banner/logcat-bridge) on rooted devices, plain `adb logcat` on unrooted) plus the in-app debug log files that the `Debug logging` patch produces. No release is cut until the change has been verified end-to-end on hardware.
 
-## What's new in v1.2.0-604
+## What's new in v1.3.0-604
 
-A full **privacy hardening stack** plus a small **UX fix** for the Explorer-view More Menu. Drop-in update on top of `v1.1.0-604` (stable keystore unchanged — installs in place).
+Two headline changes on top of `v1.2.0-604`. Drop-in update (stable keystore unchanged — installs in place).
 
-### 🔐 Privacy hardening — 7 functional patches + a public doc
+### 🎮 Preload-free vibration — fixes the x86_64 / Box64 launch-death
 
-Every telemetry channel listed in the table below is now **silent on the device**. The full data-flow write-up, including what we deliberately did NOT touch and why, lives in [`PRIVACY.md`](PRIVACY.md) at the repo root.
+The PC-accurate XInput rumble feature no longer ships `libevshim.so` and no longer touches `LD_PRELOAD`. SDL2's ~1 s rumble auto-stop is now defeated by an in-process patch (`BhVibrationController.ensureWinebusDurationPatchOnce`) that rewrites every `winebus.so`'s `SDL_JoystickRumble` duration on disk (aarch64 + x86_64), with nothing extra mapped into the Wine subprocess.
 
-| Telemetry channel | What it leaked | Mechanism |
-| --- | --- | --- |
-| **Firebase Analytics** | screen views, session starts, in-app purchases, custom events → `app-measurement.com` | Manifest `<meta-data>` kill switch (`firebase_analytics_collection_deactivated=true` + AD-ID/SSAID disables); the SDK never initializes |
-| **Mob Push SDK** | device identifiers, push tokens, lifecycle events → Mob | Bytecode removes 3 SDK init call sites + manifest disables every `com.mob.*` / `cn.fly.*` component (ContentProvider auto-init can't fire either) |
-| **AD-ID / ADSERVICES permissions** | advertising-ID exposure to any caller that queries Play Services | 3 `<uses-permission>` declarations stripped |
-| **XiaoJi OTA update phone-home** | firmware-update check → `xiaoji.com/firmware/update/x1` | URL register rewritten to `127.0.0.1`; per-arch OTA native libs (`libJieLiUsbOta.so` + `libjl_ota_auth.so`) stripped |
-| **Heartbeat / playtime tracker** | per-game playtime sessions → XiaoJi via `heartbeat/game/{start,update,end}` | Suspend lambda bodies replaced with `return Unit.INSTANCE`; `getUserPlayTimeList` returns an empty wrapped list |
-| **GMS Measurement** | persistent `app_instance_id`, active `session_id`, lifecycle pauses → Google | Three GMS manifest components (`AppMeasurementReceiver` / `AppMeasurementService` / `AppMeasurementJobService`) flipped to `android:enabled="false"` |
-| **`statistic-gamehub-api.vgabc.com/events`** + **`/events/device-performance-config`** | general in-app analytics events + device-perf telemetry → XiaoJi | Pure client-side stub: `Lcx5;->a` and `Loh4;->b` early-return fake success instances before any URL string is allocated or HTTP client touched |
+This **resolves the `c000007b` crash** that prevented x86_64 / Box64 games from launching on builds carrying the old LD_PRELOAD shim. Rumble behaviour is unchanged (defaults to `MODE_CONTROLLER` at 100%; per-game via **PC Vibration Settings**). Device-confirmed.
 
-Empirically verified on-device during dev: a full 6.5-minute session (install → open → game launch → in-game session → quit) produced **zero DNS queries** for `statistic-gamehub-api.vgabc.com` and **zero advancement** of GMS Measurement's `last_pause_time` field.
+### 🪶 BannerHub v6 Lite — a slimmer counterpart for every variant
 
-> ⚠️ **We're not pretending nothing leaves the device.** [`PRIVACY.md`](PRIVACY.md) honestly enumerates what's still visible: image CDNs (`bigeyes.com`, `shared.akamai.steamstatic.com`), Firebase's vestigial settings-config GET, GOG Galaxy telemetry, and the BannerHub Cloudflare Worker that serves the catalog API. Read it.
+Alongside the 9 full APKs, every release now also attaches **9 Lite APKs** (one per variant, `…-Lite.apk`). Each Lite build is ~34.5 MB smaller on disk (≈32%: ~114.5 → ~78.3 MB) — it strips a verified-dead duplicate 20 MB font, the Aliyun carrier-login native lib, the Haima cloud-gaming stack, and the bundled AVIF/HEIC image-codec stack.
 
-### 🎛 PC Game Settings — now always visible in Explorer view
+Removed features: cloud gaming (non-functional under the BannerHub catalog redirect anyway) and the bundled AVIF/HEIC decoder — modern Android still renders HEIF/AVIF via the platform decoder; JPEG/PNG/WebP unaffected. Everything else is byte-identical to the matching full variant. Each Lite uses the **same package name** as its full counterpart, so a Lite APK **installs over (replaces)** the matching full variant — they don't coexist; pick one per package. (Lite APKs are built from the separate, never-merged `feature/lite-variant-tier1` branch and attached to this release manually.)
 
-Vanilla GameHub hides the "PC Game Settings" row in the game-detail More Menu for Steam-linked games (Steam manages its own settings; the raw Wine/DXVK/Box64/VKD3D dialog wouldn't apply). This release **forces that row to always appear** regardless of game type or launch method.
+### Carryover from `v1.2.0-604` and earlier
 
-Single-instruction bytecode patch: removes the `if-eqz` gate immediately before the row's construction in `Lx57;->a()`. Other More Menu rows (PC Uninstall, Online Update, Instant Settings, Version Switch, etc.) keep their native gating — only PC Game Settings is forced visible.
+The full privacy-hardening stack (7 functional patches + public [`PRIVACY.md`](PRIVACY.md)), the always-visible PC Game Settings row in Explorer view, the stable keystore, PC Vibration Settings menu row, and the BannerHub v6 visual rebrand all carry forward unchanged.
 
-Caveat: tapping PC Game Settings for a Steam-launched game opens the Wine settings dialog, but Steam wraps the executable so the settings won't reach the actual Steam process. Useful for direct-launch PC games of any backing source (Local / Cloud / etc.).
-
-### Carryover from `v1.1.0-604`
-
-Stable keystore, PC-accurate XInput rumble, PC Vibration Settings menu row, BannerHub v6 visual rebrand, and the in-place-update behaviour all carry forward unchanged.
-
-> 📜 Past-release notes for `v1.1.0-604`, `v1.0.0-604`, `v1.0.0-602`, `v1.0.1-601`, `v1.0.0-601`, and `v1.0.1-600` are preserved on their respective [release pages](https://github.com/The412Banner/bannerhub-revanced/releases). The README now keeps only the latest release in this section to stay focused on what's current.
+> 📜 Past-release notes for `v1.2.0-604`, `v1.1.0-604`, `v1.0.0-604`, `v1.0.0-602`, `v1.0.1-601`, `v1.0.0-601`, and `v1.0.1-600` are preserved on their respective [release pages](https://github.com/The412Banner/bannerhub-revanced/releases). The README keeps only the latest release in this section to stay focused on what's current.
 
 ---
 

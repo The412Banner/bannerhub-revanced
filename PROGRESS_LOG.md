@@ -2222,3 +2222,10 @@ Release-description edit (user request): the dedicated `### ✨ What's new in 1.
 **Resolves the prior FOLLOW-UP:** the Lite branch already carries the preload-free vibration (`72bb018` merged in via `1b567ae`); these Lite APKs are libevshim-free.
 
 **Stable-release-checklist note (NOT yet done — awaiting user direction):** README on this branch still shows "Latest stable: v1.2.0-604" + a "What's new in v1.2.0-604" section + ToC entry; release notes are still the stale 1.1.0/1.2.0 template (only the 1.1.0 section was pulled per request). README bump + a real 1.3.0-604 "What's new" + a release-notes rewrite were not requested and were not done unilaterally.
+
+
+## 2026-05-16 — v1.3.0-604 stable-release-checklist completed
+
+Followed up the prior entry's flagged item (user approved). Release notes on the v1.3.0-604 GitHub Release rewritten via `gh release edit --notes-file`: added a real **✨ What's new in 1.3.0-604** section (preload-free vibration / x86_64 c000007b fix + 9 Lite APKs), added a **🪶 Lite variants** table (9 rows, same-pkg replace-on-install semantics), fixed the stale `1.1.0-604` naming/versioning examples → `1.3.0-604`, stripped all 5 stale `⭐ *new in 1.1.0-604*` inline tags from the patches table (verified 0 remain), added a "Lite size-reduction strips" patch-table row + a full-vs-Lite Notes bullet, intro now states 18 APKs.
+
+README on `gamehub-604-build` bumped (`c61f44d`, pushed `317fef0..c61f44d`): latest-stable badge link + ToC entry + What's new section all → v1.3.0-604; new section covers the two headline changes and demotes the v1.2.0-604 privacy-stack/PC-Game-Settings detail to a concise carryover note (per the established "latest release only in README" convention; full history stays on the release pages).

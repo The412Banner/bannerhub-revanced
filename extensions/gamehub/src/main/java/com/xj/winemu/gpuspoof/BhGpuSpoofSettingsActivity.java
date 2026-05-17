@@ -111,14 +111,13 @@ public class BhGpuSpoofSettingsActivity extends Activity {
         // Mode
         root.addView(label("Mode"));
         final Spinner modeSpinner = new Spinner(this);
-        modeSpinner.setAdapter(new ArrayAdapter<>(this,
-                android.R.layout.simple_spinner_dropdown_item, MODE_LABELS));
+        modeSpinner.setAdapter(smallAdapter(MODE_LABELS));
         root.addView(modeSpinner);
 
         // ── Spoof box: cascading Vendor → Model ──────────────────────────
         final LinearLayout spoofBox = new LinearLayout(this);
         spoofBox.setOrientation(LinearLayout.VERTICAL);
-        spoofBox.setLayoutParams(topMargin(dp(10)));
+        spoofBox.setLayoutParams(topMargin(dp(6)));
 
         spoofBox.addView(label("Vendor"));
         final Spinner vendorSpinner = new Spinner(this);
@@ -127,8 +126,7 @@ public class BhGpuSpoofSettingsActivity extends Activity {
             vendorLabels[i] = BhGpuCards.VENDOR_LABEL[i]
                     + "  (" + BhGpuCards.CARDS[i].length + " cards)";
         }
-        vendorSpinner.setAdapter(new ArrayAdapter<>(this,
-                android.R.layout.simple_spinner_dropdown_item, vendorLabels));
+        vendorSpinner.setAdapter(smallAdapter(vendorLabels));
         spoofBox.addView(vendorSpinner);
 
         spoofBox.addView(label("Model"));
@@ -139,7 +137,7 @@ public class BhGpuSpoofSettingsActivity extends Activity {
         // ── Custom box: vendor / device / name ───────────────────────────
         final LinearLayout customBox = new LinearLayout(this);
         customBox.setOrientation(LinearLayout.VERTICAL);
-        customBox.setLayoutParams(topMargin(dp(10)));
+        customBox.setLayoutParams(topMargin(dp(6)));
 
         final EditText vendorIn = hexField("Vendor ID (hex, e.g. 10de)", ctl.getVendor());
         final EditText deviceIn = hexField("Device ID (hex, e.g. 1c03)", ctl.getDevice());
@@ -249,7 +247,7 @@ public class BhGpuSpoofSettingsActivity extends Activity {
 
         FrameLayout wrapper = new FrameLayout(this);
         wrapper.setBackgroundColor(0x00000000);
-        final int maxH = (int) (getResources().getDisplayMetrics().heightPixels * 0.85f);
+        final int maxH = (int) (getResources().getDisplayMetrics().heightPixels * 0.78f);
         final int screenW = getResources().getDisplayMetrics().widthPixels;
         final int dialogW = Math.min(dp(340), (int) (screenW * 0.92f));
         FrameLayout.LayoutParams scLp = new FrameLayout.LayoutParams(
@@ -274,8 +272,7 @@ public class BhGpuSpoofSettingsActivity extends Activity {
     /** Repopulates the Model spinner for a vendor and selects {@code sel}. */
     private void rebuildModels(Spinner modelSpinner, int vendorIdx, int sel) {
         String[] models = BhGpuCards.modelNames(vendorIdx);
-        modelSpinner.setAdapter(new ArrayAdapter<>(this,
-                android.R.layout.simple_spinner_dropdown_item, models));
+        modelSpinner.setAdapter(smallAdapter(models));
         if (sel < 0 || sel >= models.length) sel = 0;
         if (models.length > 0) modelSpinner.setSelection(sel);
     }
@@ -309,6 +306,35 @@ public class BhGpuSpoofSettingsActivity extends Activity {
                 vendor.getText().toString(),
                 device.getText().toString(),
                 name.getText().toString());
+    }
+
+    /**
+     * Compact spinner adapter — small text + tight row padding for both the
+     * collapsed control and the dropdown list, so the 313-entry Model spinner
+     * (and Mode/Vendor) take far less vertical space than the stock chunky rows.
+     */
+    private ArrayAdapter<String> smallAdapter(String[] items) {
+        ArrayAdapter<String> a = new ArrayAdapter<String>(this,
+                android.R.layout.simple_spinner_item, items) {
+            @Override public View getView(int pos, View cv, ViewGroup parent) {
+                TextView t = (TextView) super.getView(pos, cv, parent);
+                t.setTextSize(12);
+                t.setPadding(0, dp(3), 0, dp(3));
+                t.setSingleLine(true);
+                t.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                return t;
+            }
+            @Override public View getDropDownView(int pos, View cv, ViewGroup parent) {
+                TextView t = (TextView) super.getDropDownView(pos, cv, parent);
+                t.setTextSize(12);
+                t.setPadding(dp(10), dp(5), dp(10), dp(5));
+                t.setSingleLine(true);
+                t.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                return t;
+            }
+        };
+        a.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        return a;
     }
 
     private TextView label(String text) {

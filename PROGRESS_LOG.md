@@ -2321,3 +2321,12 @@ pre7 device test: **works**. User asked to make the settings dialog smaller. `Bh
 - **Smaller text:** title `16→14`, subtitle `12→11` (+ maxWidth `160→140`), label `13→12`, desc `11→10`, hexField & nameIn `13→12`.
 
 No mode/preset/storage/anchor logic touched. Build = artifact-only `release.yml` pre8. Retest: dialog noticeably smaller, all 3 modes (Off/Spoof/Custom) + cascading spinners still usable.
+
+### 2026-05-17 — pre9: compact spinner options + shorter dialog (user request, pre8 installed)
+
+pre8 installed; user asked for smaller spinner *options* and a shorter dialog. The pre8 shrink left the spinners on Android's stock `simple_spinner_dropdown_item` (chunky ~48dp rows, big text). `BhGpuSpoofSettingsActivity` only (still pure ext Java, zero patcher/anchor):
+
+- **`smallAdapter(String[])`** — new helper returning an `ArrayAdapter` that overrides `getView` (collapsed control: 12sp, `dp(3)` v-padding, single-line ellipsized) and `getDropDownView` (list rows: 12sp, `dp(10/5)` padding, single-line ellipsized), `setDropDownViewResource(simple_spinner_dropdown_item)`. Applied to all 3 spinners (Mode, Vendor, Model) — Mode/Vendor/Model dropdowns and the 313-entry Model list are far tighter.
+- **Shorter:** spoofBox/customBox top-margin `10→6`, height cap `0.85→0.78` of screen.
+
+No mode/preset/storage/anchor logic touched. Build = artifact-only `release.yml` pre9. Retest: spinner rows + dropdown list visibly smaller, dialog shorter, all 3 modes + cascading pickers still work.

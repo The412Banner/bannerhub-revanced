@@ -44,7 +44,7 @@
 >
 > **USE AT YOUR OWN RISK.**
 
-**What it does** — removes the login requirement, redirects the catalog API to the BannerHub Cloudflare Worker, ships PC-accurate XInput rumble for Wine games (with a per-game settings dialog injected into both popup menus), mutes the UI feedback sounds, and rebrands the launcher icon + in-app artwork as BannerHub v6. Nine APK variants install side-by-side on the same device.
+**What it does** — removes the login requirement, redirects the catalog API to the BannerHub Cloudflare Worker, ships **preload-free** PC-accurate XInput rumble for Wine games (with a per-game settings dialog injected into both popup menus), mutes the UI feedback sounds, and rebrands the launcher icon + in-app artwork as BannerHub v6. Nine APK variants install side-by-side on the same device — and as of `v1.3.0-604` each also ships a ~34.5 MB-smaller **Lite** counterpart.
 
 > ✅ **In-place updates** — from `v1.1.0-604` onward, BannerHub releases are signed with a stable test keystore ([`keystore/README.md`](keystore/README.md)) so every future stable installs on top of the previous one with no uninstall. **One-time migration**: if you're still on `v1.0.0-604` or older (those used per-run ephemeral keys), uninstall your current BannerHub-ReVanced variant once before installing `v1.1.0-604`. From there on, regular Android updates flow normally.
 
@@ -131,6 +131,12 @@ The same patch bundle is applied to the same base APK 9 times, each time with a 
 
 Three variants (Normal, Normal-GHL, Original) share the bare "BannerHub v6" launcher label and the two AnTuTu variants share "BannerHub v6 AnTuTu" — they install side-by-side via different package names, so the shared labels are intentional.
 
+### 🪶 Lite variants
+
+From `v1.3.0-604` onward every release also ships a **Lite** counterpart of all 9 variants (filenames carry a trailing `-Lite`, e.g. `BannerHub-V6-<version>-Patched-Normal-Lite.apk`). A Lite build is byte-identical to its full counterpart except it strips ~34.5 MB of dead/optional weight (≈32% on disk: ~114.5 → ~78.3 MB) — a verified-dead duplicate 20 MB MiSans font, the Aliyun carrier-login native lib, the Haima cloud-gaming stack, and the bundled avif-coil AVIF/HEIC image-codec stack. Cloud gaming is non-functional under the BannerHub catalog redirect anyway, and modern Android still decodes HEIF/AVIF via the platform decoder (JPEG/PNG/WebP unaffected).
+
+Each Lite uses the **same package name** as its full counterpart, so installing a Lite APK **replaces** the matching full variant — they do not coexist; pick one per package. Only the launcher label differs (full label + " Lite"). Lite APKs are built from the separate, intentionally never-merged [`feature/lite-variant-tier1`](https://github.com/The412Banner/bannerhub-revanced/tree/feature/lite-variant-tier1) branch (same patch bundle + 4 `use=false` size-reduction strip patches) and attached to the release alongside the 9 full APKs.
+
 ## Signing
 
 From `v1.1.0-604` onward, every release is signed with the **public test keystore** at [`keystore/bannerhub.keystore`](keystore/bannerhub.keystore). The keystore + passwords are intentionally committed to the repo so the signing cert is reproducible across releases — that's what enables in-place Android updates between BannerHub stables.
@@ -172,7 +178,7 @@ Removes the Firebase Crashlytics initialisation block. Without this, GameHub 6.0
 
 Replaces the bundled UI feedback sounds (`assets/composeResources/com.xiaoji.egggame.core/files/sound/*.wav`) with silent PCM. Menu navigation and button taps stop clicking. The patch substitutes the resource at packaging time — no runtime audio routing is changed, so game audio is unaffected. The patch's resource lookup is anchored on a Kotlin `object {}` to give the classloader a stable handle (the alternative — anchoring on the patch class itself — fails when ReVanced's class loader can't see the patches module's resources from inside the runner JVM).
 
-### `PC-accurate vibration` ⭐ *new in v1.1.0-604*
+### `PC-accurate vibration` ⭐ *new in v1.1.0-604 · reworked preload-free in v1.3.0-604*
 
 Four bytecode hooks (`GamepadServerManager.onRumble` entry + per-controller dispatch + stop + Wine env-builder pre-launch trigger) route XInput rumble from Wine games into Android's `VibratorManager` with dual-motor independent dispatch on multi-motor pads, intensity blending on single-motor pads, sustained-hold keepalive, and instant release on let-go. The `BhVibrationController` Java extension owns the state machine (per-slot motor amplitudes, keepalive worker thread, mode dispatch: off/device/controller/both, per-game intensity scaling) **and the preload-free winebus disk patcher** (see below). Adapted from [TideGear/GameHub-Vibration-Fix](https://github.com/TideGear/GameHub-Vibration-Fix) (GameNative PR #1214 lineage) with the author's permission; class-letter map derived for 6.0.4.
 
@@ -352,7 +358,8 @@ BannerHub v6 is a patch bundle — almost nothing under the hood is our work. Ev
 | [Mesa Turnip](https://gitlab.freedesktop.org/mesa/mesa) | Open-source Vulkan driver for Qualcomm Adreno GPUs (part of [Mesa 3D](https://www.mesa3d.org/)) | Rob Clark, Connor Abbott, Danylo Piliaiev, and many contributors. Adreno forks BannerHub serves: [Banners-Turnip](https://github.com/The412Banner/Banners-Turnip), [StevenMXZ](https://github.com/StevenMXZ), [whitebelyash](https://github.com/whitebelyash). |
 | [XiaoJi GameHub](https://gamehub.xiaoji.com/) | The closed-source host APK we patch | XiaoJi GameHub Team |
 | [ReVanced](https://revanced.app/) | Patcher framework, CLI, and patch SDK | ReVanced team — source at [github.com/revanced](https://github.com/revanced) |
-| [TideGear / GameHub-Vibration-Fix](https://github.com/TideGear/GameHub-Vibration-Fix) | 6.0.2 port of BannerHub PR #80 — basis of our `PC-accurate vibration` patch | [@TideGear](https://github.com/TideGear) |
+| [TideGear / GameHub-Vibration-Fix](https://github.com/TideGear/GameHub-Vibration-Fix) | The entire `PC-accurate vibration` patch is built on TideGear's work — the original rumble port (PR #80) and the **preload-free `winebus.so` disk-patch rework** (PR #91) that `v1.3.0-604` ships; both downstream of the GameNative PR #1214 lineage. Adapted with the author's explicit permission. | [@TideGear](https://github.com/TideGear) |
+| [GameNative](https://github.com/utkarshdalal/GameNative) | Upstream Wine-on-Android rumble lineage (PR #1214) that TideGear's fix — and therefore our vibration patch — derives from | [@utkarshdalal](https://github.com/utkarshdalal) and GameNative contributors |
 
 *If any attribution above is wrong, missing, or under the wrong licence header, please let us know.*
 

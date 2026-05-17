@@ -252,98 +252,95 @@ jobs:
         with:
           tag_name: ${{ needs.build.outputs.tag }}
           name: BannerHub v6 ${{ needs.build.outputs.version }}
+          # Slim release-notes template (default since v1.3.0-604). Each stable: refresh the
+          # "What's new in ..." bullets + the "On top of vX.Y.Z-604" prior-stable line below.
           body: |
             ## BannerHub v6 ${{ needs.build.outputs.version }}
 
-            A patched build of XiaoJi GameHub 6.0.4 (`com.xiaoji.egggame`, versionCode 114) that removes the login requirement so games can be imported and used without an account, redirects the catalog API to the BannerHub Cloudflare Worker, and ships **9 variants that install side-by-side on the same device**.
+            A patched build of **XiaoJi GameHub 6.0.4** that removes the login requirement (import and play games with no account) and redirects the catalog to the BannerHub Cloudflare Worker. Ships **9 variants that install side-by-side**, each with an optional **Lite** build (~34.5 MB / ≈32% smaller).
 
-            ### ✨ What's new in 1.1.0-604
+            **18 APKs attached** — 9 full + 9 Lite. Steam game launches work end-to-end.
 
-            This is the **first BannerHub v6 stable** on the new build pipeline. Compared to `v1.0.0-604`, this release ships four major changes:
+            🔒 **Privacy-hardened** — upstream telemetry/analytics channels stripped at the bytecode level. Full list of killed channels (and the honest leftovers) in [`PRIVACY.md`](https://github.com/${{ github.repository }}/blob/gamehub-604-build/PRIVACY.md).
 
-            - **🎮 PC-accurate XInput rumble for Wine games.** Ported from [TideGear/GameHub-Vibration-Fix](https://github.com/TideGear/GameHub-Vibration-Fix) (GameNative PR #1214 lineage) with the author's permission. Dual-motor independent dispatch on multi-motor controllers, sustained rumble that persists past SDL2's ~1 s auto-stop (**preload-free**: an in-process hook patches every `winebus.so` on disk so SDL2's `rumble_expiration` never fires — no `libevshim.so`, no `LD_PRELOAD`, no extra mapping in the Wine subprocess, so x86_64/box64 game launches are no longer destabilised), and instant release on let-go. **On by default** — `MODE_CONTROLLER` at 100% intensity. Adjust per-game via the new **PC Vibration Settings** menu entry (see below).
-            - **🎛 PC Vibration Settings menu row in both per-game popups.** A new 5th row labelled **PC Vibration Settings** now appears in (1) the game-details "More Menu" (3-dot from inside a game's detail screen) and (2) the library-tile 3-dot popup. Tapping it opens a per-game mode/intensity dialog (off / device / controller / both). Per-game settings persist; global defaults apply to games without per-game overrides.
-            - **🎨 BannerHub v6 visual rebrand.** New launcher icon (adaptive-icon foreground, masked-shape friendly on every launcher), refreshed in-app `wine_logo`, and rebranded auth-screen + splash-screen banners. Five drawables touched; per-variant package names + side-by-side install behaviour unchanged.
-            - **🔐 Stable signing — in-place updates from now on.** This release is the first one signed with a stable test keystore (cert SHA-256 `10:89:5A:31:1F:E0:4F:95:F8:2E:4D:A5:C9:A6:C0:41:BA:92:82:BF:21:1F:1B:57:8F:E1:CB:EB:89:4C:E0:BA`). Future BannerHub v6 stables update in-place — no more uninstall-between-versions. **One-time migration required** if you're on `v1.0.0-604` or older (different cert) — see the migration note below.
+            <details>
+            <summary><strong>✨ Everything BannerHub v6 offers (click to expand)</strong></summary>
 
-            ### 🔐 Stable signing — in-place updates from this release onward
+            - **No login required** — launch straight to the home screen and import/play games without a XiaoJi account.
+            - **Custom catalog API** — the catalog is redirected to the BannerHub Cloudflare Worker for **curated component delivery** (hand-picked DXVK, VKD3D-Proton, Box64, FEX, Mesa Turnip driver builds, etc.) instead of the stock upstream set.
+            - **Privacy-hardened** — upstream telemetry/analytics channels stripped at the bytecode level (see the `PRIVACY.md` link above for the full list).
+            - **PC-accurate controller vibration** — real XInput rumble routed into Android's VibratorManager with independent dual-motor support, configurable **per-game** (mode + intensity) via the **PC Vibration Settings** menu row. Preload-free — no `libevshim` / `LD_PRELOAD`.
+            - **9 side-by-side variants** — different package names + launcher labels so multiple builds coexist on one device (`Original` replaces stock GameHub; the rest install alongside it).
+            - **Optional Lite builds** — a ~34.5 MB-smaller counterpart of every variant.
+            - **Muted UI sounds** — menu/button click sounds silenced; in-game audio untouched.
+            - **Root-free file manager access** — a content provider lets MT Manager and similar apps browse GameHub's data dir without root.
+            - **Portrait PC-settings** — per-game PC settings render in both landscape and portrait (side benefit of the API redirect).
+            - **Installs in place** — stable signing keystore; future BannerHub v6 stables upgrade without uninstalling.
+            - **BannerHub v6 branding** — custom app icon, Wine container header, and auth/splash artwork.
+            - **Triage-friendly** — debuggable build with logcat markers along the import path.
 
-            BannerHub releases are now signed with a **stable test keystore** ([`keystore/bannerhub.keystore`](https://github.com/${{ github.repository }}/blob/gamehub-604-build/keystore/README.md)) instead of a fresh per-run ephemeral key. From this release forward, every future BannerHub v6 stable installs **on top of the previous one** with no uninstall — Android sees them as the same app.
+            </details>
 
-            **One-time migration from any earlier `v1.0.0-604`-or-older release:** the old builds were signed with revanced-cli's per-run ephemeral key, so the cert differs. Uninstall your current BannerHub-ReVanced variant once, then install the matching variant from this release. From here on out you can update in place.
+            ### What's new in ${{ needs.build.outputs.version }}
 
-            Cert fingerprints (SHA-256 / SHA-1) are documented in [`keystore/README.md`](https://github.com/${{ github.repository }}/blob/gamehub-604-build/keystore/README.md) and printed in every CI run's `apksigner verify --print-certs` log lines so you can cross-check.
+            On top of `v1.2.0-604` (same keystore — installs in place):
 
-            ### ✅ Steam game launches work end-to-end
-
-            v1.0.0-602's release notes carried a warning that the **standard Steam client** wouldn't launch games under the BannerHub catalog redirect — the workaround was to switch to the **Lightweight Steam client** in the per-game settings. **That warning no longer applies.** The BannerHub API Worker has been fixed server-side to serve a Steam-launch-compatible payload for both client variants, so the standard Steam client launches games successfully on this build (and on existing patched builds — the fix is server-side and retroactive). Pick whichever Steam client suits your title; both work.
-
-            > ⚠ **If your first Steam launch errors with `xtask install components failed`:** open that game's **PC game settings**, set the components manually (Wine prefix, DXVK, VKD3D, container, etc.) and — most importantly — make sure the **correct Steam client** is selected, then try to launch again. The error is a one-time setup hiccup on the first launch when components haven't been pinned per-game yet; once the per-game settings are filled in the launch succeeds.
-
-            ### Source
-            - **Base APK**: `GameHub_6.0.4.apk` — the official 6.0.4 global build (versionCode 114), attached unmodified to [`base-apk-604`](https://github.com/${{ github.repository }}/releases/tag/base-apk-604).
-            - **Patcher**: ReVanced CLI 6.0.0 + this repo's patch bundle, branch `gamehub-604-build`.
-            - **Catalog backend**: [`The412Banner/bannerhub-api`](https://github.com/The412Banner/bannerhub-api) — Cloudflare Worker, deployed at `bannerhub-api.the412banner.workers.dev`.
-            - **Repo**: https://github.com/${{ github.repository }}
-
-            #### Naming & versioning scheme
-
-            APK files follow the pattern **`BannerHub-V6-{version}-Patched-{variant}.apk`** — e.g. `BannerHub-V6-1.1.0-604-Patched-Normal.apk`. The version string itself has three parts:
-
-            - **BannerHub v6** — product name. The `v6` is fixed; it's our branch family aligned with GameHub's 6.x series and stays put across upstream patch-version bumps.
-            - **`1.1.0`** — BannerHub-side semver (`major.minor.patch`). Tracks our own changes: new patches, infrastructure work, bug fixes. Bumps on every release.
-            - **`-604`** — GameHub base version with the dots stripped (`6.0.4` → `604`). Tells you which upstream GameHub APK was patched. When GameHub upstream releases `6.0.5`, the suffix becomes `-605` and the same patch set can be retargeted (e.g. `v1.1.0-605`) without otherwise changing.
-
-            The release tag (`v1.1.0-604`) is just the version string with a leading `v`. The `{variant}` slot in the filename identifies which of the 9 side-by-side packagings you grabbed.
+            - **🎮 Preload-free vibration — fixes the x86_64 / Box64 launch crash.** PC-accurate XInput rumble no longer ships `libevshim.so` or touches `LD_PRELOAD`; SDL2's ~1 s auto-stop is now defeated by an on-disk `winebus.so` patch instead. This resolves the `c000007b` crash that blocked x86_64 / Box64 game launches on older builds. Rumble behaviour is unchanged (per-game via **PC Vibration Settings**). Device-confirmed.
+            - **🪶 Lite builds for every variant.** Each Lite APK is ~34.5 MB smaller (≈114.5 → ≈78.3 MB) — it strips a dead duplicate font, the Aliyun carrier-login lib, the Haima cloud-gaming stack, and the bundled AVIF/HEIC codecs. Removed: cloud gaming (non-functional under the catalog redirect anyway) and the bundled AVIF/HEIC decoder (Android still renders these via the platform decoder; JPEG/PNG/WebP unaffected). Otherwise byte-identical to the full build. Strip-by-strip breakdown in [`bannerhub-v6-lite.md`](https://github.com/${{ github.repository }}/blob/gamehub-604-build/bannerhub-v6-lite.md).
 
             ### Variants
 
-            Nine APKs are produced from the same patch bundle, each with a different package name + launcher label so they install side-by-side. The `Original` variant **replaces** an installed GameHub; the rest install **alongside** the original.
+            Each variant has its own package name + launcher label, so the variants install **side-by-side** with each other. `Original` replaces an installed GameHub; the rest install alongside it.
 
-            | Variant | APK | Package | Launcher label |
-            | --- | --- | --- | --- |
-            | Normal | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Normal.apk` | `banner.hub` | BannerHub v6 |
-            | Normal-GHL | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Normal-GHL.apk` | `gamehub.lite` | BannerHub v6 |
-            | PuBG | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-PuBG.apk` | `com.tencent.ig` | BannerHub v6 PuBG |
-            | AnTuTu | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-AnTuTu.apk` | `com.antutu.ABenchMark` | BannerHub v6 AnTuTu |
-            | alt-AnTuTu | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-alt-AnTuTu.apk` | `com.antutu.benchmark.full` | BannerHub v6 AnTuTu |
-            | PuBG-CrossFire | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-PuBG-CrossFire.apk` | `com.tencent.tmgp.cf` | BannerHub v6 PuBG CrossFire |
-            | Ludashi | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Ludashi.apk` | `com.ludashi.aibench` | BannerHub v6 Ludashi |
-            | Genshin | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Genshin.apk` | `com.miHoYo.GenshinImpact` | BannerHub v6 Genshin |
-            | Original | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Original.apk` | `com.xiaoji.egggame` | BannerHub v6 |
+            **Full vs Lite:** a Lite APK shares its full counterpart's package name and cert — installing Lite **replaces** the matching full build (and vice versa). They do **not** coexist; pick one per row.
+
+            | Variant | Package | Full APK / Lite APK |
+            | --- | --- | --- |
+            | Normal | `banner.hub` | `…-Normal.apk` / `…-Normal-Lite.apk` |
+            | Normal-GHL | `gamehub.lite` | `…-Normal-GHL.apk` / `…-Normal-GHL-Lite.apk` |
+            | PuBG | `com.tencent.ig` | `…-PuBG.apk` / `…-PuBG-Lite.apk` |
+            | AnTuTu | `com.antutu.ABenchMark` | `…-AnTuTu.apk` / `…-AnTuTu-Lite.apk` |
+            | alt-AnTuTu | `com.antutu.benchmark.full` | `…-alt-AnTuTu.apk` / `…-alt-AnTuTu-Lite.apk` |
+            | PuBG-CrossFire | `com.tencent.tmgp.cf` | `…-PuBG-CrossFire.apk` / `…-PuBG-CrossFire-Lite.apk` |
+            | Ludashi | `com.ludashi.aibench` | `…-Ludashi.apk` / `…-Ludashi-Lite.apk` |
+            | Genshin | `com.miHoYo.GenshinImpact` | `…-Genshin.apk` / `…-Genshin-Lite.apk` |
+            | Original | `com.xiaoji.egggame` | `…-Original.apk` / `…-Original-Lite.apk` |
+
+            Filenames follow `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-{variant}[-Lite].apk`. The version string is `BannerHub v6` (product) + `1.3.0` (our semver) + `-604` (the GameHub base, `6.0.4`).
+
+            ### Install notes
+
+            - **Signing**: stable BannerHub test keystore. A one-time uninstall is only needed if upgrading from `v1.0.0-604` or older (cert changed then); every release since installs in place. Fingerprints in [`keystore/README.md`](https://github.com/${{ github.repository }}/blob/gamehub-604-build/keystore/README.md).
+            - Base APK is unmodified XiaoJi GameHub 6.0.4 (versionCode 114) — only the bytecode/resources the patches need are touched.
+            - The `.rvp` / `.rve` bundles are attached for use with `revanced-cli` directly. Built with ReVanced CLI 6.0.0; full APKs from `gamehub-604-build`, Lite from `feature/lite-variant-tier1`.
 
             <details>
             <summary><strong>📦 Patches applied (click to expand)</strong></summary>
 
             | Patch | What it does |
             | --- | --- |
-            | **Bypass login** | Lets you launch straight into the home screen and import games without an account. |
-            | **Disable Firebase Crashlytics** | Removes the Crashlytics init block so the patched build doesn't crash on launch with `VerifyError`. |
-            | **Debug logging** | Marks the APK debuggable and adds logcat markers along the import code path for triage. |
-            | **File manager access** | Exposes a content provider so external file managers (MT Manager etc.) can browse GameHub's data dir without root. |
-            | **Rewrite custom permissions per variant** | Per-variant `com.xiaoji.egggame.permission.*` rewrite so two installed variants don't collide on Android 7+. |
-            | **Mute UI sounds** | Replaces the bundled menu/button click sounds with silent PCM. Game audio is untouched. |
-            | **Redirect catalog API** | Points the catalog API at the BannerHub Cloudflare Worker (`bannerhub-api.the412banner.workers.dev`) for curated component delivery. Side benefit: per-game PC settings now render in both landscape and portrait. |
-            | **Prefix API path with /v6** | Prepends `v6/` to every relative API call so the Worker can serve 6.0-only response variants without affecting 5.x clients. |
-            | **Offline component cache fallback** ⚠ *currently broken on 6.0.4* | *Intended to let per-game pickers show your cached components when the device is offline.* Online behavior is unchanged, so this caveat only matters when you're offline — pickers will still show only the embedded built-in versions instead of the cached entries the patch was meant to surface. Investigation pending; safe to ignore unless you specifically rely on offline picker contents. |
-            | **PC-accurate vibration** ⭐ *new in 1.1.0-604* | 4 bytecode hooks (GamepadServerManager.onRumble entry + per-controller dispatch + stop + Wine env-builder pre-launch trigger) route XInput rumble into Android's VibratorManager with dual-motor independent dispatch on multi-motor pads. SDL2's ~1 s auto-stop is defeated **preload-free**: `BhVibrationController.ensureWinebusDurationPatchOnce` rewrites every `winebus.so`'s two non-zero `SDL_JoystickRumble` duration loads to `0xffffffff` on disk (aarch64 + x86_64) once per app process — no `libevshim.so`, no `LD_PRELOAD`, no extra mapping in the Wine subprocess (fixes the x86_64/box64 launch-death regression). Defaults to `MODE_CONTROLLER` at 100% intensity — works out of the box. |
-            | **Vibration settings activity** ⭐ *new in 1.1.0-604* | Registers `com.xj.winemu.vibration.BhVibrationSettingsActivity` in the manifest. Internal-only (exported=false); launched by the menu rows below via explicit Intent. Dialog lets you pick mode (off / device / controller / both) and intensity (0–100%) per-game, with global defaults. |
-            | **PC Vibration Settings menu row** ⭐ *new in 1.1.0-604* | Injects a 5th menu row labelled **PC Vibration Settings** into both per-game popups (game-details "More Menu" + library-tile 3-dot popup). Tapping launches the vibration settings dialog scoped to the active game. Survives Compose Multiplatform's R8-renamed `Function0/Function1` interfaces (proxied at runtime) and the empty-Kotlin-subclass `Lell` resource descriptor (allocated via `Unsafe`). |
-            | **PC Vibration Settings label resource** ⭐ *new in 1.1.0-604* | Appends a `bh_pc_vibration_label = "PC Vibration Settings"` entry to `features.home`'s Compose Multiplatform resource bundle (`.cvr` file). Used as documentation; the actual runtime resolution goes via a bytecode-patched short-circuit in `Lxd3.l1` because Compose's resource manifest needs entries the bare `.cvr` doesn't register. |
-            | **Change app icon** ⭐ *new in 1.1.0-604* | Replaces 5 in-APK drawables with BannerHub v6 branding: adaptive-icon foreground (deletes the stock GameHub vector so the new raster wins on every device density), in-app `wine_logo` (Wine container header), and three Compose Multiplatform auth/splash assets (auth-screen landscape + overseas logos + splash banner). Launcher background drawable left as-is so launcher masking applies cleanly. |
-            | **Change package name** *(per variant)* | Renames the APK package per variant so all 9 variants install side-by-side. The `Original` variant keeps `com.xiaoji.egggame`. |
-            | **Change app name** *(per variant)* | Renames the launcher label per variant. |
+            | **Bypass login** | Launch straight to the home screen; import and play games with no account. |
+            | **Disable Firebase Crashlytics** | Prevents a launch-time `VerifyError` crash. |
+            | **Debug logging** | Debuggable APK + logcat markers along the import path for triage. |
+            | **File manager access** | Content provider so external file managers (MT Manager etc.) can browse the data dir without root. |
+            | **Rewrite custom permissions per variant** | Stops two installed variants colliding on Android 7+. |
+            | **Mute UI sounds** | Silences menu/button clicks; game audio untouched. |
+            | **Redirect catalog API** | Points the catalog at the BannerHub Worker; also fixes PC-settings rendering in portrait. |
+            | **Prefix API path with /v6** | Lets the Worker serve 6.0-only responses without affecting 5.x clients. |
+            | **Offline component cache fallback** ⚠ *broken on 6.0.4* | Online behaviour unaffected; offline pickers just fall back to built-in versions. Safe to ignore unless you rely on offline picker contents. |
+            | **PC-accurate vibration** | Routes XInput rumble into Android's VibratorManager (independent dual-motor). Preload-free: an on-disk `winebus.so` patch defeats SDL2's ~1 s auto-stop with no `libevshim.so` / `LD_PRELOAD` (fixes the x86_64/box64 launch-death). Default on at 100%. |
+            | **PC Vibration Settings (activity + menu row)** | Per-game mode (off / device / controller / both) and intensity (0–100%), plus a **PC Vibration Settings** row in both per-game popups. |
+            | **Change app icon** | BannerHub v6 branding — adaptive icon, Wine container header, auth/splash assets. |
+            | **Change package & app name** *(per variant)* | Per-variant package + launcher label so all 9 variants install side-by-side (`Original` keeps `com.xiaoji.egggame`). |
+            | **Lite size-reduction strips** *(Lite only)* | Strips the dead 20 MB font, Aliyun carrier-login lib, Haima cloud-gaming stack, and AVIF/HEIC codecs. ~34.5 MB smaller; no effect on full variants. |
 
-            *Per-patch mechanics, smali edits, structural anchors, and version-by-version letter maps live in the [README's Patches applied section](https://github.com/${{ github.repository }}/blob/gamehub-604-build/README.md#patches-applied) and the patch source comments under [`patches/src/main/kotlin/app/revanced/patches/gamehub/`](https://github.com/${{ github.repository }}/tree/gamehub-604-build/patches/src/main/kotlin/app/revanced/patches/gamehub).*
+            *Per-patch mechanics, smali anchors, and version-by-version letter maps are in the [README's Patches applied section](https://github.com/${{ github.repository }}/blob/gamehub-604-build/README.md#patches-applied) and the [patch sources](https://github.com/${{ github.repository }}/tree/gamehub-604-build/patches/src/main/kotlin/app/revanced/patches/gamehub).*
 
             </details>
 
-            ### Notes
+            ### Credits
 
-            - The base APK is unmodified XiaoJi GameHub 6.0.4; only the bytecode/resources required by the patches above are touched.
-            - **Signing**: signed with the stable BannerHub test keystore (`keystore/bannerhub.keystore`). One-time uninstall required if upgrading from `v1.0.0-604` or older (different cert). From this release onward, all future BannerHub v6 stables install in place. Cert fingerprints: see [`keystore/README.md`](https://github.com/${{ github.repository }}/blob/gamehub-604-build/keystore/README.md).
-            - Cover-art-on-import was fixed server-side in the BannerHub Worker on 2026-05-11 (worker deploy `5fd6c6a7…`) and applies retroactively to every existing patched build — no APK rebuild needed.
-            - The `.rvp` patch bundle and `.rve` extension files are also attached for use with `revanced-cli` directly.
+            PC-accurate controller vibration (including the preload-free rework) is built on **[TideGear](https://github.com/TideGear)**'s [GameHub-Vibration-Fix](https://github.com/TideGear/GameHub-Vibration-Fix) (PR #80 + PR #91), adapted with explicit permission, deriving from [GameNative](https://github.com/utkarshdalal/GameNative) (PR #1214). Full project credits (DXVK, VKD3D-Proton, Box64, FEX, Mesa Turnip, ReVanced, etc.) are in the [README Credits section](https://github.com/${{ github.repository }}/blob/gamehub-604-build/README.md#credits).
           files: |
             apks/BannerHub-V6-*.apk
             shared/*.rvp

@@ -2449,3 +2449,16 @@ Closing state for the x86_64/box64 launch-death + vibration saga:
 - **`feature/lite-variant-tier1`** @ `7fe9bbe`: `gamehub-604-build` merged in via `--no-ff` `1b567ae`; vibration files clean-merged, all 4 Lite strips intact; Lite rebuild green (Release `25975305640`, `apk-Lite` ≈75.6 MB). APK staged `/storage/emulated/0/Download/BannerHub-V6-Lite-vibpf-pre1.apk`.
 - **Both branches now ship the preload-free vibration patch** (no libevshim/LD_PRELOAD/native-evshim). `fix/vibration-preload-free` retained on origin as history.
 - **Open:** user device re-test of the Lite APK (boots no c000007b + rumble incl. sustained hold + still ~78 MB). Problem 2 (DiRT3 self-exits ~10 s post-render, also in stock GH-6.0.x) remains separate/unaddressed.
+
+
+## 2026-05-16 — Lite device re-test: vibration/launch fix CONFIRMED; DiRT-3-no-video = Problem 2 (closed)
+
+On `banner.hub.lite` (preload-free Lite APK, branch `feature/lite-variant-tier1`@`7fe9bbe`): XLiveRedist installed OK; **DiRT 3 now LAUNCHES — no `c000007b`** (Problem 1 / the vibration-libevshim launch-death is CURED on the Lite build too; user's original report = fixed & shipped on both branches). Remaining symptom: **black screen / no video**, game self-exits ~25–58 s (`onStopGame`, `normalExit=true`).
+
+Exhaustive, evidence-based elimination (no guessing):
+- NOT stripped codecs — DXVK presents 30–60 fps, `isBooted=true`; AVIF/HEIC = Android Coil image-loader, not in the Wine render path (architectural + empirical).
+- NOT GPU driver — black on BOTH `SMXZ_Turnip_v26.2.0_R4` and `MTR_WN_Turnip_v1.01_Axxx_p`; DXVK `onWindowStartPresent`+fps>0 in both (`gpuPercent≈13%` on WN-Turnip ⇒ presenting cleared/empty frames, not a drawn scene).
+- NOT libevshim/`c000007b` (fixed), NOT packaging (fixed), NOT BannerHub/Lite patches — **same black+self-exit on STOCK GameHub 6.0.4**.
+- `xlive.dll` (GFWL redist) correctly installed in container 131962; no xlive/D3D error logged.
+
+⇒ **Problem 2 = GameHub-6.0.x-generation limitation**: DiRT 3 (Games-for-Windows-Live) boots + DXVK-presents-black + self-exits under the GH-6.0.x experimental-WoW64 container; the GameHub-5.x lineage (BannerHub 3.7.x) renders it fine at 30–40 fps. Effectively upstream-class (in stock 6.0.4), **no BannerHub-side root cause to fix**. Practical: DiRT 3 playable today only on BannerHub 3.7.x. **DiRT-3 thread CLOSED here**; Problem 2 is a separate optional deep workstream (GFWL/xlive under GH-6.0.x experimental-WoW64 — same generational divergence already characterized). The vibration/launch-death fix the user originally reported is DONE/SHIPPED on `gamehub-604-build`@`ed355d3` + `feature/lite-variant-tier1`@`7fe9bbe`.

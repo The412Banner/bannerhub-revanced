@@ -2245,3 +2245,25 @@ Two further `gh release edit` passes on the v1.3.0-604 GitHub release (notes onl
 2. Removed the **body** of the **✅ Steam game launches work end-to-end** section (the "v1.0.0-602's release notes…" paragraph + the ⚠ `xtask install components failed` blockquote) but **kept the header line** (with the ✅ check mark) per request — it now sits directly above `### Source`.
 
 Final published v1.3.0-604 notes structure: title intro → ✨ What's new in 1.3.0-604 → ✅ Steam game launches work end-to-end (header only) → Source → Naming/versioning → Variants (full + 🪶 Lite tables) → Patches applied (details) → 🙏 Credits → Notes. No stale `1.1.0` references or `⭐ new in 1.1.0-604` tags remain.
+
+
+## 2026-05-17 — Per-game GPU spoof feature (branch `feature/gpu-spoof-menu`)
+
+### Motivation
+Crysis 2 (CryEngine 3) shows *"Unsupported video card detected!"* then crashes after OK. The engine reads the adapter as `"GameFusion Driver" [vendor id = 0x5143, device id = 0x43051401]` — 0x5143 is Qualcomm (the Adreno), which CryEngine's GPU whitelist (NVIDIA 0x10DE / AMD 0x1002 / Intel 0x8086 only) rejects. Verified from a user screenshot. DXVK's `dxgi/d3d9/dxvk.customVendorId/customDeviceId` overrides exactly these fields.
+
+### Feature — "GPU Spoof" per-game menu row + dialog
+Direct structural clone of the vibration feature (4 patches + 3 extension classes), so it inherits the proven menu-injection trail from `[[bannerhub-revanced-menu-injection-playbook]]`.
+
+New extension classes (`extensions/gamehub/.../com/xj/winemu/gpuspoof/`):
+- `BhGpuSpoofController.java` — per-game persistence in stock `pc_g_setting<gameId>` SharedPreferences under `bh_gpuspoof_*` keys (export/import compatible, mirrors `BhVibrationController`); global fallback `bh_gpuspoof_prefs`. `applyGpuSpoof(EnvVars)` writes `<filesDir>/bh_gpuspoof_dxvk.conf` (dxgi+d3d9+dxvk customVendorId/DeviceId/DeviceDesc) and force-sets `DXVK_CONFIG_FILE` via reflection. Mode 0 = Off = stock, zero regression.
+- `BhGpuSpoofSettingsActivity.java` — dialog: Off / GTX 1060 / GTX 1080 / RX 580 / UHD 630 / Custom (hex vendor+device+name fields shown for Custom). Saves immediately.
+- `BhGpuSpoofMenuRowClick.java` — Function1/Function0 proxies + 3 row-append helpers + `maybeResolveCustomLabel`, mirroring `BhMenuRowClick`.
+
+New patches (`patches/.../gamehub/gpuspoof/`):
+- `GpuSpoofMenuRowPatch.kt` — 3 injections (Lx57;->a More Menu, ted.f, Lpzc;->j0) + Lxd3;->l1 resolver short-circuit (distinct `:bh_gpuspoof_resolve_fallthrough` label so it coexists with the vibration patch's index-0 head block).
+- `GpuSpoofMenuLabelPatch.kt` — appends `bh_gpuspoof_label` = `GPU Spoof` (b64 `R1BVIFNwb29m`) to features.home CVR.
+- `GpuSpoofManifestPatch.kt` — registers the Activity (exported=false).
+- `GpuSpoofPatch.kt` — launch plumbing. Hooks `Lbg5;->a` (.locals 35, env builder). **Anchor verified by reading bg5.smali:** the app's sole `DXVK_CONFIG_FILE` write is at smali ~2472 inside the `:cond_15` (max-device-memory) conditional; `EnvVars` receiver is stably `v11`; "last EnvVars.a" is a trap (smali ~3099, after the main `return-void` at 3078, in a conditional tail). Correct anchor = the unconditional `ZINK_DESCRIPTORS` set right after `:cond_16` (past both the DXVK and MANGOHUD conditional merges) — inject `invoke-static {v11}, applyGpuSpoof` after it so our `DXVK_CONFIG_FILE` always wins.
+
+Branched off `gamehub-604-build` per branch-per-patch workflow. Pushed; CI compile via `build_pull_request.yml` (workflow_dispatch). Not merged — awaits CI green + device test (Crysis 2 → GTX 1060 preset).

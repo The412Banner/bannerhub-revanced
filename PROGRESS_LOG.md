@@ -2209,3 +2209,16 @@ Memory updated: `bannerhub-revanced-vibration-port-feature-vibration-branch` (CU
 Device test PASSED (user-confirmed: DiRT 3 boots, no c000007b; rumble incl. sustained hold works). `fix/vibration-preload-free` (`dc30275`) merged into `gamehub-604-build` via **`--no-ff` merge commit `72bb018`** (identity The412Banner, no Claude trailer), pushed `9fa3c53..72bb018`. Brought: preload-free `VibrationPatch` Hook 4 + ported winebus disk-patcher in `BhVibrationController.java`; deletions of `VibrationLibPatch.kt`, `native/evshim/{evshim.c,CMakeLists.txt}`, CI libevshim step; README/release-notes refreshed. Clean merge (604-build was ancestor of the fix branch; no conflicts). `fix/vibration-preload-free` retained on origin as history. Post-merge branch-compile CI triggered for sanity.
 
 **FOLLOW-UP REQUIRED (user-flagged):** `feature/lite-variant-tier1` was branched off gamehub-604-build BEFORE this rework → still carries the old libevshim LD_PRELOAD VibrationPatch and will hit the same c000007b. Must bring `72bb018` into the Lite branch (merge/rebase gamehub-604-build → feature/lite-variant-tier1) and rebuild the Lite variant before any new `banner.hub.lite` Lite build. Until then Lite builds still have the broken vibration patch.
+
+
+## 2026-05-16 — v1.3.0-604 STABLE shipped (9 full APKs + GitHub Release)
+
+Dispatched `release.yml` on `gamehub-604-build` with `version=1.3.0-604` `stable=true` → run [25977976554](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25977976554) ✅ → 9 full variant APKs + GitHub Release `BannerHub v6 1.3.0-604` (tag `v1.3.0-604`). Built off `ed355d3` (preload-free vibration in place; matrix unchanged — canonical 9 full variants incl. `Normal-GHL`).
+
+**Dual-build flow (first use):** the separate, never-merged `feature/lite-variant-tier1` branch (@`13ac017`) was dispatched in parallel with `version=1.3.0-604` `stable=false` → run [25977995330](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25977995330) ✅ → 9 Lite APKs as Actions artifacts (its `release` job auto-skipped by the `stable==true` gate). The 9 Lite APKs (≈78.3 MB each) were manually attached to the v1.3.0-604 release via `gh run download … -p 'apk-*-Lite'` + `gh release upload`. **Release now carries 21 assets** = 9 full + 9 Lite + 3 `.rvp`.
+
+Release-description edit (user request): the dedicated `### ✨ What's new in 1.1.0-604` section was removed from the notes (the workflow's notes template still carried it); 0 occurrences remain. Inline `⭐ *new in 1.1.0-604*` patch-table provenance markers left as-is (out of scope).
+
+**Resolves the prior FOLLOW-UP:** the Lite branch already carries the preload-free vibration (`72bb018` merged in via `1b567ae`); these Lite APKs are libevshim-free.
+
+**Stable-release-checklist note (NOT yet done — awaiting user direction):** README on this branch still shows "Latest stable: v1.2.0-604" + a "What's new in v1.2.0-604" section + ToC entry; release notes are still the stale 1.1.0/1.2.0 template (only the 1.1.0 section was pulled per request). README bump + a real 1.3.0-604 "What's new" + a release-notes rewrite were not requested and were not done unilaterally.

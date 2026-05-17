@@ -2236,3 +2236,12 @@ README on `gamehub-604-build` bumped (`c61f44d`, pushed `317fef0..c61f44d`): lat
 README (`gamehub-604-build`, `313caa6`): "What it does" now says preload-free vibration + notes the per-variant ~34.5 MB Lite counterpart; new **🪶 Lite variants** subsection under Variants (strip list, same-pkg replace-on-install, built from never-merged `feature/lite-variant-tier1`); `PC-accurate vibration` patch heading flags the v1.3.0-604 preload-free rework; Credits row rewritten — TideGear PR #80 (original port) + PR #91 (preload-free winebus rework, used with explicit permission) + a new **GameNative** row (verified upstream `github.com/utkarshdalal/GameNative`, PR #1214 lineage; my first-pass `github.com/GameNative` guess was wrong — verified via the local GameNative checkout's `upstream` remote per the always-verify rule).
 
 Release notes (v1.3.0-604 GitHub release, via `gh release edit`): added a **🙏 Credits** section before Notes crediting the controller vibration fix — TideGear/GameHub-Vibration-Fix (PR #80 + #91, with permission) + GameNative (utkarshdalal, PR #1214 lineage), linking the README Credits for the full list.
+
+
+## 2026-05-16 — v1.3.0-604 release-notes trims (user-requested)
+
+Two further `gh release edit` passes on the v1.3.0-604 GitHub release (notes only; no APK/repo change):
+1. Removed the entire **🔐 Stable signing — in-place updates from this release onward** section (header + 3 paragraphs). The brief "(stable keystore unchanged — installs in place)" parenthetical in the What's new intro, the **Signing** bullet in Notes, and the README signing callout were intentionally left as-is (out of scope).
+2. Removed the **body** of the **✅ Steam game launches work end-to-end** section (the "v1.0.0-602's release notes…" paragraph + the ⚠ `xtask install components failed` blockquote) but **kept the header line** (with the ✅ check mark) per request — it now sits directly above `### Source`.
+
+Final published v1.3.0-604 notes structure: title intro → ✨ What's new in 1.3.0-604 → ✅ Steam game launches work end-to-end (header only) → Source → Naming/versioning → Variants (full + 🪶 Lite tables) → Patches applied (details) → 🙏 Credits → Notes. No stale `1.1.0` references or `⭐ new in 1.1.0-604` tags remain.

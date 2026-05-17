@@ -2338,3 +2338,5 @@ pre9 device screenshot (`Screenshot_20260517-163400.png`): in **Custom** mode th
 - **New `styleField(EditText)`** — `GradientDrawable` dark fill `0xFF2A2A2A`, `dp(6)` corner, `dp(1)`/`0xFF4A4A4A` border; white text, hint `0xFF8A8A8A`; `dp(10/8)` padding; `dp(6)` top-margin. Applied to all 3 Custom fields (`hexField()` now calls it; `nameIn` styled inline, its redundant color setters removed).
 
 No mode/preset/storage/anchor logic touched. Build = artifact-only `release.yml` pre10. Retest: Custom-mode fields legible (dark boxes, visible text/hint), spaced.
+
+**Result:** pre10 run 26002042380 → **success**; `apk-alt-AnTuTu` delivered to `/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-gpuspoof-pre10-Patched-alt-AnTuTu.apk`. UI-polish chain pre7→pre10 (full preset catalog → dialog shrink → compact spinners → legible Custom fields) all green; pre7 functionally device-confirmed, pre8/9/10 UI-only on top awaiting visual device test. Branch HEAD `e0853f4` `feature/gpu-spoof-menu`, NOT merged. Crysis-2-spoof-not-applied (pre6 DXVK-log diagnostic) remains open & orthogonal.

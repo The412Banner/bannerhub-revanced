@@ -2462,3 +2462,30 @@ Exhaustive, evidence-based elimination (no guessing):
 - `xlive.dll` (GFWL redist) correctly installed in container 131962; no xlive/D3D error logged.
 
 ⇒ **Problem 2 = GameHub-6.0.x-generation limitation**: DiRT 3 (Games-for-Windows-Live) boots + DXVK-presents-black + self-exits under the GH-6.0.x experimental-WoW64 container; the GameHub-5.x lineage (BannerHub 3.7.x) renders it fine at 30–40 fps. Effectively upstream-class (in stock 6.0.4), **no BannerHub-side root cause to fix**. Practical: DiRT 3 playable today only on BannerHub 3.7.x. **DiRT-3 thread CLOSED here**; Problem 2 is a separate optional deep workstream (GFWL/xlive under GH-6.0.x experimental-WoW64 — same generational divergence already characterized). The vibration/launch-death fix the user originally reported is DONE/SHIPPED on `gamehub-604-build`@`ed355d3` + `feature/lite-variant-tier1`@`7fe9bbe`.
+
+
+## 2026-05-16 — Lite branch builds 9 Lite variants (one per full variant), artifact-only (commit `d3f63f7`)
+
+User decision: keep `feature/lite-variant-tier1` **permanently separate** from `gamehub-604-build` (no merge — Lite-specific regressions must never touch the canonical full set), and have it build a **Lite counterpart of all 9 full variants** instead of the single repurposed `Normal-GHL`→`Lite` slot.
+
+`release.yml` `patch` matrix reworked → 9 rows, every row carries the 4 Tier-1–4 strip `-e` flags:
+
+| Lite variant | Package (= full counterpart) | Label |
+| --- | --- | --- |
+| Normal-Lite | `banner.hub` | BannerHub v6 Lite |
+| Normal-GHL-Lite | `gamehub.lite` | BannerHub v6 Lite |
+| PuBG-Lite | `com.tencent.ig` | BannerHub v6 PuBG Lite |
+| AnTuTu-Lite | `com.antutu.ABenchMark` | BannerHub v6 AnTuTu Lite |
+| alt-AnTuTu-Lite | `com.antutu.benchmark.full` | BannerHub v6 AnTuTu Lite |
+| PuBG-CrossFire-Lite | `com.tencent.tmgp.cf` | BannerHub v6 PuBG CrossFire Lite |
+| Ludashi-Lite | `com.ludashi.aibench` | BannerHub v6 Ludashi Lite |
+| Genshin-Lite | `com.miHoYo.GenshinImpact` | BannerHub v6 Genshin Lite |
+| Original-Lite | `com.xiaoji.egggame` | BannerHub v6 Lite |
+
+- **Option 2 packaging:** each Lite uses the *same* package name as its full counterpart → installing a Lite **replaces** the matching full variant (they do not coexist); only the launcher label differs (full label + " Lite").
+- `name` carries a `-Lite` suffix so APK filenames (`…-Patched-<name>-Lite.apk`) and Actions artifacts (`apk-<name>-Lite`) never collide with the full set.
+- `gamehub-604-build` **untouched** — its 9 full variants stay byte-identical; it owns the GitHub Release.
+- **Release flow:** dispatch `gamehub-604-build` with `stable=true` → 9 full APKs + Release; dispatch the Lite branch *without* `stable=true` → the `release` job is skipped by its existing `if: workflow_dispatch && inputs.stable==true` gate, leaving all 9 Lite APKs as Actions artifacts; manually `gh run download <id> -p 'apk-*'` then `gh release upload <tag> apks/*.apk` onto the gamehub-604-build release. Net = **18 APKs per release** (9 full + 9 Lite).
+- `### Variants` block in `release.yml` + the README variants table rewritten to the 9 Lite rows + replace-on-install semantics. js-yaml-validated; only `.github/workflows/release.yml` + `README.md` changed.
+
+Committed `d3f63f7` on `feature/lite-variant-tier1` (not pushed yet).

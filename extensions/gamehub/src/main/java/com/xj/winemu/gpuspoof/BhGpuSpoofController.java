@@ -240,10 +240,21 @@ public final class BhGpuSpoofController {
             if (confPath != null) {
                 a.invoke(envVars, "DXVK_CONFIG_FILE", confPath);
             }
+            // DIAGNOSTIC (pre6): force DXVK logging via the SAME env channel.
+            // If DXVK then writes d3d9.log/dxgi.log into filesDir, env
+            // propagation to the guest works and the log shows whether it
+            // read our config + what adapter it reports. If no log appears,
+            // env vars we set here are NOT reaching the game process — that
+            // is the real bug, not the spoof keys/path. filesDir is proven
+            // guest-visible (the prefix system32 d3d9.dll symlink resolves a
+            // /data/user/0/<pkg>/files/... path and DXVK loads from it).
+            a.invoke(envVars, "DXVK_LOG_LEVEL", "info");
+            a.invoke(envVars, "DXVK_LOG_PATH", ctx.getFilesDir().getAbsolutePath());
             Log.i(TAG, "GPU spoof active: " + vendor + ":" + device
                     + " (" + desc + ") for " + (gid != null ? gid : "(global)")
                     + " | DXVK_CONFIG=[" + dxvkConfig + "] file="
-                    + (confPath != null ? confPath : "(skipped)"));
+                    + (confPath != null ? confPath : "(skipped)")
+                    + " | DXVK_LOG -> " + ctx.getFilesDir());
         } catch (Throwable t) {
             Log.w(TAG, "EnvVars#a reflection failed; spoof not applied", t);
         }

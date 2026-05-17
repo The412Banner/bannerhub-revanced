@@ -190,48 +190,68 @@ public final class BhGpuSpoofController {
             return;
         }
 
-        StringBuilder conf = new StringBuilder();
-        // DXGI (D3D10/11), D3D9 and the generic dxvk.* keys all map to the
-        // adapter identity surfaces CryEngine and similar engines read.
-        appendKv(conf, "dxgi.customVendorId", vendor);
-        appendKv(conf, "dxgi.customDeviceId", device);
-        if (!desc.isEmpty()) appendKv(conf, "dxgi.customDeviceDesc", desc);
-        appendKv(conf, "d3d9.customVendorId", vendor);
-        appendKv(conf, "d3d9.customDeviceId", device);
-        appendKv(conf, "dxvk.customVendorId", vendor);
-        appendKv(conf, "dxvk.customDeviceId", device);
+        // Primary mechanism: DXVK's inline DXVK_CONFIG env var (DXVK >= 2.1;
+        // this container ships DXVK 2.4.1). Entries are ';'-separated. This
+        // avoids a config FILE entirely — the earlier file approach wrote to
+        // ctx.getFilesDir() (/data/user/0/<pkg>/files/...), which is NOT
+        // visible inside the Proton/FEX guest filesystem, so DXVK could
+        // never open it. DXVK_CONFIG rides the exact same env channel as the
+        // working DXVK_HUD/DXVK_ASYNC the app already sets, so no path or
+        // mount-namespace dependency.
+        //
+        // DXGI (D3D10/11), D3D9 and generic dxvk.* keys are all set so the
+        // adapter-identity surface CryEngine reads is covered regardless of
+        // which DXVK frontend the title uses.
+        StringBuilder inline = new StringBuilder();
+        appendKv(inline, "dxgi.customVendorId", vendor);
+        appendKv(inline, "dxgi.customDeviceId", device);
+        if (!desc.isEmpty()) appendKv(inline, "dxgi.customDeviceDesc", desc);
+        appendKv(inline, "d3d9.customVendorId", vendor);
+        appendKv(inline, "d3d9.customDeviceId", device);
+        appendKv(inline, "dxvk.customVendorId", vendor);
+        appendKv(inline, "dxvk.customDeviceId", device);
+        String dxvkConfig = inline.toString();
 
-        File out = new File(ctx.getFilesDir(), "bh_gpuspoof_dxvk.conf");
+        // Belt-and-braces: also write a file and point DXVK_CONFIG_FILE at it,
+        // in case a future container's DXVK predates DXVK_CONFIG or the path
+        // does happen to be guest-visible. Newline-separated for the file.
+        String fileBody = dxvkConfig.replace(';', '\n');
+        String confPath = null;
         try {
+            File out = new File(ctx.getFilesDir(), "bh_gpuspoof_dxvk.conf");
             java.io.FileOutputStream fos = new java.io.FileOutputStream(out, false);
             try {
-                fos.write(conf.toString().getBytes("UTF-8"));
+                fos.write(fileBody.getBytes("UTF-8"));
             } finally {
                 fos.close();
             }
+            confPath = out.getAbsolutePath();
         } catch (Throwable t) {
-            Log.w(TAG, "could not write " + out, t);
-            return;
+            Log.w(TAG, "could not write dxvk.conf (non-fatal; DXVK_CONFIG still set)", t);
         }
 
         // EnvVars#a(String key, Object value) — same setter the env builder
-        // itself uses for DXVK_CONFIG_FILE. Setting it here (after the app's
-        // own conditional block) overrides any earlier value so the spoof
-        // always takes effect.
+        // uses for DXVK_HUD/DXVK_CONFIG_FILE. Injected after the app's own
+        // conditional DXVK block so our values win.
         try {
             Method a = envVars.getClass().getMethod("a", String.class, Object.class);
             a.setAccessible(true);
-            a.invoke(envVars, "DXVK_CONFIG_FILE", out.getAbsolutePath());
+            a.invoke(envVars, "DXVK_CONFIG", dxvkConfig);
+            if (confPath != null) {
+                a.invoke(envVars, "DXVK_CONFIG_FILE", confPath);
+            }
             Log.i(TAG, "GPU spoof active: " + vendor + ":" + device
                     + " (" + desc + ") for " + (gid != null ? gid : "(global)")
-                    + " → " + out);
+                    + " | DXVK_CONFIG=[" + dxvkConfig + "] file="
+                    + (confPath != null ? confPath : "(skipped)"));
         } catch (Throwable t) {
             Log.w(TAG, "EnvVars#a reflection failed; spoof not applied", t);
         }
     }
 
+    /** Appends "k = v;" — ';'-separated for the DXVK_CONFIG inline env var. */
     private static void appendKv(StringBuilder b, String k, String v) {
-        b.append(k).append(" = ").append(v).append('\n');
+        b.append(k).append(" = ").append(v).append(';');
     }
 
     // ─────────────────────────────────────────────────────────────────────

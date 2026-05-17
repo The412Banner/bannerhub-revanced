@@ -124,28 +124,34 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # APK filename is computed in "Apply patches" from needs.build.outputs.version
-        # + matrix.variant.name, so no per-variant `file:` column. Three labels share
-        # the bare "BannerHub v6" tag (Normal, Original) — they install
-        # side-by-side via different package names, same pattern as the two AnTuTu
-        # variants which share "BannerHub v6 AnTuTu".
-        # `extra` is appended verbatim to the revanced-cli patch command. It is
-        # empty for every variant except Lite, so all other variants build
-        # byte-identically to before this column existed. The Lite variant
-        # (formerly the redundant Normal-GHL rename of Normal — it already
-        # carried the gamehub.lite package, the gamehub-lite convention) opts
-        # into the Tier 1+2 size-reduction patches, which are use=false and so
-        # never apply to any variant that doesn't explicitly -e them.
+        # THIS IS THE LITE PARALLEL BRANCH (feature/lite-variant-tier1).
+        # It is intentionally NOT merged into gamehub-604-build. gamehub-604-build
+        # owns the canonical 9 full variants + the GitHub Release; this branch
+        # builds a Lite counterpart of each of those 9 and is kept separate so
+        # Lite-specific regressions never touch the full set.
+        #
+        # Every row carries the 4 Tier-1–4 strip patches via `extra` (they are
+        # use=false patches, so they only apply because each row -e names them).
+        # `pkg` mirrors the matching full variant on gamehub-604-build exactly
+        # (Option 2: a Lite APK installs over — i.e. replaces — its full sibling;
+        # they do not coexist). `label` is the full variant's label + " Lite".
+        # `name` carries a -Lite suffix so the APK filename and the Actions
+        # artifact (apk-<name>) never collide with the full set.
+        #
+        # The `release` job stays gated on workflow_dispatch + stable==true, so
+        # dispatching this branch without stable=true ends at the patch matrix
+        # and leaves all 9 Lite APKs as Actions artifacts. Those are then
+        # manually attached to the gamehub-604-build release.
         variant:
-          - { name: Normal,         pkg: "banner.hub",                 label: "BannerHub v6",               extra: "" }
-          - { name: Lite,           pkg: "gamehub.lite",               label: "BannerHub v6 Lite",          extra: '-e "Strip duplicate font" -e "Disable Aliyun NumberAuth" -e "Strip cloud gaming" -e "Strip AVIF/HEIC codecs"' }
-          - { name: PuBG,           pkg: "com.tencent.ig",             label: "BannerHub v6 PuBG",          extra: "" }
-          - { name: AnTuTu,         pkg: "com.antutu.ABenchMark",      label: "BannerHub v6 AnTuTu",        extra: "" }
-          - { name: alt-AnTuTu,     pkg: "com.antutu.benchmark.full",  label: "BannerHub v6 AnTuTu",        extra: "" }
-          - { name: PuBG-CrossFire, pkg: "com.tencent.tmgp.cf",        label: "BannerHub v6 PuBG CrossFire", extra: "" }
-          - { name: Ludashi,        pkg: "com.ludashi.aibench",        label: "BannerHub v6 Ludashi",       extra: "" }
-          - { name: Genshin,        pkg: "com.miHoYo.GenshinImpact",   label: "BannerHub v6 Genshin",       extra: "" }
-          - { name: Original,       pkg: "com.xiaoji.egggame",         label: "BannerHub v6",               extra: "" }
+          - { name: Normal-Lite,         pkg: "banner.hub",                 label: "BannerHub v6 Lite",                extra: '-e "Strip duplicate font" -e "Disable Aliyun NumberAuth" -e "Strip cloud gaming" -e "Strip AVIF/HEIC codecs"' }
+          - { name: Normal-GHL-Lite,     pkg: "gamehub.lite",               label: "BannerHub v6 Lite",                extra: '-e "Strip duplicate font" -e "Disable Aliyun NumberAuth" -e "Strip cloud gaming" -e "Strip AVIF/HEIC codecs"' }
+          - { name: PuBG-Lite,           pkg: "com.tencent.ig",             label: "BannerHub v6 PuBG Lite",           extra: '-e "Strip duplicate font" -e "Disable Aliyun NumberAuth" -e "Strip cloud gaming" -e "Strip AVIF/HEIC codecs"' }
+          - { name: AnTuTu-Lite,         pkg: "com.antutu.ABenchMark",      label: "BannerHub v6 AnTuTu Lite",         extra: '-e "Strip duplicate font" -e "Disable Aliyun NumberAuth" -e "Strip cloud gaming" -e "Strip AVIF/HEIC codecs"' }
+          - { name: alt-AnTuTu-Lite,     pkg: "com.antutu.benchmark.full",  label: "BannerHub v6 AnTuTu Lite",         extra: '-e "Strip duplicate font" -e "Disable Aliyun NumberAuth" -e "Strip cloud gaming" -e "Strip AVIF/HEIC codecs"' }
+          - { name: PuBG-CrossFire-Lite, pkg: "com.tencent.tmgp.cf",        label: "BannerHub v6 PuBG CrossFire Lite", extra: '-e "Strip duplicate font" -e "Disable Aliyun NumberAuth" -e "Strip cloud gaming" -e "Strip AVIF/HEIC codecs"' }
+          - { name: Ludashi-Lite,        pkg: "com.ludashi.aibench",        label: "BannerHub v6 Ludashi Lite",        extra: '-e "Strip duplicate font" -e "Disable Aliyun NumberAuth" -e "Strip cloud gaming" -e "Strip AVIF/HEIC codecs"' }
+          - { name: Genshin-Lite,        pkg: "com.miHoYo.GenshinImpact",   label: "BannerHub v6 Genshin Lite",        extra: '-e "Strip duplicate font" -e "Disable Aliyun NumberAuth" -e "Strip cloud gaming" -e "Strip AVIF/HEIC codecs"' }
+          - { name: Original-Lite,       pkg: "com.xiaoji.egggame",         label: "BannerHub v6 Lite",                extra: '-e "Strip duplicate font" -e "Disable Aliyun NumberAuth" -e "Strip cloud gaming" -e "Strip AVIF/HEIC codecs"' }
     steps:
       - name: Checkout
         # Needed so the apksigner step can read keystore/bannerhub.keystore.
@@ -306,19 +312,19 @@ jobs:
 
             ### Variants
 
-            Nine APKs are produced, each with a different package name + launcher label so they install side-by-side. Eight share one patch bundle; the **Lite** variant additionally strips a verified-dead duplicate 20 MB font, the Aliyun carrier-login native lib, the Haima cloud-gaming stack, and the avif-coil AVIF/HEIC image-codec stack (~34.5 MB smaller on disk, ≈32%: 114.5 → 78.3 MB). Removed features: cloud gaming (non-functional under the BannerHub catalog redirect anyway) and the bundled AVIF/HEIC decoder — modern Android still renders HEIF/AVIF via the platform decoder, JPEG/PNG/WebP unaffected. The `Original` variant **replaces** an installed GameHub; the rest install **alongside** the original.
+            This is the **Lite** parallel branch (`feature/lite-variant-tier1`). It produces 9 Lite APKs — a Lite counterpart of each of the 9 full variants built by `gamehub-604-build`. Every Lite APK strips a verified-dead duplicate 20 MB font, the Aliyun carrier-login native lib, the Haima cloud-gaming stack, and the avif-coil AVIF/HEIC image-codec stack (~34.5 MB smaller on disk, ≈32%: 114.5 → 78.3 MB). Removed features: cloud gaming (non-functional under the BannerHub catalog redirect anyway) and the bundled AVIF/HEIC decoder — modern Android still renders HEIF/AVIF via the platform decoder, JPEG/PNG/WebP unaffected. Each Lite APK uses the **same package name** as its full counterpart, so installing a Lite APK **replaces** the matching full variant (they do not coexist); only the launcher label differs (full label + " Lite"). These Lite APKs are normally built artifact-only and manually attached to the `gamehub-604-build` release alongside the 9 full APKs.
 
             | Variant | APK | Package | Launcher label |
             | --- | --- | --- | --- |
-            | Normal | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Normal.apk` | `banner.hub` | BannerHub v6 |
-            | Lite | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Lite.apk` | `gamehub.lite` | BannerHub v6 Lite |
-            | PuBG | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-PuBG.apk` | `com.tencent.ig` | BannerHub v6 PuBG |
-            | AnTuTu | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-AnTuTu.apk` | `com.antutu.ABenchMark` | BannerHub v6 AnTuTu |
-            | alt-AnTuTu | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-alt-AnTuTu.apk` | `com.antutu.benchmark.full` | BannerHub v6 AnTuTu |
-            | PuBG-CrossFire | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-PuBG-CrossFire.apk` | `com.tencent.tmgp.cf` | BannerHub v6 PuBG CrossFire |
-            | Ludashi | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Ludashi.apk` | `com.ludashi.aibench` | BannerHub v6 Ludashi |
-            | Genshin | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Genshin.apk` | `com.miHoYo.GenshinImpact` | BannerHub v6 Genshin |
-            | Original | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Original.apk` | `com.xiaoji.egggame` | BannerHub v6 |
+            | Normal-Lite | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Normal-Lite.apk` | `banner.hub` | BannerHub v6 Lite |
+            | Normal-GHL-Lite | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Normal-GHL-Lite.apk` | `gamehub.lite` | BannerHub v6 Lite |
+            | PuBG-Lite | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-PuBG-Lite.apk` | `com.tencent.ig` | BannerHub v6 PuBG Lite |
+            | AnTuTu-Lite | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-AnTuTu-Lite.apk` | `com.antutu.ABenchMark` | BannerHub v6 AnTuTu Lite |
+            | alt-AnTuTu-Lite | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-alt-AnTuTu-Lite.apk` | `com.antutu.benchmark.full` | BannerHub v6 AnTuTu Lite |
+            | PuBG-CrossFire-Lite | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-PuBG-CrossFire-Lite.apk` | `com.tencent.tmgp.cf` | BannerHub v6 PuBG CrossFire Lite |
+            | Ludashi-Lite | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Ludashi-Lite.apk` | `com.ludashi.aibench` | BannerHub v6 Ludashi Lite |
+            | Genshin-Lite | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Genshin-Lite.apk` | `com.miHoYo.GenshinImpact` | BannerHub v6 Genshin Lite |
+            | Original-Lite | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Original-Lite.apk` | `com.xiaoji.egggame` | BannerHub v6 Lite |
 
             <details>
             <summary><strong>📦 Patches applied (click to expand)</strong></summary>

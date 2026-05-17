@@ -129,21 +129,21 @@ It also fixes a launch-time `VerifyError` that the original 5.x `Disable Crashly
 
 ## Variants
 
-The same patch bundle is applied to the same base APK 9 times, each time with a different package name + launcher label so the variants install **side-by-side** on the same device. The `Original` variant keeps the upstream package name `com.xiaoji.egggame` and so **replaces** an installed GameHub on install; everything else coexists.
+This branch (`feature/lite-variant-tier1`) is the **Lite parallel track**. It is intentionally kept separate from `gamehub-604-build` (which owns the canonical 9 full variants + the GitHub Release) so Lite-specific regressions never touch the full set. It builds a **Lite counterpart of each of the 9 full variants** — same patch bundle, plus the 4 Tier-1–4 strip patches. Each Lite APK uses the **same package name** as its full counterpart, so installing it **replaces** the matching full variant (they do not coexist); only the launcher label differs (full label + " Lite"). These 9 Lite APKs are normally built artifact-only (no Release) and manually attached to the `gamehub-604-build` release.
 
 | Variant | APK file | Package | Launcher label |
 | --- | --- | --- | --- |
-| Normal | `BannerHub-V6-<version>-Patched-Normal.apk` | `banner.hub` | BannerHub v6 |
-| Lite | `BannerHub-V6-<version>-Patched-Lite.apk` | `gamehub.lite` | BannerHub v6 Lite |
-| PuBG | `BannerHub-V6-<version>-Patched-PuBG.apk` | `com.tencent.ig` | BannerHub v6 PuBG |
-| AnTuTu | `BannerHub-V6-<version>-Patched-AnTuTu.apk` | `com.antutu.ABenchMark` | BannerHub v6 AnTuTu |
-| alt-AnTuTu | `BannerHub-V6-<version>-Patched-alt-AnTuTu.apk` | `com.antutu.benchmark.full` | BannerHub v6 AnTuTu |
-| PuBG-CrossFire | `BannerHub-V6-<version>-Patched-PuBG-CrossFire.apk` | `com.tencent.tmgp.cf` | BannerHub v6 PuBG CrossFire |
-| Ludashi | `BannerHub-V6-<version>-Patched-Ludashi.apk` | `com.ludashi.aibench` | BannerHub v6 Ludashi |
-| Genshin | `BannerHub-V6-<version>-Patched-Genshin.apk` | `com.miHoYo.GenshinImpact` | BannerHub v6 Genshin |
-| Original | `BannerHub-V6-<version>-Patched-Original.apk` | `com.xiaoji.egggame` | BannerHub v6 |
+| Normal-Lite | `BannerHub-V6-<version>-Patched-Normal-Lite.apk` | `banner.hub` | BannerHub v6 Lite |
+| Normal-GHL-Lite | `BannerHub-V6-<version>-Patched-Normal-GHL-Lite.apk` | `gamehub.lite` | BannerHub v6 Lite |
+| PuBG-Lite | `BannerHub-V6-<version>-Patched-PuBG-Lite.apk` | `com.tencent.ig` | BannerHub v6 PuBG Lite |
+| AnTuTu-Lite | `BannerHub-V6-<version>-Patched-AnTuTu-Lite.apk` | `com.antutu.ABenchMark` | BannerHub v6 AnTuTu Lite |
+| alt-AnTuTu-Lite | `BannerHub-V6-<version>-Patched-alt-AnTuTu-Lite.apk` | `com.antutu.benchmark.full` | BannerHub v6 AnTuTu Lite |
+| PuBG-CrossFire-Lite | `BannerHub-V6-<version>-Patched-PuBG-CrossFire-Lite.apk` | `com.tencent.tmgp.cf` | BannerHub v6 PuBG CrossFire Lite |
+| Ludashi-Lite | `BannerHub-V6-<version>-Patched-Ludashi-Lite.apk` | `com.ludashi.aibench` | BannerHub v6 Ludashi Lite |
+| Genshin-Lite | `BannerHub-V6-<version>-Patched-Genshin-Lite.apk` | `com.miHoYo.GenshinImpact` | BannerHub v6 Genshin Lite |
+| Original-Lite | `BannerHub-V6-<version>-Patched-Original-Lite.apk` | `com.xiaoji.egggame` | BannerHub v6 Lite |
 
-Normal and Original share the bare "BannerHub v6" launcher label and the two AnTuTu variants share "BannerHub v6 AnTuTu" — they install side-by-side via different package names, so the shared labels are intentional. The **Lite** variant (`gamehub.lite`) is the same patch bundle minus a verified-dead duplicate 20 MB font, the Aliyun carrier-login native lib, the Haima cloud-gaming stack, and the avif-coil AVIF/HEIC image-codec stack — ~34.5 MB smaller on disk (≈32%: 114.5 → 78.3 MB). Removed features: cloud gaming (non-functional under the BannerHub catalog redirect anyway) and the bundled AVIF/HEIC decoder (modern Android renders HEIF/AVIF via the platform decoder; JPEG/PNG/WebP unaffected). Everything else is byte-identical to Normal. Part of an incremental size-reduction track.
+Each Lite APK strips a verified-dead duplicate 20 MB font, the Aliyun carrier-login native lib, the Haima cloud-gaming stack, and the avif-coil AVIF/HEIC image-codec stack — ~34.5 MB smaller on disk (≈32%: 114.5 → 78.3 MB). Removed features: cloud gaming (non-functional under the BannerHub catalog redirect anyway) and the bundled AVIF/HEIC decoder (modern Android renders HEIF/AVIF via the platform decoder; JPEG/PNG/WebP unaffected). Everything else is byte-identical to the matching full variant. Part of an incremental size-reduction track.
 
 ## Signing
 

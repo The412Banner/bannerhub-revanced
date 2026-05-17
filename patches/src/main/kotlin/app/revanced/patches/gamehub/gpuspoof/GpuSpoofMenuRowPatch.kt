@@ -19,12 +19,18 @@ import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 //
 //   1. Game-details More Menu     — Lx57;->a(Lf37;Lpo7;Lv83;I)V (Liae rows)
 //   2. Library-tile popup (ted.f) — 7-arg, Lscd rows via Lqs2;->H
+//   3. Library list popup         — Lpzc;->j0(...)List (Lz4e rows)
+//   + resolver Lxd3;->l1 short-circuit so the Lell label key resolves.
 //
-// Both use raw String labels, so NO Lxd3;->l1 resolver hook is needed. The
-// vibration patch's l1 hook runs reflection on the main thread for every
-// Compose string resolve; a second copy here ANR'd MainActivity cold start
-// on slow devices (2026-05-17). The library-list popup (Lpzc;->j0/Lz4e)
-// path — the only one that needs l1 — is therefore deliberately omitted.
+// ANR HISTORY: a first cut of Injection 3 + the l1 hook ANR'd MainActivity
+// cold start (2026-05-17) — l1 is called for every Compose string resolve
+// and the original maybeResolveCustomLabel did Class.forName +
+// getDeclaredField PER CALL, stacked as a second uncached hook on top of
+// the vibration patch's. Re-added here for full parity with PC Vibration's
+// placement, but BhGpuSpoofMenuRowClick.maybeResolveCustomLabel is now
+// O(1): the tdi.a Field is resolved ONCE into a static and every call is a
+// single cached Field.get + String compare. Near-zero per-resolve cost, so
+// stacking it on vibration's (which ships fine alone) stays within budget.
 // =========================================================================
 
 private const val ROW_DATA      = "Liae;"
@@ -39,6 +45,8 @@ val gpuSpoofMenuRowPatch = bytecodePatch(
         "Injects after the existing rows so stock behaviour is preserved.",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
+
+    dependsOn(gpuSpoofMenuLabelPatch)
 
     apply {
         // ── Injection 1: game-details More Menu (Lx57;->a) ──────────────────
@@ -133,16 +141,72 @@ val gpuSpoofMenuRowPatch = bytecodePatch(
             """.trimIndent(),
         )
 
-        // NOTE: a third injection (library-list popup Lpzc;->j0 with an
-        // Lz4e/Lell-typed label) plus an Lxd3;->l1 resolver short-circuit
-        // were intentionally REMOVED. The l1 hook ran reflection on the
-        // main thread for every Compose string resolve at startup; stacked
-        // on top of the vibration patch's identical l1 hook it tipped cold
-        // start past the ANR threshold on slow devices (verified: ANR on
-        // com.xiaoji.egggame.MainActivity, 2026-05-17). Injections 1 (More
-        // Menu) and 2 (tile popup) use raw String labels — no l1, zero
-        // startup cost — and already cover the per-game GPU-settings entry
-        // point (where the Crysis 2 fix is reached). The library-list popup
-        // row is dropped as acceptable scope.
+        // ── Injection 3: library list popup (Lpzc;->j0) ────────────────────
+        val pzcMethod = firstMethod {
+            parameterTypes == listOf(
+                "Laub;", "Z", "Llvc;", "Llvc;", "Lmob;", "Lmob;",
+                "Lz9;", "Ljn9;", "Lmvc;", "Lmvc;", "Ljvc;"
+            ) &&
+                returnType == "Ljava/util/List;" &&
+                (implementation?.instructions?.any { ins ->
+                    ins.opcode == Opcode.INVOKE_VIRTUAL &&
+                        (ins as? ReferenceInstruction)?.getReference<MethodReference>()
+                            ?.let {
+                                it.definingClass == "Lx9d;" && it.name == "i" &&
+                                    it.returnType == "Lx9d;"
+                            } == true
+                } ?: false)
+        }
+
+        val pzcInstructions = pzcMethod.implementation!!.instructions.toList()
+        val finalizeIdx = pzcInstructions.indexOfLast { ins ->
+            ins.opcode == Opcode.INVOKE_VIRTUAL &&
+                (ins as? ReferenceInstruction)?.getReference<MethodReference>()
+                    ?.let { it.definingClass == "Lx9d;" && it.name == "i" } == true
+        }
+        require(finalizeIdx >= 0) {
+            "GpuSpoofMenuRowPatch: no Lx9d;->i() finalize call in pzc.j0()"
+        }
+        val returnIdx = (finalizeIdx until pzcInstructions.size).firstOrNull { i ->
+            pzcInstructions[i].opcode == Opcode.RETURN_OBJECT
+        }
+        require(returnIdx != null && returnIdx > finalizeIdx) {
+            "GpuSpoofMenuRowPatch: no return-object after Lx9d;->i() in pzc.j0()"
+        }
+        val returnReg = (pzcInstructions[returnIdx] as OneRegisterInstruction).registerA
+        val pzcCallSmali = if (returnReg <= 15) {
+            "invoke-static {v$returnReg}, $CLICK_HANDLER->appendLibraryPopupRow(Ljava/lang/Object;)Ljava/util/List;"
+        } else {
+            "invoke-static/range {v$returnReg .. v$returnReg}, $CLICK_HANDLER->appendLibraryPopupRow(Ljava/lang/Object;)Ljava/util/List;"
+        }
+        pzcMethod.addInstructions(
+            returnIdx,
+            """
+                $pzcCallSmali
+                move-result-object v$returnReg
+            """.trimIndent(),
+        )
+
+        // ── Resolver Lxd3;->l1 short-circuit for our Lell label key ────────
+        // Label-at-end-of-snippet workaround (works at index 0; see
+        // [[revanced-trailing-label-footgun]] and VibrationMenuRowPatch).
+        // Distinct label name so this coexists with the vibration patch's
+        // own index-0 head block. maybeResolveCustomLabel is O(1) (cached
+        // Field) — see the ANR HISTORY note in this file's header.
+        val resolverMethod = firstMethod {
+            definingClass == "Lxd3;" && name == "l1" &&
+                parameterTypes == listOf("Lell;", "Lv83;", "I") &&
+                returnType == "Ljava/lang/String;"
+        }
+        resolverMethod.addInstructions(
+            0,
+            """
+                invoke-static {p0}, $CLICK_HANDLER->maybeResolveCustomLabel(Ljava/lang/Object;)Ljava/lang/String;
+                move-result-object v0
+                if-eqz v0, :bh_gpuspoof_resolve_fallthrough
+                return-object v0
+                :bh_gpuspoof_resolve_fallthrough
+            """.trimIndent(),
+        )
     }
 }

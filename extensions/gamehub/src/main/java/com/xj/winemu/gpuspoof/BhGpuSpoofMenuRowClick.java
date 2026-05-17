@@ -22,7 +22,19 @@ public final class BhGpuSpoofMenuRowClick implements Function1<Object, Object> {
     private static final String TAG = "BhGpuSpoofRow";
 
     private static final String ROW_LABEL  = "GPU Spoof";
+    private static final String LABEL_KEY  = "string:bh_gpuspoof_label";
     private static final String ACTION_ID  = "local_detail_menu_gpu_spoof";
+
+    // Lxd3;->l1 (the Compose string resolver) is patched to call
+    // maybeResolveCustomLabel for EVERY string resolve. The first cut did
+    // Class.forName + getDeclaredField per call and, stacked on the
+    // vibration patch's identical hook, ANR'd MainActivity cold start
+    // (2026-05-17). Fix: resolve tdi.a ONCE into this cache; every call is
+    // then a single Field.get + String compare (O(1), no per-call lookup).
+    // sKeyFieldInit is volatile + the resolve is idempotent, so the worst
+    // race is a few redundant lookups before it settles — never incorrect.
+    private static volatile Field sKeyField;
+    private static volatile boolean sKeyFieldInit;
 
     @Override
     public Object invoke(Object ignoredFromCompose) {
@@ -146,11 +158,75 @@ public final class BhGpuSpoofMenuRowClick implements Function1<Object, Object> {
         }
     }
 
-    // NOTE: appendLibraryPopupRow (Lpzc;->j0/Lz4e) and maybeResolveCustomLabel
-    // (the Lxd3;->l1 resolver short-circuit) were removed — the l1 hook ran
-    // main-thread reflection on every Compose string resolve and ANR'd cold
-    // start when stacked on the vibration patch's identical hook. The row now
-    // ships only on the More Menu + tile popup (raw String labels, no l1).
+    /** Library list popup (Lpzc;->j0): rebuilds the Lz4e list with our row. */
+    public static java.util.List<Object> appendLibraryPopupRow(Object original) {
+        try {
+            if (!(original instanceof java.util.List)) return safeReturn(original);
+            java.util.ArrayList<Object> augmented =
+                new java.util.ArrayList<>((java.util.List<?>) original);
+
+            Class<?> z4eCls = Class.forName("z4e");
+            Class<?> ellCls = Class.forName("ell");
+            Class<?> tdiCls = Class.forName("tdi");
+            Class<?> nw6Cls = Class.forName("nw6");
+
+            Class<?> unsafeCls = Class.forName("sun.misc.Unsafe");
+            Field theUnsafe = unsafeCls.getDeclaredField("theUnsafe");
+            theUnsafe.setAccessible(true);
+            Object unsafe = theUnsafe.get(null);
+            Object label = unsafeCls.getMethod("allocateInstance", Class.class)
+                .invoke(unsafe, ellCls);
+            Field aField = tdiCls.getDeclaredField("a");
+            aField.setAccessible(true);
+            aField.set(label, LABEL_KEY);
+            Field bField = tdiCls.getDeclaredField("b");
+            bField.setAccessible(true);
+            bField.set(label, java.util.Collections.emptySet());
+
+            Object click = newFunction0Proxy(nw6Cls);
+            java.lang.reflect.Constructor<?> z4eCtor =
+                z4eCls.getDeclaredConstructor(ellCls, nw6Cls, int.class);
+            z4eCtor.setAccessible(true);
+            augmented.add(z4eCtor.newInstance(label, click, 0));
+            return augmented;
+        } catch (Throwable t) {
+            Log.w(TAG, "appendLibraryPopupRow failed", t);
+            return safeReturn(original);
+        }
+    }
+
+    /**
+     * Patched into Lxd3.l1 (Compose string resolver) at index 0; called for
+     * EVERY string resolve. Returns our text when the key matches, null
+     * otherwise (stock path runs). O(1): the tdi.a Field is resolved once
+     * into a static cache — no per-call Class.forName/getDeclaredField (that
+     * uncached form, stacked on the vibration hook, caused the 2026-05-17
+     * MainActivity cold-start ANR).
+     */
+    public static String maybeResolveCustomLabel(Object ell) {
+        if (ell == null) return null;
+        Field f = sKeyField;
+        if (f == null) {
+            if (sKeyFieldInit) return null;        // resolve already failed
+            try {
+                Field kf = Class.forName("tdi").getDeclaredField("a");
+                kf.setAccessible(true);
+                sKeyField = kf;
+                f = kf;
+            } catch (Throwable t) {
+                sKeyFieldInit = true;              // don't retry forever
+                Log.w(TAG, "maybeResolveCustomLabel: tdi.a unresolved", t);
+                return null;
+            } finally {
+                sKeyFieldInit = true;
+            }
+        }
+        try {
+            return LABEL_KEY.equals(f.get(ell)) ? ROW_LABEL : null;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
 
     // R8 renamed kotlin Function1/Function0; a Java `implements` is a
     // different JVM type than the host's Lpw6;/Lnw6;. Proxy actually

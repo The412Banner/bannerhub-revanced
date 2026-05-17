@@ -22,7 +22,6 @@ public final class BhGpuSpoofMenuRowClick implements Function1<Object, Object> {
     private static final String TAG = "BhGpuSpoofRow";
 
     private static final String ROW_LABEL  = "GPU Spoof";
-    private static final String LABEL_KEY  = "string:bh_gpuspoof_label";
     private static final String ACTION_ID  = "local_detail_menu_gpu_spoof";
 
     @Override
@@ -147,59 +146,11 @@ public final class BhGpuSpoofMenuRowClick implements Function1<Object, Object> {
         }
     }
 
-    /** Library list popup (Lpzc;->j0): rebuilds the Lz4e list with our row. */
-    public static java.util.List<Object> appendLibraryPopupRow(Object original) {
-        try {
-            if (!(original instanceof java.util.List)) return safeReturn(original);
-            java.util.ArrayList<Object> augmented =
-                new java.util.ArrayList<>((java.util.List<?>) original);
-
-            Class<?> z4eCls = Class.forName("z4e");
-            Class<?> ellCls = Class.forName("ell");
-            Class<?> tdiCls = Class.forName("tdi");
-            Class<?> nw6Cls = Class.forName("nw6");
-
-            Class<?> unsafeCls = Class.forName("sun.misc.Unsafe");
-            Field theUnsafe = unsafeCls.getDeclaredField("theUnsafe");
-            theUnsafe.setAccessible(true);
-            Object unsafe = theUnsafe.get(null);
-            Object label = unsafeCls.getMethod("allocateInstance", Class.class)
-                .invoke(unsafe, ellCls);
-            Field aField = tdiCls.getDeclaredField("a");
-            aField.setAccessible(true);
-            aField.set(label, LABEL_KEY);
-            Field bField = tdiCls.getDeclaredField("b");
-            bField.setAccessible(true);
-            bField.set(label, java.util.Collections.emptySet());
-
-            Object click = newFunction0Proxy(nw6Cls);
-            java.lang.reflect.Constructor<?> z4eCtor =
-                z4eCls.getDeclaredConstructor(ellCls, nw6Cls, int.class);
-            z4eCtor.setAccessible(true);
-            augmented.add(z4eCtor.newInstance(label, click, 0));
-            return augmented;
-        } catch (Throwable t) {
-            Log.w(TAG, "appendLibraryPopupRow failed", t);
-            return safeReturn(original);
-        }
-    }
-
-    /**
-     * Patched into the resolver Lxd3.l1 to short-circuit our sentinel key
-     * before Compose's resource runtime throws "Resource not found". Returns
-     * our text when the key matches, null otherwise (stock path runs).
-     */
-    public static String maybeResolveCustomLabel(Object ell) {
-        try {
-            Field aField = Class.forName("tdi").getDeclaredField("a");
-            aField.setAccessible(true);
-            Object key = aField.get(ell);
-            if (LABEL_KEY.equals(key)) return ROW_LABEL;
-        } catch (Throwable t) {
-            Log.w(TAG, "maybeResolveCustomLabel error", t);
-        }
-        return null;
-    }
+    // NOTE: appendLibraryPopupRow (Lpzc;->j0/Lz4e) and maybeResolveCustomLabel
+    // (the Lxd3;->l1 resolver short-circuit) were removed — the l1 hook ran
+    // main-thread reflection on every Compose string resolve and ANR'd cold
+    // start when stacked on the vibration patch's identical hook. The row now
+    // ships only on the More Menu + tile popup (raw String labels, no l1).
 
     // R8 renamed kotlin Function1/Function0; a Java `implements` is a
     // different JVM type than the host's Lpw6;/Lnw6;. Proxy actually

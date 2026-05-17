@@ -12,16 +12,19 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 
 // =========================================================================
-// Injects a "GPU Spoof" row into GameHub 6.0.4's three per-game menu
-// surfaces. Direct structural clone of VibrationMenuRowPatch (which captured
-// the pre7→pre17 debugging trail in [[bannerhub-revanced-menu-injection-
-// playbook]]). Each injection hands row construction to a Java helper via a
-// single invoke-static — no register clobbering, no verifier risk.
+// Injects a "GPU Spoof" row into GameHub 6.0.4's per-game menus. Structural
+// clone of VibrationMenuRowPatch (pre7→pre17 trail in [[bannerhub-revanced-
+// menu-injection-playbook]]). Each injection hands row construction to a
+// Java helper via a single invoke-static — no register clobbering.
 //
 //   1. Game-details More Menu     — Lx57;->a(Lf37;Lpo7;Lv83;I)V (Liae rows)
 //   2. Library-tile popup (ted.f) — 7-arg, Lscd rows via Lqs2;->H
-//   3. Library list popup         — Lpzc;->j0(...)List (Lz4e rows)
-//   + resolver Lxd3;->l1 short-circuit so the Lell label key resolves.
+//
+// Both use raw String labels, so NO Lxd3;->l1 resolver hook is needed. The
+// vibration patch's l1 hook runs reflection on the main thread for every
+// Compose string resolve; a second copy here ANR'd MainActivity cold start
+// on slow devices (2026-05-17). The library-list popup (Lpzc;->j0/Lz4e)
+// path — the only one that needs l1 — is therefore deliberately omitted.
 // =========================================================================
 
 private const val ROW_DATA      = "Liae;"
@@ -36,8 +39,6 @@ val gpuSpoofMenuRowPatch = bytecodePatch(
         "Injects after the existing rows so stock behaviour is preserved.",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
-
-    dependsOn(gpuSpoofMenuLabelPatch)
 
     apply {
         // ── Injection 1: game-details More Menu (Lx57;->a) ──────────────────
@@ -132,71 +133,16 @@ val gpuSpoofMenuRowPatch = bytecodePatch(
             """.trimIndent(),
         )
 
-        // ── Injection 3: library list popup (Lpzc;->j0) ────────────────────
-        val pzcMethod = firstMethod {
-            parameterTypes == listOf(
-                "Laub;", "Z", "Llvc;", "Llvc;", "Lmob;", "Lmob;",
-                "Lz9;", "Ljn9;", "Lmvc;", "Lmvc;", "Ljvc;"
-            ) &&
-                returnType == "Ljava/util/List;" &&
-                (implementation?.instructions?.any { ins ->
-                    ins.opcode == Opcode.INVOKE_VIRTUAL &&
-                        (ins as? ReferenceInstruction)?.getReference<MethodReference>()
-                            ?.let {
-                                it.definingClass == "Lx9d;" && it.name == "i" &&
-                                    it.returnType == "Lx9d;"
-                            } == true
-                } ?: false)
-        }
-
-        val pzcInstructions = pzcMethod.implementation!!.instructions.toList()
-        val finalizeIdx = pzcInstructions.indexOfLast { ins ->
-            ins.opcode == Opcode.INVOKE_VIRTUAL &&
-                (ins as? ReferenceInstruction)?.getReference<MethodReference>()
-                    ?.let { it.definingClass == "Lx9d;" && it.name == "i" } == true
-        }
-        require(finalizeIdx >= 0) {
-            "GpuSpoofMenuRowPatch: no Lx9d;->i() finalize call in pzc.j0()"
-        }
-        val returnIdx = (finalizeIdx until pzcInstructions.size).firstOrNull { i ->
-            pzcInstructions[i].opcode == Opcode.RETURN_OBJECT
-        }
-        require(returnIdx != null && returnIdx > finalizeIdx) {
-            "GpuSpoofMenuRowPatch: no return-object after Lx9d;->i() in pzc.j0()"
-        }
-        val returnReg = (pzcInstructions[returnIdx] as OneRegisterInstruction).registerA
-        val pzcCallSmali = if (returnReg <= 15) {
-            "invoke-static {v$returnReg}, $CLICK_HANDLER->appendLibraryPopupRow(Ljava/lang/Object;)Ljava/util/List;"
-        } else {
-            "invoke-static/range {v$returnReg .. v$returnReg}, $CLICK_HANDLER->appendLibraryPopupRow(Ljava/lang/Object;)Ljava/util/List;"
-        }
-        pzcMethod.addInstructions(
-            returnIdx,
-            """
-                $pzcCallSmali
-                move-result-object v$returnReg
-            """.trimIndent(),
-        )
-
-        // ── Resolver Lxd3;->l1 short-circuit for our Lell label key ────────
-        // Label-at-end-of-snippet workaround (works at index 0; see
-        // [[revanced-trailing-label-footgun]] and VibrationMenuRowPatch).
-        // Distinct label name so this coexists with the vibration patch's
-        // own index-0 head block in the same method.
-        val resolverMethod = firstMethod {
-            definingClass == "Lxd3;" && name == "l1" &&
-                parameterTypes == listOf("Lell;", "Lv83;", "I") &&
-                returnType == "Ljava/lang/String;"
-        }
-        resolverMethod.addInstructions(
-            0,
-            """
-                invoke-static {p0}, $CLICK_HANDLER->maybeResolveCustomLabel(Ljava/lang/Object;)Ljava/lang/String;
-                move-result-object v0
-                if-eqz v0, :bh_gpuspoof_resolve_fallthrough
-                return-object v0
-                :bh_gpuspoof_resolve_fallthrough
-            """.trimIndent(),
-        )
+        // NOTE: a third injection (library-list popup Lpzc;->j0 with an
+        // Lz4e/Lell-typed label) plus an Lxd3;->l1 resolver short-circuit
+        // were intentionally REMOVED. The l1 hook ran reflection on the
+        // main thread for every Compose string resolve at startup; stacked
+        // on top of the vibration patch's identical l1 hook it tipped cold
+        // start past the ANR threshold on slow devices (verified: ANR on
+        // com.xiaoji.egggame.MainActivity, 2026-05-17). Injections 1 (More
+        // Menu) and 2 (tile popup) use raw String labels — no l1, zero
+        // startup cost — and already cover the per-game GPU-settings entry
+        // point (where the Crysis 2 fix is reached). The library-list popup
+        // row is dropped as acceptable scope.
     }
 }

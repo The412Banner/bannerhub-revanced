@@ -2311,3 +2311,13 @@ User asked to extend the preset list "as many as possible like GameNative/Winlat
 - **`BhGpuSpoofSettingsActivity`** — Option 1 cascading-spinner UX: Mode (Off/Spoof a GPU/Custom) → Vendor spinner (NVIDIA/AMD/Intel + counts) → Model spinner repopulating per vendor; reopen restores via `locate()`. Native Spinner popups only — no ListView/eager inflation, ANR-safe per the pre1–pre4 lesson.
 
 Zero patcher/CVR/asset/anchor change: the 3 patches reference only the menu row + activity (verified no preset coupling); `applyGpuSpoof(Object)` signature unchanged. All 3 Java files lint-compile clean vs android-34 android.jar (exit 0). **Caveat:** modern-card device IDs are well-known refs — sanity-check vs `pci.ids` before any *stable* ship; the 286 GameNative entries are upstream-clean. Build = artifact-only `release.yml` pre7. Carries pre5/pre6's inline-`DXVK_CONFIG` + DXVK-log diagnostic unchanged.
+
+### 2026-05-17 — pre8: shrink the GPU Spoof dialog (user request, pre7 confirmed working)
+
+pre7 device test: **works**. User asked to make the settings dialog smaller. `BhGpuSpoofSettingsActivity` only (pure extension Java, zero patcher/anchor change — same risk class as pre7):
+
+- **Width:** fixed `dp(480)` → `Math.min(dp(340), screenW * 0.92)` so the card no longer spans edge-to-edge / overflows on phones.
+- **Compact vertically:** root padding `dp(20/14)` → `dp(16/12)`, corner radius `12→10`, title bottom-margin `10→8`, desc top-margin `8→6`, btnRow top-margin `8→6`, label vertical padding `6/4 → 4/2`.
+- **Smaller text:** title `16→14`, subtitle `12→11` (+ maxWidth `160→140`), label `13→12`, desc `11→10`, hexField & nameIn `13→12`.
+
+No mode/preset/storage/anchor logic touched. Build = artifact-only `release.yml` pre8. Retest: dialog noticeably smaller, all 3 modes (Off/Spoof/Custom) + cascading spinners still usable.

@@ -73,10 +73,10 @@ public class BhGpuSpoofSettingsActivity extends Activity {
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(20), dp(14), dp(20), dp(14));
+        root.setPadding(dp(16), dp(12), dp(16), dp(12));
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(0xFF1B1B1B);
-        bg.setCornerRadius(dp(12));
+        bg.setCornerRadius(dp(10));
         root.setBackground(bg);
 
         // Title row
@@ -87,7 +87,7 @@ public class BhGpuSpoofSettingsActivity extends Activity {
         TextView title = new TextView(this);
         title.setText("GPU Spoof");
         title.setTextColor(Color.WHITE);
-        title.setTextSize(16);
+        title.setTextSize(14);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         titleRow.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
@@ -96,15 +96,15 @@ public class BhGpuSpoofSettingsActivity extends Activity {
         else if (gameId != null && !gameId.isEmpty())     subtitle.setText("Game " + gameId);
         else                                              subtitle.setText("Global");
         subtitle.setTextColor(0xFFFFD54F);
-        subtitle.setTextSize(12);
+        subtitle.setTextSize(11);
         subtitle.setSingleLine(true);
-        subtitle.setMaxWidth(dp(160));
+        subtitle.setMaxWidth(dp(140));
         subtitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
         titleRow.addView(subtitle);
 
         LinearLayout.LayoutParams titleLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        titleLp.bottomMargin = dp(10);
+        titleLp.bottomMargin = dp(8);
         titleRow.setLayoutParams(titleLp);
         root.addView(titleRow);
 
@@ -148,7 +148,7 @@ public class BhGpuSpoofSettingsActivity extends Activity {
         nameIn.setText(ctl.getName());
         nameIn.setTextColor(Color.WHITE);
         nameIn.setHintTextColor(0xFF777777);
-        nameIn.setTextSize(13);
+        nameIn.setTextSize(12);
         nameIn.setSingleLine(true);
         customBox.addView(vendorIn);
         customBox.addView(deviceIn);
@@ -160,15 +160,15 @@ public class BhGpuSpoofSettingsActivity extends Activity {
         desc.setText("Overrides the GPU vendor/device games see (DXVK). Fixes "
                 + "CryEngine \"Unsupported video card\". Saves to this game's PC config.");
         desc.setTextColor(0xFF999999);
-        desc.setTextSize(11);
-        desc.setLayoutParams(topMargin(dp(8)));
+        desc.setTextSize(10);
+        desc.setLayoutParams(topMargin(dp(6)));
         root.addView(desc);
 
         // Close
         LinearLayout btnRow = new LinearLayout(this);
         btnRow.setOrientation(LinearLayout.HORIZONTAL);
         btnRow.setGravity(Gravity.END);
-        btnRow.setLayoutParams(topMargin(dp(8)));
+        btnRow.setLayoutParams(topMargin(dp(6)));
         Button close = new Button(this);
         close.setText("Close");
         close.setOnClickListener(new View.OnClickListener() {
@@ -250,8 +250,10 @@ public class BhGpuSpoofSettingsActivity extends Activity {
         FrameLayout wrapper = new FrameLayout(this);
         wrapper.setBackgroundColor(0x00000000);
         final int maxH = (int) (getResources().getDisplayMetrics().heightPixels * 0.85f);
+        final int screenW = getResources().getDisplayMetrics().widthPixels;
+        final int dialogW = Math.min(dp(340), (int) (screenW * 0.92f));
         FrameLayout.LayoutParams scLp = new FrameLayout.LayoutParams(
-                dp(480), ViewGroup.LayoutParams.WRAP_CONTENT);
+                dialogW, ViewGroup.LayoutParams.WRAP_CONTENT);
         scLp.gravity = Gravity.CENTER;
         wrapper.addView(scroller, scLp);
         scroller.getLayoutParams().height = ViewGroup.LayoutParams.WRAP_CONTENT;
@@ -313,8 +315,8 @@ public class BhGpuSpoofSettingsActivity extends Activity {
         TextView t = new TextView(this);
         t.setText(text);
         t.setTextColor(Color.WHITE);
-        t.setTextSize(13);
-        t.setPadding(0, dp(6), 0, dp(4));
+        t.setTextSize(12);
+        t.setPadding(0, dp(4), 0, dp(2));
         return t;
     }
 
@@ -331,7 +333,7 @@ public class BhGpuSpoofSettingsActivity extends Activity {
         e.setText(value);
         e.setTextColor(Color.WHITE);
         e.setHintTextColor(0xFF777777);
-        e.setTextSize(13);
+        e.setTextSize(12);
         e.setSingleLine(true);
         e.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         return e;

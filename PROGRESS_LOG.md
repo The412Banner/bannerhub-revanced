@@ -2521,3 +2521,26 @@ Run [26025275469](https://github.com/The412Banner/bannerhub-revanced/actions/run
 **Run procedure (awaiting user):** install → confirm Renderer=Legacy for GoW → launch GoW, screen on, **left running ≥90 s** (`:wine` self-dies ~40 s; staying distinguishes fixed-timeout watchdog kill vs real progress) → pull (no manual capture): `getlog --cat /data/data/com.antutu.benchmark.full/files/bh_renderer_diag.log`, `…/files/fex_diag.log`, `getlog -n 40000 com.antutu.benchmark.full`.
 
 **Decision table:** `WINEMU_LOAD_OK`+`LOAD_OK legacy libxserver`→GoW renders = full pair fixes it, xserver-only WAS the cause (pairing hypothesis confirmed); loads but still dies = deeper than lib pairing; no `WINEMU` lines = winemu redirect found 0 sites (rework redirect); md5 `MISMATCH!` = bundle/extract corruption; `LOAD_OK`+heartbeats stop ~40 s + FEX log clean = loaded/no-composite → host watchdog kill = deleted-DirectRendering tier-2 wall; `fex_diag.log` fatal `c000007b`/wow64 = FEX/arm64x death, renderer is a red herring for GoW.
+
+## 2026-05-18 — M3 full-pair device result + forced-enable experiment (branch `feature/legacy-renderer-toggle`)
+
+### Full-pair diag device run — root cause found
+User ran 3 GoW launches on `…rendererm2-fullpair-diag-pre1` (pkg `com.antutu.benchmark.full`): L1 Legacy=black, L2 Vulkan/stock=working gameplay, L3 Legacy=black. Logcat buffer rolled (AnTuTu floods it); `bh_renderer_diag.log` fsync'd so it survived; `fex_diag.log` 0 B; `GoW_d3d11.log` stale (05-17 15:56) → game never reached DXVK/FEX under Legacy.
+
+**Decisive findings from the diag log:**
+1. **Full-pair bundle correct & loads** — `WINEMU_LOAD_OK legacy libwinemu` md5 `407f274d…` MATCHES 6.0.2; `LOAD_OK legacy libxserver` md5 `e8eb8948…` MATCHES 6.0.2; `XSERVER_CLINIT_DONE (legacy)`. The "`redirectStaticLibLoad` may no-op on 0 sites" caveat is **resolved — it fired**.
+2. **Process does NOT die** — heartbeats unbroken n=0→n=42+, no tombstone/SIGABRT. **Full pair fixed the M2-pre2 ~40 s crash** (the missing lib *was* libwinemu, as hypothesised).
+3. **Black + alive-forever = the deleted-DirectRendering tier-2 wall, confirmed.**
+
+**Root cause:** `flip()` logs exactly ONCE per legacy launch — `branch=setRenderingEnabled enabled=false … OK` — and is never called again. The test2b "`setFlipEnabled`↔`setRenderingEnabled` = name-drift rename" was a *signature* match, not *semantic*: 6.0.4 `setFlipEnabled(Z)` = GPU-passthrough flip (default OFF → false); 6.0.2 `setRenderingEnabled(Z)` = master switch that turns the GLES2 renderer ON, formerly driven by the **6.0.4-deleted `com.winemu.core.DirectRendering`**. We pass 6.0.4's passthrough flag (false) into 6.0.2's renderer-enable switch → libs load, compositor present, renderer never enabled/driven → black, alive forever.
+
+### Forced-enable experiment (user chose cheap test over full port)
+Commit `55b3422` (off `ea2eef9`): one-line THROWAWAY in `BhRendererController.flip()` — `effEnabled = legacy ? true : enabled`; legacy branch now always invokes `setRenderingEnabled(true)` regardless of the 6.0.4-side flag; diag logs `FORCED->true (M3 experiment)` + `eff=`. Full-pair + all diag logging retained. **REVERT before any M2 ship.**
+
+**CI ✅** run [26027685582](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26027685582) completed/success, log-scanned **0 SEVERE**, all renderer patches `succeeded` 9/9 ("Legacy renderer conditional swap" / "libxserver bundle" / "diagnostic env (THROWAWAY)" / "Renderer menu row" / "Renderer settings activity").
+
+**Delivered:** `/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-rendererm3-forceenable-pre1-Patched-alt-AnTuTu.apk` (md5 `7b298d4a932a24d0c298cd1e24484ed7`, 116 MB, pkg `com.antutu.benchmark.full`). Same workflow/keystore → in-place update expected; signature refusal fallback = uninstall (wipes `bh_renderer_mode` + library).
+
+**Caveat for reading the result:** flip() fires ONCE at clinit time, surface almost certainly not yet ready. Still-black could mean EITHER the lib pair can't self-drive (→ full DirectRendering port) OR `setRenderingEnabled(true)` was called too early and needs re-assertion post-`surfaceChanged` (→ deferred re-call, still cheaper than full port). Lit screen → 6.0.2 renderer self-drives once enabled → M2 reduces to wiring the enable correctly.
+
+**Run procedure (awaiting user):** install → Renderer=Legacy for GoW → launch, screen on, **left running ≥90 s** → pull `getlog --cat /data/data/com.antutu.benchmark.full/files/bh_renderer_diag.log` (confirm `FORCED->true (M3 experiment)` + `eff=true` on the FLIP line), `…/fex_diag.log`, `getlog -n 40000 com.antutu.benchmark.full` — capture promptly before the buffer rolls.

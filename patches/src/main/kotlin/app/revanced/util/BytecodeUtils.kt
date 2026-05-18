@@ -30,7 +30,10 @@ import com.android.tools.smali.dexlib2.iface.reference.Reference
 import com.android.tools.smali.dexlib2.iface.reference.StringReference
 import com.android.tools.smali.dexlib2.iface.value.*
 import com.android.tools.smali.dexlib2.immutable.ImmutableField
+import com.android.tools.smali.dexlib2.immutable.ImmutableMethod
+import com.android.tools.smali.dexlib2.immutable.ImmutableMethodParameter
 import com.android.tools.smali.dexlib2.immutable.value.*
+import app.revanced.com.android.tools.smali.dexlib2.mutable.MutableMethod.Companion.toMutable as toMutableMethod
 import com.android.tools.smali.dexlib2.util.MethodUtil
 import java.util.*
 import app.revanced.com.android.tools.smali.dexlib2.mutable.MutableClassDef as MutableClass
@@ -1315,6 +1318,98 @@ internal fun BytecodePatchContext.addStaticFieldToExtension(
                     sget-object v0, $objectCall
                 """ + smaliInstructions,
             )
+        }
+    }
+}
+
+/**
+ * Add an abstract-style `native` method declaration to an existing class so a
+ * dynamically-`RegisterNatives`-binding .so can resolve it. No body (native).
+ * No-op if a method with that name already exists on the class.
+ */
+internal fun BytecodePatchContext.addNativeMethod(
+    className: String,
+    methodName: String,
+    parameterTypes: List<String>,
+    returnType: String,
+) {
+    val classDef = classDefs.find { classDef -> classDef.type == className }
+        ?: throw PatchException("Class not found for native-method shim: $className")
+    val mutableClass = classDefs.getOrReplaceMutable(classDef)
+
+    // Explicitly-typed nulls: dexlib2 overloads the annotation/hidden-api
+    // params (Set<Annotation> vs ImmutableSet), so a bare `null` is an
+    // overload-resolution ambiguity.
+    val noAnnotations: Set<com.android.tools.smali.dexlib2.iface.Annotation>? = null
+    val noHiddenApi: Set<com.android.tools.smali.dexlib2.HiddenApiRestriction>? = null
+    val noImpl: com.android.tools.smali.dexlib2.iface.MethodImplementation? = null
+
+    mutableClass.apply {
+        if (methods.any { it.name == methodName }) return@apply
+        methods.add(
+            ImmutableMethod(
+                type,
+                methodName,
+                parameterTypes.map { ImmutableMethodParameter(it, noAnnotations, null) },
+                returnType,
+                AccessFlags.PUBLIC.value or AccessFlags.FINAL.value or AccessFlags.NATIVE.value,
+                noAnnotations,
+                noHiddenApi,
+                noImpl,
+            ).toMutableMethod(),
+        )
+    }
+}
+
+/**
+ * Rewrite every `invoke-virtual` call to [definingClass]->[fromName][proto]
+ * into a call to [definingClass]->[toName][proto], preserving registers.
+ * Matches by method reference (R8-letter-resilient). [proto] is the smali
+ * proto, e.g. "(Z)V".
+ */
+internal fun BytecodePatchContext.redirectVirtualCalls(
+    definingClass: String,
+    fromName: String,
+    toName: String,
+    proto: String,
+) {
+    fun Instruction.matches(): Boolean {
+        if (opcode != Opcode.INVOKE_VIRTUAL) return false
+        val r = getReference<MethodReference>() ?: return false
+        return r.definingClass == definingClass &&
+            r.name == fromName &&
+            "(${r.parameterTypes.joinToString("")})${r.returnType}" == proto
+    }
+
+    classDefs.forEach { classDef ->
+        classDef.methods.forEach { method ->
+            val impl = method.implementation ?: return@forEach
+            if (impl.instructions.none { it.matches() }) return@forEach
+
+            val mutableMethod =
+                classDefs.getOrReplaceMutable(classDef).findMutableMethodOf(method)
+
+            val indexes = ArrayList<Int>()
+            mutableMethod.instructions.forEachIndexed { index, ins ->
+                if (ins.matches()) indexes.add(index)
+            }
+            indexes.asReversed().forEach { index ->
+                val ins = mutableMethod.getInstruction(index) as FiveRegisterInstruction
+                val regs = (0 until ins.registerCount).map {
+                    "v" + when (it) {
+                        0 -> ins.registerC
+                        1 -> ins.registerD
+                        2 -> ins.registerE
+                        3 -> ins.registerF
+                        else -> ins.registerG
+                    }
+                }.joinToString(", ")
+                mutableMethod.removeInstruction(index)
+                mutableMethod.addInstructions(
+                    index,
+                    "invoke-virtual {$regs}, $definingClass->$toName$proto",
+                )
+            }
         }
     }
 }

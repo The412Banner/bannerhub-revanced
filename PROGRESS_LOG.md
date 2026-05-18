@@ -2416,3 +2416,13 @@ git rm the 3 throwaway files (LegacyGles2RendererTestPatch.kt + 6.0.2 libxserver
 ### 2026-05-17 — CORRECTION: legacy renderer DOES display (GoW on Proton-10-arm); DiRT3 is the outlier
 
 User: God of War ran fine on the legacy renderer on wine_proton10.0-arm64x-2 (arm64x+FEX). Telemetry corroborates (session hit fps=310/299 @ gpuPercent=80 = heavy real rendering, not black). Both my prior swings were over-generalised from DiRT 3 (session-long problem child: GFWL/32-bit-wow64/c000007b): "PROVEN VIABLE" (telemetry-fooled) AND "black-screen, DirectRendering crux unsolved" (DiRT3 visual) were BOTH wrong. Corrected: **legacy GLES2 renderer DISPLAYS and works for real games (GoW end-to-end); deleted-DirectRendering is NOT a universal present blocker; arm64x not broken for legacy (c000007b was DiRT3 32-bit wow64).** Real toggle scope shrinks to gating the already-proven lib-swap+JNI-bridge behind a per-game pref. Plan doc + memory corrected. Lesson: never generalise DiRT 3 to the renderer; validate with a clean title.
+
+### 2026-05-17 — Legacy-renderer-toggle Milestone 1: toggle plumbing (UI + pref + menu row)
+
+On `feature/legacy-renderer-toggle`. Cloned the GPU-Spoof scaffold → renderer toggle (no swap yet; that is M2):
+- `extensions/.../renderer/BhRendererController.java` — per-game+global pref `bh_renderer_mode` (0=New default / 1=Legacy) in `pc_g_setting<id>` + `bh_renderer_prefs`; get/setMode, reload, `isLegacyForGame/isLegacyForLaunchingGame` (M2 entry), sniffGameIdFromStack.
+- `BhRendererSettingsActivity.java` — compact dialog (gpuspoof styling): Mode spinner New(Vulkan)/Legacy(GLES2) + inert-features/GFWL warning; persists on select + Close.
+- `BhRendererMenuRowClick.java` — faithful clone of BhGpuSpoofMenuRowClick (More Menu Lx57;->a + tile popup ted.f; raw-String label, NO l1; Proxy over R8 Function1/0). ROW_LABEL "Renderer".
+- `RendererMenuRowPatch.kt` — clone of GpuSpoofMenuRowPatch (Inj1 Lx57;->a + Inj2 ted.f); additive to the GPU-Spoof row (distinct label, same proven-safe append). `dependsOn(sharedGamehubExtensionPatch, rendererManifestPatch)`.
+- `RendererManifestPatch.kt` — registers BhRendererSettingsActivity (exported=false, translucent).
+All brace-balanced; auto-discovered patches. M1 = the row+dialog+persistence work and are device-testable now (selecting Legacy won't change rendering until M2 wires the conditional 6.0.2 lib-swap+JNI-bridge). Artifact-only build to verify compile + that the renderer menu injections resolve alongside gpuspoof's identical anchors.

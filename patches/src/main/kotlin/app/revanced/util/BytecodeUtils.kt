@@ -1484,6 +1484,101 @@ internal fun BytecodePatchContext.redirectVirtualToStatic(
     }
 }
 
+/**
+ * Rewrite every `System.loadLibrary("<libName>")` call (anywhere in the
+ * app — typically several early `<clinit>` loaders) into
+ * `invoke-static {vName}, targetMethod`, where `targetMethod` has proto
+ * `(Ljava/lang/String;)V` and receives the original name register.
+ *
+ * Matched by tracing the loadLibrary call's name register back to the
+ * nearest preceding `const-string` and comparing its value, so unrelated
+ * `System.loadLibrary` calls (e.g. "xserver", handled separately) are left
+ * untouched. R8-resilient (no class-name dependency).
+ *
+ * Uses the snapshot-then-mutate pattern (see [redirectVirtualToStatic]) to
+ * avoid the ConcurrentModificationException `getOrReplaceMutable` causes
+ * when iterating `classDefs` live.
+ */
+internal fun BytecodePatchContext.redirectStaticLibLoad(
+    libName: String,
+    targetMethod: String,
+) {
+    val SYSTEM = "Ljava/lang/System;"
+
+    fun Instruction.isLoadLibrary(): Boolean {
+        if (opcode != Opcode.INVOKE_STATIC) return false
+        val r = getReference<MethodReference>() ?: return false
+        return r.definingClass == SYSTEM && r.name == "loadLibrary" &&
+            r.parameterTypes.toList() == listOf("Ljava/lang/String;")
+    }
+
+    // For a loadLibrary call at [idx], walk back to the const-string that
+    // last wrote its name register; return that index iff it is [libName].
+    fun List<Instruction>.matchAt(idx: Int): Boolean {
+        val call = this[idx] as? FiveRegisterInstruction ?: return false
+        val nameReg = call.registerC
+        for (i in idx - 1 downTo 0) {
+            val ins = this[i]
+            if ((ins.opcode == Opcode.CONST_STRING ||
+                    ins.opcode == Opcode.CONST_STRING_JUMBO) &&
+                (ins as OneRegisterInstruction).registerA == nameReg
+            ) {
+                return ins.getReference<StringReference>()?.string == libName
+            }
+            // Register reused for something else before the load → give up.
+            if (ins is OneRegisterInstruction && ins.registerA == nameReg &&
+                ins.opcode != Opcode.CONST_STRING &&
+                ins.opcode != Opcode.CONST_STRING_JUMBO
+            ) {
+                return false
+            }
+        }
+        return false
+    }
+
+    val candidates = classDefs.filter { classDef ->
+        classDef.methods.any { method ->
+            val ins = method.implementation?.instructions?.toList() ?: return@any false
+            ins.withIndex().any { (i, x) -> x.isLoadLibrary() && ins.matchAt(i) }
+        }
+    }
+
+    candidates.forEach { classDef ->
+        classDef.methods.toList().forEach { method ->
+            val impl = method.implementation ?: return@forEach
+            val snapshot = impl.instructions.toList()
+            if (snapshot.withIndex().none { (i, x) ->
+                    x.isLoadLibrary() && snapshot.matchAt(i)
+                }
+            ) {
+                return@forEach
+            }
+
+            val mutableMethod =
+                classDefs.getOrReplaceMutable(classDef).findMutableMethodOf(method)
+
+            val indexes = ArrayList<Int>()
+            val mins = mutableMethod.instructions.toList()
+            mins.forEachIndexed { index, ins ->
+                if (ins.isLoadLibrary() && mins.matchAt(index)) indexes.add(index)
+            }
+            indexes.asReversed().forEach { index ->
+                val ins = mutableMethod.getInstruction(index) as FiveRegisterInstruction
+                val nameReg = ins.registerC
+                mutableMethod.removeInstruction(index)
+                mutableMethod.addInstructions(
+                    index,
+                    if (nameReg <= 15) {
+                        "invoke-static {v$nameReg}, $targetMethod"
+                    } else {
+                        "invoke-static/range {v$nameReg .. v$nameReg}, $targetMethod"
+                    },
+                )
+            }
+        }
+    }
+}
+
 @Suppress("ktlint:standard:argument-list-wrapping")
 private class InstructionUtils {
     companion object {

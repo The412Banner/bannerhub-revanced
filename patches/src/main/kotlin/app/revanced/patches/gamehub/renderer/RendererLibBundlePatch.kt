@@ -27,34 +27,44 @@ import java.io.File
 
 private const val RES_DIR = "/legacyrenderer"
 private const val ABI_DIR = "lib/arm64-v8a"
-private const val LEGACY_SO = "libxserver_legacy.so"
+
+// FULL-PAIR (user decision 2026-05-18): bundle BOTH 6.0.2 libs (test3's
+// proven pair). Each maps stock <name>.so -> bundled <name>_legacy.so,
+// additive (stock never overwritten → New mode provably bit-identical).
+//   libxserver_legacy.so  md5 e8eb894825da66cca0fc59b242ac0ad5
+//   libwinemu_legacy.so   md5 407f274d998335dbce03b2074a187e9f
+private val LEGACY_LIBS = mapOf(
+    "libxserver.so" to "libxserver_legacy.so",
+    "libwinemu.so" to "libwinemu_legacy.so",
+)
 
 @Suppress("unused")
 val rendererLibBundlePatch = resourcePatch(
     name = "Legacy renderer libxserver bundle",
-    description = "Bundles the 6.0.2 GLES2-era libxserver.so as " +
-        "libxserver_legacy.so alongside the stock 6.0.4 one (additive, " +
-        "never overwrites stock). The conditional loader chooses per game.",
+    description = "Bundles the 6.0.2 GLES2-era libxserver.so + libwinemu.so " +
+        "as *_legacy.so alongside the stock 6.0.4 ones (additive, never " +
+        "overwrites stock). The conditional loaders choose per game.",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
 
     apply {
-        val bundled = object {}.javaClass.getResourceAsStream("$RES_DIR/$LEGACY_SO")
-            ?.use { it.readBytes() }
-            ?: throw PatchException(
-                "Bundled 6.0.2 $LEGACY_SO not found at $RES_DIR/$LEGACY_SO in patch resources.",
-            )
+        LEGACY_LIBS.forEach { (stockName, legacyName) ->
+            val bundled = object {}.javaClass.getResourceAsStream("$RES_DIR/$legacyName")
+                ?.use { it.readBytes() }
+                ?: throw PatchException(
+                    "Bundled 6.0.2 $legacyName not found at $RES_DIR/$legacyName in patch resources.",
+                )
 
-        // Anchor on the stock lib so we land in the right (existing) ABI dir
-        // and never have to create one; assert it stays untouched.
-        val stock: File = get("$ABI_DIR/libxserver.so")
-        if (!stock.isFile) {
-            throw PatchException(
-                "Expected stock $ABI_DIR/libxserver.so not found — base APK layout changed.",
-            )
+            // Anchor on the stock lib so we land in the right (existing) ABI
+            // dir and never have to create one; assert it stays untouched.
+            val stock: File = get("$ABI_DIR/$stockName")
+            if (!stock.isFile) {
+                throw PatchException(
+                    "Expected stock $ABI_DIR/$stockName not found — base APK layout changed.",
+                )
+            }
+
+            File(stock.parentFile, legacyName).writeBytes(bundled)
         }
-
-        val target = File(stock.parentFile, LEGACY_SO)
-        target.writeBytes(bundled)
     }
 }

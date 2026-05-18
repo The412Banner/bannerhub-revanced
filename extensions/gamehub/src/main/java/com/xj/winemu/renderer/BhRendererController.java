@@ -125,6 +125,11 @@ public final class BhRendererController {
 
     private static volatile boolean legacyActive = false;
     private static volatile boolean legacyDecided = false;
+    /** FULL-PAIR (throwaway): libwinemu loads first, via several early
+     *  clinit loaders; this guards the one-shot legacy swap. Independent of
+     *  legacyActive/legacyDecided, which stay owned by loadXserver so flip()'s
+     *  frozen-decision contract is unchanged. */
+    private static volatile boolean winemuLoaded = false;
 
     /**
      * Replaces {@code System.loadLibrary("xserver")} in XServer's static
@@ -136,29 +141,116 @@ public final class BhRendererController {
      */
     public static void loadXserver(String name) {
         boolean legacy = false;
+        String sniffedGid = null;
         try {
-            legacy = getInstance().isLegacyForLaunchingGame();
+            sniffedGid = sniffGameIdFromStack();
+            legacy = getInstance().isLegacyForGame(sniffedGid);
         } catch (Throwable t) {
             Log.w(TAG, "loadXserver: legacy resolve failed; using stock", t);
+            BhRendererDiag.log("LOAD", "legacy resolve threw; using stock", t);
         }
+        BhRendererDiag.log("LOAD", "loadXserver entry: name=" + name
+                + " sniffedGameId=" + sniffedGid + " legacyForGame=" + legacy
+                + " legacyDecided(pre)=" + legacyDecided);
         if (legacy) {
             try {
                 File so = resolveLegacyLib("libxserver_legacy.so");
+                BhRendererDiag.log("LOAD", "resolveLegacyLib -> "
+                        + (so == null ? "null" : so.getAbsolutePath()
+                        + " isFile=" + so.isFile()
+                        + " len=" + (so.isFile() ? so.length() : -1)
+                        + " md5=" + BhRendererDiag.md5(so,
+                            BhRendererDiag.EXPECTED_XSERVER_MD5)));
                 if (so != null && so.isFile()) {
                     System.load(so.getAbsolutePath());
                     legacyActive = true;
                     legacyDecided = true;
                     Log.i(TAG, "loaded LEGACY libxserver: " + so.getAbsolutePath());
+                    BhRendererDiag.log("LOAD",
+                            "LOAD_OK legacy libxserver -> legacyActive=true");
+                    BhRendererDiag.startHeartbeat();
+                    BhRendererDiag.log("LOAD", "XSERVER_CLINIT_DONE (legacy)");
                     return;
                 }
                 Log.w(TAG, "legacy libxserver unavailable; falling back to stock");
+                BhRendererDiag.log("LOAD",
+                        "legacy libxserver unavailable; FALLBACK->stock");
             } catch (Throwable t) {
                 Log.w(TAG, "legacy libxserver load failed; falling back to stock", t);
+                BhRendererDiag.log("LOAD",
+                        "LOAD_FAIL legacy libxserver; FALLBACK->stock", t);
             }
         }
         System.loadLibrary(name);
         legacyActive = false;
         legacyDecided = true;
+        BhRendererDiag.log("LOAD", "STOCK loadLibrary(\"" + name
+                + "\") -> legacyActive=false");
+        BhRendererDiag.log("LOAD", "XSERVER_CLINIT_DONE (stock)");
+    }
+
+    /**
+     * FULL-PAIR (THROWAWAY, user decision 2026-05-18). Replaces every
+     * {@code System.loadLibrary("winemu")} early loader. When the launching
+     * game's pref is Legacy, swaps in the bundled 6.0.2
+     * {@code libwinemu_legacy.so} — test3's proven pair with the 6.0.2
+     * libxserver — otherwise loads stock {@code "winemu"} bit-identically.
+     *
+     * Idempotent: libwinemu is pulled by several early {@code <clinit>}
+     * loaders; only the first call performs the load, the rest no-op (the
+     * native lib is process-global once loaded). Decision ownership stays
+     * with {@link #loadXserver} (it sets {@link #legacyActive}/
+     * {@link #legacyDecided} for flip()); loadWinemu only mirrors the same
+     * per-launch pref so the pair stays consistent. Any failure on the
+     * legacy path falls back to stock so New mode and a missing/failed
+     * legacy lib never regress.
+     */
+    public static void loadWinemu(String name) {
+        if (winemuLoaded) {
+            BhRendererDiag.log("WINEMU", "loadWinemu re-entry ignored "
+                    + "(already loaded) name=" + name);
+            return;
+        }
+        boolean legacy = false;
+        String sniffedGid = null;
+        try {
+            sniffedGid = sniffGameIdFromStack();
+            legacy = getInstance().isLegacyForGame(sniffedGid);
+        } catch (Throwable t) {
+            Log.w(TAG, "loadWinemu: legacy resolve failed; using stock", t);
+            BhRendererDiag.log("WINEMU", "legacy resolve threw; using stock", t);
+        }
+        BhRendererDiag.log("WINEMU", "loadWinemu entry: name=" + name
+                + " sniffedGameId=" + sniffedGid + " legacyForGame=" + legacy);
+        if (legacy) {
+            try {
+                File so = resolveLegacyLib("libwinemu_legacy.so");
+                BhRendererDiag.log("WINEMU", "resolveLegacyLib -> "
+                        + (so == null ? "null" : so.getAbsolutePath()
+                        + " isFile=" + so.isFile()
+                        + " len=" + (so.isFile() ? so.length() : -1)
+                        + " md5=" + BhRendererDiag.md5(so,
+                            BhRendererDiag.EXPECTED_WINEMU_MD5)));
+                if (so != null && so.isFile()) {
+                    System.load(so.getAbsolutePath());
+                    winemuLoaded = true;
+                    Log.i(TAG, "loaded LEGACY libwinemu: " + so.getAbsolutePath());
+                    BhRendererDiag.log("WINEMU", "WINEMU_LOAD_OK legacy libwinemu");
+                    BhRendererDiag.startHeartbeat();
+                    return;
+                }
+                Log.w(TAG, "legacy libwinemu unavailable; falling back to stock");
+                BhRendererDiag.log("WINEMU",
+                        "legacy libwinemu unavailable; FALLBACK->stock");
+            } catch (Throwable t) {
+                Log.w(TAG, "legacy libwinemu load failed; falling back to stock", t);
+                BhRendererDiag.log("WINEMU",
+                        "WINEMU_LOAD_FAIL legacy libwinemu; FALLBACK->stock", t);
+            }
+        }
+        System.loadLibrary(name);
+        winemuLoaded = true;
+        BhRendererDiag.log("WINEMU", "STOCK loadLibrary(\"" + name + "\")");
     }
 
     /**
@@ -175,11 +267,28 @@ public final class BhRendererController {
                 ? legacyActive
                 : safeIsLegacyForLaunchingGame();
         String fnName = legacy ? "setRenderingEnabled" : "setFlipEnabled";
+        BhRendererDiag.log("FLIP", "flip enter: branch=" + fnName
+                + " enabled=" + enabled + " legacyDecided=" + legacyDecided
+                + " legacyActive=" + legacyActive
+                + " caller=" + flipCaller());
         try {
             Method fn = xserver.getClass().getMethod(fnName, boolean.class);
             fn.invoke(xserver, enabled);
+            BhRendererDiag.log("FLIP", "flip(" + fnName + ") OK");
         } catch (Throwable t) {
             Log.w(TAG, "flip(" + fnName + ") failed", t);
+            BhRendererDiag.log("FLIP", "flip(" + fnName + ") FAILED", t);
+        }
+    }
+
+    /** Diagnostic-only: which redirected setFlipEnabled site drove this. */
+    private static String flipCaller() {
+        try {
+            StackTraceElement[] st = Thread.currentThread().getStackTrace();
+            // [0]=getStackTrace [1]=flipCaller [2]=flip [3]=real caller
+            return st.length > 3 ? st[3].toString() : "(unknown)";
+        } catch (Throwable t) {
+            return "(unknown)";
         }
     }
 

@@ -9,6 +9,7 @@ import app.revanced.patches.gamehub.GAMEHUB_VERSION
 import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 import app.revanced.util.addNativeMethod
 import app.revanced.util.getReference
+import app.revanced.util.redirectStaticLibLoad
 import app.revanced.util.redirectVirtualToStatic
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.FiveRegisterInstruction
@@ -65,6 +66,7 @@ val rendererSwapPatch = bytecodePatch(
         sharedGamehubExtensionPatch,
         rendererManifestPatch,
         rendererLibBundlePatch,
+        rendererDiagEnvPatch, // THROWAWAY diagnostic — revert before M2 ship
     )
 
     apply {
@@ -100,6 +102,22 @@ val rendererSwapPatch = bytecodePatch(
             "setFlipEnabled",
             "(Z)V",
             "$RENDER_CTL->flip(Ljava/lang/Object;Z)V",
+        )
+
+        // (4) FULL-PAIR (user decision 2026-05-18): also gate libwinemu.
+        //     Redirect every System.loadLibrary("winemu") early loader to
+        //     BhRendererController.loadWinemu, which swaps the 6.0.2
+        //     libwinemu_legacy.so when Legacy is active for the launching
+        //     game (test3's proven pair) and is bit-identical stock
+        //     otherwise. Idempotent + always-falls-back so New mode and a
+        //     missing/failed legacy lib never regress. This is the
+        //     deliberate trade-off the xserver-only-first cut avoided:
+        //     libwinemu's decision can't be strictly per-game (early
+        //     loaders), so it resolves per :wine launch via the same
+        //     sniff+global path.
+        redirectStaticLibLoad(
+            "winemu",
+            "$RENDER_CTL->loadWinemu(Ljava/lang/String;)V",
         )
     }
 }

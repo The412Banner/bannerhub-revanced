@@ -2498,3 +2498,14 @@ Run 26022546201 green-but-not-applied (SEVERE-doesn't-fail-CI). Scan: "Legacy re
 ### 2026-05-18 — M2 pre2 CI ✅ VERIFIED
 
 Run 26022795219: **0 SEVERE**; all 4 renderer patches `succeeded` 9/9 in real 6.0.4 APK across every variant — "Legacy renderer conditional swap", "Legacy renderer libxserver bundle", "Renderer menu row", "Renderer settings activity". CME fix confirmed. Milestone 2 is implemented + CI-verified (xserver-only-first). Plan doc updated with Status block. **Milestone 3 next:** device-test Legacy toggle on a known-good title (GoW); requires the feature on the user's actual install (V6 Lite `banner.hub`) → cherry-pick into `feature/lite-variant-tier1` (same as preload-free vibration landing).
+
+### 2026-05-18 — M3 diagnostic build (Patches A+B) + FULL-PAIR libwinemu swap
+
+Device-pulled the last 2 GoW launches under M2 pre2 (alt-AnTuTu `com.antutu.benchmark.full`, `bh_renderer_mode=1`): both bootstrapped, ran ~40 s @ 600 %% CPU, `:wine` died fg-TOP, **no tombstone, GoW_d3d11.log stale (05-17 15:56), no wine_debug.log** → never reached D3D11; died pre-render. Same shape as test3.
+
+Built a THROWAWAY diagnostic (not for merge; gated by `BhRendererDiag.DIAG`):
+- **Patch A** — `BhRendererDiag` fsync'd per-line file logger (`<files>/bh_renderer_diag.log`) threaded through `BhRendererController.loadXserver`/`loadWinemu`/`flip` (entry, resolveLegacyLib path+len+md5-vs-expected, LOAD_OK/FAIL, stock fallback, XSERVER_CLINIT_DONE, flip branch/flag/caller/result) + 1 Hz heartbeat (how far past the swap before `:wine` death).
+- **Patch B** — `RendererDiagEnvPatch` injects `BhRendererDiag.applyDiagEnv` at GpuSpoofPatch's proven `Lbg5;->a` ZINK_DESCRIPTORS anchor; reflective EnvVars#a sets `WINEDEBUG=+loaddll,+module,+process,+seh,+pid,+timestamp,fixme-all` + `FEX_SILENTLOG=0` + `FEX_OUTPUTLOG=<files>/fex_diag.log` ONLY when Legacy active for the launching game (FEX log survives kill -9, unlike host-swallowed wine stderr).
+- **FULL-PAIR (user decision)** — also swap 6.0.2 libwinemu (test3's proven pair). `redirectStaticLibLoad("winemu", loadWinemu)` (new BytecodeUtils helper) rewrites every `System.loadLibrary("winemu")` early loader; `RendererLibBundlePatch` now bundles BOTH `libxserver_legacy.so` (md5 e8eb89…) + `libwinemu_legacy.so` (md5 407f27…, verified from GameHub_6.0.2.apk) additively; `loadWinemu` idempotent + falls back to stock, decision ownership stays with loadXserver so flip()'s frozen contract is unchanged. Concession: libwinemu can't be strictly per-game (early loaders) — resolves per `:wine` launch via sniff+global.
+
+`rendererSwapPatch` dependsOn `rendererDiagEnvPatch` so the diag patch is pulled in. CI: artifact-only `1.3.0-604-rendererm2-fullpair-diag-pre1`. Next: deliver alt-AnTuTu APK, GoW launch left running ≥90 s with Legacy set, pull the 3 logs via root bridge → decision table resolves which of the 4 hypotheses holds.

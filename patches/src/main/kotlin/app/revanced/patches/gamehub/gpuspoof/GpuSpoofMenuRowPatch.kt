@@ -5,6 +5,7 @@ import app.revanced.patcher.firstMethod
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
 import app.revanced.patches.gamehub.GAMEHUB_VERSION
+import app.revanced.patches.gamehub.common.menuGameIdCapturePatch
 import app.revanced.util.getReference
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
@@ -39,6 +40,7 @@ val gpuSpoofMenuRowPatch = bytecodePatch(
         "Injects after the existing rows so stock behaviour is preserved.",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
+    dependsOn(menuGameIdCapturePatch)
 
     apply {
         // ── Injection 1: game-details More Menu (Lx57;->a) ──────────────────

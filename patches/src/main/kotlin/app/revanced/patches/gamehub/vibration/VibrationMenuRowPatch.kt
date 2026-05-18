@@ -6,6 +6,7 @@ import app.revanced.patcher.firstMethod
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
 import app.revanced.patches.gamehub.GAMEHUB_VERSION
+import app.revanced.patches.gamehub.common.menuGameIdCapturePatch
 import app.revanced.util.getReference
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
@@ -56,7 +57,7 @@ val vibrationMenuRowPatch = bytecodePatch(
     // The library-tile popup injection (injection 3) needs the
     // bh_pc_vibration_label Compose-resource entry so Lell.<init> can
     // produce a key Lxd3.l1 can resolve to "PC Vibration Settings".
-    dependsOn(vibrationMenuLabelPatch)
+    dependsOn(vibrationMenuLabelPatch, menuGameIdCapturePatch)
 
     apply {
         // Find the menu Composable structurally via firstMethod (returns

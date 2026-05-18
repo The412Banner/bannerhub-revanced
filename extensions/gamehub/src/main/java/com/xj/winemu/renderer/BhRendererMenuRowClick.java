@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.content.Intent;
 import android.util.Log;
 
+import com.xj.winemu.common.BhMenuGameId;
+
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Map;
@@ -26,44 +28,13 @@ public final class BhRendererMenuRowClick implements Function1<Object, Object> {
     private static final String ROW_LABEL = "Renderer";
     private static final String ACTION_ID = "local_detail_menu_renderer";
 
-    // Per-game gameId captured from the menu-builder's data param at method
-    // entry (RendererMenuRowPatch injects captureGameId(menuData) at index 0
-    // of Lx57;->a / ted.f — runs once per menu open). The row-build helpers
-    // bake this into each handler instance so the click is correctly scoped
-    // even from a PRE-LAUNCH menu (where sniffGameIdFromStack finds nothing).
-    private static volatile String sCapturedGameId;
-
+    // Per-game id captured once per menu open by the shared
+    // MenuGameIdCapturePatch into BhMenuGameId. Baked into each handler at
+    // row-build time so the click is scoped to the right game even from a
+    // PRE-LAUNCH menu (where sniffGameIdFromStack finds nothing).
     private final String boundGameId;
 
-    public BhRendererMenuRowClick() { this.boundGameId = sCapturedGameId; }
-
-    /**
-     * Injected at index 0 of the menu builders with the menu-data param
-     * (Lf37 GameDetailArgs / Lued). Resolves the gameId from its toString —
-     * GameHub's data/value classes render a stable
-     * {@code ServerGameId(value=<int>)} / {@code gameId=<int>} token
-     * regardless of R8 field renaming. == the pc_g_setting<id> key.
-     */
-    public static void captureGameId(Object menuData) {
-        try {
-            sCapturedGameId = resolveGameId(menuData);
-        } catch (Throwable t) {
-            Log.w(TAG, "captureGameId failed", t);
-        }
-    }
-
-    private static String resolveGameId(Object menuData) {
-        if (menuData == null) return null;
-        String s;
-        try { s = String.valueOf(menuData); } catch (Throwable t) { return null; }
-        if (s == null) return null;
-        java.util.regex.Matcher m =
-            java.util.regex.Pattern.compile("ServerGameId\\(value=(-?\\d+)\\)").matcher(s);
-        if (m.find()) return m.group(1);
-        m = java.util.regex.Pattern.compile("gameId=(\\d+)").matcher(s);
-        if (m.find()) return m.group(1);
-        return null;
-    }
+    public BhRendererMenuRowClick() { this.boundGameId = BhMenuGameId.getCaptured(); }
 
     @Override
     public Object invoke(Object ignoredFromCompose) {

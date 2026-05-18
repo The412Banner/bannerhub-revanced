@@ -5,6 +5,7 @@ import app.revanced.patcher.firstMethod
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
 import app.revanced.patches.gamehub.GAMEHUB_VERSION
+import app.revanced.patches.gamehub.common.menuGameIdCapturePatch
 import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 import app.revanced.util.getReference
 import com.android.tools.smali.dexlib2.Opcode
@@ -36,7 +37,7 @@ val rendererMenuRowPatch = bytecodePatch(
         "stock behaviour and the GPU-Spoof row are preserved.",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
-    dependsOn(sharedGamehubExtensionPatch, rendererManifestPatch)
+    dependsOn(sharedGamehubExtensionPatch, rendererManifestPatch, menuGameIdCapturePatch)
 
     apply {
         // ── Injection 1: game-details More Menu (Lx57;->a) ──────────────────
@@ -131,17 +132,7 @@ val rendererMenuRowPatch = bytecodePatch(
             """.trimIndent(),
         )
 
-        // ── Per-game capture: at method entry of each builder, hand the
-        // menu-data param (p0 — Lf37 GameDetailArgs / Lued, both static
-        // methods) to the handler so the injected row's click is scoped to
-        // the actual game even from a pre-launch menu (sniffGameIdFromStack
-        // finds nothing there). Single no-label invoke, runs once per menu
-        // open — not the per-resolve l1 path, so no ANR/footgun. range form
-        // because p0 is a high param register in these .locals-heavy methods.
-        val captureSmali =
-            "invoke-static/range {p0 .. p0}, " +
-                "$CLICK_HANDLER->captureGameId(Ljava/lang/Object;)V"
-        menuMethod.addInstructions(0, captureSmali)
-        libraryMenuMethod.addInstructions(0, captureSmali)
+        // Per-game id is captured once by the shared menuGameIdCapturePatch
+        // (dependency) into BhMenuGameId; the click handler reads it.
     }
 }

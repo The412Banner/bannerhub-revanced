@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.content.Intent;
 import android.util.Log;
 
+import com.xj.winemu.common.BhMenuGameId;
+
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Map;
@@ -45,7 +47,10 @@ public final class BhMenuRowClick implements Function1<Object, Object> {
                 return kotlin.Unit.INSTANCE;
             }
             Intent intent = new Intent(host, BhVibrationSettingsActivity.class);
-            String gameId = sniffGameIdFromStack();
+            // Per-game id captured from the menu data (shared
+            // BhMenuGameId); fall back to a running WineActivity.
+            String gameId = BhMenuGameId.getCaptured();
+            if (gameId == null || gameId.isEmpty()) gameId = sniffGameIdFromStack();
             if (gameId != null && !gameId.isEmpty()) {
                 intent.putExtra("gameId", gameId);
             }

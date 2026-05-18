@@ -1,4 +1,4 @@
-package com.xj.winemu.gpuspoof;
+package com.xj.winemu.renderer;
 
 import android.app.Activity;
 import android.content.Intent;
@@ -13,18 +13,28 @@ import java.util.Map;
 import kotlin.jvm.functions.Function1;
 
 /**
- * Onclick handler for the "GPU Spoof" row injected into GameHub's per-game
- * menus (game-details More Menu + library-tile popups). Direct sibling of
- * {@code BhMenuRowClick} (vibration) — same reflection strategy against the
- * R8-mangled Compose menu data classes, same activity-stack Context/gameId
- * resolution. See that class's javadoc for the why behind each technique.
+ * Onclick handler for the "Renderer" row injected into GameHub 6.0.4's
+ * per-game menus (game-details More Menu + library-tile popup). Structural
+ * clone of {@code BhGpuSpoofMenuRowClick} — same R8-mangled Compose
+ * data-class reflection, same activity-stack Context/gameId resolution,
+ * same Proxy-over-renamed-Function1/0 trick, same raw-String labels (no
+ * Lxd3;->l1 resolver hook — see that class + the menu-injection playbook
+ * for the ANR rationale).
  */
-public final class BhGpuSpoofMenuRowClick implements Function1<Object, Object> {
+public final class BhRendererMenuRowClick implements Function1<Object, Object> {
 
-    private static final String TAG = "BhGpuSpoofRow";
+    private static final String TAG = "BhRendererRow";
 
-    private static final String ROW_LABEL  = "GPU Spoof";
-    private static final String ACTION_ID  = "local_detail_menu_gpu_spoof";
+    private static final String ROW_LABEL = "Renderer";
+    private static final String ACTION_ID = "local_detail_menu_renderer";
+
+    // Per-game id captured once per menu open by the shared
+    // MenuGameIdCapturePatch into BhMenuGameId. Baked into each handler at
+    // row-build time so the click is scoped to the right game even from a
+    // PRE-LAUNCH menu (where sniffGameIdFromStack finds nothing).
+    private final String boundGameId;
+
+    public BhRendererMenuRowClick() { this.boundGameId = BhMenuGameId.getCaptured(); }
 
     @Override
     public Object invoke(Object ignoredFromCompose) {
@@ -34,13 +44,13 @@ public final class BhGpuSpoofMenuRowClick implements Function1<Object, Object> {
                 Log.w(TAG, "no top Activity resolvable; cannot launch settings");
                 return kotlin.Unit.INSTANCE;
             }
-            Intent intent = new Intent(host, BhGpuSpoofSettingsActivity.class);
-            // Per-game id captured from the menu data (shared
-            // BhMenuGameId); fall back to a running WineActivity.
-            String gameId = BhMenuGameId.getCaptured();
-            if (gameId == null || gameId.isEmpty()) gameId = sniffGameIdFromStack();
+            Intent intent = new Intent(host, BhRendererSettingsActivity.class);
+            // Prefer the per-game id captured from the menu data; fall back
+            // to a running WineActivity (in-game sidebar entry).
+            String gameId = (boundGameId != null && !boundGameId.isEmpty())
+                ? boundGameId : sniffGameIdFromStack();
             if (gameId != null && !gameId.isEmpty()) {
-                intent.putExtra(BhGpuSpoofSettingsActivity.EXTRA_GAME_ID, gameId);
+                intent.putExtra(BhRendererSettingsActivity.EXTRA_GAME_ID, gameId);
             }
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
             host.startActivity(intent);
@@ -87,7 +97,7 @@ public final class BhGpuSpoofMenuRowClick implements Function1<Object, Object> {
     }
 
     /** Game-details More Menu (Lx57;->a): appends an Liae row. */
-    public static void appendGpuSpoofRowTo(Object menuList) {
+    public static void appendRendererRowTo(Object menuList) {
         try {
             if (!(menuList instanceof java.util.List)) return;
             java.util.List list = (java.util.List) menuList;
@@ -116,7 +126,7 @@ public final class BhGpuSpoofMenuRowClick implements Function1<Object, Object> {
             ctor.setAccessible(true);
             list.add(ctor.newInstance(iconValue, ROW_LABEL, click));
         } catch (Throwable t) {
-            Log.w(TAG, "appendGpuSpoofRowTo failed", t);
+            Log.w(TAG, "appendRendererRowTo failed", t);
         }
     }
 
@@ -154,11 +164,11 @@ public final class BhGpuSpoofMenuRowClick implements Function1<Object, Object> {
     /**
      * Library-LIST popup (Lpzc;->j0): appends an Lz4e(Lell,Lnw6,int) row.
      *
-     * The Lell label carries the sentinel key "string:bh_gpuspoof_label",
-     * which is resolved to "GPU Spoof" by the SINGLE shared Lxd3;->l1 hook
-     * that VibrationMenuRowPatch injects (BhMenuRowClick.maybeResolveCustomLabel
-     * now maps all BannerHub sentinel keys). We do NOT add our own l1
-     * head-block — a 2nd one ANR'd cold start (2026-05-17). GpuSpoofMenuRowPatch
+     * The Lell label carries the sentinel key "string:bh_renderer_label",
+     * resolved to "Renderer" by the SINGLE shared Lxd3;->l1 hook that
+     * VibrationMenuRowPatch injects (BhMenuRowClick.maybeResolveCustomLabel
+     * maps all BannerHub sentinel keys). We do NOT add our own l1 head-block
+     * — a 2nd one ANR'd cold start (2026-05-17). RendererMenuRowPatch
      * therefore dependsOn(vibrationMenuRowPatch) so that shared resolver is
      * present. Mirrors BhMenuRowClick.appendLibraryPopupRow exactly.
      */
@@ -173,10 +183,6 @@ public final class BhGpuSpoofMenuRowClick implements Function1<Object, Object> {
             Class<?> tdiCls = Class.forName("tdi");
             Class<?> nw6Cls = Class.forName("nw6");
 
-            // Lell is a Kotlin empty subclass of abstract Ltdi(String key,
-            // Set locales) — declares no ctor itself. Allocate via Unsafe
-            // (skips ctor) and reflect-set inherited Ltdi.a (key) / Ltdi.b
-            // (locales). Same technique as the vibration row.
             Class<?> unsafeCls = Class.forName("sun.misc.Unsafe");
             Field theUnsafe = unsafeCls.getDeclaredField("theUnsafe");
             theUnsafe.setAccessible(true);
@@ -185,7 +191,7 @@ public final class BhGpuSpoofMenuRowClick implements Function1<Object, Object> {
                 .invoke(unsafe, ellCls);
             Field aField = tdiCls.getDeclaredField("a");
             aField.setAccessible(true);
-            aField.set(label, "string:bh_gpuspoof_label");
+            aField.set(label, "string:bh_renderer_label");
             Field bField = tdiCls.getDeclaredField("b");
             bField.setAccessible(true);
             bField.set(label, java.util.Collections.emptySet());
@@ -206,7 +212,7 @@ public final class BhGpuSpoofMenuRowClick implements Function1<Object, Object> {
     // different JVM type than the host's Lpw6;/Lnw6;. Proxy actually
     // implements the host interface and delegates to invoke().
     private static Object newFunction1Proxy(Class<?> pw6Cls) {
-        final BhGpuSpoofMenuRowClick handler = new BhGpuSpoofMenuRowClick();
+        final BhRendererMenuRowClick handler = new BhRendererMenuRowClick();
         return java.lang.reflect.Proxy.newProxyInstance(
             pw6Cls.getClassLoader(), new Class<?>[]{ pw6Cls },
             (proxy, method, args) -> {
@@ -215,13 +221,13 @@ public final class BhGpuSpoofMenuRowClick implements Function1<Object, Object> {
                 }
                 if ("equals".equals(method.getName())) return proxy == args[0];
                 if ("hashCode".equals(method.getName())) return System.identityHashCode(proxy);
-                if ("toString".equals(method.getName())) return "BhGpuSpoofRowClickProxy";
+                if ("toString".equals(method.getName())) return "BhRendererRowClickProxy";
                 return null;
             });
     }
 
     private static Object newFunction0Proxy(Class<?> nw6Cls) {
-        final BhGpuSpoofMenuRowClick handler = new BhGpuSpoofMenuRowClick();
+        final BhRendererMenuRowClick handler = new BhRendererMenuRowClick();
         return java.lang.reflect.Proxy.newProxyInstance(
             nw6Cls.getClassLoader(), new Class<?>[]{ nw6Cls },
             (proxy, method, args) -> {
@@ -230,7 +236,7 @@ public final class BhGpuSpoofMenuRowClick implements Function1<Object, Object> {
                 }
                 if ("equals".equals(method.getName())) return proxy == args[0];
                 if ("hashCode".equals(method.getName())) return System.identityHashCode(proxy);
-                if ("toString".equals(method.getName())) return "BhGpuSpoofRowClick0";
+                if ("toString".equals(method.getName())) return "BhRendererRowClick0";
                 return null;
             });
     }

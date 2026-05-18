@@ -1414,6 +1414,171 @@ internal fun BytecodePatchContext.redirectVirtualCalls(
     }
 }
 
+/**
+ * Like [redirectVirtualCalls] but rewrites each matching
+ * `invoke-virtual {recv, args…}` into
+ * `invoke-static {recv, args…} targetMethod`. The original receiver
+ * becomes the first static argument (so [targetMethod] must take it as
+ * `Ljava/lang/Object;` followed by the original parameters).
+ *
+ * Used by the legacy-renderer flip dispatcher: routing
+ * `XServer.setFlipEnabled` call sites to a static helper avoids the
+ * self-recursion [redirectVirtualCalls] would cause (it is a *global*
+ * by-name ref-swap, so a redirect target that is itself a method on the
+ * same class would rewrite its own forwarding call).
+ */
+internal fun BytecodePatchContext.redirectVirtualToStatic(
+    definingClass: String,
+    fromName: String,
+    proto: String,
+    targetMethod: String,
+) {
+    fun Instruction.matches(): Boolean {
+        if (opcode != Opcode.INVOKE_VIRTUAL) return false
+        val r = getReference<MethodReference>() ?: return false
+        return r.definingClass == definingClass &&
+            r.name == fromName &&
+            "(${r.parameterTypes.joinToString("")})${r.returnType}" == proto
+    }
+
+    // Snapshot the candidate classDefs BEFORE touching them.
+    // getOrReplaceMutable structurally replaces the entry inside the live
+    // `classDefs` set, so iterating `classDefs` directly while calling it
+    // throws ConcurrentModificationException.
+    val candidates = classDefs.filter { classDef ->
+        classDef.methods.any { method ->
+            method.implementation?.instructions?.any { it.matches() } == true
+        }
+    }
+
+    candidates.forEach { classDef ->
+        classDef.methods.toList().forEach { method ->
+            val impl = method.implementation ?: return@forEach
+            if (impl.instructions.none { it.matches() }) return@forEach
+
+            val mutableMethod =
+                classDefs.getOrReplaceMutable(classDef).findMutableMethodOf(method)
+
+            val indexes = ArrayList<Int>()
+            mutableMethod.instructions.forEachIndexed { index, ins ->
+                if (ins.matches()) indexes.add(index)
+            }
+            indexes.asReversed().forEach { index ->
+                val ins = mutableMethod.getInstruction(index) as FiveRegisterInstruction
+                val regs = (0 until ins.registerCount).map {
+                    "v" + when (it) {
+                        0 -> ins.registerC
+                        1 -> ins.registerD
+                        2 -> ins.registerE
+                        3 -> ins.registerF
+                        else -> ins.registerG
+                    }
+                }.joinToString(", ")
+                mutableMethod.removeInstruction(index)
+                mutableMethod.addInstructions(
+                    index,
+                    "invoke-static {$regs}, $targetMethod",
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Rewrite every `System.loadLibrary("<libName>")` call (anywhere in the
+ * app — typically several early `<clinit>` loaders) into
+ * `invoke-static {vName}, targetMethod`, where `targetMethod` has proto
+ * `(Ljava/lang/String;)V` and receives the original name register.
+ *
+ * Matched by tracing the loadLibrary call's name register back to the
+ * nearest preceding `const-string` and comparing its value, so unrelated
+ * `System.loadLibrary` calls (e.g. "xserver", handled separately) are left
+ * untouched. R8-resilient (no class-name dependency).
+ *
+ * Uses the snapshot-then-mutate pattern (see [redirectVirtualToStatic]) to
+ * avoid the ConcurrentModificationException `getOrReplaceMutable` causes
+ * when iterating `classDefs` live.
+ */
+internal fun BytecodePatchContext.redirectStaticLibLoad(
+    libName: String,
+    targetMethod: String,
+) {
+    val SYSTEM = "Ljava/lang/System;"
+
+    fun Instruction.isLoadLibrary(): Boolean {
+        if (opcode != Opcode.INVOKE_STATIC) return false
+        val r = getReference<MethodReference>() ?: return false
+        return r.definingClass == SYSTEM && r.name == "loadLibrary" &&
+            r.parameterTypes.toList() == listOf("Ljava/lang/String;")
+    }
+
+    // For a loadLibrary call at [idx], walk back to the const-string that
+    // last wrote its name register; return that index iff it is [libName].
+    fun List<Instruction>.matchAt(idx: Int): Boolean {
+        val call = this[idx] as? FiveRegisterInstruction ?: return false
+        val nameReg = call.registerC
+        for (i in idx - 1 downTo 0) {
+            val ins = this[i]
+            if ((ins.opcode == Opcode.CONST_STRING ||
+                    ins.opcode == Opcode.CONST_STRING_JUMBO) &&
+                (ins as OneRegisterInstruction).registerA == nameReg
+            ) {
+                return ins.getReference<StringReference>()?.string == libName
+            }
+            // Register reused for something else before the load → give up.
+            if (ins is OneRegisterInstruction && ins.registerA == nameReg &&
+                ins.opcode != Opcode.CONST_STRING &&
+                ins.opcode != Opcode.CONST_STRING_JUMBO
+            ) {
+                return false
+            }
+        }
+        return false
+    }
+
+    val candidates = classDefs.filter { classDef ->
+        classDef.methods.any { method ->
+            val ins = method.implementation?.instructions?.toList() ?: return@any false
+            ins.withIndex().any { (i, x) -> x.isLoadLibrary() && ins.matchAt(i) }
+        }
+    }
+
+    candidates.forEach { classDef ->
+        classDef.methods.toList().forEach { method ->
+            val impl = method.implementation ?: return@forEach
+            val snapshot = impl.instructions.toList()
+            if (snapshot.withIndex().none { (i, x) ->
+                    x.isLoadLibrary() && snapshot.matchAt(i)
+                }
+            ) {
+                return@forEach
+            }
+
+            val mutableMethod =
+                classDefs.getOrReplaceMutable(classDef).findMutableMethodOf(method)
+
+            val indexes = ArrayList<Int>()
+            val mins = mutableMethod.instructions.toList()
+            mins.forEachIndexed { index, ins ->
+                if (ins.isLoadLibrary() && mins.matchAt(index)) indexes.add(index)
+            }
+            indexes.asReversed().forEach { index ->
+                val ins = mutableMethod.getInstruction(index) as FiveRegisterInstruction
+                val nameReg = ins.registerC
+                mutableMethod.removeInstruction(index)
+                mutableMethod.addInstructions(
+                    index,
+                    if (nameReg <= 15) {
+                        "invoke-static {v$nameReg}, $targetMethod"
+                    } else {
+                        "invoke-static/range {v$nameReg .. v$nameReg}, $targetMethod"
+                    },
+                )
+            }
+        }
+    }
+}
+
 @Suppress("ktlint:standard:argument-list-wrapping")
 private class InstructionUtils {
     companion object {

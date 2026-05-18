@@ -27,6 +27,22 @@ Gate the **already-proven** lib-swap + JNI bridge behind a per-game toggle.
 No DirectRendering reconstruction required for the general case; only
 revisit per-title if a specific game proves to need it.
 
+## Status (2026-05-18)
+- **Milestone 1: DONE** (scaffold + per-game pref + menu rows, device-confirmed).
+- **Milestone 2: IMPLEMENTED + CI-VERIFIED** (xserver-only-first). Commits
+  `75ebe7f` (impl) + CME fix, build run **26022795219** = 0 SEVERE, all 4
+  renderer patches `succeeded` 9/9. Mechanism: additive
+  `libxserver_legacy.so`; `XServer.<clinit>` loadLibrary →
+  `BhRendererController.loadXserver` (Legacy → `System.load` legacy lib,
+  else stock, frozen decision, stock fallback never bricks); 2
+  `setFlipEnabled` sites → static `flip()` reflective dispatcher
+  (`setRenderingEnabled` legacy / `setFlipEnabled` stock); `addNativeMethod`
+  shim; new `BytecodeUtils.redirectVirtualToStatic`. libwinemu NOT gated.
+- **Milestone 3: NEXT** — device-test the Legacy toggle on a known-good
+  title (GoW = proven). Needs the feature on the user's actual install
+  (V6 **Lite** `banner.hub`) → same cherry-pick-into-`feature/lite-variant-tier1`
+  pattern as the preload-free vibration landing.
+
 ## Milestones
 1. **Toggle plumbing.** Clone the GPU-Spoof scaffold →
    `BhRendererController` (per-game + global pref, same `pc_g_setting<id>`

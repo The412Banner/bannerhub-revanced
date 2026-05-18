@@ -2572,3 +2572,22 @@ Added read-only `proc <pid> <leaf>` verb (whitelist maps|cmdline|status|comm|sma
    - only stock libs = cleanup regressed the load path → investigate, do NOT merge.
 4. Then decide optional permanent breadcrumb (one line to `getFilesDir()/bh_renderer.log` in legacy branch — prod observability, not the stripped diag harness).
 Mergeable delta vs `gamehub-604-build`: 18 commits/18 files/+2073−34, no junk; only conscious change = GPU Spoof global→per-game-from-menu; +4.6 MB (2 .so).
+
+## 2026-05-18 — Clean build BIDIRECTIONALLY verified LIVE → MERGED to gamehub-604-build → artifact build
+
+### Verification (logcat-bridge v1.3.0 `--proc` verb, live GoW, full pkg `com.antutu.benchmark.full`)
+RESUME plan executed. Bridge v1.3.0 proc verb confirmed live post-reboot. Both renderer modes proven against the live running GoW `:wine` process — DEFINITIVE, not inferred from the (stale) diag log:
+- **Legacy run** (pid 8652): `/proc/8652/maps` = `libxserver_legacy.so` + `libwinemu_legacy.so`, NO stock. `bh_renderer_diag.log` correctly NOT freshly written (diag stripped) — corroborates this is the clean build.
+- **Vulkan run** (pid 15133, same APK install hash `XkQ1IwHRAfdeZx0zIdv8OA==`): `/proc/15133/maps` = stock `libxserver.so` + `libwinemu.so` + `/vendor/lib64/hw/vulkan.adreno.so` + `/system/lib64/libvulkan.so`, NO `_legacy`.
+Same APK toggles both ways cleanly, no regression either direction. Cleanup (`44b2e4e`) validated. (Capture-method note: `getlog --proc` sometimes writes a `/home/*.txt` file, sometimes prints maps to stdout — handle both.)
+
+### Merge
+`git checkout gamehub-604-build` (was `792ae69`, == origin) → `git merge --no-ff feature/legacy-renderer-toggle` → merge commit **`01b2f4d`** (18 files, +2101−34, 2 bundled 6.0.2 .so, no conflicts — gamehub-604-build was fully contained in the feature branch). Author The412Banner, no Claude trailer. Pushed `792ae69..01b2f4d gamehub-604-build`. Brings: per-game Vulkan↔legacy renderer swap (forced-enable permanent, diag stripped); shared `BhMenuGameId`+`MenuGameIdCapturePatch` (conscious change: GPU Spoof global-from-menu → per-game-from-menu); Task #20 library-list-popup rows.
+
+### Artifact-only CI
+`gh workflow run release.yml --ref gamehub-604-build -f version=1.3.0-604-renderer-merged-pre1` (stable defaulted false = artifact-only prerelease). Run **26035851236** (https://github.com/The412Banner/bannerhub-revanced/actions/runs/26035851236), queued.
+
+### NEXT
+- Watch run 26035851236 → green + 0 SEVERE + renderer/menu patches succeeded 9/9.
+- Then refresh dependent Lite branch `feature/lite-variant-tier1` off the new `gamehub-604-build` (NOT Lite-first) and re-cut the Lite artifacts.
+- M3 device-test on the user's actual **Lite** (`banner.hub`) install — the only open device-test gap (full-pkg is proven bidirectionally).

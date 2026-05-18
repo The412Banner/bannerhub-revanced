@@ -1,9 +1,12 @@
 package app.revanced.extension.gamehub.winemu;
 
+import android.content.Context;
+import android.content.SharedPreferences;
+
 import app.revanced.extension.gamehub.debug.DebugTrace;
 
-import java.lang.reflect.Field;
 import java.io.Serializable;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Map;
 
@@ -11,94 +14,116 @@ import java.util.Map;
  * Picker offline-cache fallback for the GPU driver / DXVK / VKD3D / FEXCore /
  * Box64 / container pickers.
  *
- * <p>The pickers read through {@code eci.a(category, cont)}, which delegates
- * to a network-aware {@code Uaa} flow (Lv43; / Lag3; / Lxca; per
- * RepoCategory). Online the Uaa emits the live catalog; offline it emits an
- * empty list, and {@code eci.a} short-circuits to Kotlin's EmptyList — so
- * the picker shows only the embedded built-in versions.
+ * <h2>Why the previous (in-memory) implementation was inert on 6.0.4</h2>
  *
- * <p>Meanwhile, {@code u6o.<init>} has already hydrated the host registry's
- * in-memory ConcurrentHashMap from the on-disk
- * {@code sp_winemu_unified_resources} XML at app start (unconditional,
- * happens before any network call). Every WinEmuRepo the user has ever
- * seen — including downloaded components — is sitting in memory.
+ * <p>The pickers read through {@code mci.a(RepoCategory, Continuation) ->
+ * Serializable} (was {@code eci.a} in 6.0.2). That method is
+ * <em>network-spine</em> by design: it reads the registry's in-memory
+ * {@code ConcurrentHashMap} but only enters its cache-merge loop when the
+ * network list is non-empty; an empty network list (offline) jumps straight
+ * to the {@code :goto_2} block and returns Kotlin's {@code EmptyList}. The
+ * patch swaps that EmptyList return for a call into this helper.
  *
- * <p>This helper builds a list out of that map filtered by the requested
- * category. It's hooked at the tail of {@code eci.a} where the original
- * method would have returned EmptyList, so online behavior is unchanged
- * (the hook only fires when the original would have returned empty).
+ * <p>The old body reflected into that same in-memory map ({@code mci.a ->
+ * myo.c}). Verified against a fresh 6.0.4 decompile (2026-05-18): that
+ * reflective path still resolves correctly — but on a <strong>cold offline
+ * launch the map is empty</strong>. 6.0.4 has no startup disk-hydrator (the
+ * {@code u6o.<init>} the old Javadoc assumed does not exist); the map is
+ * {@code new}'d empty and filled lazily via network-access paths. So the
+ * hook fired, found an empty map, and returned an empty list — "applies
+ * cleanly, does nothing", exactly as reported.
  *
- * <p>Field name conventions (host code, NOT R8-mangled symbols we need to
- * track):
+ * <h2>What this implementation does instead</h2>
+ *
+ * <p>It reads the <strong>durable on-disk store directly</strong> at query
+ * time. The host persists every downloaded/seen component into the
+ * {@code "sp_winemu_unified_resources"} SharedPreferences via
+ * {@code dj9.b(WinEmuRepo)}: key = {@code "<RepoCategory.name()>:<name>"},
+ * value = the host's Gson {@code toJson(WinEmuRepo)}
+ * ({@code new GsonBuilder().serializeNulls().disableHtmlEscaping().create()}
+ * — both options are serialize-only, so a plain {@code Gson.fromJson}
+ * round-trips faithfully).
+ *
+ * <p>Every anchor used here is intentionally <strong>non-obfuscated</strong>
+ * so this survives base-APK R8 reshuffles without re-derivation:
  * <ul>
- *   <li>{@code eci.a} — field on the eci instance whose runtime type is xxo.
- *       Selected by being the only field on the receiver whose declared
- *       type is the host's registry container class.</li>
- *   <li>{@code xxo.c} — Object field on xxo holding the category-keyed
- *       ConcurrentHashMap. Selected by being the only field on xxo whose
- *       runtime value is a Map.</li>
+ *   <li>the literal SharedPreferences name {@code "sp_winemu_unified_resources"};</li>
+ *   <li>the key shape {@code "<RepoCategory.name()>:..."} (enum constant
+ *       names are stable);</li>
+ *   <li>{@code com.google.gson.Gson} (kept library class);</li>
+ *   <li>{@code com.xiaoji.egggame.common.winemu.bean.WinEmuRepo} (host bean,
+ *       not obfuscated; Gson maps by its own non-obfuscated field names).</li>
  * </ul>
- * Both are looked up by reflection on the receiver's class, with the
- * resolved {@link Field} objects cached. The lookup uses field-by-name
- * ("a", "c") plus a runtime type sanity check so the patch survives R8
- * letter shuffles between minor base APK bumps as long as those single-
- * letter field names stay the same shape.
- *
- * <p>Cache keys are formatted {@code "CATEGORY_NAME:entry_name"} by the
- * host's key builder (e.g. {@code xxo.y(RepoCategory, String) → String}),
- * so we filter by enum {@link Enum#name()} prefix without ever calling a
- * method on the WinEmuRepo values themselves.
+ * No reflection into obfuscated host state, no writes to the host registry.
+ * Online behaviour is unchanged: the hook only fires where the host would
+ * have returned EmptyList anyway.
  */
 public final class PickerCacheFallback {
     private PickerCacheFallback() {}
 
-    private static final Class<?> CLS = PickerCacheFallback.class;
+    private static final String PREFS = "sp_winemu_unified_resources";
+    private static final String GSON_CLASS = "com.google.gson.Gson";
+    private static final String WINEMU_REPO_CLASS =
+            "com.xiaoji.egggame.common.winemu.bean.WinEmuRepo";
 
-    private static volatile Field eciToRegistryField;
-    private static volatile Field registryToMapField;
+    private static volatile Object gson;            // com.google.gson.Gson
+    private static volatile Method gsonFromJson;    // Gson#fromJson(String, Class)
+    private static volatile Class<?> winEmuRepoCls;
 
     /**
-     * Returns a {@link Serializable} list of cached WinEmuRepo entries for
-     * the requested category. Replaces the {@code Lz85;->a:Lz85;}
-     * (EmptyList) sentinel that the original {@code eci.a} returned at
-     * its {@code :goto_2} block.
+     * Returns a {@link Serializable} list of cached {@code WinEmuRepo}
+     * entries for the requested category, read from the on-disk
+     * {@code sp_winemu_unified_resources} prefs. Replaces the
+     * {@code Lw85;->a:Lw85;} (Kotlin EmptyList) sentinel the original
+     * {@code mci.a} returned at its {@code :goto_2} block.
      *
-     * @param eci      the eci receiver (passed in as p0 from the smali
-     *                 call site; declared as Object so the extension
-     *                 doesn't depend on the R8-mangled class name).
-     * @param category the RepoCategory enum the picker is asking for.
-     * @return a non-empty ArrayList&lt;WinEmuRepo&gt; if cached entries
-     *         exist; an empty ArrayList otherwise. Both are
-     *         Serializable, which is what the method's return type
-     *         demands. Never returns {@code null} — falling through to
-     *         empty matches the original method's contract.
+     * @param eci      the {@code mci} receiver (passed as p0 by the smali
+     *                 call site; unused now — kept so the patched
+     *                 {@code invoke-static} signature is unchanged).
+     * @param category the {@code RepoCategory} enum the picker is asking for.
+     * @return a non-empty {@code ArrayList<WinEmuRepo>} if cached entries
+     *         exist for the category; an empty {@code ArrayList} otherwise.
+     *         Both are {@link Serializable} (the method's return type) and
+     *         never {@code null} — empty matches the original contract.
      */
     public static Serializable fromXxo(Object eci, Object category) {
-        if (eci == null || category == null) return new ArrayList<>();
+        OfflineDiag.mark("fromXxo ENTER (:goto_2 reached) categoryClass="
+                + (category == null ? "null" : category.getClass().getName()));
+        if (!(category instanceof Enum)) return new ArrayList<>();
         try {
-            Object registry = readField(eciToRegistryField, eci, "a", "eciToRegistryField");
-            if (registry == null) return new ArrayList<>();
+            Context ctx = currentContext();
+            if (ctx == null) {
+                DebugTrace.write("PickerCacheFallback: no Context");
+                return new ArrayList<>();
+            }
 
-            Object mapObj = readField(registryToMapField, registry, "c", "registryToMapField");
-            if (!(mapObj instanceof Map)) return new ArrayList<>();
-            Map<?, ?> map = (Map<?, ?>) mapObj;
-            if (map.isEmpty()) return new ArrayList<>();
+            SharedPreferences prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+            Map<String, ?> all = prefs.getAll();
+            if (all == null || all.isEmpty()) return new ArrayList<>();
 
-            // Keys are "<RepoCategory.name()>:<entry_name>" — see
-            // host xxo.y(category, name) String-builder.
             String prefix = ((Enum<?>) category).name() + ":";
 
+            Object g = gson();
+            Method fromJson = gsonFromJson;
+            Class<?> repoCls = winEmuRepoCls;
+            if (g == null || fromJson == null || repoCls == null) return new ArrayList<>();
+
             ArrayList<Object> out = new ArrayList<>();
-            for (Map.Entry<?, ?> e : map.entrySet()) {
-                Object k = e.getKey();
-                if (k instanceof String && ((String) k).startsWith(prefix)) {
-                    Object v = e.getValue();
-                    if (v != null) out.add(v);
+            int bad = 0;
+            for (Map.Entry<String, ?> e : all.entrySet()) {
+                String k = e.getKey();
+                if (k == null || !k.startsWith(prefix)) continue;
+                Object v = e.getValue();
+                if (!(v instanceof String)) continue;
+                try {
+                    Object repo = fromJson.invoke(g, (String) v, repoCls);
+                    if (repo != null) out.add(repo);
+                } catch (Throwable perEntry) {
+                    bad++; // one corrupt entry must not drop the rest
                 }
             }
-            if (!out.isEmpty()) {
-                DebugTrace.write("PickerCacheFallback hit category=" + prefix.substring(0, prefix.length() - 1) + " size=" + out.size());
-            }
+            DebugTrace.write("PickerCacheFallback category=" + ((Enum<?>) category).name()
+                    + " hit=" + out.size() + " scanned=" + all.size() + " bad=" + bad);
             return out;
         } catch (Throwable t) {
             DebugTrace.write("PickerCacheFallback failed", t);
@@ -106,20 +131,38 @@ public final class PickerCacheFallback {
         }
     }
 
-    private static Object readField(Field cached, Object instance, String name, String slot) throws Exception {
-        Field f = cached;
-        if (f == null) {
-            synchronized (CLS) {
-                // Re-read after acquiring lock.
-                f = slot.equals("eciToRegistryField") ? eciToRegistryField : registryToMapField;
-                if (f == null) {
-                    f = instance.getClass().getDeclaredField(name);
-                    f.setAccessible(true);
-                    if (slot.equals("eciToRegistryField")) eciToRegistryField = f;
-                    else registryToMapField = f;
-                }
+    /** Lazily build (and cache) a plain host-compatible Gson + fromJson handle. */
+    private static Object gson() {
+        Object g = gson;
+        if (g != null) return g;
+        synchronized (PickerCacheFallback.class) {
+            if (gson != null) return gson;
+            try {
+                Class<?> gsonCls = Class.forName(GSON_CLASS);
+                Object instance = gsonCls.getConstructor().newInstance();
+                gsonFromJson = gsonCls.getMethod("fromJson", String.class, Class.class);
+                winEmuRepoCls = Class.forName(WINEMU_REPO_CLASS);
+                gson = instance;
+                return gson;
+            } catch (Throwable t) {
+                DebugTrace.write("PickerCacheFallback: Gson/WinEmuRepo resolve failed", t);
+                return null;
             }
         }
-        return f.get(instance);
+    }
+
+    /**
+     * Application context via {@code ActivityThread.currentApplication()} —
+     * the same hidden-API path the other BannerHub extension controllers
+     * use (see {@code BhVibrationController}). Application extends Context.
+     */
+    private static Context currentContext() {
+        try {
+            Class<?> at = Class.forName("android.app.ActivityThread");
+            Object app = at.getMethod("currentApplication").invoke(null);
+            return (Context) app;
+        } catch (Throwable t) {
+            return null;
+        }
     }
 }

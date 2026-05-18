@@ -87,5 +87,27 @@ val menuGameIdCapturePatch = bytecodePatch(
                 } ?: false)
         }
         libraryMenuMethod.addInstructions(0, capture)
+
+        // Library-LIST popup — Lpzc;->j0(Laub;Z…)Ljava/util/List; (static,
+        // p0=Laub which holds a kept-name GameInfo). This is the 3rd entry
+        // point only PC Vibration has a row in; without capture here it fell
+        // back to the global sniff. (GPU Spoof/Renderer rows aren't here
+        // yet — Task: add them — but capturing now makes that free.)
+        val pzcMethod = firstMethod {
+            parameterTypes == listOf(
+                "Laub;", "Z", "Llvc;", "Llvc;", "Lmob;", "Lmob;",
+                "Lz9;", "Ljn9;", "Lmvc;", "Lmvc;", "Ljvc;"
+            ) &&
+                returnType == "Ljava/util/List;" &&
+                (implementation?.instructions?.any { ins ->
+                    ins.opcode == Opcode.INVOKE_VIRTUAL &&
+                        (ins as? ReferenceInstruction)?.getReference<MethodReference>()
+                            ?.let {
+                                it.definingClass == "Lx9d;" && it.name == "i" &&
+                                    it.returnType == "Lx9d;"
+                            } == true
+                } ?: false)
+        }
+        pzcMethod.addInstructions(0, capture)
     }
 }

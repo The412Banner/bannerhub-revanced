@@ -52,15 +52,53 @@ public final class BhMenuGameId {
         return sCapturedGameId;
     }
 
+    private static final String GAMEINFO_CLS =
+        "com.xiaoji.egggame.game.di.model.game.GameInfo";
+
     private static String resolve(Object menuData) {
         if (menuData == null) return null;
-        String s;
-        try { s = String.valueOf(menuData); } catch (Throwable t) { return null; }
-        if (s == null) return null;
-        Matcher m = P_SERVER.matcher(s);
-        if (m.find()) return m.group(1);
-        m = P_GAMEID.matcher(s);
-        if (m.find()) return m.group(1);
+
+        // 1) toString token — works for Lf37 GameDetailArgs (More Menu /
+        //    tile popup): renders a stable ServerGameId(value=<int>) /
+        //    gameId=<int> regardless of R8 field renaming.
+        try {
+            String s = String.valueOf(menuData);
+            if (s != null) {
+                Matcher m = P_SERVER.matcher(s);
+                if (m.find()) return m.group(1);
+                m = P_GAMEID.matcher(s);
+                if (m.find()) return m.group(1);
+            }
+        } catch (Throwable ignored) { }
+
+        // 2) GameInfo.getServerGameId() — works for Laub (library-list
+        //    popup) which holds a kept-name GameInfo. The class name is
+        //    kept by R8 so this is stable; field/accessor names are not, so
+        //    we locate the GameInfo by VALUE type, not by name.
+        try {
+            Class<?> giCls = Class.forName(GAMEINFO_CLS);
+            Object gi = (giCls.isInstance(menuData)) ? menuData
+                                                     : findFieldOfType(menuData, giCls);
+            if (gi != null) {
+                java.lang.reflect.Method g = giCls.getMethod("getServerGameId");
+                Object id = g.invoke(gi);
+                if (id != null) return String.valueOf(id);
+            }
+        } catch (Throwable ignored) { }
+
+        return null;
+    }
+
+    /** Shallow scan of host's declared fields for an instance of {@code type}. */
+    private static Object findFieldOfType(Object host, Class<?> type) {
+        try {
+            for (java.lang.reflect.Field f : host.getClass().getDeclaredFields()) {
+                if (!type.isAssignableFrom(f.getType())) continue;
+                f.setAccessible(true);
+                Object v = f.get(host);
+                if (type.isInstance(v)) return v;
+            }
+        } catch (Throwable ignored) { }
         return null;
     }
 }

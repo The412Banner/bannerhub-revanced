@@ -6,6 +6,7 @@ import app.revanced.patcher.patch.resourcePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
 import app.revanced.patches.gamehub.GAMEHUB_VERSION
 import app.revanced.util.addNativeMethod
+import app.revanced.util.redirectVirtualCalls
 import java.io.File
 
 // =========================================================================
@@ -48,13 +49,27 @@ val legacyGles2XServerShimPatch = bytecodePatch(
 }
 
 @Suppress("unused")
+val legacyGles2SetFlipRedirectPatch = bytecodePatch(
+    name = "Legacy GLES2 setFlipEnabled redirect (THROWAWAY)",
+    description = "Redirects 6.0.4's XServer.setFlipEnabled(Z)V call sites to " +
+        "the 6.0.2-named setRenderingEnabled(Z)V (same fn) the swapped " +
+        "libxserver actually binds. Diagnostic only.",
+) {
+    compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
+
+    apply {
+        redirectVirtualCalls(XSERVER, "setFlipEnabled", "setRenderingEnabled", "(Z)V")
+    }
+}
+
+@Suppress("unused")
 val legacyGles2LibSwapPatch = resourcePatch(
     name = "Legacy GLES2 lib swap (THROWAWAY)",
     description = "Overwrites the 6.0.4 libxserver.so + libwinemu.so with " +
         "the 6.0.2 GLES2-era pair, always-on. Diagnostic only; do not ship.",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
-    dependsOn(legacyGles2XServerShimPatch)
+    dependsOn(legacyGles2XServerShimPatch, legacyGles2SetFlipRedirectPatch)
 
     apply {
         LIBS.forEach { lib ->

@@ -1361,6 +1361,59 @@ internal fun BytecodePatchContext.addNativeMethod(
     }
 }
 
+/**
+ * Rewrite every `invoke-virtual` call to [definingClass]->[fromName][proto]
+ * into a call to [definingClass]->[toName][proto], preserving registers.
+ * Matches by method reference (R8-letter-resilient). [proto] is the smali
+ * proto, e.g. "(Z)V".
+ */
+internal fun BytecodePatchContext.redirectVirtualCalls(
+    definingClass: String,
+    fromName: String,
+    toName: String,
+    proto: String,
+) {
+    fun Instruction.matches(): Boolean {
+        if (opcode != Opcode.INVOKE_VIRTUAL) return false
+        val r = getReference<MethodReference>() ?: return false
+        return r.definingClass == definingClass &&
+            r.name == fromName &&
+            "(${r.parameterTypes.joinToString("")})${r.returnType}" == proto
+    }
+
+    classDefs.forEach { classDef ->
+        classDef.methods.forEach { method ->
+            val impl = method.implementation ?: return@forEach
+            if (impl.instructions.none { it.matches() }) return@forEach
+
+            val mutableMethod =
+                classDefs.getOrReplaceMutable(classDef).findMutableMethodOf(method)
+
+            val indexes = ArrayList<Int>()
+            mutableMethod.instructions.forEachIndexed { index, ins ->
+                if (ins.matches()) indexes.add(index)
+            }
+            indexes.asReversed().forEach { index ->
+                val ins = mutableMethod.getInstruction(index) as FiveRegisterInstruction
+                val regs = (0 until ins.registerCount).map {
+                    "v" + when (it) {
+                        0 -> ins.registerC
+                        1 -> ins.registerD
+                        2 -> ins.registerE
+                        3 -> ins.registerF
+                        else -> ins.registerG
+                    }
+                }.joinToString(", ")
+                mutableMethod.removeInstruction(index)
+                mutableMethod.addInstructions(
+                    index,
+                    "invoke-virtual {$regs}, $definingClass->$toName$proto",
+                )
+            }
+        }
+    }
+}
+
 @Suppress("ktlint:standard:argument-list-wrapping")
 private class InstructionUtils {
     companion object {

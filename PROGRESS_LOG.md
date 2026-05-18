@@ -2594,3 +2594,22 @@ Same APK toggles both ways cleanly, no regression either direction. Cleanup (`44
 
 ### CI RESULT — run 26035851236 ✅ GREEN
 `conclusion=success`; all 9 Patch jobs success, `Create GitHub Release` skipped (correct for stable=false). Log-scanned (125 files, 950K): **0 `SEVERE`**, 0 patch failures. alt-AnTuTu job confirms applied: "Legacy renderer conditional swap" / "Legacy renderer libxserver bundle" / "Renderer menu row" / "Renderer settings activity" / "Per-game menu id capture (shared)" + GPU Spoof (DXVK plumbing/menu row/settings) + PC-accurate vibration (label/menu row/settings) — all `succeeded`. APK delivered: `/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-renderer-merged-pre1-Patched-alt-AnTuTu.apk` (116,042,150 B, md5 `75b4cf73def5f71435bbda812542f717`). Merge `01b2f4d` validated on `gamehub-604-build`. **NEXT: refresh Lite branch `feature/lite-variant-tier1` off new gamehub-604-build → M3 device-test on `banner.hub`.**
+
+---
+
+## Offline component picker — root-caused + reworked for 6.0.4 (2026-05-18)
+
+User report: offline, the GPU-driver/DXVK/VKD3D/FEXCore/Box64/container pickers don't list components the user already downloaded/saved locally — only built-ins. `OfflineComponentCachePatch` (flagged KNOWN BROKEN since 2026-05-12) was meant to fix this. User chose the **read-side strategy** (fix the existing patch, not the `component-manager-injection` write-side branch); goal = offline parity for already-downloaded components in the existing pickers.
+
+### Root cause — verified against a FRESH `apktool d` of GameHub_6.0.4.apk (on-disk decompile was stale 5.3.5)
+
+- **H1 (hook anchor drift) — REFUTED.** 6.0.4 `mci.a`'s `:goto_2` is still `sget-object pX, Lw85;->a:Lw85;` / `return-object`. Patch anchor + letter map (`ECI_CLASS=Lmci;`, `CONTINUATION=Lci3;`, `KOTLIN_EMPTY_LIST=Lw85;`) all correct; hook lands right.
+- **H2 (reflective field drift) — REFUTED.** Host's own offline read is `mci.a:Lmyo;` → `myo.c:Object` → `check-cast ConcurrentHashMap`; old `PickerCacheFallback` reflective `a`→`c`+`instanceof Map` resolved to that same map (the 6.0.2 `xxo`→6.0.4 `myo` rename is irrelevant, resolved by field name).
+- **H3 (cache empty at query time) — CONFIRMED, the real cause.** 6.0.4 has **no `u6o` startup disk-hydrator** (old Javadoc assumption false). `mci.a` is network-spine: empty network list → straight to `:goto_2`/EmptyList before the cached map is used. In-memory `myo.c` is `new`'d empty + filled lazily via network paths → empty on a cold offline launch → patch fired, found nothing, returned empty. Exactly the reported "applies cleanly, does nothing".
+
+### Fix — extension-only; `OfflineComponentCachePatch.kt` logic UNCHANGED (anchors verified correct)
+
+`PickerCacheFallback` rewritten to read the **durable on-disk store directly** at query time. Host persists every component via `dj9.b(WinEmuRepo)` into the `"sp_winemu_unified_resources"` SharedPreferences: key `"<RepoCategory.name()>:<name>"`, value = host Gson `toJson` (`new GsonBuilder().serializeNulls().disableHtmlEscaping().create()` — serialize-only opts, so a plain `Gson.fromJson` round-trips). New impl: `ActivityThread.currentApplication()` → `getSharedPreferences("sp_winemu_unified_resources",0)` → iterate `getAll()`, key-prefix filter by `((Enum)category).name()+":"`, deserialize each value via reflective `com.google.gson.Gson#fromJson(String, com.xiaoji.egggame.common.winemu.bean.WinEmuRepo.class)`, return the list at `:goto_2`. Every anchor is **non-obfuscated** (literal prefs name, enum key shape, kept Gson lib class, non-obfuscated host bean) → also survives future base-APK R8 reshuffles. No host-registry writes; online path untouched (hook only fires where host would've returned EmptyList). Patch-source KNOWN BROKEN header replaced with the accurate root-cause note. Branch `fix/offline-component-picker` off `gamehub-604-build`.
+
+### NEXT
+Push branch → any-branch compile CI → log-scan for SEVERE (revanced-cli per-patch SEVERE does NOT fail the run) → deliver APK for offline device-test → on confirm, merge → `gamehub-604-build`, refresh Lite, clear KNOWN BROKEN in README/release.yml.

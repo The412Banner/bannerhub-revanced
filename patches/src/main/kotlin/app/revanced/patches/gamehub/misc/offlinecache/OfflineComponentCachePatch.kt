@@ -13,32 +13,28 @@ import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 
 // ============================================================================
-// ⚠ KNOWN BROKEN ON 6.0.4 (2026-05-12)
+// ROOT-CAUSED + REWORKED FOR 6.0.4 (2026-05-18)
 //
-// The patch applies cleanly (CI green, all 9 variants patched on v1.0.0-604)
-// but at runtime it doesn't deliver the intended cached-entry fallback. The
-// structural anchors and reflective field lookups apparently survived the
-// 6.0.2 → 6.0.4 R8 reshuffle on the surface — patcher-side everything looks
-// fine — but the runtime behavior regressed somewhere downstream.
+// Was flagged KNOWN BROKEN 2026-05-12 (applied cleanly, inert at runtime).
+// Root-caused against a fresh 6.0.4 decompile:
+//   - The hook anchor is FINE: mci.a's :goto_2 block is still exactly
+//     `sget-object pX, Lw85;->a:Lw85;` / `return-object` — this patch lands
+//     on the right instruction. (ECI/CONTINUATION/EMPTY_LIST letter map
+//     below is correct for 6.0.4.)
+//   - The OLD failure was downstream in the extension, not here: the prior
+//     PickerCacheFallback reflected into the in-memory registry map
+//     (mci.a -> myo.c). That path still resolves, but 6.0.4 has NO startup
+//     disk-hydrator (the assumed `u6o.<init>` does not exist); the map is
+//     new'd empty and filled lazily via network paths, so on a cold
+//     OFFLINE launch it is empty when the picker queries -> empty list.
 //
-// Investigation pending. Possible angles to check on the next pass:
-//   - Has `mci.a(RepoCategory, Continuation)` itself changed shape beyond
-//     the `:goto_2` sentinel? Walk the full method body and compare against
-//     the 6.0.2 `eci.a` body the patch was designed around.
-//   - Did `xxo`'s field layout / `xxo.c` `ConcurrentHashMap` type change?
-//     `PickerCacheFallback.fromXxo` uses single-letter field lookups (`a`,
-//     `c`) plus a runtime type sanity check; if `c`'s declared type is no
-//     longer assignable to `Map`, the sanity check returns the empty
-//     ArrayList silently — visible only via `DebugTrace`.
-//   - Is `u6o.<init>` still the disk-hydrator? If 6.0.4 renamed/restructured
-//     the hydrator the map could simply be empty at the time the picker
-//     consults it, in which case the patch IS firing but has nothing to
-//     return.
+// FIX is extension-only — this patch is UNCHANGED. PickerCacheFallback now
+// reads the durable on-disk store directly (the "sp_winemu_unified_resources"
+// SharedPreferences the host persists every component to via dj9.b), using
+// only non-obfuscated anchors. See that class's Javadoc for the full design.
 //
-// Online behavior is unchanged because the hook only fires on the
-// network-returned-empty path. Safe to leave enabled in v1.0.0-604 (no
-// regression for online users); safe to disable via revanced-cli `-d
-// "Offline component cache fallback"` for users who want a leaner build.
+// Online behavior is unchanged: the hook only fires on the
+// network-returned-empty path.
 //
 // ============================================================================
 // 6.0.2 R8-mangled letter map

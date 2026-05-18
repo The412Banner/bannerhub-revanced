@@ -2502,3 +2502,386 @@ Manually attached the 9 Lite APKs to the release: `gh run download 25977995330 -
 **Release now carries 21 assets** = 9 full APKs + 9 Lite APKs + `patches.rvp` / `patches-1.0.0.rvp` / `patches-1.0.0-sources.rvp`.
 
 Release-description edit (user request): removed the dedicated `### ✨ What's new in 1.1.0-604` section from the notes (the workflow's notes template still carried the 1.1.0 section). Verified 0 occurrences remain. NOTE: the inline `⭐ *new in 1.1.0-604*` provenance markers in the patches table were left untouched (out of scope of the request).
+## 2026-05-16 — v1.3.0-604 STABLE shipped (9 full APKs + GitHub Release)
+
+Dispatched `release.yml` on `gamehub-604-build` with `version=1.3.0-604` `stable=true` → run [25977976554](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25977976554) ✅ → 9 full variant APKs + GitHub Release `BannerHub v6 1.3.0-604` (tag `v1.3.0-604`). Built off `ed355d3` (preload-free vibration in place; matrix unchanged — canonical 9 full variants incl. `Normal-GHL`).
+
+**Dual-build flow (first use):** the separate, never-merged `feature/lite-variant-tier1` branch (@`13ac017`) was dispatched in parallel with `version=1.3.0-604` `stable=false` → run [25977995330](https://github.com/The412Banner/bannerhub-revanced/actions/runs/25977995330) ✅ → 9 Lite APKs as Actions artifacts (its `release` job auto-skipped by the `stable==true` gate). The 9 Lite APKs (≈78.3 MB each) were manually attached to the v1.3.0-604 release via `gh run download … -p 'apk-*-Lite'` + `gh release upload`. **Release now carries 21 assets** = 9 full + 9 Lite + 3 `.rvp`.
+
+Release-description edit (user request): the dedicated `### ✨ What's new in 1.1.0-604` section was removed from the notes (the workflow's notes template still carried it); 0 occurrences remain. Inline `⭐ *new in 1.1.0-604*` patch-table provenance markers left as-is (out of scope).
+
+**Resolves the prior FOLLOW-UP:** the Lite branch already carries the preload-free vibration (`72bb018` merged in via `1b567ae`); these Lite APKs are libevshim-free.
+
+**Stable-release-checklist note (NOT yet done — awaiting user direction):** README on this branch still shows "Latest stable: v1.2.0-604" + a "What's new in v1.2.0-604" section + ToC entry; release notes are still the stale 1.1.0/1.2.0 template (only the 1.1.0 section was pulled per request). README bump + a real 1.3.0-604 "What's new" + a release-notes rewrite were not requested and were not done unilaterally.
+
+
+## 2026-05-16 — v1.3.0-604 stable-release-checklist completed
+
+Followed up the prior entry's flagged item (user approved). Release notes on the v1.3.0-604 GitHub Release rewritten via `gh release edit --notes-file`: added a real **✨ What's new in 1.3.0-604** section (preload-free vibration / x86_64 c000007b fix + 9 Lite APKs), added a **🪶 Lite variants** table (9 rows, same-pkg replace-on-install semantics), fixed the stale `1.1.0-604` naming/versioning examples → `1.3.0-604`, stripped all 5 stale `⭐ *new in 1.1.0-604*` inline tags from the patches table (verified 0 remain), added a "Lite size-reduction strips" patch-table row + a full-vs-Lite Notes bullet, intro now states 18 APKs.
+
+README on `gamehub-604-build` bumped (`c61f44d`, pushed `317fef0..c61f44d`): latest-stable badge link + ToC entry + What's new section all → v1.3.0-604; new section covers the two headline changes and demotes the v1.2.0-604 privacy-stack/PC-Game-Settings detail to a concise carryover note (per the established "latest release only in README" convention; full history stays on the release pages).
+
+
+## 2026-05-16 — README accuracy pass + vibration-fix credits (v1.3.0-604)
+
+README (`gamehub-604-build`, `313caa6`): "What it does" now says preload-free vibration + notes the per-variant ~34.5 MB Lite counterpart; new **🪶 Lite variants** subsection under Variants (strip list, same-pkg replace-on-install, built from never-merged `feature/lite-variant-tier1`); `PC-accurate vibration` patch heading flags the v1.3.0-604 preload-free rework; Credits row rewritten — TideGear PR #80 (original port) + PR #91 (preload-free winebus rework, used with explicit permission) + a new **GameNative** row (verified upstream `github.com/utkarshdalal/GameNative`, PR #1214 lineage; my first-pass `github.com/GameNative` guess was wrong — verified via the local GameNative checkout's `upstream` remote per the always-verify rule).
+
+Release notes (v1.3.0-604 GitHub release, via `gh release edit`): added a **🙏 Credits** section before Notes crediting the controller vibration fix — TideGear/GameHub-Vibration-Fix (PR #80 + #91, with permission) + GameNative (utkarshdalal, PR #1214 lineage), linking the README Credits for the full list.
+
+
+## 2026-05-16 — v1.3.0-604 release-notes trims (user-requested)
+
+Two further `gh release edit` passes on the v1.3.0-604 GitHub release (notes only; no APK/repo change):
+1. Removed the entire **🔐 Stable signing — in-place updates from this release onward** section (header + 3 paragraphs). The brief "(stable keystore unchanged — installs in place)" parenthetical in the What's new intro, the **Signing** bullet in Notes, and the README signing callout were intentionally left as-is (out of scope).
+2. Removed the **body** of the **✅ Steam game launches work end-to-end** section (the "v1.0.0-602's release notes…" paragraph + the ⚠ `xtask install components failed` blockquote) but **kept the header line** (with the ✅ check mark) per request — it now sits directly above `### Source`.
+
+Final published v1.3.0-604 notes structure: title intro → ✨ What's new in 1.3.0-604 → ✅ Steam game launches work end-to-end (header only) → Source → Naming/versioning → Variants (full + 🪶 Lite tables) → Patches applied (details) → 🙏 Credits → Notes. No stale `1.1.0` references or `⭐ new in 1.1.0-604` tags remain.
+
+
+## 2026-05-17 — Per-game GPU spoof feature (branch `feature/gpu-spoof-menu`)
+
+### Motivation
+Crysis 2 (CryEngine 3) shows *"Unsupported video card detected!"* then crashes after OK. The engine reads the adapter as `"GameFusion Driver" [vendor id = 0x5143, device id = 0x43051401]` — 0x5143 is Qualcomm (the Adreno), which CryEngine's GPU whitelist (NVIDIA 0x10DE / AMD 0x1002 / Intel 0x8086 only) rejects. Verified from a user screenshot. DXVK's `dxgi/d3d9/dxvk.customVendorId/customDeviceId` overrides exactly these fields.
+
+### Feature — "GPU Spoof" per-game menu row + dialog
+Direct structural clone of the vibration feature (4 patches + 3 extension classes), so it inherits the proven menu-injection trail from `[[bannerhub-revanced-menu-injection-playbook]]`.
+
+New extension classes (`extensions/gamehub/.../com/xj/winemu/gpuspoof/`):
+- `BhGpuSpoofController.java` — per-game persistence in stock `pc_g_setting<gameId>` SharedPreferences under `bh_gpuspoof_*` keys (export/import compatible, mirrors `BhVibrationController`); global fallback `bh_gpuspoof_prefs`. `applyGpuSpoof(EnvVars)` writes `<filesDir>/bh_gpuspoof_dxvk.conf` (dxgi+d3d9+dxvk customVendorId/DeviceId/DeviceDesc) and force-sets `DXVK_CONFIG_FILE` via reflection. Mode 0 = Off = stock, zero regression.
+- `BhGpuSpoofSettingsActivity.java` — dialog: Off / GTX 1060 / GTX 1080 / RX 580 / UHD 630 / Custom (hex vendor+device+name fields shown for Custom). Saves immediately.
+- `BhGpuSpoofMenuRowClick.java` — Function1/Function0 proxies + 3 row-append helpers + `maybeResolveCustomLabel`, mirroring `BhMenuRowClick`.
+
+New patches (`patches/.../gamehub/gpuspoof/`):
+- `GpuSpoofMenuRowPatch.kt` — 3 injections (Lx57;->a More Menu, ted.f, Lpzc;->j0) + Lxd3;->l1 resolver short-circuit (distinct `:bh_gpuspoof_resolve_fallthrough` label so it coexists with the vibration patch's index-0 head block).
+- `GpuSpoofMenuLabelPatch.kt` — appends `bh_gpuspoof_label` = `GPU Spoof` (b64 `R1BVIFNwb29m`) to features.home CVR.
+- `GpuSpoofManifestPatch.kt` — registers the Activity (exported=false).
+- `GpuSpoofPatch.kt` — launch plumbing. Hooks `Lbg5;->a` (.locals 35, env builder). **Anchor verified by reading bg5.smali:** the app's sole `DXVK_CONFIG_FILE` write is at smali ~2472 inside the `:cond_15` (max-device-memory) conditional; `EnvVars` receiver is stably `v11`; "last EnvVars.a" is a trap (smali ~3099, after the main `return-void` at 3078, in a conditional tail). Correct anchor = the unconditional `ZINK_DESCRIPTORS` set right after `:cond_16` (past both the DXVK and MANGOHUD conditional merges) — inject `invoke-static {v11}, applyGpuSpoof` after it so our `DXVK_CONFIG_FILE` always wins.
+
+Branched off `gamehub-604-build` per branch-per-patch workflow. Pushed (`ec5bc11`).
+
+**CI:** `build_pull_request.yml` run 25994438414 → `BUILD SUCCESSFUL in 1m 34s` (2026-05-17). This workflow only runs `./gradlew build` — it confirms the Kotlin patches + Java extension **compile cleanly** but does NOT run revanced-cli, so the `firstMethod {}` anchors resolving in the real 6.0.4 APK and the smali injections applying are **NOT yet verified** (per the playbook anti-pattern: patcher SEVERE failures wouldn't even fail a CI run, and this run didn't invoke the patcher at all). **Patch-apply VERIFIED:** artifact-only `release.yml` dispatch (run 25994546875, version `1.3.0-604-gpuspoof-pre1`, stable unticked → 9 full-variant APK artifacts, no GH Release) → all 4 gpuspoof patches report `succeeded` **36/36 (4 patches × 9 variants)**, zero SEVERE/WARNING/skip. Confirms the `firstMethod {}` anchors resolve in the real 6.0.4 APK and every smali injection applies — including the `GpuSpoofPatch` `bg5` plumbing hook (ZINK_DESCRIPTORS anchor + v11 EnvVars register), all 3 menu-row injections, and the Lxd3;->l1 resolver short-circuit coexisting with the vibration patch. 9 APKs at run 25994546875 artifacts (`BannerHub-V6-1.3.0-604-gpuspoof-pre1-Patched-{Normal,Original,AnTuTu,alt-AnTuTu,Genshin,Ludashi,Normal-GHL,PuBG,PuBG-CrossFire}.apk`, ~114 MB).
+
+Remaining: device test (Crysis 2 → GPU Spoof row → GTX 1060 → relaunch). Not merged. NB: user's daily driver is `banner.hub` (V6 **Lite**, never-merged `feature/lite-variant-tier1`); this branch builds the 9 **full** variants (different package) — to test in-place on their install, gpuspoof must later be brought into the Lite branch (as the preload-free vibration fix was). For now: sideload a full variant alongside Lite to validate the feature itself.
+
+### 2026-05-17 — ANR-on-launch fix (strip l1/pzc/CVR from gpuspoof)
+
+Device test of `…-Patched-alt-AnTuTu.apk` (pkg `com.antutu.benchmark.full`): "isn't responding" on launch. Verified via full (non-pkg-filtered) logcat: `ActivityTaskManager: Force finishing activity com.antutu.benchmark.full/com.xiaoji.egggame.MainActivity` → `ActivityManager: Killing … user request after error` → `Window{Application Not Responding}`. **ANR on MainActivity, not a crash** — crash buffer had no entry for the pkg (only stale 05-16 com.tencent.ig), no native tombstone, gpuspoof classes never logged.
+
+Root-cause hypothesis (strong; exact ANR main-thread stack unobtainable — logcat-bridge blocks `/data/anr/`): the only gpuspoof code on the startup path was `GpuSpoofMenuRowPatch`'s `Lxd3;->l1` resolver short-circuit — uncached reflection (`Class.forName`+`getDeclaredField`+`get`) on the **main thread for every Compose string resolve**, stacked as a *second* such head-block atop the in-production vibration patch's identical one. First capture showed the freeze starting immediately after that resolver fired on the splash dialog. Vibration's single hook ships fine → the doubling is the delta.
+
+Fix (also a sound scope cut): removed Injection 3 (library-list popup `Lpzc;->j0`/`Lz4e`), the `Lxd3;->l1` hook, `GpuSpoofMenuLabelPatch` (+ its `dependsOn`), and `BhGpuSpoofMenuRowClick.appendLibraryPopupRow`/`maybeResolveCustomLabel`/`LABEL_KEY`. Kept Injection 1 (More Menu `Lx57;->a`) + Injection 2 (tile popup `ted.f`) — both raw-String labels, **no l1, zero startup cost** — which already cover the per-game GPU-settings entry (where the Crysis 2 fix is reached). Net: gpuspoof now contributes nothing to MainActivity cold start. If the ANR persists after this build, gpuspoof is exonerated and it's a variant/device cold-start issue (next: stock-alt-AnTuTu comparison build).
+
+### 2026-05-17 — pre2 device test: ANR fixed; spoof not applied → DXVK_CONFIG inline (pre3)
+
+pre2 (`com.antutu.benchmark.full`): **app launches** (ANR fix confirmed — the l1 double-hook was the cause). Row appears in the More Menu (Injection 1; tile-popup Injection 2 not observed but More Menu is the relevant entry). Crysis 2 still showed "Unsupported video card / GameFusion 0x5143".
+
+On-disk + logcat verification: `BhGpuSpoof: GPU spoof active: 8086:3e92 (Intel UHD 630)` logged at Wine launch; `bh_gpuspoof_dxvk.conf` written; `bh_gpuspoof_prefs.xml` mode=4. So our entire chain (bg5 hook → conf write → `EnvVars#a` reflection) **succeeds** — the failure is downstream. `pc_g_setting3939` shows the container = **Proton 10 ARM64EC + FEX + DXVK-2.4.1 + Turnip** (DXVK fully supports customVendorId). Root cause: the conf was written to `ctx.getFilesDir()` (`/data/user/0/<pkg>/files/...`) which is **not visible inside the Proton/FEX guest filesystem**, so DXVK could never open the file (GameHub writes its own dxvk.conf to a guest-visible dir `v0` it computes; we bypassed that).
+
+Fix (`BhGpuSpoofController`): switch primary mechanism to DXVK's **inline `DXVK_CONFIG` env var** (DXVK ≥2.1; ';'-separated entries) — no file, no path/mount-namespace dependency, rides the same env channel as the working `DXVK_HUD`/`DXVK_ASYNC`. File + `DXVK_CONFIG_FILE` kept as belt-and-braces fallback. Diagnostic log now prints the full `DXVK_CONFIG` string. Rebuild = pre3. If Crysis 2 STILL sees 0x5143 after this, next hypothesis = the title's D3D9 goes through wined3d (no customVendorId) rather than DXVK d3d9 — would need the DXVK log (enable DXVK_LOG_LEVEL) to confirm.
+
+### 2026-05-17 — pre4: library-popup parity (O(1) resolver) + inline DXVK_CONFIG
+
+User requested GPU Spoof in the library per-game popup like PC Vibration. Re-added Injection 3 (`Lpzc;->j0`/`Lz4e`), `GpuSpoofMenuLabelPatch` (CVR `bh_gpuspoof_label`), the `Lxd3;->l1` resolver short-circuit, and `appendLibraryPopupRow` — **without** re-triggering the ANR: `maybeResolveCustomLabel` is now O(1) (tdi.a `Field` resolved once into a `volatile` static; every call = one `Field.get` + `String.equals`, no per-call `Class.forName`/`getDeclaredField`). pre3's inline-`DXVK_CONFIG` spoof fix is also in this build. pre4 (run 25995687479) green: all 4 patches incl. label resource apply 9/9, zero SEVERE. APK → `/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-gpuspoof-pre4-Patched-alt-AnTuTu.apk`. Retest matrix: (1) still launches (O(1) resolver didn't regress ANR), (2) row in library popup like PC Vibration, (3) Crysis 2 accepts spoofed GPU via inline DXVK_CONFIG.
+
+### 2026-05-17 — pre4 ANR'd; DECISION: ship More-Menu-only (revert parity)
+
+pre4 device test: ANR again. `ActivityManager` Reasons logged = `executing service …steam.cloud.SteamCloudSaveService` and `No response to onStartJob` — stock background components (which dispatch on the **main thread**), no "input dispatching timed out". Empirical isolation across builds is unambiguous: **l1 hook present (pre1 uncached / pre4 O(1)) → ANR; l1 hook absent (pre2) → launches**; user confirms other BannerHub v6 builds launch fine on this device. So a *second* `Lxd3;->l1` `addInstructions(0,…)` head-block stacked on the vibration patch's breaks startup regardless of `maybeResolveCustomLabel` cost (cost was a red herring; mechanism consistent with the [[revanced-trailing-label-footgun]] — the trailing-`:label`-at-index-0 workaround only holds when it's the *sole* index-0 injection; the stock service/job is just the ANR *victim* of the disrupted main thread).
+
+User decision: **GPU Spoof = More Menu + tile popup only** (no library-list popup, no l1). Full PC-Vibration-parity would need a single shared l1 resolver (touching the shipping vibration patch — regression risk) and is dropped. Reverted the parity commit (`git revert 1e1fabd` → `b9dbf05`): GpuSpoofMenuLabelPatch deleted, Injection 3 + l1 + appendLibraryPopupRow/maybeResolveCustomLabel gone — **inline-`DXVK_CONFIG` Crysis 2 fix retained**. Net state = the working menu + the Crysis 2 fix, combined (never tested together before). Rebuild = pre5. Retest: (1) launches (no ANR), (2) Crysis 2 accepts spoofed GPU.
+
+### 2026-05-17 — pre5: launch OK + spoof set, but Crysis 2 unchanged → pre6 DXVK-log diagnostic
+
+pre5 device test: **app launches clean (no ANR)** — More-menu-only is stable. Spoof fully applied (`GPU spoof active 10de:1c03 (GTX 1060)`, DXVK_CONFIG + DXVK_CONFIG_FILE + conf file all confirmed on disk). Crysis 2 still "GameFusion 0x5143", no DX11/bin64 exe (SteamRIP Maximum Edition, bin32 only). **Two earlier inferences disproven by inspecting prefix `files/usr/home/virtual_containers/3939`:** `syswow64/d3d9.dll` → symlink to **DXVK-2.4.1-gplasync d3d9.dll**, so Crysis 2 DX9 runs on **DXVK d3d9, not wined3d**; and that symlink target is a `/data/user/0/<pkg>/files/...` path DXVK loads from, so that path **is** guest-visible (the pre3 file-path-invisibility theory was wrong too). DXVK d3d9 is the renderer, path reachable, spoof set — yet not applied. Real remaining suspects: env vars not propagating into the Proton-ARM64EC+FEX game process, or DXVK_CONFIG format. pre6 (`BhGpuSpoofController`): also set `DXVK_LOG_LEVEL=info` + `DXVK_LOG_PATH=<filesDir>` via the same EnvVars hook — DXVK log presence/absence is the conclusive test (propagation works vs not) and shows what DXVK does with our config. Stop inferring the failure layer; get the log.
+
+### 2026-05-17 — pre7: full GameNative/Winlator GPU catalog + cascading-spinner UX
+
+User asked to extend the preset list "as many as possible like GameNative/Winlator". Source identified locally (no APK decompile needed): `GameNative/app/src/main/assets/gpu_cards.json` — the same file Winlator ships. 289 entries → 286 after dropping 3 with overflowed (>0xFFFF) deviceIDs (`GeForce Go 7300/8200/GTX 860M`). Added a curated modern set the ~2021-era upstream list predates (RTX 30/40, RX 6000/7000, Intel Arc/B-series) → **313 cards total: 155 NVIDIA / 72 AMD / 86 Intel**.
+
+- **New generated `BhGpuCards.java`** — `String[][][] CARDS` grouped by vendor, name-sorted, dup names suffixed ` (0xXXXX)`; helpers `locate()` (restore selection from stored hex) and `modelNames()`.
+- **`BhGpuSpoofController`** — modes collapsed `OFF/GTX1060..UHD630/CUSTOM(5)` → `MODE_OFF=0 / MODE_SPOOF=1 / MODE_CUSTOM=2`; `PRESETS[][]` deleted; SPOOF & CUSTOM both apply the stored `bh_gpuspoof_{vendor,device,name}` triplet (storage/export keys unchanged).
+- **`BhGpuSpoofSettingsActivity`** — Option 1 cascading-spinner UX: Mode (Off/Spoof a GPU/Custom) → Vendor spinner (NVIDIA/AMD/Intel + counts) → Model spinner repopulating per vendor; reopen restores via `locate()`. Native Spinner popups only — no ListView/eager inflation, ANR-safe per the pre1–pre4 lesson.
+
+Zero patcher/CVR/asset/anchor change: the 3 patches reference only the menu row + activity (verified no preset coupling); `applyGpuSpoof(Object)` signature unchanged. All 3 Java files lint-compile clean vs android-34 android.jar (exit 0). **Caveat:** modern-card device IDs are well-known refs — sanity-check vs `pci.ids` before any *stable* ship; the 286 GameNative entries are upstream-clean. Build = artifact-only `release.yml` pre7. Carries pre5/pre6's inline-`DXVK_CONFIG` + DXVK-log diagnostic unchanged.
+
+### 2026-05-17 — pre8: shrink the GPU Spoof dialog (user request, pre7 confirmed working)
+
+pre7 device test: **works**. User asked to make the settings dialog smaller. `BhGpuSpoofSettingsActivity` only (pure extension Java, zero patcher/anchor change — same risk class as pre7):
+
+- **Width:** fixed `dp(480)` → `Math.min(dp(340), screenW * 0.92)` so the card no longer spans edge-to-edge / overflows on phones.
+- **Compact vertically:** root padding `dp(20/14)` → `dp(16/12)`, corner radius `12→10`, title bottom-margin `10→8`, desc top-margin `8→6`, btnRow top-margin `8→6`, label vertical padding `6/4 → 4/2`.
+- **Smaller text:** title `16→14`, subtitle `12→11` (+ maxWidth `160→140`), label `13→12`, desc `11→10`, hexField & nameIn `13→12`.
+
+No mode/preset/storage/anchor logic touched. Build = artifact-only `release.yml` pre8. Retest: dialog noticeably smaller, all 3 modes (Off/Spoof/Custom) + cascading spinners still usable.
+
+### 2026-05-17 — pre9: compact spinner options + shorter dialog (user request, pre8 installed)
+
+pre8 installed; user asked for smaller spinner *options* and a shorter dialog. The pre8 shrink left the spinners on Android's stock `simple_spinner_dropdown_item` (chunky ~48dp rows, big text). `BhGpuSpoofSettingsActivity` only (still pure ext Java, zero patcher/anchor):
+
+- **`smallAdapter(String[])`** — new helper returning an `ArrayAdapter` that overrides `getView` (collapsed control: 12sp, `dp(3)` v-padding, single-line ellipsized) and `getDropDownView` (list rows: 12sp, `dp(10/5)` padding, single-line ellipsized), `setDropDownViewResource(simple_spinner_dropdown_item)`. Applied to all 3 spinners (Mode, Vendor, Model) — Mode/Vendor/Model dropdowns and the 313-entry Model list are far tighter.
+- **Shorter:** spoofBox/customBox top-margin `10→6`, height cap `0.85→0.78` of screen.
+
+No mode/preset/storage/anchor logic touched. Build = artifact-only `release.yml` pre9. Retest: spinner rows + dropdown list visibly smaller, dialog shorter, all 3 modes + cascading pickers still work.
+
+### 2026-05-17 — pre10: fix invisible Custom-mode input fields (screenshot-confirmed)
+
+pre9 device screenshot (`Screenshot_20260517-163400.png`): in **Custom** mode the 3 input fields (Vendor ID / Device ID / Adapter name) showed as blank white boxes. Root cause: the host theme renders `EditText` with a light/white background, but the dialog set white text + gray hint → **white-on-white, invisible**. `BhGpuSpoofSettingsActivity` only (pure ext Java, zero patcher/anchor):
+
+- **New `styleField(EditText)`** — `GradientDrawable` dark fill `0xFF2A2A2A`, `dp(6)` corner, `dp(1)`/`0xFF4A4A4A` border; white text, hint `0xFF8A8A8A`; `dp(10/8)` padding; `dp(6)` top-margin. Applied to all 3 Custom fields (`hexField()` now calls it; `nameIn` styled inline, its redundant color setters removed).
+
+No mode/preset/storage/anchor logic touched. Build = artifact-only `release.yml` pre10. Retest: Custom-mode fields legible (dark boxes, visible text/hint), spaced.
+
+**Result:** pre10 run 26002042380 → **success**; `apk-alt-AnTuTu` delivered to `/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-gpuspoof-pre10-Patched-alt-AnTuTu.apk`. UI-polish chain pre7→pre10 (full preset catalog → dialog shrink → compact spinners → legible Custom fields) all green; pre7 functionally device-confirmed, pre8/9/10 UI-only on top awaiting visual device test. Branch HEAD `e0853f4` `feature/gpu-spoof-menu`, NOT merged. Crysis-2-spoof-not-applied (pre6 DXVK-log diagnostic) remains open & orthogonal.
+
+### 2026-05-17 — pre11: API-coverage expansion — wined3d + DX12/Vulkan prongs
+
+Research (see [[gpu-spoof-api-coverage]]) established the DXVK-only feature covers DX9/10/11-on-DXVK only. User approved building **both** remaining prongs. **Extension-only, NO new smali patch** (the bg5 VK_ICD_FILENAMES set at decompile line 2233 uses the same `EnvVars.a(String,Object)` setter our ZINK-anchored hook runs *after* → last-write-wins, like DXVK_CONFIG_FILE):
+
+- **Prong B — wined3d (`BhGpuSpoofController.upsertWineRegistry`)**: reads `WINEPREFIX` from `EnvVars`' public `LinkedHashMap a` (new `readEnv()` reflection helper), upserts `[Software\\Wine\\Direct3D]` `VideoPciVendorID`/`VideoPciDeviceID` (`dword:%08x`) + `VideoDescription` into `user.reg` in place — atomic temp+rename, one-time `user.reg.bhgpuspoof.bak`, fully non-fatal. Mirrors GameNative/Winlator `ContainerUtils`. Applied whenever a spoof is active (harmless to DXVK titles; no toggle).
+- **Prong C — DX12/VKD3D + native Vulkan (`applyVulkanSpoof`)**: opt-in `KEY_DEEP` per-game pref. When on, reflectively reads `VK_ICD_FILENAMES`, swaps suffix `home/steamuser/.config/vulkan/icd.d/GameScopeVK_icd.json` → `share/vulkan/GameScopeVK_icd.json` (libGameScopeVK→libGameScopeV2, both ship in imagefs 1.4.1, base-agnostic), sets `GAMESCOPE_SPOOF_VENDOR_ID/DEVICE_ID` (`0x`+hex for strtoul base-0) + `DEVICE_NAME`. V2's `vkGetPhysicalDeviceProperties2` hook ⇒ covers all Vulkan-backed APIs at once; **cost: disables frame-gen direct rendering** for that game.
+- **UI (`BhGpuSpoofSettingsActivity`)**: new CheckBox "Also spoof DX12 / Vulkan games (turns off frame-gen for this game)", visible when mode≠Off, persists live via `ctl.setDeep()` + on Close; restores from `ctl.getDeep()`.
+
+Pure ext Java (controller +234/−13, activity +24); no `.kt` patch / CVR / asset / anchor change; brace-balanced. Build = artifact-only `release.yml` pre11 → **run 26002591052 success**; `apk-alt-AnTuTu` delivered to `/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-gpuspoof-pre11-Patched-alt-AnTuTu.apk`. Branch HEAD `b253894`. Retest: (1) DX9/10/11-on-DXVK still works (regression check), (2) toggle on → a DX12/VKD3D title sees the spoofed GPU, (3) wined3d-renderer title sees it, (4) frame-gen indeed off when deep on.
+
+### 2026-05-17 — Reference: GameHub "GPU Passthrough" = renamed Native Rendering
+
+User asked what the app's "GPU Passthrough" does. Verified in `gamehub_604_decompile/res/values/strings.xml:466`: `<string name="native_rendering_plus">GPU Passthrough</string>` — it is the **UI rename of the existing `NativeRendering` setting** (enum `NativeRenderingMode` Auto/Never/Always, MMKV slot 3), not a new feature. 6.0.4 also re-implemented it: old `DirectRendering` ASurfaceTransaction plane compositor deleted, absorbed into the Vulkan path; toggle now `XServer.setFlipEnabled` (libwinemu.so −25 KB). Function = direct flip/scan-out (GPU→display surface, skipping the X-server copy) → higher FPS / lower latency; Auto/Always/Never because the direct path is less flexible. **Relevance to this feature:** the flip path runs through `libGameScopeVK`; our pre11 deep DX12/Vulkan spoof swaps to `libGameScopeV2` which has DirectRendering removed — so GPU-Passthrough-Always + deep-spoof on the same game forces the slow copy path. That subsystem IS the "turns off frame-gen" cost on the deep-spoof checkbox. Full note in memory `reference_gamehub_gpu_passthrough.md` + master map § 26.23 / § 3.3.
+
+### 2026-05-17 — CORRECTION: 6.0.4 GPU Passthrough is on/off ONLY (not Auto/Never/Always)
+
+User flagged that on their 6.0.4 install GPU Passthrough is a plain on/off — no Auto/Never/Always, and no "Native Rendering" wording. Decompile trace confirms the user, corrects the prior entry's master-map-sourced enum claim: UI label `native_rendering_plus`=`GPU Passthrough` (`strings.xml:466`, id `0x7f1101ca`; `native_rendering_plus` is only the legacy resource *name*) → one MMKV bool **`key_native_rendering_enabled`, default false/OFF** (`tco.smali:407` `MMKV.decodeBool(...,false)`) → straight to **`XServer.setFlipEnabled(Z)`** at launch (`tco.smali:452`) and in-game sidebar live (`jk9.smali:839`). The `NativeRendering` bean has `enable:Z`+`mode:NativeRenderingMode`(Auto/Never/Always) but the factory builds `(enable=false, mode=null)` (`leo.smali` pswitch_6) and the flip decision reads only the boolean — the enum is vestigial in 6.0.4. memory `reference_gamehub_gpu_passthrough.md` + MEMORY.md index corrected.
+
+### 2026-05-17 — 6.0.2→6.0.4 side-by-side saved + DiRT3/Crysis2 black-screen regression localized
+
+(1) Binary-re-verified the GLES2→Vulkan rewrite against the exact libs (md5 match); consolidated 6.0.2-vs-6.0.4 side-by-side saved to master map § 26.23.8 + memory `reference_gamehub_602_vs_604.md`. Precision fix: 6.0.4 libxserver retains 121 `gl*` strings = X-server **GLX** dispatch (in both versions), NOT a surviving GLES2 renderer. Scope rule: renderer/native = byte-exact 6.0.2v6.0.4; broader app deltas = 6.0.1→6.0.4 only (6.0.2/6.0.3 never decompiled).
+
+(2) User reports **DiRT 3 + Crysis 2 = black screen + audio on 6.0.4, worked on 6.0.2-era, GPU Spoof OFF/never used** (issue predates the spoof feature). Spoof + our patches excluded by the user's own account → only changed variable is the renderer rewrite; mechanism = removed libwinemu `ASurfaceTransaction` plane-compositor fallback → single Vulkan-only present path can't catch titles whose swapchain won't AHB-import on Turnip (black + sound = exact signature). NOT yet log-confirmed (need `getlog` during repro: libxserver `renderer_init failed`/`swapchain returned no images`/`no surface formats`/`vkAcquireNextImageKHR returned invalid image index`/`dlopen libvulkan.so failed` + DXVK d3d9.log). This is the concrete regression that fires the shelved **legacy-GLES2 renderer** plan's "revisit when" trigger — memory `project_bannerhub_revanced_legacy_gles2_renderer.md` + MEMORY.md index updated (trigger FIRED). Stock mitigations to try first: GPU Passthrough on/off, different Turnip+DXVK, force `winemu-xserver` backend if exposed. Real fix if unfixable in-app = legacy-GLES2 toggle or a separate 6.0.2-base BannerHub variant. No code change this entry — research/triage only.
+
+### 2026-05-17 — DiRT3 black-screen ROOT-CAUSED: our own global deep-spoof (prior triage RETRACTED)
+
+Log-server (`http://…:8080/events` SSE) + root logcat-bridge (`getlog --cat/--ls`) capture on the **pre11 alt-AnTuTu (non-Lite)** build. Prior entry's "spoof excluded → stock-6.0.4 renderer-rewrite regression" is **WRONG and retracted**. Evidence: `shared_prefs/bh_gpuspoof_prefs.xml` GLOBAL default = `bh_gpuspoof_mode=1` + **`bh_gpuspoof_deep=true`** (RTX 4080 / 10de:2704); DiRT 3 `pc_g_setting131962.xml` has no gpuspoof keys → inherits global → spoof+deep ON despite user believing it off (global-vs-per-game confusion). `dirt3_game_d3d11.log`: DXVK init **fully clean** (device "NVIDIA GeForce RTX 4080", swapchain B8G8R8A8 800x600 ×3 immediate, **zero errors**) then silence = textbook libGameScopeV2 signature (deep swaps `VK_ICD_FILENAMES`→libGameScopeV2, which has DirectRendering/present REMOVED). So **deep-spoof globally on bricks presentation for any game lacking a per-game override → black screen + audio.** Definitive test pending: spoof Off *globally* + deep off, relaunch. Side findings: DiRT3 & Crysis2 are **D3D11**-on-DXVK (their `*_d3d9.log`=0B, `*_d3d11.log` populated) — old "Crysis2=DX9" note corrected; both FEX + DXVK-2.4.1-gplasync + SMXZ_Turnip_v26.2.0_R4 + proton10-arm64x. **Design bug to fix: global-default `deep=true` is dangerous — deep should be per-game-only / not inherit from global, or global spoof must not silently apply the libGameScopeV2 swap.** Memory `project_bannerhub_revanced_gpu_spoof.md` + legacy-gles2 (trigger RETRACTED) + MEMORY.md corrected. No code change this entry.
+
+### 2026-05-17 — DiRT3 spoof-off clean repro: pre-renderer hang; renderer-rewrite + spoof BOTH exonerated
+
+Clean spoof-off run captured live (root bridge + log-server SSE), game left running. Verified `bh_gpuspoof_mode=0`, spoof conf NOT rewritten (hook didn't fire). `launchLog131962.txt` fresh (18:13) but **`dirt3_game_d3d11.log` never created** (stale 18:00) and SSE frozen 30s+ immediately after `dirt3_game.exe` PE load. ⇒ With spoof OFF, **DiRT 3 hangs pre-renderer — never loads d3d11.dll/DXVK**. Exonerates the 6.0.4 GLES2→Vulkan rewrite, the plane-compositor removal, AND our gpuspoof for the spoof-off case (none reached). Deep-spoof/libGameScopeV2 black-screen (18:00 run) remains a separate confirmed bug. DiRT3 spoof-off = longstanding pre-renderer early-exec hang, leading hypothesis GFWL (title needs it; `XLiveRedist` in prefix; needs `WINEDEBUG=+loaddll,+module,+seh` to pin). Fixes are GFWL-class (xliveless/disable GFWL/Box64-not-FEX). Memory (gpu-spoof, legacy-gles2 trigger NOT-fired, MEMORY.md) corrected. No code change.
+
+### 2026-05-17 — DiRT3 ROOT CAUSE: ARM64EC+FEX vs x86_64+Box64 (clean 5.3.5-vs-6.0.4 A/B)
+
+User ran DiRT3 on BannerHub 5.3.5 PuBG (`com.tencent.ig`) where it works; diffed its `launchLog131962.txt` vs the broken 6.0.4 alt-AnTuTu one (same game/exe/gameId 131962, same DXVK-2.4.1-gplasync/vkd3d-3.0.1/Pulse). Decisive delta: **WORKS = `wine_proton10.0-x64-1`, isArm64X=false, Box64 (Hybrid-Bionic "Extreme"); HANGS = `wine_proton10.0-arm64x-2`, isArm64X=true, FEX (ARM64EC)**. So DiRT3's pre-renderer hang = **ARM64EC+FEX failing on the 32-bit GFWL early-init**, not the GameHub version, not the GLES2→Vulkan renderer rewrite, not gpuspoof (all exonerated by this A/B). **Fix is a per-game container setting (no build): on 6.0.4 set DiRT3 (likely Crysis2 + other GFWL/old titles too) to a `wine_proton10.0-x64` base + Box64 translator.** Memory `project_bannerhub_revanced_gpu_spoof.md` updated; supersedes the GFWL-only hypothesis (FEX/ARM64EC is the proven lever).
+
+### 2026-05-17 — Legacy-GLES2 THROWAWAY load test (go/no-go)
+
+Per user request to test feasibility cheaply. New `LegacyGles2RendererTestPatch.kt` (resourcePatch, MuteUiSounds-pattern): force-overwrites 6.0.4 `lib/arm64-v8a/libxserver.so` + `libwinemu.so` with the 6.0.2 GLES2-era pair (bundled in `patches/src/main/resources/legacygles2/`, md5 libxserver e8eb89…/libwinemu 407f27…), always-on, NO toggle/pref/UI/DirectRendering stubs. Sole purpose: learn on-device whether the 6.0.2 pair loads/renders on the 6.0.4 Kotlin runtime or hard-crashes on JNI package drift (6.0.2 com.winemu.ui.XServer vs 6.0.4 com.winemu.core.server.XServer + deleted DirectRendering callbacks). Outcomes: UnsatisfiedLinkError→needs JNI shim; launches-but-blackscreen→pair coupling dead; renders→viable. Artifact-only release.yml test build; deliver alt-AnTuTu, capture launch logcat. Not for merge.
+
+### 2026-05-17 — Legacy-GLES2 load test RESULT: JNI drift confirmed (outcome #1, feasible-with-shim)
+
+test1 build (`b35d258`) device-tested: every game **instant SIGABRT on launch**. Abort: `JNI DETECTED ERROR ... java.lang.NoSuchMethodError: no ... method "Lcom/winemu/core/server/XServer;.setRenderingEnabled(Z)V"` at `XServer.<clinit>` → `libxserver.so JNI_OnLoad` → abort (pid `…:wine`). The 6.0.2 libxserver's JNI_OnLoad binds to 6.0.2's `XServer.setRenderingEnabled(Z)V`; 6.0.4 renamed it `setFlipEnabled(Z)V` (DirectRendering→flip). So **NOT package-drift (it found `com.winemu.core.server.XServer` fine — JNI_OnLoad uses FindClass+RegisterNatives) — it's METHOD-surface drift.** Verdict = predicted outcome #1: lib-pair coupling NOT disproven; legacy toggle is **feasible but requires a smali JNI shim** re-exposing the 6.0.2 native-method surface on 6.0.4's XServer (≥`setRenderingEnabled(Z)V` + the rest of 6.0.2 libxserver's RegisterNatives table + DirectRendering callbacks). Next scoping step: statically enumerate 6.0.2 libxserver.so's full JNI_OnLoad RegisterNatives {name,sig} list. Throwaway patch + bundled libs REVERTED from branch (would brick all subsequent gpuspoof builds). Memory `project_bannerhub_revanced_legacy_gles2_renderer.md` updated.
+
+### 2026-05-17 — Legacy-GLES2 JNI surface enumerated; scope is two-tier
+
+Static analysis of 6.0.2 libxserver.so (md5 e8eb89…, 0 Java_ exports, all-dynamic RegisterNatives) + libwinemu.so (407f27…, 36 static Java_ exports). libxserver = 11 natives on com.winemu.core.server.XServer; **10/11 name+sig identical to 6.0.4; only mismatch = `setRenderingEnabled(Z)V` (6.0.4 renamed → setFlipEnabled)**. libwinemu statically exports `Java_com_winemu_core_DirectRendering_00024Companion_{nativeInitialize,nativeSetSurfaceFormat,nativeStartTestClient}` against the 6.0.4-DELETED `com.winemu.core.DirectRendering`. **Scope: (1) trivial — +1 smali method `setRenderingEnabled(Z)V` on XServer fixes the load crash; (2) real work — restore deleted DirectRendering(+Companion) + port the 6.0.2 Java orchestration that drives it, to actually composite (lib-pair runtime still unproven).** Next = test2 (libs + tier-1 shim only, incremental). Memory `project_bannerhub_revanced_legacy_gles2_renderer.md` updated with the full surface.
+
+### 2026-05-17 — Legacy-GLES2 test2 (tier-1 JNI shim) build
+
+Added `BytecodePatchContext.addNativeMethod()` helper to BytecodeUtils (ImmutableMethod+ImmutableMethodParameter, `MutableMethod.Companion.toMutable as toMutableMethod`, modeled on addStaticFieldToExtension). `LegacyGles2RendererTestPatch.kt` now = 2 throwaway patches: (1) `legacyGles2XServerShimPatch` (bytecodePatch) adds native `setRenderingEnabled(Z)V` to `Lcom/winemu/core/server/XServer;`; (2) `legacyGles2LibSwapPatch` (resourcePatch, dependsOn the shim) overwrites libxserver.so+libwinemu.so with the 6.0.2 pair. Always-on, no toggle. Answers: does the app get PAST the JNI_OnLoad abort, and what next (render / next missing symbol / black via deleted DirectRendering orchestration). Artifact-only release.yml test2; deliver alt-AnTuTu; capture launch logcat. Not for merge.
+
+### 2026-05-17 — Legacy-GLES2 test2b RESULT: load wall PASSED; next = setFlipEnabled call-direction
+
+test2b (lib swap + added native `setRenderingEnabled(Z)V` on XServer) device result: **JNI_OnLoad no longer aborts** — 6.0.2 libxserver.so now loads (shim worked, RegisterNatives resolves). New crash, further along: `java.lang.UnsatisfiedLinkError: No implementation found for void com.winemu.core.server.XServer.setFlipEnabled(boolean)` — 6.0.4's Java calls `setFlipEnabled` at launch (GPU-Passthrough flip), but the 6.0.2 lib only provides `setRenderingEnabled` (the 6.0.2 name for the same fn). Confirms it's ONE rename hit from BOTH directions (lib exposes setRenderingEnabled / app calls setFlipEnabled). Next (test3): redirect 6.0.4's ~2 `XServer->setFlipEnabled(Z)V` call sites (tco/jk9) → `setRenderingEnabled` (tiny method-ref swap). Then expect the real tier-2 wall (deleted DirectRendering orchestration / does it render). Throwaway now visibly = a 6.0.2↔6.0.4 JNI compat layer. Memory updated. Branch still has the throwaway patches (revert when done).
+
+### 2026-05-17 — Legacy-GLES2 test3 (setFlipEnabled redirect) build
+
+Added `BytecodePatchContext.redirectVirtualCalls(definingClass,fromName,toName,proto)` helper (BytecodeUtils; mirrors forEachLiteralValueInstruction iteration, matches by MethodReference so R8-letter-resilient, rebuilds invoke-virtual preserving regs via FiveRegisterInstruction + remove/addInstructions — no replaceInstruction in this patcher set). New `legacyGles2SetFlipRedirectPatch` bytecodePatch redirects the 2 `Lcom/winemu/core/server/XServer;->setFlipEnabled(Z)V` call sites (jk9.smali:839, tco.smali:452) → `setRenderingEnabled`. legacyGles2LibSwapPatch now dependsOn(shim, redirect). test3 = shim + redirect + lib swap. Artifact-only release.yml. Expected next: past both JNI walls → the real tier-2 question (deleted DirectRendering orchestration / does it composite). Throwaway; not for merge.
+
+### 2026-05-17 — Legacy-GLES2 test3 RESULT: BOTH JNI walls cleared; old engine loads + game executes
+
+test3 (lib swap + setRenderingEnabled shim + setFlipEnabled→setRenderingEnabled redirect) device run: **NO crash, NO JNI error** (no NoSuchMethodError, no UnsatisfiedLinkError anywhere). Logcat 20:46: `gamescope: vkCreateInstance app_name: dirt3_game.exe engine_name: DXVK` ×2, loads syswow64/d3d8.dll + wine i386 comdlg32.dll — i.e. **6.0.2 libxserver.so loaded successfully and dirt3_game.exe actually executed into DXVK Vulkan-instance bring-up** (~14s real run) before `:wine` died at 20:46:35 → WineActivity→MainActivity, user switched to Termux 20:46:43. JNI compat bridge (addNativeMethod + redirectVirtualCalls) WORKS. Inconclusive on render: not left running long enough, no DXVK device/render log written before it ended (same launch→switch-away pattern as prior runs; no logged crash for the :wine death). Next: left-running ≥90s capture (live SSE + DXVK log) to see render-or-DirectRendering-wall. Memory updated.
+
+### 2026-05-17 — Legacy-GLES2 test3 RENDERS (milestone: toggle proven viable)
+
+Background SSE auto-capture + logcat. Two runs: (1) **20:58 arm64x+FEX** → `err:wow:load_64bit_module failed ... c000007b` + `Could not find memory region containing address /wine` at run.exe wow64 bootstrap = **6.0.2 libwinemu can't do the ARM64EC/wow64 path** (predicted libwinemu-pairing blocker, real but path-specific; no JNI crash). (2) **21:01 DiRT3 on wine_proton10.0-x64-1 + Box64 (isArm64X=false)** → `WinEmuModule DevicePerformanceReporter fps=29` sustained durationSec 80→90→100→110, :wine pid 31363 alive, no crash = **THE 6.0.2 GLES2 libxserver+libwinemu pair LOADS AND RENDERS on 6.0.4 with the JNI bridge.** ⇒ **Legacy-GLES2 toggle is VIABLE.** Constraint: must pair with **x64/Box64** containers (arm64x/FEX bootstrap dies on 6.0.2 libwinemu). Tier-2 "deleted DirectRendering" did NOT block rendering on this path. Pending: user visual confirm (fps=29 telemetry says rendering; eyes = tiebreaker). Helpers `addNativeMethod`+`redirectVirtualCalls` are the proven shim primitives for the real feature. Memory updated.
+
+### 2026-05-17 — Remove throwaway legacy-GLES2 patches (pre GPU-Spoof merge)
+
+git rm the 3 throwaway files (LegacyGles2RendererTestPatch.kt + 6.0.2 libxserver.so/libwinemu.so) off feature/gpu-spoof-menu so GPU Spoof can merge clean to gamehub-604-build. Reusable BytecodeUtils helpers `addNativeMethod`/`redirectVirtualCalls` KEPT (generic; needed for the upcoming real renderer toggle). Learnings preserved in memory project_bannerhub_revanced_legacy_gles2_renderer.md (test1→test3: JNI bridge works, x64+Box64 runs but black-screen+sound = DirectRendering present path still required = tier-2 crux).
+
+### 2026-05-17 — CORRECTION: legacy renderer DOES display (GoW on Proton-10-arm); DiRT3 is the outlier
+
+User: God of War ran fine on the legacy renderer on wine_proton10.0-arm64x-2 (arm64x+FEX). Telemetry corroborates (session hit fps=310/299 @ gpuPercent=80 = heavy real rendering, not black). Both my prior swings were over-generalised from DiRT 3 (session-long problem child: GFWL/32-bit-wow64/c000007b): "PROVEN VIABLE" (telemetry-fooled) AND "black-screen, DirectRendering crux unsolved" (DiRT3 visual) were BOTH wrong. Corrected: **legacy GLES2 renderer DISPLAYS and works for real games (GoW end-to-end); deleted-DirectRendering is NOT a universal present blocker; arm64x not broken for legacy (c000007b was DiRT3 32-bit wow64).** Real toggle scope shrinks to gating the already-proven lib-swap+JNI-bridge behind a per-game pref. Plan doc + memory corrected. Lesson: never generalise DiRT 3 to the renderer; validate with a clean title.
+
+### 2026-05-17 — Legacy-renderer-toggle Milestone 1: toggle plumbing (UI + pref + menu row)
+
+On `feature/legacy-renderer-toggle`. Cloned the GPU-Spoof scaffold → renderer toggle (no swap yet; that is M2):
+- `extensions/.../renderer/BhRendererController.java` — per-game+global pref `bh_renderer_mode` (0=New default / 1=Legacy) in `pc_g_setting<id>` + `bh_renderer_prefs`; get/setMode, reload, `isLegacyForGame/isLegacyForLaunchingGame` (M2 entry), sniffGameIdFromStack.
+- `BhRendererSettingsActivity.java` — compact dialog (gpuspoof styling): Mode spinner New(Vulkan)/Legacy(GLES2) + inert-features/GFWL warning; persists on select + Close.
+- `BhRendererMenuRowClick.java` — faithful clone of BhGpuSpoofMenuRowClick (More Menu Lx57;->a + tile popup ted.f; raw-String label, NO l1; Proxy over R8 Function1/0). ROW_LABEL "Renderer".
+- `RendererMenuRowPatch.kt` — clone of GpuSpoofMenuRowPatch (Inj1 Lx57;->a + Inj2 ted.f); additive to the GPU-Spoof row (distinct label, same proven-safe append). `dependsOn(sharedGamehubExtensionPatch, rendererManifestPatch)`.
+- `RendererManifestPatch.kt` — registers BhRendererSettingsActivity (exported=false, translucent).
+All brace-balanced; auto-discovered patches. M1 = the row+dialog+persistence work and are device-testable now (selecting Legacy won't change rendering until M2 wires the conditional 6.0.2 lib-swap+JNI-bridge). Artifact-only build to verify compile + that the renderer menu injections resolve alongside gpuspoof's identical anchors.
+
+### 2026-05-17 — Per-game-from-menu investigation: GameInfo.getServerGameId() is the source
+
+User-confirmed: Vibration is global from BOTH More Menu and library popup too — the per-game gap is universal/pre-existing (all 3 use sniffGameIdFromStack = needs a running WineActivity; none at pre-launch menu → global). Decompile trace result: real per-game id = **`com.xiaoji.egggame.game.di.model.game.GameInfo` (kept-name, non-R8) → `getServerGameId()I`** (== pc_g_setting<id> / launchLog gameId). In scope in both `Lx57;->a(Lf37;…)` (More Menu) and `Lpzc;->j0(Laub;…)` (library popup); stock rows read it (pzc.j0 ~2146/2180/2192); Laub/Lf37 carry libraryGameId. **Shared fix:** capture in-scope GameInfo at each injection site, getServerGameId(), thread into click→settings Intent (replace sniffGameIdFromStack). Also recorded: GPU-Spoof & Renderer were never added to the library popup (Lpzc;->j0/Lz4e) — only Vibration has it (needs Lxd3;->l1; gpuspoof dropped it over the l1-ANR) → adding them must avoid a 2nd l1 head-block. Plan doc updated. Next: implement the shared GameInfo-capture mechanism (Renderer first, then retrofit GpuSpoof+Vibration), then add GPU-Spoof/Renderer library-popup rows w/o a 2nd l1 hook.
+
+### 2026-05-17 — Step 1: shared per-game gameId-from-menu mechanism (Renderer)
+
+`BhRendererMenuRowClick`: + `captureGameId(menuData)` (resolves gameId from menuData.toString() via the R8-stable token `ServerGameId\(value=(-?\d+)\)` / fallback `gameId=(\d+)` — == pc_g_setting<id>); + `volatile static sCapturedGameId`; handler instances bind it at construction; `invoke()` prefers boundGameId, falls back to sniffGameIdFromStack (in-game sidebar). `RendererMenuRowPatch`: + index-0 `invoke-static/range {p0 .. p0} -> captureGameId(Object)V` on BOTH builders (Lx57;->a More Menu p0=Lf37 GameDetailArgs; ted;->f tile popup p0=Lued — both verified `static final`). Single no-label once-per-menu-open invoke = no l1/ANR/trailing-label footgun. Mechanism is generic & R8-letter-proof → retrofit target for GpuSpoof+Vibration next. Artifact-only build to verify compile + smali (pN range invoke at idx0) + per-game on device.
+
+### 2026-05-17 — Shared BhMenuGameId refactor (per-game for all 3 menu features)
+
+Extracted capture into `extensions/.../common/BhMenuGameId.java` (captureGameId/getCaptured/resolve via R8-stable ServerGameId/gameId toString token) + `patches/.../common/MenuGameIdCapturePatch.kt` (ONE index-0 `invoke-static/range {p0..p0}` into BOTH builders Lx57;->a + Lted;->f, dependsOn sharedGamehubExtensionPatch). Renderer de-duped (BhRendererMenuRowClick → BhMenuGameId.getCaptured; RendererMenuRowPatch dropped its own capture, dependsOn menuGameIdCapturePatch). Retrofitted GPU Spoof (BhGpuSpoofMenuRowClick getCaptured-else-sniff; GpuSpoofMenuRowPatch dependsOn menuGameIdCapturePatch) + Vibration (BhMenuRowClick getCaptured-else-sniff; VibrationMenuRowPatch dependsOn += menuGameIdCapturePatch). One shared capture, three small handler consumers — no triplicate index-0 stacking. Build verifies all 3 coexist + compile.
+
+### 2026-05-17 — Per-game fix #2: cover the library-LIST popup (Vibration's 3rd entry)
+
+Device: GPU Spoof + Renderer now per-game (More Menu/tile popup) but Vibration still global — because Vibration also has a row in the library-LIST popup `Lpzc;->j0(Laub;Z…)` which MenuGameIdCapturePatch didn't cover (GPU Spoof/Renderer have no row there yet). Fix: (1) MenuGameIdCapturePatch + 3rd index-0 capture into `Lpzc;->j0` (static, p0=Laub; mirrors vibration's exact j0 predicate). (2) `BhMenuGameId.resolve()` now 2-pronged: toString token (Lf37 GameDetailArgs) THEN kept-name `com.xiaoji.egggame.game.di.model.game.GameInfo.getServerGameId()` located by VALUE type on the param or its declared fields (Laub.a:GameInfo) — R8-field-name-proof. Build to verify + device-test Vibration per-game from the library popup.
+
+### 2026-05-17 — Vibration per-game ROOT CAUSE: Intent extra key mismatch (1-line fix)
+
+Capture mechanism was fine (GPU Spoof/Renderer per-game proved it). Vibration stayed global because of a pre-existing key mismatch: `BhMenuRowClick` put the id under `"gameId"` but `BhVibrationSettingsActivity` reads `EXTRA_GAME_ID = "bh_vibration.gameId"` → settings activity always got null → `setContainerForSettings(null)` → global. Fixed: putExtra now uses `BhVibrationSettingsActivity.EXTRA_GAME_ID`. (GPU Spoof/Renderer were unaffected — their handler/activity keys already matched.) Build to verify Vibration now per-game from all 3 menus.
+
+### 2026-05-17 — STATE SNAPSHOT (per-game saga) + memory synced
+
+Branch `feature/legacy-renderer-toggle` HEAD `4ab5230`. Done: shared `BhMenuGameId` + single `MenuGameIdCapturePatch` (index-0 capture into all 3 builders Lx57;->a / Lted;->f / Lpzc;->j0; R8-proof via ServerGameId/gameId toString token + kept-name GameInfo.getServerGameId by value-type); Renderer de-duped; GPU Spoof + Vibration retrofitted to read getCaptured(); Vibration extra-key bug fixed (`4ab5230`, build 26010126663 verification pending). Device-confirmed per-game: GPU Spoof + Renderer (More Menu/tile popup). Pending: (a) verify Vibration per-game post-`4ab5230`; (b) Task #20 — add GPU Spoof + Renderer ROWS to library-list popup `Lpzc;->j0` without a 2nd l1 head-block; (c) Milestone 2 — Renderer toggle still UI/pref-only, conditional 6.0.2 lib-swap+JNI-bridge not wired. Caveat recorded in memory: `gamehub-604-build` gpuspoof (merged `792ae69`) lacks the per-game mechanism — only this branch has it; needs later merge. Memory updated: project_bannerhub_revanced_legacy_gles2_renderer.md + project_bannerhub_revanced_gpu_spoof.md.
+
+### 2026-05-17 — Vibration per-game CONFIRMED WORKING on device
+
+User confirmed: Vibration per-game settings now work end-to-end on device after the extra-key fix `4ab5230` (`putExtra` → `BhVibrationSettingsActivity.EXTRA_GAME_ID`, build 26010126663). All three per-game menu features are now device-verified per-game: **GPU Spoof + Renderer** (More Menu / tile popup) and **Vibration** (all three menus incl. the library-list popup `Lpzc;->j0`). The shared `BhMenuGameId` + single `MenuGameIdCapturePatch` mechanism is fully proven end-to-end. Branch `feature/legacy-renderer-toggle` HEAD `28de6c4`. Pending item (a) CLOSED. Remaining: (b) Task #20 — add GPU Spoof + Renderer ROWS to the library-list popup `Lpzc;->j0` without a 2nd `Lxd3;->l1` head-block (STARTING NOW); (c) Milestone 2 — Renderer conditional 6.0.2 lib-swap+JNI-bridge. Memory updated: project_bannerhub_revanced_legacy_gles2_renderer.md + project_bannerhub_revanced_gpu_spoof.md.
+
+### 2026-05-17 — Task #20 IMPLEMENTED: GPU Spoof + Renderer rows in library-list popup (shared-resolver, no 2nd l1)
+
+Added the missing library-list popup (`Lpzc;->j0`, `Lz4e(Lell,Lnw6,int)` rows) entry for **GPU Spoof** and **Renderer** — previously only Vibration had a row there. Hard constraint honoured: **NO 2nd `Lxd3;->l1` head-block** (that stacking ANR'd cold start, 2026-05-17 gpuspoof saga). Approach = **single shared l1 resolver**:
+- `BhMenuRowClick.maybeResolveCustomLabel` (the method the ONE existing vibration-injected l1 head-block calls) extended from 1→3 sentinel keys: `string:bh_pc_vibration_label`→"PC Vibration Settings", `string:bh_gpuspoof_label`→"GPU Spoof", `string:bh_renderer_label`→"Renderer". Null-safe early-out unchanged.
+- `BhGpuSpoofMenuRowClick` + `BhRendererMenuRowClick`: added `appendLibraryPopupRow(Object)List` (Unsafe-allocate `Lell`, reflect-set `Ltdi.a`=sentinel key / `Ltdi.b`=emptySet, `Lz4e(Lell,Lnw6,int)` ctor, Function0 proxy → own `invoke()`), exact mirror of the proven vibration helper. Stale "removed due to ANR" NOTE comments replaced with the shared-resolver rationale.
+- `GpuSpoofMenuRowPatch` + `RendererMenuRowPatch`: added **Injection 3** into `Lpzc;->j0` — `return-object`-anchored `invoke-static appendLibraryPopupRow + move-result` (mirrors vibration Injection 3; this is a row-append before return, NOT an l1 head-block — the proven-safe coexistence pattern). Both now `dependsOn(vibrationMenuRowPatch)` so the single shared l1 hook is guaranteed present + applied first; header/dependsOn comments updated. No new `Lxd3;->l1` injection anywhere → zero ANR regression risk.
+
+5 files edited, all brace-balanced. Chaining across the 3 patches into the same `Lpzc;->j0` return path is the same proven additive pattern as the More Menu Injection 1. Next: commit + push + artifact-only CI build to verify compile + 3-patch coexistence + smali resolves in real 6.0.4 APK, then device-test all 3 rows in the library-list popup (no ANR).
+
+Committed `d57bd78`, pushed to `feature/legacy-renderer-toggle`. Artifact-only build (stable unticked) **run 26011229146** (`1.3.0-604-libpoprows-pre1`) → ✅ **GREEN**. Patches bundle compiled; all 9 variants patched; `Create GitHub Release: skipped` (artifact-only as intended). Patch-log scan (per the SEVERE-doesn't-fail-CI anti-pattern): **0 SEVERE**, and `"GPU Spoof menu row"`, `"Renderer menu row"`, `"PC Vibration Settings menu row"`, `"Per-game menu id capture (shared)"` all `succeeded` in the real 6.0.4 APK — the 3 `Lpzc;->j0` Injection-3 row-appends + the shared 3-key l1 resolver resolve cleanly and coexist. Task #20 implementation CI-verified.
+
+### 2026-05-17 — Task #20 DEVICE-CONFIRMED (full variant)
+
+User installed `BannerHub-V6-1.3.0-604-libpoprows-pre1-Patched-alt-AnTuTu.apk` and confirmed: **all 3 rows (GPU Spoof, Renderer, PC Vibration Settings) appear in the library-LIST popup**. App launched and reached the menus → **no cold-start ANR** (the entire point of the single-shared-l1-resolver design — validated). Task #20 functionally proven on the full variant. Click-behaviour (each row opens its per-game settings dialog scoped to the right game) not yet separately reported but the handlers are the same proven code already device-confirmed from the More Menu/tile popup. Remaining: bring this to the user's ACTUAL install (V6 **Lite** `banner.hub`), which needs the whole per-game feature set (this branch's delta), not just `d57bd78` — Lite (`feature/lite-variant-tier1`, off `gamehub-604-build`) lacks `BhMenuGameId`/`MenuGameIdCapturePatch`/Renderer patches/the extended l1 hook. Decision point surfaced to user (merge route).
+
+### 2026-05-17 — Merge-delta analysis: feature/legacy-renderer-toggle → gamehub-604-build (decision PENDING)
+
+Computed exact git delta `origin/gamehub-604-build...feature/legacy-renderer-toggle` = **10 commits, 13 files, +1434/−34** (2 docs-only: PROGRESS_LOG.md, docs/LEGACY_RENDERER_TOGGLE_PLAN.md). What a main merge would add:
+1. **Shared per-game mechanism** (new): `BhMenuGameId.java` + `MenuGameIdCapturePatch.kt` → GPU Spoof becomes per-game *from the menu* (currently global-from-menu on main since gpuspoof merge `792ae69`; per-game only worked from the in-game sidebar).
+2. **Entire new Renderer feature** (new): BhRendererController/SettingsActivity/MenuRowClick + RendererMenuRowPatch + RendererManifestPatch. ⚠️ **Milestone 2 NOT wired → the Renderer row+dialog are visible but INERT** (picking Legacy does nothing). This is the sole real trade-off of a main merge.
+3. **Existing-feature mods**: BhMenuRowClick (+48: vibration EXTRA_GAME_ID per-game fix + shared 3-key l1 resolver), BhGpuSpoofMenuRowClick (+62), GpuSpoofMenuRowPatch (+83), VibrationMenuRowPatch (+3) → Vibration + GPU Spoof go per-game; all 3 get the Task #20 library-list-popup row.
+Clarified: the gpuspoof global-default `deep=true` black-screen bug is ALREADY on gamehub-604-build (came with `792ae69`) — this merge does NOT introduce it; the new per-game mechanism is actually a prerequisite for the proper per-game-`deep` fix. Confirmed to user that GPU Spoof itself already shipped to main at `792ae69` (verified via git, not memory). **Routing decision still OPEN** — options on the table: (A) merge → gamehub-604-build then Lite; (B) merge → Lite branch only; (C) fix deep-spoof first; (D) verify row clicks on full variant before any merge. Mitigations for the inert-Renderer concern noted: hold merge until M2, or strip/hide the Renderer row in a main-merge variant. Verify: patches `succeeded` 9/9 each, 0 SEVERE, the 3 Lpzc;->j0 Injection-3 row-appends + the shared 3-key l1 resolver all resolve in the real 6.0.4 APK. Then device-test: GPU Spoof + Renderer + Vibration rows all appear in the library-LIST popup AND no MainActivity ANR on cold start (the whole point of the shared-resolver design).
+
+### 2026-05-18 — Milestone 2 IMPLEMENTED (xserver-only-first): conditional 6.0.2 libxserver swap + JNI bridge, per-game gated
+
+User picked **xserver-only first** for the libwinemu timing risk (7 early clinit loaders lock libwinemu to first-loaded copy; libxserver loads only at `XServer.<clinit>` = game-session time, so it is the clean, ordering-proof first cut; GoW rendered fine on the full pair so xserver-only may already suffice).
+
+Wired the proven test1→test3 mechanism (GoW device-confirmed 2026-05-17) behind the per-game pref so New mode is provably stock (zero regression):
+
+1. **`RendererLibBundlePatch.kt`** (resource, additive) — bundles 6.0.2 `libxserver.so` (md5 `e8eb894825da66cca0fc59b242ac0ad5`, recovered from throwaway commit `cee31f4`) into the APK as `lib/arm64-v8a/libxserver_legacy.so` ALONGSIDE the untouched stock 6.0.4 lib. Anchors on the stock lib's existing ABI dir; asserts stock present, never overwrites it.
+2. **`BhRendererController` M2 methods** — `loadXserver(name)` (resolves launching gameId; Legacy → `System.load(libxserver_legacy.so)` via nativeLibraryDir or APK-zip fallback, else stock `System.loadLibrary` bit-identically; any legacy failure falls back to stock so it can never brick); `flip(xserver, flag)` reflective dispatcher → `setRenderingEnabled` (legacy lib) vs `setFlipEnabled` (stock); decision FROZEN at load time (`legacyActive`/`legacyDecided`) so flip never invokes an unbound native; `resolveLegacyLib` (nativeLibDir → cache-extract fallback for `extractNativeLibs=false`).
+3. **`redirectVirtualToStatic`** helper added to `BytecodeUtils.kt` next to `redirectVirtualCalls` — rewrites `invoke-virtual {recv,args} cls->fn` → `invoke-static {recv,args} target`; needed because `redirectVirtualCalls` is a *global by-name* swap and a virtual target on XServer would self-recurse.
+4. **`RendererSwapPatch.kt`** (bytecode) — `addNativeMethod` XServer `setRenderingEnabled(Z)V` (so legacy lib's RegisterNatives binds; harmless unbound under stock); rewrites `XServer.<clinit>`'s single `System.loadLibrary` → `BhRendererController.loadXserver`; `redirectVirtualToStatic` on the exactly-2 `setFlipEnabled(Z)V` call sites (`jk9:839 {v0,v1}`, `tco:452 {v8,v6}`) → `BhRendererController.flip`. `dependsOn(sharedGamehubExtensionPatch, rendererManifestPatch, rendererLibBundlePatch)`.
+
+libwinemu deliberately NOT gated (xserver-only-first). Next: CI artifact-only build to verify compile + patches resolve 9/9 / 0 SEVERE in real 6.0.4 APK, then device-test Legacy toggle on a known-good title (GoW).
+
+### 2026-05-18 — M2 pre1 CI: bundle+manifest+menu-row ✅, swap ✗ (CME) → fixed
+
+Run 26022546201 green-but-not-applied (SEVERE-doesn't-fail-CI). Scan: "Legacy renderer libxserver bundle" / "Renderer settings activity" / "Renderer menu row" `succeeded` 9/9; **"Legacy renderer conditional swap" SEVERE 9/9** — `Caused by: java.util.ConcurrentModificationException at BytecodeUtils.redirectVirtualToStatic`. Root cause: `classDefs.getOrReplaceMutable(classDef)` structurally replaces the entry in the live `classDefs` set while the enclosing `classDefs.forEach` iterates it (latent in the copied `redirectVirtualCalls`, which no shipping patch actually invokes — `redirectVirtualToStatic` is the first real use). Fix: snapshot candidate classDefs via `classDefs.filter { … }` before the mutate loop + `classDef.methods.toList()`. Left the unused original `redirectVirtualCalls` untouched (minimal blast radius). Re-triggering pre2.
+
+### 2026-05-18 — M2 pre2 CI ✅ VERIFIED
+
+Run 26022795219: **0 SEVERE**; all 4 renderer patches `succeeded` 9/9 in real 6.0.4 APK across every variant — "Legacy renderer conditional swap", "Legacy renderer libxserver bundle", "Renderer menu row", "Renderer settings activity". CME fix confirmed. Milestone 2 is implemented + CI-verified (xserver-only-first). Plan doc updated with Status block. **Milestone 3 next:** device-test Legacy toggle on a known-good title (GoW); requires the feature on the user's actual install (V6 Lite `banner.hub`) → cherry-pick into `feature/lite-variant-tier1` (same as preload-free vibration landing).
+
+### 2026-05-18 — M3 diagnostic build (Patches A+B) + FULL-PAIR libwinemu swap
+
+Device-pulled the last 2 GoW launches under M2 pre2 (alt-AnTuTu `com.antutu.benchmark.full`, `bh_renderer_mode=1`): both bootstrapped, ran ~40 s @ 600 %% CPU, `:wine` died fg-TOP, **no tombstone, GoW_d3d11.log stale (05-17 15:56), no wine_debug.log** → never reached D3D11; died pre-render. Same shape as test3.
+
+Built a THROWAWAY diagnostic (not for merge; gated by `BhRendererDiag.DIAG`):
+- **Patch A** — `BhRendererDiag` fsync'd per-line file logger (`<files>/bh_renderer_diag.log`) threaded through `BhRendererController.loadXserver`/`loadWinemu`/`flip` (entry, resolveLegacyLib path+len+md5-vs-expected, LOAD_OK/FAIL, stock fallback, XSERVER_CLINIT_DONE, flip branch/flag/caller/result) + 1 Hz heartbeat (how far past the swap before `:wine` death).
+- **Patch B** — `RendererDiagEnvPatch` injects `BhRendererDiag.applyDiagEnv` at GpuSpoofPatch's proven `Lbg5;->a` ZINK_DESCRIPTORS anchor; reflective EnvVars#a sets `WINEDEBUG=+loaddll,+module,+process,+seh,+pid,+timestamp,fixme-all` + `FEX_SILENTLOG=0` + `FEX_OUTPUTLOG=<files>/fex_diag.log` ONLY when Legacy active for the launching game (FEX log survives kill -9, unlike host-swallowed wine stderr).
+- **FULL-PAIR (user decision)** — also swap 6.0.2 libwinemu (test3's proven pair). `redirectStaticLibLoad("winemu", loadWinemu)` (new BytecodeUtils helper) rewrites every `System.loadLibrary("winemu")` early loader; `RendererLibBundlePatch` now bundles BOTH `libxserver_legacy.so` (md5 e8eb89…) + `libwinemu_legacy.so` (md5 407f27…, verified from GameHub_6.0.2.apk) additively; `loadWinemu` idempotent + falls back to stock, decision ownership stays with loadXserver so flip()'s frozen contract is unchanged. Concession: libwinemu can't be strictly per-game (early loaders) — resolves per `:wine` launch via sniff+global.
+
+`rendererSwapPatch` dependsOn `rendererDiagEnvPatch` so the diag patch is pulled in. CI: artifact-only `1.3.0-604-rendererm2-fullpair-diag-pre1`. Next: deliver alt-AnTuTu APK, GoW launch left running ≥90 s with Legacy set, pull the 3 logs via root bridge → decision table resolves which of the 4 hypotheses holds.
+
+#### CI ✅ + APK delivered (post-build, 2026-05-18)
+
+Run [26025275469](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26025275469) success; log-scanned (SEVERE-doesn't-fail-CI guard): **no real `SEVERE:`** (earlier grep hits = an echoed code-comment string, not patch failures); all 5 renderer/diag patches `succeeded` **9/9** — "Legacy renderer conditional swap" (holds the `redirectStaticLibLoad("winemu",…)` call), "Legacy renderer libxserver bundle" (now both 6.0.2 libs), "Legacy renderer diagnostic env (THROWAWAY)", "Renderer menu row", "Renderer settings activity". 9 variant APKs produced.
+
+**Delivered:** `/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-rendererm2-fullpair-diag-pre1-Patched-alt-AnTuTu.apk` (md5 `72bca817d6b7d1b298ea23566158ee82`, pkg `com.antutu.benchmark.full`). Same workflow/keystore as M2 pre2 → in-place update expected; if Android refuses on signature, uninstall first (wipes `bh_renderer_mode` + game library → re-set Legacy + re-import GoW).
+
+**Caveat:** green "conditional swap succeeded" only proves RendererSwapPatch ran without throwing; `redirectStaticLibLoad` silently no-ops on 0 `loadLibrary("winemu")` matches (doesn't fail CI). `loadWinemu` wiring is confirmable ONLY from the device `bh_renderer_diag.log` `WINEMU`/`loadWinemu entry` lines.
+
+**Run procedure (awaiting user):** install → confirm Renderer=Legacy for GoW → launch GoW, screen on, **left running ≥90 s** (`:wine` self-dies ~40 s; staying distinguishes fixed-timeout watchdog kill vs real progress) → pull (no manual capture): `getlog --cat /data/data/com.antutu.benchmark.full/files/bh_renderer_diag.log`, `…/files/fex_diag.log`, `getlog -n 40000 com.antutu.benchmark.full`.
+
+**Decision table:** `WINEMU_LOAD_OK`+`LOAD_OK legacy libxserver`→GoW renders = full pair fixes it, xserver-only WAS the cause (pairing hypothesis confirmed); loads but still dies = deeper than lib pairing; no `WINEMU` lines = winemu redirect found 0 sites (rework redirect); md5 `MISMATCH!` = bundle/extract corruption; `LOAD_OK`+heartbeats stop ~40 s + FEX log clean = loaded/no-composite → host watchdog kill = deleted-DirectRendering tier-2 wall; `fex_diag.log` fatal `c000007b`/wow64 = FEX/arm64x death, renderer is a red herring for GoW.
+
+## 2026-05-18 — M3 full-pair device result + forced-enable experiment (branch `feature/legacy-renderer-toggle`)
+
+### Full-pair diag device run — root cause found
+User ran 3 GoW launches on `…rendererm2-fullpair-diag-pre1` (pkg `com.antutu.benchmark.full`): L1 Legacy=black, L2 Vulkan/stock=working gameplay, L3 Legacy=black. Logcat buffer rolled (AnTuTu floods it); `bh_renderer_diag.log` fsync'd so it survived; `fex_diag.log` 0 B; `GoW_d3d11.log` stale (05-17 15:56) → game never reached DXVK/FEX under Legacy.
+
+**Decisive findings from the diag log:**
+1. **Full-pair bundle correct & loads** — `WINEMU_LOAD_OK legacy libwinemu` md5 `407f274d…` MATCHES 6.0.2; `LOAD_OK legacy libxserver` md5 `e8eb8948…` MATCHES 6.0.2; `XSERVER_CLINIT_DONE (legacy)`. The "`redirectStaticLibLoad` may no-op on 0 sites" caveat is **resolved — it fired**.
+2. **Process does NOT die** — heartbeats unbroken n=0→n=42+, no tombstone/SIGABRT. **Full pair fixed the M2-pre2 ~40 s crash** (the missing lib *was* libwinemu, as hypothesised).
+3. **Black + alive-forever = the deleted-DirectRendering tier-2 wall, confirmed.**
+
+**Root cause:** `flip()` logs exactly ONCE per legacy launch — `branch=setRenderingEnabled enabled=false … OK` — and is never called again. The test2b "`setFlipEnabled`↔`setRenderingEnabled` = name-drift rename" was a *signature* match, not *semantic*: 6.0.4 `setFlipEnabled(Z)` = GPU-passthrough flip (default OFF → false); 6.0.2 `setRenderingEnabled(Z)` = master switch that turns the GLES2 renderer ON, formerly driven by the **6.0.4-deleted `com.winemu.core.DirectRendering`**. We pass 6.0.4's passthrough flag (false) into 6.0.2's renderer-enable switch → libs load, compositor present, renderer never enabled/driven → black, alive forever.
+
+### Forced-enable experiment (user chose cheap test over full port)
+Commit `55b3422` (off `ea2eef9`): one-line THROWAWAY in `BhRendererController.flip()` — `effEnabled = legacy ? true : enabled`; legacy branch now always invokes `setRenderingEnabled(true)` regardless of the 6.0.4-side flag; diag logs `FORCED->true (M3 experiment)` + `eff=`. Full-pair + all diag logging retained. **REVERT before any M2 ship.**
+
+**CI ✅** run [26027685582](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26027685582) completed/success, log-scanned **0 SEVERE**, all renderer patches `succeeded` 9/9 ("Legacy renderer conditional swap" / "libxserver bundle" / "diagnostic env (THROWAWAY)" / "Renderer menu row" / "Renderer settings activity").
+
+**Delivered:** `/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-rendererm3-forceenable-pre1-Patched-alt-AnTuTu.apk` (md5 `7b298d4a932a24d0c298cd1e24484ed7`, 116 MB, pkg `com.antutu.benchmark.full`). Same workflow/keystore → in-place update expected; signature refusal fallback = uninstall (wipes `bh_renderer_mode` + library).
+
+**Caveat for reading the result:** flip() fires ONCE at clinit time, surface almost certainly not yet ready. Still-black could mean EITHER the lib pair can't self-drive (→ full DirectRendering port) OR `setRenderingEnabled(true)` was called too early and needs re-assertion post-`surfaceChanged` (→ deferred re-call, still cheaper than full port). Lit screen → 6.0.2 renderer self-drives once enabled → M2 reduces to wiring the enable correctly.
+
+**Run procedure (awaiting user):** install → Renderer=Legacy for GoW → launch, screen on, **left running ≥90 s** → pull `getlog --cat /data/data/com.antutu.benchmark.full/files/bh_renderer_diag.log` (confirm `FORCED->true (M3 experiment)` + `eff=true` on the FLIP line), `…/fex_diag.log`, `getlog -n 40000 com.antutu.benchmark.full` — capture promptly before the buffer rolls.
+
+---
+
+## 2026-05-18 (cont.) — M3 forced-enable DEVICE-CONFIRMED, cleanup shipped, verification blocked → root-bridge v1.3.0 (branch `feature/legacy-renderer-toggle`)
+
+### M3 forced-enable result — ✅ GAME SCREEN (decisive positive)
+`forceenable-pre1` device run, `bh_renderer_diag.log` 06:53: both 6.0.2 libs md5-MATCH (`libwinemu_legacy.so` `407f274d…`, `libxserver_legacy.so` `e8eb8948…`), `LOAD_OK legacy libxserver -> legacyActive=true`, `XSERVER_CLINIT_DONE (legacy)`, then `[FLIP] … FORCED->true (M3 experiment) … legacyActive=true` → `flip(setRenderingEnabled) OK eff=true`; heartbeats unbroken, no tombstone. User confirmed **game screen**. **PROVEN: the 6.0.2 GLES2 renderer self-drives once `setRenderingEnabled(true)` is called — no DirectRendering RE port needed.** Root cause was the identified semantic mismatch (6.0.4 fed its passthrough `false` into the 6.0.2 renderer master-switch).
+
+### Cleanup shipped (commit `44b2e4e`)
+Deleted `BhRendererDiag.java` + `RendererDiagEnvPatch.kt`; stripped all diag log/heartbeat/md5/flipCaller + the `rendererDiagEnvPatch` dependsOn; promoted the forced-true to the permanent documented rule in `BhRendererController.flip()` (javadoc explains 6.0.2 `setRenderingEnabled` = renderer master-switch ≠ 6.0.4 `setFlipEnabled` passthrough). Kept the proven full 6.0.2 pair bundling + swap. Fixed stale "xserver-only-first" comments. Author The412Banner, no Claude co-author. **NO merge to gamehub-604-build / NO Lite port yet** (user: clean+rebuild on branch first).
+
+### Clean build — ✅ CI green
+Artifact-only `release.yml` run **26029782656** (`--ref feature/legacy-renderer-toggle`, `version=1.3.0-604-renderer-clean-pre1`, `stable=false`): completed/success, log-scanned **0 SEVERE**, renderer patches `succeeded` all 9 variants, throwaway diag-env patch correctly ABSENT. APK delivered `/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-renderer-clean-pre1-Patched-alt-AnTuTu.apk` md5 `19415351da8a3b46692c4dddf2d4e805`.
+
+### Verification of the CLEAN build — BLOCKED, not yet proven
+Device: Legacy SELECTED (`bh_renderer_mode=1` global + per-game 131962/3939/49908). But 6.0.2-libs-loaded NOT durably provable for the clean build: logcat flooded by AnTuTu (`getlog` logcat 0 lines); GameHub Log Server (`http://192.168.12.242:8080/` SSE `/events`) carries ONLY wine stdout/stderr — not Android logcat, so the kept `BhRenderer` `Log.i` markers don't appear; `bh_renderer_diag.log` stale (06:53, old forceenable run); `/proc` + `/data/app` outside root-bridge allowlist; app cache empty by design (native-extract path). GoW/d3d logs stale (05-17 15:56). Honest status: selection proven, load NOT proven for clean build (strong inference only — flip()/load logic byte-identical to the proven forceenable build).
+
+### Root-bridge fix → logcat-bridge v1.3.0 (built, awaiting user flash+reboot)
+Added read-only `proc <pid> <leaf>` verb (whitelist maps|cmdline|status|comm|smaps_rollup|stat|wchan|oom_score|cgroup|environ; numeric-pid; cat-only; `/proc` kept out of write allowlist). Client `getlog --proc <pid> <leaf>` (symlinked client already live). Zip `/storage/emulated/0/Download/logcat-bridge-magisk-v1.3.0.zip` (supersedes never-flashed v1.2.0). User WILL flash + reboot, relaunch GoW on Legacy, then return.
+
+### RESUME (next session, after user returns)
+1. `getlog --ping`→pong; `getlog --proc 1 comm`→ not "unknown verb" (confirms v1.3.0 live).
+2. `getlog --ps` → find `com.antutu.benchmark.full` `:wine`/`:winemu` child pid.
+3. `getlog --proc <pid> maps` → grep `libxserver_legacy.so` + `libwinemu_legacy.so`.
+   - both present = DEFINITIVE proof clean build loads 6.0.2 pair → cleanup validated → MERGE to `gamehub-604-build` (NOT Lite-first), test there, then refresh Lite.
+   - only stock libs = cleanup regressed the load path → investigate, do NOT merge.
+4. Then decide optional permanent breadcrumb (one line to `getFilesDir()/bh_renderer.log` in legacy branch — prod observability, not the stripped diag harness).
+Mergeable delta vs `gamehub-604-build`: 18 commits/18 files/+2073−34, no junk; only conscious change = GPU Spoof global→per-game-from-menu; +4.6 MB (2 .so).
+
+## 2026-05-18 — Clean build BIDIRECTIONALLY verified LIVE → MERGED to gamehub-604-build → artifact build
+
+### Verification (logcat-bridge v1.3.0 `--proc` verb, live GoW, full pkg `com.antutu.benchmark.full`)
+RESUME plan executed. Bridge v1.3.0 proc verb confirmed live post-reboot. Both renderer modes proven against the live running GoW `:wine` process — DEFINITIVE, not inferred from the (stale) diag log:
+- **Legacy run** (pid 8652): `/proc/8652/maps` = `libxserver_legacy.so` + `libwinemu_legacy.so`, NO stock. `bh_renderer_diag.log` correctly NOT freshly written (diag stripped) — corroborates this is the clean build.
+- **Vulkan run** (pid 15133, same APK install hash `XkQ1IwHRAfdeZx0zIdv8OA==`): `/proc/15133/maps` = stock `libxserver.so` + `libwinemu.so` + `/vendor/lib64/hw/vulkan.adreno.so` + `/system/lib64/libvulkan.so`, NO `_legacy`.
+Same APK toggles both ways cleanly, no regression either direction. Cleanup (`44b2e4e`) validated. (Capture-method note: `getlog --proc` sometimes writes a `/home/*.txt` file, sometimes prints maps to stdout — handle both.)
+
+### Merge
+`git checkout gamehub-604-build` (was `792ae69`, == origin) → `git merge --no-ff feature/legacy-renderer-toggle` → merge commit **`01b2f4d`** (18 files, +2101−34, 2 bundled 6.0.2 .so, no conflicts — gamehub-604-build was fully contained in the feature branch). Author The412Banner, no Claude trailer. Pushed `792ae69..01b2f4d gamehub-604-build`. Brings: per-game Vulkan↔legacy renderer swap (forced-enable permanent, diag stripped); shared `BhMenuGameId`+`MenuGameIdCapturePatch` (conscious change: GPU Spoof global-from-menu → per-game-from-menu); Task #20 library-list-popup rows.
+
+### Artifact-only CI
+`gh workflow run release.yml --ref gamehub-604-build -f version=1.3.0-604-renderer-merged-pre1` (stable defaulted false = artifact-only prerelease). Run **26035851236** (https://github.com/The412Banner/bannerhub-revanced/actions/runs/26035851236), queued.
+
+### NEXT
+- Watch run 26035851236 → green + 0 SEVERE + renderer/menu patches succeeded 9/9.
+- Then refresh dependent Lite branch `feature/lite-variant-tier1` off the new `gamehub-604-build` (NOT Lite-first) and re-cut the Lite artifacts.
+- M3 device-test on the user's actual **Lite** (`banner.hub`) install — the only open device-test gap (full-pkg is proven bidirectionally).
+
+### CI RESULT — run 26035851236 ✅ GREEN
+`conclusion=success`; all 9 Patch jobs success, `Create GitHub Release` skipped (correct for stable=false). Log-scanned (125 files, 950K): **0 `SEVERE`**, 0 patch failures. alt-AnTuTu job confirms applied: "Legacy renderer conditional swap" / "Legacy renderer libxserver bundle" / "Renderer menu row" / "Renderer settings activity" / "Per-game menu id capture (shared)" + GPU Spoof (DXVK plumbing/menu row/settings) + PC-accurate vibration (label/menu row/settings) — all `succeeded`. APK delivered: `/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-renderer-merged-pre1-Patched-alt-AnTuTu.apk` (116,042,150 B, md5 `75b4cf73def5f71435bbda812542f717`). Merge `01b2f4d` validated on `gamehub-604-build`. **NEXT: refresh Lite branch `feature/lite-variant-tier1` off new gamehub-604-build → M3 device-test on `banner.hub`.**

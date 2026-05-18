@@ -1414,6 +1414,66 @@ internal fun BytecodePatchContext.redirectVirtualCalls(
     }
 }
 
+/**
+ * Like [redirectVirtualCalls] but rewrites each matching
+ * `invoke-virtual {recv, args…}` into
+ * `invoke-static {recv, args…} targetMethod`. The original receiver
+ * becomes the first static argument (so [targetMethod] must take it as
+ * `Ljava/lang/Object;` followed by the original parameters).
+ *
+ * Used by the legacy-renderer flip dispatcher: routing
+ * `XServer.setFlipEnabled` call sites to a static helper avoids the
+ * self-recursion [redirectVirtualCalls] would cause (it is a *global*
+ * by-name ref-swap, so a redirect target that is itself a method on the
+ * same class would rewrite its own forwarding call).
+ */
+internal fun BytecodePatchContext.redirectVirtualToStatic(
+    definingClass: String,
+    fromName: String,
+    proto: String,
+    targetMethod: String,
+) {
+    fun Instruction.matches(): Boolean {
+        if (opcode != Opcode.INVOKE_VIRTUAL) return false
+        val r = getReference<MethodReference>() ?: return false
+        return r.definingClass == definingClass &&
+            r.name == fromName &&
+            "(${r.parameterTypes.joinToString("")})${r.returnType}" == proto
+    }
+
+    classDefs.forEach { classDef ->
+        classDef.methods.forEach { method ->
+            val impl = method.implementation ?: return@forEach
+            if (impl.instructions.none { it.matches() }) return@forEach
+
+            val mutableMethod =
+                classDefs.getOrReplaceMutable(classDef).findMutableMethodOf(method)
+
+            val indexes = ArrayList<Int>()
+            mutableMethod.instructions.forEachIndexed { index, ins ->
+                if (ins.matches()) indexes.add(index)
+            }
+            indexes.asReversed().forEach { index ->
+                val ins = mutableMethod.getInstruction(index) as FiveRegisterInstruction
+                val regs = (0 until ins.registerCount).map {
+                    "v" + when (it) {
+                        0 -> ins.registerC
+                        1 -> ins.registerD
+                        2 -> ins.registerE
+                        3 -> ins.registerF
+                        else -> ins.registerG
+                    }
+                }.joinToString(", ")
+                mutableMethod.removeInstruction(index)
+                mutableMethod.addInstructions(
+                    index,
+                    "invoke-static {$regs}, $targetMethod",
+                )
+            }
+        }
+    }
+}
+
 @Suppress("ktlint:standard:argument-list-wrapping")
 private class InstructionUtils {
     companion object {

@@ -4,11 +4,17 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
 import android.util.Log;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 /**
  * BhRendererController — per-game choice of display renderer.
@@ -107,6 +113,127 @@ public final class BhRendererController {
     /** Convenience for a launch-time hook: resolves the gameId itself. */
     public boolean isLegacyForLaunchingGame() {
         return isLegacyForGame(sniffGameIdFromStack());
+    }
+
+    // ── Milestone 2: conditional native-lib load + flip dispatch ─────────
+    //
+    // The renderer choice is FROZEN the moment libxserver is loaded
+    // (XServer.<clinit>). libxserver cannot be reloaded, so flip() must use
+    // the exact same decision the loader used — otherwise it would invoke a
+    // native the loaded .so never bound. {@link #legacyActive} caches that
+    // frozen decision; {@link #legacyDecided} guards the pre-load window.
+
+    private static volatile boolean legacyActive = false;
+    private static volatile boolean legacyDecided = false;
+
+    /**
+     * Replaces {@code System.loadLibrary("xserver")} in XServer's static
+     * initializer. When the launching game's renderer pref is Legacy, loads
+     * the bundled 6.0.2 {@code libxserver_legacy.so}; otherwise loads stock
+     * {@code "xserver"} bit-identically (zero regression in New mode). Any
+     * failure on the legacy path falls back to the stock lib so the app can
+     * never be bricked by this feature.
+     */
+    public static void loadXserver(String name) {
+        boolean legacy = false;
+        try {
+            legacy = getInstance().isLegacyForLaunchingGame();
+        } catch (Throwable t) {
+            Log.w(TAG, "loadXserver: legacy resolve failed; using stock", t);
+        }
+        if (legacy) {
+            try {
+                File so = resolveLegacyLib("libxserver_legacy.so");
+                if (so != null && so.isFile()) {
+                    System.load(so.getAbsolutePath());
+                    legacyActive = true;
+                    legacyDecided = true;
+                    Log.i(TAG, "loaded LEGACY libxserver: " + so.getAbsolutePath());
+                    return;
+                }
+                Log.w(TAG, "legacy libxserver unavailable; falling back to stock");
+            } catch (Throwable t) {
+                Log.w(TAG, "legacy libxserver load failed; falling back to stock", t);
+            }
+        }
+        System.loadLibrary(name);
+        legacyActive = false;
+        legacyDecided = true;
+    }
+
+    /**
+     * Replaces {@code XServer.setFlipEnabled(Z)V} call sites. Routes to the
+     * native the loaded libxserver actually binds: stock 6.0.4 binds
+     * {@code setFlipEnabled}, the 6.0.2 legacy lib binds
+     * {@code setRenderingEnabled} (same function, renamed across versions).
+     * Reflective so the extension need not compile-time reference the host
+     * {@code com.winemu.core.server.XServer} class.
+     */
+    public static void flip(Object xserver, boolean enabled) {
+        if (xserver == null) return;
+        boolean legacy = legacyDecided
+                ? legacyActive
+                : safeIsLegacyForLaunchingGame();
+        String fnName = legacy ? "setRenderingEnabled" : "setFlipEnabled";
+        try {
+            Method fn = xserver.getClass().getMethod(fnName, boolean.class);
+            fn.invoke(xserver, enabled);
+        } catch (Throwable t) {
+            Log.w(TAG, "flip(" + fnName + ") failed", t);
+        }
+    }
+
+    private static boolean safeIsLegacyForLaunchingGame() {
+        try {
+            return getInstance().isLegacyForLaunchingGame();
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /**
+     * Resolves the bundled legacy .so to an absolute path. Prefers the
+     * extracted nativeLibraryDir; falls back to extracting it from the APK
+     * zip into the cache dir (covers android:extractNativeLibs="false").
+     */
+    private static File resolveLegacyLib(String soName) {
+        BhRendererController c = getInstance();
+        c.ensureContext();
+        Context ctx = c.appContext;
+        if (ctx == null) return null;
+        ApplicationInfo ai = ctx.getApplicationInfo();
+
+        File extracted = new File(ai.nativeLibraryDir, soName);
+        if (extracted.isFile()) return extracted;
+
+        File out = new File(ctx.getCacheDir(), soName);
+        try {
+            if (out.isFile() && out.length() > 0) return out;
+            ZipFile zf = new ZipFile(ai.sourceDir);
+            try {
+                ZipEntry e = zf.getEntry("lib/arm64-v8a/" + soName);
+                if (e == null) {
+                    Log.w(TAG, "legacy .so not in APK: lib/arm64-v8a/" + soName);
+                    return null;
+                }
+                InputStream is = zf.getInputStream(e);
+                FileOutputStream os = new FileOutputStream(out);
+                try {
+                    byte[] buf = new byte[1 << 16];
+                    int r;
+                    while ((r = is.read(buf)) != -1) os.write(buf, 0, r);
+                } finally {
+                    os.close();
+                    is.close();
+                }
+            } finally {
+                zf.close();
+            }
+            return out;
+        } catch (Throwable t) {
+            Log.w(TAG, "extract " + soName + " failed", t);
+            return null;
+        }
     }
 
     // ── Settings I/O — mirrors BhGpuSpoofController ──────────────────────

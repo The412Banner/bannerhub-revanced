@@ -9,3 +9,6 @@ local.properties
 .idea/
 *.iml
 .DS_Store
+
+release_notes_v1.3.0-604_LIVE_BACKUP_*.md
+release_notes_v1.3.0-604_slim.md

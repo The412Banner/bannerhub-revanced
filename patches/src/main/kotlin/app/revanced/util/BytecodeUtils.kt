@@ -30,7 +30,10 @@ import com.android.tools.smali.dexlib2.iface.reference.Reference
 import com.android.tools.smali.dexlib2.iface.reference.StringReference
 import com.android.tools.smali.dexlib2.iface.value.*
 import com.android.tools.smali.dexlib2.immutable.ImmutableField
+import com.android.tools.smali.dexlib2.immutable.ImmutableMethod
+import com.android.tools.smali.dexlib2.immutable.ImmutableMethodParameter
 import com.android.tools.smali.dexlib2.immutable.value.*
+import app.revanced.com.android.tools.smali.dexlib2.mutable.MutableMethod.Companion.toMutable as toMutableMethod
 import com.android.tools.smali.dexlib2.util.MethodUtil
 import java.util.*
 import app.revanced.com.android.tools.smali.dexlib2.mutable.MutableClassDef as MutableClass
@@ -1316,6 +1319,38 @@ internal fun BytecodePatchContext.addStaticFieldToExtension(
                 """ + smaliInstructions,
             )
         }
+    }
+}
+
+/**
+ * Add an abstract-style `native` method declaration to an existing class so a
+ * dynamically-`RegisterNatives`-binding .so can resolve it. No body (native).
+ * No-op if a method with that name already exists on the class.
+ */
+internal fun BytecodePatchContext.addNativeMethod(
+    className: String,
+    methodName: String,
+    parameterTypes: List<String>,
+    returnType: String,
+) {
+    val classDef = classDefs.find { classDef -> classDef.type == className }
+        ?: throw PatchException("Class not found for native-method shim: $className")
+    val mutableClass = classDefs.getOrReplaceMutable(classDef)
+
+    mutableClass.apply {
+        if (methods.any { it.name == methodName }) return@apply
+        methods.add(
+            ImmutableMethod(
+                type,
+                methodName,
+                parameterTypes.map { ImmutableMethodParameter(it, null, null) },
+                returnType,
+                AccessFlags.PUBLIC.value or AccessFlags.FINAL.value or AccessFlags.NATIVE.value,
+                null,
+                null,
+                null,
+            ).toMutableMethod(),
+        )
     }
 }
 

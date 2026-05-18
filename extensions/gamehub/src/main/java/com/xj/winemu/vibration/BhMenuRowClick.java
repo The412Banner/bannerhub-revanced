@@ -334,13 +334,23 @@ public final class BhMenuRowClick implements Function1<Object, Object> {
      * extension lands on joc-based rows.
      */
     /**
-     * Patched into the resolver Lxd3.l1 to short-circuit our sentinel key
-     * BEFORE it hits the Compose Multiplatform resource lookup (which
-     * throws "Resource with ID='string:bh_pc_vibration_label' not found"
-     * because the runtime expects a manifest registration alongside the
-     * .cvr entry — and just appending to the .cvr isn't enough).
+     * Patched into the resolver Lxd3.l1 to short-circuit our sentinel keys
+     * BEFORE they hit the Compose Multiplatform resource lookup (which
+     * throws "Resource with ID='string:bh_..._label' not found" because the
+     * runtime expects a manifest registration alongside the .cvr entry — and
+     * just appending to the .cvr isn't enough).
      *
-     * Returns "PC Vibration Settings" when the key matches; returns null
+     * SHARED resolver for ALL BannerHub library-popup rows. There is
+     * deliberately ONE Lxd3;->l1 head-block in the whole patch set (injected
+     * by VibrationMenuRowPatch); a SECOND head-block stacked on it ANR'd
+     * MainActivity cold start on slow devices (2026-05-17, gpuspoof saga).
+     * So GPU Spoof and Renderer do NOT add their own l1 hook — they reuse
+     * this single one by registering their sentinel key → label here. Adding
+     * a new library-popup row = add one entry to the table below + an
+     * appendLibraryPopupRow helper in that feature's click class (no patcher
+     * change to l1).
+     *
+     * Returns the row label when a sentinel key matches; returns null
      * otherwise so the stock resolver path runs unchanged.
      */
     public static String maybeResolveCustomLabel(Object ell) {
@@ -348,10 +358,18 @@ public final class BhMenuRowClick implements Function1<Object, Object> {
             Field aField = Class.forName("tdi").getDeclaredField("a");
             aField.setAccessible(true);
             Object key = aField.get(ell);
-            Log.i(TAG, "maybeResolveCustomLabel called key=" + key);
+            if (key == null) return null;
+            String label = null;
             if ("string:bh_pc_vibration_label".equals(key)) {
-                Log.i(TAG, "  → short-circuiting to 'PC Vibration Settings'");
-                return "PC Vibration Settings";
+                label = "PC Vibration Settings";
+            } else if ("string:bh_gpuspoof_label".equals(key)) {
+                label = "GPU Spoof";
+            } else if ("string:bh_renderer_label".equals(key)) {
+                label = "Renderer";
+            }
+            if (label != null) {
+                Log.i(TAG, "maybeResolveCustomLabel key=" + key + " → '" + label + "'");
+                return label;
             }
         } catch (Throwable t) {
             Log.w(TAG, "maybeResolveCustomLabel error", t);

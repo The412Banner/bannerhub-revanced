@@ -161,6 +161,53 @@ public final class BhRendererMenuRowClick implements Function1<Object, Object> {
         }
     }
 
+    /**
+     * Library-LIST popup (Lpzc;->j0): appends an Lz4e(Lell,Lnw6,int) row.
+     *
+     * The Lell label carries the sentinel key "string:bh_renderer_label",
+     * resolved to "Renderer" by the SINGLE shared Lxd3;->l1 hook that
+     * VibrationMenuRowPatch injects (BhMenuRowClick.maybeResolveCustomLabel
+     * maps all BannerHub sentinel keys). We do NOT add our own l1 head-block
+     * — a 2nd one ANR'd cold start (2026-05-17). RendererMenuRowPatch
+     * therefore dependsOn(vibrationMenuRowPatch) so that shared resolver is
+     * present. Mirrors BhMenuRowClick.appendLibraryPopupRow exactly.
+     */
+    public static java.util.List<Object> appendLibraryPopupRow(Object original) {
+        try {
+            if (!(original instanceof java.util.List)) return safeReturn(original);
+            java.util.ArrayList<Object> augmented =
+                new java.util.ArrayList<>((java.util.List<?>) original);
+
+            Class<?> z4eCls = Class.forName("z4e");
+            Class<?> ellCls = Class.forName("ell");
+            Class<?> tdiCls = Class.forName("tdi");
+            Class<?> nw6Cls = Class.forName("nw6");
+
+            Class<?> unsafeCls = Class.forName("sun.misc.Unsafe");
+            Field theUnsafe = unsafeCls.getDeclaredField("theUnsafe");
+            theUnsafe.setAccessible(true);
+            Object unsafe = theUnsafe.get(null);
+            Object label = unsafeCls.getMethod("allocateInstance", Class.class)
+                .invoke(unsafe, ellCls);
+            Field aField = tdiCls.getDeclaredField("a");
+            aField.setAccessible(true);
+            aField.set(label, "string:bh_renderer_label");
+            Field bField = tdiCls.getDeclaredField("b");
+            bField.setAccessible(true);
+            bField.set(label, java.util.Collections.emptySet());
+
+            Object click = newFunction0Proxy(nw6Cls);
+            java.lang.reflect.Constructor<?> z4eCtor =
+                z4eCls.getDeclaredConstructor(ellCls, nw6Cls, int.class);
+            z4eCtor.setAccessible(true);
+            augmented.add(z4eCtor.newInstance(label, click, 0));
+            return augmented;
+        } catch (Throwable t) {
+            Log.w(TAG, "appendLibraryPopupRow failed", t);
+            return safeReturn(original);
+        }
+    }
+
     // R8 renamed kotlin Function1/Function0; a Java `implements` is a
     // different JVM type than the host's Lpw6;/Lnw6;. Proxy actually
     // implements the host interface and delegates to invoke().

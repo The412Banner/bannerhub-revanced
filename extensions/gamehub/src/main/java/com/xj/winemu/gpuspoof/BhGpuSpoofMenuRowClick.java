@@ -151,11 +151,56 @@ public final class BhGpuSpoofMenuRowClick implements Function1<Object, Object> {
         }
     }
 
-    // NOTE: appendLibraryPopupRow (Lpzc;->j0/Lz4e) and maybeResolveCustomLabel
-    // (the Lxd3;->l1 resolver short-circuit) were removed — the l1 hook ran
-    // main-thread reflection on every Compose string resolve and ANR'd cold
-    // start when stacked on the vibration patch's identical hook. The row now
-    // ships only on the More Menu + tile popup (raw String labels, no l1).
+    /**
+     * Library-LIST popup (Lpzc;->j0): appends an Lz4e(Lell,Lnw6,int) row.
+     *
+     * The Lell label carries the sentinel key "string:bh_gpuspoof_label",
+     * which is resolved to "GPU Spoof" by the SINGLE shared Lxd3;->l1 hook
+     * that VibrationMenuRowPatch injects (BhMenuRowClick.maybeResolveCustomLabel
+     * now maps all BannerHub sentinel keys). We do NOT add our own l1
+     * head-block — a 2nd one ANR'd cold start (2026-05-17). GpuSpoofMenuRowPatch
+     * therefore dependsOn(vibrationMenuRowPatch) so that shared resolver is
+     * present. Mirrors BhMenuRowClick.appendLibraryPopupRow exactly.
+     */
+    public static java.util.List<Object> appendLibraryPopupRow(Object original) {
+        try {
+            if (!(original instanceof java.util.List)) return safeReturn(original);
+            java.util.ArrayList<Object> augmented =
+                new java.util.ArrayList<>((java.util.List<?>) original);
+
+            Class<?> z4eCls = Class.forName("z4e");
+            Class<?> ellCls = Class.forName("ell");
+            Class<?> tdiCls = Class.forName("tdi");
+            Class<?> nw6Cls = Class.forName("nw6");
+
+            // Lell is a Kotlin empty subclass of abstract Ltdi(String key,
+            // Set locales) — declares no ctor itself. Allocate via Unsafe
+            // (skips ctor) and reflect-set inherited Ltdi.a (key) / Ltdi.b
+            // (locales). Same technique as the vibration row.
+            Class<?> unsafeCls = Class.forName("sun.misc.Unsafe");
+            Field theUnsafe = unsafeCls.getDeclaredField("theUnsafe");
+            theUnsafe.setAccessible(true);
+            Object unsafe = theUnsafe.get(null);
+            Object label = unsafeCls.getMethod("allocateInstance", Class.class)
+                .invoke(unsafe, ellCls);
+            Field aField = tdiCls.getDeclaredField("a");
+            aField.setAccessible(true);
+            aField.set(label, "string:bh_gpuspoof_label");
+            Field bField = tdiCls.getDeclaredField("b");
+            bField.setAccessible(true);
+            bField.set(label, java.util.Collections.emptySet());
+
+            Object click = newFunction0Proxy(nw6Cls);
+            java.lang.reflect.Constructor<?> z4eCtor =
+                z4eCls.getDeclaredConstructor(ellCls, nw6Cls, int.class);
+            z4eCtor.setAccessible(true);
+            augmented.add(z4eCtor.newInstance(label, click, 0));
+            return augmented;
+        } catch (Throwable t) {
+            Log.w(TAG, "appendLibraryPopupRow failed", t);
+            return safeReturn(original);
+        }
+    }
 
     // R8 renamed kotlin Function1/Function0; a Java `implements` is a
     // different JVM type than the host's Lpw6;/Lnw6;. Proxy actually

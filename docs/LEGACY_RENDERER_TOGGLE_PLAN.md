@@ -42,6 +42,34 @@ revisit per-title if a specific game proves to need it.
    note 32-bit GFWL titles (DiRT-3-class) are out of scope by their own
    wow64/GFWL issues, not the renderer.
 
+## Per-game-from-menu gap (shared by Vibration/GPU-Spoof/Renderer) + fix
+
+All three resolve gameId via `sniffGameIdFromStack()` = a *running*
+WineActivity. From a pre-launch More Menu / library popup there is none →
+**all three fall back to GLOBAL prefs** (confirmed by user: Vibration is
+global from both menus too). Not a Renderer bug — universal & pre-existing.
+
+**Investigation result (2026-05-17):** the real per-game id source =
+`com.xiaoji.egggame.game.di.model.game.GameInfo` — a **kept-name (non-R8)**
+class with **`getServerGameId()I`** (== the `pc_g_setting<id>` / launchLog
+`gameId`). In scope in BOTH builders: `Lx57;->a(Lf37;…)` (More Menu) and
+`Lpzc;->j0(Laub;…)` (library popup) — stock rows read
+`GameInfo.getServerGameId()` (e.g. `pzc.j0` ~lines 2146/2180/2192);
+`Laub`/`Lf37` carry the game context (`libraryGameId`).
+
+**Fix (shared, build once, apply to all three):** at each menu-row
+injection site, capture the in-scope `GameInfo` register, call
+`getServerGameId()`, and thread it into the click handler → settings
+Intent extra (replacing `sniffGameIdFromStack`). This is exactly how stock
+"PC Game Settings" is per-game.
+
+**Also:** GPU-Spoof & Renderer were NEVER added to the library per-game
+popup (`Lpzc;->j0`/`Lz4e`) — only Vibration has it
+(`appendLibraryPopupRow`, which needs the `Lxd3;->l1` resolver). gpuspoof
+dropped that path over the l1-ANR (stacking a 2nd l1 head-block). Adding
+GPU-Spoof/Renderer to the library popup must avoid a 2nd l1 hook (share
+Vibration's single resolver, or raw-label route).
+
 ## Reusable assets already in-tree
 `BytecodeUtils.addNativeMethod`, `BytecodeUtils.redirectVirtualCalls`,
 the GPU-Spoof per-game-pref + menu-injection pattern.

@@ -112,33 +112,68 @@ public final class OfflineComponentList {
         throw new IllegalStateException("gof.b(int,int,int,Cont) not found");
     }
 
-    /** Offline-only: synthesised BaseResult, or null to use the original. */
+    /** gof.a (components, by ComponentType). Offline-only; null → original. */
     private static Object getList(Object componentType) {
+        try {
+            int wantType = ((Number) componentType.getClass()
+                    .getMethod("getType").invoke(componentType)).intValue();
+            return synthesize("COMPONENT:", wantType, "getList type=" + wantType);
+        } catch (Throwable t) {
+            diag("getList FAILED passthrough: " + t);
+            return null;
+        }
+    }
+
+    /**
+     * gof.c (containers — the Wine/Proton picker). No ComponentType (returns
+     * all containers). Offline-only; null → original gof.c runs.
+     * Injected at gof.c entry with a conditional short-circuit.
+     */
+    public static Object getContainers() {
+        try {
+            return synthesize("CONTAINER:", Integer.MIN_VALUE, "getContainers");
+        } catch (Throwable t) {
+            diag("getContainers FAILED passthrough: " + t);
+            return null;
+        }
+    }
+
+    /**
+     * Shared offline synthesiser. {@code keyPrefix} = "COMPONENT:" or
+     * "CONTAINER:"; {@code wantType} = the ComponentType.type filter, or
+     * {@code Integer.MIN_VALUE} to take every entry of that key (containers
+     * aren't type-filtered). Returns {@code n55(List<EnvLayerEntity>)} (the
+     * uniform repo result both zxf.a and zxf.c unwrap) or null.
+     */
+    private static Object synthesize(String keyPrefix, int wantType,
+                                     String tag) {
         try {
             Application app = currentApp();
             if (app == null) return null;
             if (isOnline(app)) return null;            // online → fresh original
 
-            int wantType = ((Number) componentType.getClass()
-                    .getMethod("getType").invoke(componentType)).intValue();
-
             String xml = readCatalog(app);
             if (xml == null) return null;
 
             Class<?> envLayerCls = Class.forName(ENV_LAYER);
-            // Collect {catalogRank, name, env}: sp_winemu_unified_resources is
-            // in arbitrary prefs-hash order; we re-order to the canonical
-            // catalog order so the offline list matches the online (API)
-            // order exactly — newest at the bottom, curated variant
-            // interleaving preserved (DXVK + GPU-driver and all types).
+            // sp_winemu_unified_resources is arbitrary prefs-hash order; we
+            // re-order to the canonical catalog order so the offline list
+            // matches online exactly (newest at bottom, curated interleaving).
+            // Containers aren't in the component-order map → rank=MAX_VALUE →
+            // stable prefs order (their order isn't user-specified).
             ArrayList<Object[]> rows = new ArrayList<>();
-            Matcher m = ENTRY.matcher(xml);
+            Matcher m = java.util.regex.Pattern.compile(
+                    "<string name=\"" + keyPrefix + "[^\"]*\">(.*?)</string>",
+                    java.util.regex.Pattern.DOTALL).matcher(xml);
             while (m.find()) {
                 try {
                     JSONObject repo = new JSONObject(unescapeXml(m.group(1)));
                     JSONObject e = repo.optJSONObject("entry");
                     if (e == null) continue;
-                    if (e.optInt("type", Integer.MIN_VALUE) != wantType) continue;
+                    if (wantType != Integer.MIN_VALUE
+                            && e.optInt("type", Integer.MIN_VALUE) != wantType) {
+                        continue;
+                    }
                     Object env = buildEnvLayer(envLayerCls, e);
                     if (env == null) continue;
                     String nm = e.optString("name", "");
@@ -148,8 +183,6 @@ public final class OfflineComponentList {
                 }
             }
             if (rows.isEmpty()) return null;
-            // Stable sort by catalog rank (Collections.sort is stable, so
-            // unknown names — rank=MAX_VALUE — and ties keep prefs order).
             try {
                 java.util.Collections.sort(rows, new java.util.Comparator<Object[]>() {
                     public int compare(Object[] a, Object[] b) {
@@ -162,15 +195,14 @@ public final class OfflineComponentList {
             ArrayList<Object> list = new ArrayList<>(rows.size());
             for (Object[] r : rows) list.add(r[1]);
 
-            // gof.a's REAL return contract (per zxf.a): Lo55; result —
-            // Ln55;(success) whose field `a` IS the List<EnvLayerEntity>
-            // directly (NOT BaseResult/EnvListData; that's gof.b-internal).
+            // Uniform repo contract (zxf.a / zxf.c): Lo55; → Ln55;(success)
+            // whose field `a` IS the List<EnvLayerEntity> directly.
             Object success = newSuccess(list);
-            diag("getList type=" + wantType + " built=" + list.size()
+            diag(tag + " built=" + list.size()
                     + (success != null ? " OK" : " N55_FAIL"));
-            return success;            // null → dispatch falls back to original
+            return success;            // null → caller falls back to original
         } catch (Throwable t) {
-            diag("getList FAILED passthrough: " + t);
+            diag(tag + " FAILED passthrough: " + t);
             return null;
         }
     }

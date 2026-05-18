@@ -48,14 +48,12 @@ public final class OfflineComponentList {
             "/shared_prefs/sp_winemu_unified_resources.xml";
     private static final String ENV_LAYER =
             "com.xiaoji.egggame.common.winemu.bean.EnvLayerEntity";
-    private static final String ENV_LIST =
-            "com.xiaoji.egggame.common.winemu.bean.EnvListData";
     private static final String STATE_ENUM =
             "com.xiaoji.egggame.common.winemu.bean.State";
-    // R8-renamed BaseResult (verified: gof.b casts to Lc91;, NPE msg names
-    // com.xiaoji.egggame.core.network.model.BaseResult). Fields a:int(code),
-    // b:String(msg), c:String(time), d:Object(data).
-    private static final String BASE_RESULT = "c91";
+    // gof.a's real success wrapper (R8): Ln55; extends sealed Lo55;,
+    // public final a:Object, ctor <init>(Object). zxf.a unwraps n55.a as
+    // List<EnvLayerEntity>. (BaseResult/Lc91; is gof.b-INTERNAL only.)
+    private static final String N55_SUCCESS = "n55";
 
     private static final Pattern ENTRY = Pattern.compile(
             "<string name=\"COMPONENT:[^\"]*\">(.*?)</string>", Pattern.DOTALL);
@@ -144,12 +142,13 @@ public final class OfflineComponentList {
             }
             if (list.isEmpty()) return null;
 
-            Object envListData = newEnvListData(list);
-            if (envListData == null) return null;
-            Object baseResult = newBaseResult(envListData);
+            // gof.a's REAL return contract (per zxf.a): Lo55; result —
+            // Ln55;(success) whose field `a` IS the List<EnvLayerEntity>
+            // directly (NOT BaseResult/EnvListData; that's gof.b-internal).
+            Object success = newSuccess(list);
             diag("getList type=" + wantType + " built=" + list.size()
-                    + (baseResult != null ? " OK" : " BR_FAIL"));
-            return baseResult;
+                    + (success != null ? " OK" : " N55_FAIL"));
+            return success;            // null → dispatch falls back to original
         } catch (Throwable t) {
             diag("getList FAILED passthrough: " + t);
             return null;
@@ -202,41 +201,19 @@ public final class OfflineComponentList {
         return o;
     }
 
-    private static Object newEnvListData(ArrayList<Object> list) {
+    /**
+     * Wrap the list in the host's success result. gof.a's caller (zxf.a)
+     * does: check suspend-sentinel; else {@code check-cast Lo55;};
+     * {@code if (instanceof Ln55;) return ((Ln55;)x).a as List}. So we must
+     * return {@code new n55(list)} — n55 extends the sealed Lo55;, has a
+     * single {@code public final a:Object} set by {@code <init>(Object)}.
+     */
+    private static Object newSuccess(java.util.List<Object> list) {
         try {
-            Class<?> c = Class.forName(ENV_LIST);
-            int n = list.size();
-            // public ctor (List, int page, int pageSize, int total)
-            try {
-                Constructor<?> ct = c.getDeclaredConstructor(
-                        java.util.List.class, int.class, int.class, int.class);
-                ct.setAccessible(true);
-                return ct.newInstance(list, 1, n, n);
-            } catch (NoSuchMethodException no) {
-                Object o = allocate(c);
-                if (o == null) return null;
-                setField(o, "list", list);
-                setField(o, "page", 1);
-                setField(o, "pageSize", n);
-                setField(o, "total", n);
-                return o;
-            }
-        } catch (Throwable t) {
-            return null;
-        }
-    }
-
-    private static Object newBaseResult(Object data) {
-        try {
-            Class<?> c = Class.forName(BASE_RESULT);
-            Object o = allocate(c);
-            if (o == null) return null;
-            // a:int code, b:String msg, c:String time, d:Object data
-            setField(o, "a", 200);
-            setField(o, "b", "Success");
-            setField(o, "c", String.valueOf(System.currentTimeMillis()));
-            setField(o, "d", data);
-            return o;
+            Class<?> n55 = Class.forName(N55_SUCCESS);
+            Constructor<?> ct = n55.getDeclaredConstructor(Object.class);
+            ct.setAccessible(true);
+            return ct.newInstance(list);
         } catch (Throwable t) {
             return null;
         }

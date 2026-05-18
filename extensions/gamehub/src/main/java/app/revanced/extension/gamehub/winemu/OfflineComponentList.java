@@ -126,7 +126,12 @@ public final class OfflineComponentList {
             if (xml == null) return null;
 
             Class<?> envLayerCls = Class.forName(ENV_LAYER);
-            ArrayList<Object> list = new ArrayList<>();
+            // Collect {catalogRank, name, env}: sp_winemu_unified_resources is
+            // in arbitrary prefs-hash order; we re-order to the canonical
+            // catalog order so the offline list matches the online (API)
+            // order exactly — newest at the bottom, curated variant
+            // interleaving preserved (DXVK + GPU-driver and all types).
+            ArrayList<Object[]> rows = new ArrayList<>();
             Matcher m = ENTRY.matcher(xml);
             while (m.find()) {
                 try {
@@ -135,12 +140,27 @@ public final class OfflineComponentList {
                     if (e == null) continue;
                     if (e.optInt("type", Integer.MIN_VALUE) != wantType) continue;
                     Object env = buildEnvLayer(envLayerCls, e);
-                    if (env != null) list.add(env);
+                    if (env == null) continue;
+                    String nm = e.optString("name", "");
+                    rows.add(new Object[]{OfflineComponentOrder.rank(nm), env});
                 } catch (Throwable perEntry) {
                     // skip a bad entry, keep the rest
                 }
             }
-            if (list.isEmpty()) return null;
+            if (rows.isEmpty()) return null;
+            // Stable sort by catalog rank (Collections.sort is stable, so
+            // unknown names — rank=MAX_VALUE — and ties keep prefs order).
+            try {
+                java.util.Collections.sort(rows, new java.util.Comparator<Object[]>() {
+                    public int compare(Object[] a, Object[] b) {
+                        return Integer.compare((Integer) a[0], (Integer) b[0]);
+                    }
+                });
+            } catch (Throwable sortFail) {
+                // ordering is best-effort; never fail the list over it
+            }
+            ArrayList<Object> list = new ArrayList<>(rows.size());
+            for (Object[] r : rows) list.add(r[1]);
 
             // gof.a's REAL return contract (per zxf.a): Lo55; result —
             // Ln55;(success) whose field `a` IS the List<EnvLayerEntity>

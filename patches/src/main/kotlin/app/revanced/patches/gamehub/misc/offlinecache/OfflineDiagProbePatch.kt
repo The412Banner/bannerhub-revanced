@@ -1,6 +1,7 @@
 package app.revanced.patches.gamehub.misc.offlinecache
 
 import app.revanced.patcher.extensions.addInstructions
+import app.revanced.patcher.extensions.getInstruction
 import app.revanced.patcher.firstMethod
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
@@ -9,70 +10,84 @@ import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 import app.revanced.util.getReference
 import app.revanced.util.indexOfFirstInstructionOrThrow
 import com.android.tools.smali.dexlib2.Opcode
+import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 
 // ============================================================================
 // ⚠ THROWAWAY DIAGNOSTIC — DO NOT MERGE / DO NOT SHIP
 //
-// Locates where the OFFLINE component-picker path actually goes in 6.0.4
-// mci.a(RepoCategory, Continuation). The prefs-read fix produced ZERO trace
-// on device; we must know whether the offline path:
-//   (a) never reaches this method (picker uses a different path), or
-//   (b) reaches it but the network fetch THROWS and the coroutine rethrows
-//       at Lkl5;->V (Kotlin throwOnFailure) on resume, BEFORE :goto_2, or
-//   (c) reaches :goto_2 (returns-empty) and the failure is downstream in
-//       fromXxo / the prefs read (i.e. DebugTrace was the blind spot).
+// The mci.a hook is dead in 6.0.4 (device-proven: mciEnter never fired).
+// Real picker architecture (precise winemu files, no R8 collision):
+//   - myo.w(RepoCategory)->ArrayList  = the picker's category-list source;
+//     it filters the in-memory myo.c ConcurrentHashMap by category, reads
+//     NO disk.
+//   - j7o.<init>(Application,myo,oja,cla,fxo,mei,mci,dj9)V  = the WinEmu
+//     repo ctor; contains the real disk hydrator (dj9.a().getAll() ->
+//     Gson -> ici.e -> map.put) that is supposed to fill myo.c.
 //
-// Three breadcrumbs (OfflineDiag, internal-files sink, NOT DebugTrace):
-//   1. mciEnter()      injected at mci.a index 0           → answers (a)
-//   2. mciPostResume() injected AFTER the first Lkl5;->V    → answers (b)
-//   3. fromXxo ENTER   (in PickerCacheFallback itself)      → answers (c)
+// Three probes (OfflineDiag internal-files sink, root-readable):
+//   1. myoW()        @ myo.w index 0          → does the picker use myo.w?
+//   2. myoWReturn(v) before myo.w return      → size of what it returns
+//   3. j7oCtor()     @ j7o.<init> index 0     → did disk-hydration run?
 //
-// All injected calls are zero-arg static void → no register pressure.
+// Decodes: myoW fires + size 0 + j7oCtor fired → disk read ran but didn't
+// fill the map (or ran after) ; myoW fires + size 0 + no j7oCtor → repo
+// never constructed before picker ; myoW fires + size>0 → map IS populated,
+// failure is downstream (picker sub-filter) ; no myoW → some other feed.
+// All injected calls are register-safe (zero-arg, or one already-live reg).
 // ============================================================================
 
-private const val MCI_CLASS         = "Lmci;"
-private const val REPO_CATEGORY     = "Lcom/xiaoji/egggame/common/winemu/bean/RepoCategory;"
-private const val CONTINUATION_TYPE = "Lci3;"
-private const val KL5_CLASS         = "Lkl5;"   // Kotlin ResultKt (throwOnFailure = V)
+private const val MYO_CLASS     = "Lmyo;"
+private const val J7O_CLASS     = "Lj7o;"
+private const val REPO_CATEGORY = "Lcom/xiaoji/egggame/common/winemu/bean/RepoCategory;"
 private const val DIAG =
     "Lapp/revanced/extension/gamehub/winemu/OfflineDiag;"
 
 @Suppress("unused")
 val offlineDiagProbePatch = bytecodePatch(
     name = "Offline picker diagnostic probe (THROWAWAY)",
-    description = "Injects root-readable breadcrumbs into mci.a to locate " +
-        "the offline component-picker control path. Throwaway — never ship.",
+    description = "Probes myo.w (picker list source) + j7o.<init> (disk " +
+        "hydrator) to locate the real 6.0.4 offline picker path. Throwaway.",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
     dependsOn(sharedGamehubExtensionPatch)
 
     apply {
+        // --- Probe 1+2: myo.w(RepoCategory) -> ArrayList ---
         firstMethod {
-            definingClass == MCI_CLASS &&
-                name == "a" &&
-                parameterTypes == listOf(REPO_CATEGORY, CONTINUATION_TYPE) &&
-                returnType == "Ljava/io/Serializable;"
+            definingClass == MYO_CLASS &&
+                name == "w" &&
+                parameterTypes == listOf(REPO_CATEGORY) &&
+                returnType == "Ljava/util/ArrayList;"
         }.apply {
-            // Probe 2: right AFTER the first Lkl5;->V (resume-path
-            // throwOnFailure). Done before the index-0 insert so the index
-            // we compute isn't shifted by probe 1.
-            val vIdx = indexOfFirstInstructionOrThrow {
-                opcode == Opcode.INVOKE_STATIC &&
-                    getReference<MethodReference>()?.let {
-                        it.definingClass == KL5_CLASS && it.name == "V"
-                    } == true
+            // size-of-returned-list, injected before the final return-object
+            // (do this first so its index isn't shifted by the index-0 insert)
+            val retIdx = indexOfFirstInstructionOrThrow {
+                opcode == Opcode.RETURN_OBJECT
             }
+            val retReg = getInstruction<OneRegisterInstruction>(retIdx).registerA
             addInstructions(
-                vIdx + 1,
-                "invoke-static {}, $DIAG->mciPostResume()V",
+                retIdx,
+                "invoke-static {v$retReg}, $DIAG->myoWReturn(Ljava/lang/Object;)V",
             )
+            addInstructions(0, "invoke-static {}, $DIAG->myoW()V")
+        }
 
-            // Probe 1: very first instruction of mci.a.
-            addInstructions(
-                0,
-                "invoke-static {}, $DIAG->mciEnter()V",
-            )
+        // --- Probe 3: j7o.<init>(...8 args...) V ---
+        firstMethod {
+            definingClass == J7O_CLASS &&
+                name == "<init>" &&
+                returnType == "V" &&
+                parameterTypes.size == 8
+        }.apply {
+            // Inject AFTER the super-constructor invoke-direct so `this` is
+            // initialized (avoids any uninitialized-this VerifyError that
+            // would crash the app on launch).
+            val superIdx = indexOfFirstInstructionOrThrow {
+                opcode == Opcode.INVOKE_DIRECT &&
+                    getReference<MethodReference>()?.name == "<init>"
+            }
+            addInstructions(superIdx + 1, "invoke-static {}, $DIAG->j7oCtor()V")
         }
     }
 }

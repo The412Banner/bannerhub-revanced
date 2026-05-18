@@ -56,6 +56,21 @@ public final class OfflineDiag {
     /** First instruction of mci.a — did the picker even reach this method? */
     public static void mciEnter() { mark("mci.a ENTER"); }
 
+    // ---- 6.0.4 real-picker-path probes (myo.w / j7o.<init>) ----
+
+    /** Entry of myo.w(RepoCategory) — the in-memory category list source. */
+    public static void myoW() { mark("myo.w ENTER (picker category-list read)"); }
+
+    /** Value myo.w is about to return — size tells us if the in-memory map is populated. */
+    public static void myoWReturn(Object list) {
+        int n = -1;
+        try { if (list instanceof java.util.Collection) n = ((java.util.Collection<?>) list).size(); } catch (Throwable ignored) {}
+        mark("myo.w RETURN size=" + n + " type=" + (list == null ? "null" : list.getClass().getName()));
+    }
+
+    /** Entry of j7o.<init> — does the repo (which disk-hydrates myo.c) get constructed before the picker? */
+    public static void j7oCtor() { mark("j7o.<init> ENTER (disk-hydrator constructor)"); }
+
     /**
      * Right after the coroutine-resume {@code Lkl5;->V} (Kotlin
      * throwOnFailure). If ENTER logs but this does NOT, the offline network

@@ -2544,3 +2544,31 @@ Commit `55b3422` (off `ea2eef9`): one-line THROWAWAY in `BhRendererController.fl
 **Caveat for reading the result:** flip() fires ONCE at clinit time, surface almost certainly not yet ready. Still-black could mean EITHER the lib pair can't self-drive (→ full DirectRendering port) OR `setRenderingEnabled(true)` was called too early and needs re-assertion post-`surfaceChanged` (→ deferred re-call, still cheaper than full port). Lit screen → 6.0.2 renderer self-drives once enabled → M2 reduces to wiring the enable correctly.
 
 **Run procedure (awaiting user):** install → Renderer=Legacy for GoW → launch, screen on, **left running ≥90 s** → pull `getlog --cat /data/data/com.antutu.benchmark.full/files/bh_renderer_diag.log` (confirm `FORCED->true (M3 experiment)` + `eff=true` on the FLIP line), `…/fex_diag.log`, `getlog -n 40000 com.antutu.benchmark.full` — capture promptly before the buffer rolls.
+
+---
+
+## 2026-05-18 (cont.) — M3 forced-enable DEVICE-CONFIRMED, cleanup shipped, verification blocked → root-bridge v1.3.0 (branch `feature/legacy-renderer-toggle`)
+
+### M3 forced-enable result — ✅ GAME SCREEN (decisive positive)
+`forceenable-pre1` device run, `bh_renderer_diag.log` 06:53: both 6.0.2 libs md5-MATCH (`libwinemu_legacy.so` `407f274d…`, `libxserver_legacy.so` `e8eb8948…`), `LOAD_OK legacy libxserver -> legacyActive=true`, `XSERVER_CLINIT_DONE (legacy)`, then `[FLIP] … FORCED->true (M3 experiment) … legacyActive=true` → `flip(setRenderingEnabled) OK eff=true`; heartbeats unbroken, no tombstone. User confirmed **game screen**. **PROVEN: the 6.0.2 GLES2 renderer self-drives once `setRenderingEnabled(true)` is called — no DirectRendering RE port needed.** Root cause was the identified semantic mismatch (6.0.4 fed its passthrough `false` into the 6.0.2 renderer master-switch).
+
+### Cleanup shipped (commit `44b2e4e`)
+Deleted `BhRendererDiag.java` + `RendererDiagEnvPatch.kt`; stripped all diag log/heartbeat/md5/flipCaller + the `rendererDiagEnvPatch` dependsOn; promoted the forced-true to the permanent documented rule in `BhRendererController.flip()` (javadoc explains 6.0.2 `setRenderingEnabled` = renderer master-switch ≠ 6.0.4 `setFlipEnabled` passthrough). Kept the proven full 6.0.2 pair bundling + swap. Fixed stale "xserver-only-first" comments. Author The412Banner, no Claude co-author. **NO merge to gamehub-604-build / NO Lite port yet** (user: clean+rebuild on branch first).
+
+### Clean build — ✅ CI green
+Artifact-only `release.yml` run **26029782656** (`--ref feature/legacy-renderer-toggle`, `version=1.3.0-604-renderer-clean-pre1`, `stable=false`): completed/success, log-scanned **0 SEVERE**, renderer patches `succeeded` all 9 variants, throwaway diag-env patch correctly ABSENT. APK delivered `/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-renderer-clean-pre1-Patched-alt-AnTuTu.apk` md5 `19415351da8a3b46692c4dddf2d4e805`.
+
+### Verification of the CLEAN build — BLOCKED, not yet proven
+Device: Legacy SELECTED (`bh_renderer_mode=1` global + per-game 131962/3939/49908). But 6.0.2-libs-loaded NOT durably provable for the clean build: logcat flooded by AnTuTu (`getlog` logcat 0 lines); GameHub Log Server (`http://192.168.12.242:8080/` SSE `/events`) carries ONLY wine stdout/stderr — not Android logcat, so the kept `BhRenderer` `Log.i` markers don't appear; `bh_renderer_diag.log` stale (06:53, old forceenable run); `/proc` + `/data/app` outside root-bridge allowlist; app cache empty by design (native-extract path). GoW/d3d logs stale (05-17 15:56). Honest status: selection proven, load NOT proven for clean build (strong inference only — flip()/load logic byte-identical to the proven forceenable build).
+
+### Root-bridge fix → logcat-bridge v1.3.0 (built, awaiting user flash+reboot)
+Added read-only `proc <pid> <leaf>` verb (whitelist maps|cmdline|status|comm|smaps_rollup|stat|wchan|oom_score|cgroup|environ; numeric-pid; cat-only; `/proc` kept out of write allowlist). Client `getlog --proc <pid> <leaf>` (symlinked client already live). Zip `/storage/emulated/0/Download/logcat-bridge-magisk-v1.3.0.zip` (supersedes never-flashed v1.2.0). User WILL flash + reboot, relaunch GoW on Legacy, then return.
+
+### RESUME (next session, after user returns)
+1. `getlog --ping`→pong; `getlog --proc 1 comm`→ not "unknown verb" (confirms v1.3.0 live).
+2. `getlog --ps` → find `com.antutu.benchmark.full` `:wine`/`:winemu` child pid.
+3. `getlog --proc <pid> maps` → grep `libxserver_legacy.so` + `libwinemu_legacy.so`.
+   - both present = DEFINITIVE proof clean build loads 6.0.2 pair → cleanup validated → MERGE to `gamehub-604-build` (NOT Lite-first), test there, then refresh Lite.
+   - only stock libs = cleanup regressed the load path → investigate, do NOT merge.
+4. Then decide optional permanent breadcrumb (one line to `getFilesDir()/bh_renderer.log` in legacy branch — prod observability, not the stripped diag harness).
+Mergeable delta vs `gamehub-604-build`: 18 commits/18 files/+2073−34, no junk; only conscious change = GPU Spoof global→per-game-from-menu; +4.6 MB (2 .so).

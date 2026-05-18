@@ -117,4 +117,82 @@ public final class OfflineDiag {
         mark("myo.w RETURN size=" + n + " type="
                 + (list == null ? "null" : list.getClass().getName()));
     }
+
+    // ---- catalog-access stack-trace probe (model-free) ----------------------
+    // Injected at je6.invoke()'s sp_winemu_unified_resources branch — the SOLE
+    // host accessor for the saved catalog SharedPreferences. Every read of the
+    // catalog (incl. whatever the working online picker uses) passes here. We
+    // dump the caller stack so the real, obfuscated picker path names itself —
+    // no model/hypothesis required. Dedupe by stack signature + hard cap so a
+    // hot accessor can't flood the log.
+
+    private static final java.util.Set<String> SEEN =
+            java.util.Collections.synchronizedSet(new java.util.HashSet<String>());
+    private static volatile int catalogCount;
+
+    public static void catalogAccess() {
+        try {
+            if (catalogCount >= 40) return;
+            StackTraceElement[] st = new Throwable().getStackTrace();
+            StringBuilder sig = new StringBuilder();
+            StringBuilder pretty = new StringBuilder();
+            // Skip frame 0 (this method); capture up to 18 host frames.
+            int shown = 0;
+            for (int i = 1; i < st.length && shown < 18; i++) {
+                StackTraceElement e = st[i];
+                String cn = e.getClassName();
+                // drop noise frames; keep host + key framework anchors
+                if (cn.startsWith("java.") || cn.startsWith("dalvik.")
+                        || cn.startsWith("android.os.") || cn.startsWith("sun.")) {
+                    continue;
+                }
+                sig.append(cn).append('#').append(e.getMethodName()).append(';');
+                pretty.append("\n    at ").append(cn).append('.')
+                        .append(e.getMethodName())
+                        .append(e.getLineNumber() > 0 ? ":" + e.getLineNumber() : "");
+                shown++;
+            }
+            String s = sig.toString();
+            if (!SEEN.add(s)) return; // distinct caller-chain only once
+            catalogCount++;
+            mark("CATALOG-PREFS access #" + catalogCount + pretty);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    // Injected at ApiCacheDao_Impl.getCache$lambda$0 entry (the synchronous
+    // Room read worker; p0 = cache_key). Tells us, model-free, whether the
+    // offline picker reads the cached winemu_game_config (→ worker fix viable)
+    // and who reads it. Deduped by key+stack signature, capped.
+    private static volatile int apiCount;
+
+    public static void apiCacheRead(Object cacheKey) {
+        try {
+            if (apiCount >= 40) return;
+            String key = cacheKey == null ? "null" : cacheKey.toString();
+            // only care about the component-config cache
+            if (!key.startsWith("winemu_game_config")) return;
+            StackTraceElement[] st = new Throwable().getStackTrace();
+            StringBuilder sig = new StringBuilder();
+            StringBuilder pretty = new StringBuilder();
+            int shown = 0;
+            for (int i = 1; i < st.length && shown < 18; i++) {
+                StackTraceElement e = st[i];
+                String cn = e.getClassName();
+                if (cn.startsWith("java.") || cn.startsWith("dalvik.")
+                        || cn.startsWith("android.os.") || cn.startsWith("sun.")) {
+                    continue;
+                }
+                sig.append(cn).append('#').append(e.getMethodName()).append(';');
+                pretty.append("\n    at ").append(cn).append('.')
+                        .append(e.getMethodName())
+                        .append(e.getLineNumber() > 0 ? ":" + e.getLineNumber() : "");
+                shown++;
+            }
+            if (!SEEN.add("API|" + sig)) return;
+            apiCount++;
+            mark("API-CACHE read #" + apiCount + " key=" + key + pretty);
+        } catch (Throwable ignored) {
+        }
+    }
 }

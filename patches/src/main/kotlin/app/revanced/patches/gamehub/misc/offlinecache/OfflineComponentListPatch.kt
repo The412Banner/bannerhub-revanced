@@ -1,6 +1,9 @@
 package app.revanced.patches.gamehub.misc.offlinecache
 
+import app.revanced.patcher.extensions.ExternalLabel
 import app.revanced.patcher.extensions.addInstructions
+import app.revanced.patcher.extensions.addInstructionsWithLabels
+import app.revanced.patcher.extensions.getInstruction
 import app.revanced.patcher.firstMethod
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
@@ -72,6 +75,32 @@ val offlineComponentListPatch = bytecodePatch(
                     move-result-object p0
                     return-object p0
                 """.trimIndent(),
+            )
+        }
+
+        // gof.c(Lci3;)Object — the container list (Wine/Proton picker), via
+        // getContainerList. No ComponentType (returns all containers); no
+        // sibling impl to delegate to, so index-0 conditional short-circuit:
+        // offline → OfflineComponentList.getContainers() (n55(List) or null);
+        // null → fall through to the original gof.c (online fetch unchanged).
+        // .locals 11 ⇒ v0 is a free scratch local (original's first insn
+        // overwrites v0 on the fall-through path, so reuse is safe).
+        firstMethod {
+            definingClass == GOF_CLASS &&
+                name == "c" &&
+                parameterTypes.size == 1 &&
+                returnType == "Ljava/lang/Object;"
+        }.apply {
+            val orig = getInstruction(0)
+            addInstructionsWithLabels(
+                0,
+                """
+                    invoke-static {}, $LIST->getContainers()Ljava/lang/Object;
+                    move-result-object v0
+                    if-eqz v0, :bhOrig
+                    return-object v0
+                """.trimIndent(),
+                ExternalLabel("bhOrig", orig),
             )
         }
     }

@@ -130,5 +130,18 @@ val rendererMenuRowPatch = bytecodePatch(
                 move-result-object v$listReg
             """.trimIndent(),
         )
+
+        // ── Per-game capture: at method entry of each builder, hand the
+        // menu-data param (p0 — Lf37 GameDetailArgs / Lued, both static
+        // methods) to the handler so the injected row's click is scoped to
+        // the actual game even from a pre-launch menu (sniffGameIdFromStack
+        // finds nothing there). Single no-label invoke, runs once per menu
+        // open — not the per-resolve l1 path, so no ANR/footgun. range form
+        // because p0 is a high param register in these .locals-heavy methods.
+        val captureSmali =
+            "invoke-static/range {p0 .. p0}, " +
+                "$CLICK_HANDLER->captureGameId(Ljava/lang/Object;)V"
+        menuMethod.addInstructions(0, captureSmali)
+        libraryMenuMethod.addInstructions(0, captureSmali)
     }
 }

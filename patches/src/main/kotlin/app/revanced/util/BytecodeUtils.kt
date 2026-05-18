@@ -1441,8 +1441,18 @@ internal fun BytecodePatchContext.redirectVirtualToStatic(
             "(${r.parameterTypes.joinToString("")})${r.returnType}" == proto
     }
 
-    classDefs.forEach { classDef ->
-        classDef.methods.forEach { method ->
+    // Snapshot the candidate classDefs BEFORE touching them.
+    // getOrReplaceMutable structurally replaces the entry inside the live
+    // `classDefs` set, so iterating `classDefs` directly while calling it
+    // throws ConcurrentModificationException.
+    val candidates = classDefs.filter { classDef ->
+        classDef.methods.any { method ->
+            method.implementation?.instructions?.any { it.matches() } == true
+        }
+    }
+
+    candidates.forEach { classDef ->
+        classDef.methods.toList().forEach { method ->
             val impl = method.implementation ?: return@forEach
             if (impl.instructions.none { it.matches() }) return@forEach
 

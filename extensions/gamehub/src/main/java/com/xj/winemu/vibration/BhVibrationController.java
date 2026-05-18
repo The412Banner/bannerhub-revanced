@@ -404,12 +404,15 @@ public final class BhVibrationController {
      *  When a game is in scope, writes go to that game's pc_g_setting<gameId>
      *  file (so Export Config picks them up). Always also updates the
      *  global default in bh_vibration_prefs. */
+    // STRICT PER-GAME: written ONLY to our own bh_vibration_prefs, keyed
+    // per-game (PER_GAME_KEY_* + "__" + gameId). Never global, never the
+    // host-owned pc_g_setting<id> (host rewrites that → reset bug). No game
+    // in scope ⇒ nothing persisted (stays that one game's setting only).
     public void setMode(int mode) {
         if (mode < 0 || mode > 3) return;
         this.cachedMode = mode;
-        writeIntGlobal(GLOBAL_KEY_MODE, mode);
         if (containerGameId != null) {
-            writeIntPerGame(containerGameId, PER_GAME_KEY_MODE, mode);
+            writeIntOwned(pgKey(PER_GAME_KEY_MODE, containerGameId), mode);
         }
     }
 
@@ -418,9 +421,8 @@ public final class BhVibrationController {
         if (pct < 0) pct = 0;
         if (pct > 100) pct = 100;
         this.cachedIntensity = pct;
-        writeIntGlobal(GLOBAL_KEY_INTENSITY, pct);
         if (containerGameId != null) {
-            writeIntPerGame(containerGameId, PER_GAME_KEY_INTENSITY, pct);
+            writeIntOwned(pgKey(PER_GAME_KEY_INTENSITY, containerGameId), pct);
         }
     }
 
@@ -1117,52 +1119,67 @@ public final class BhVibrationController {
     // Settings I/O
     // ─────────────────────────────────────────────────────────────────────────
 
+    /** Per-game key inside our OWN bh_vibration_prefs file. */
+    private static String pgKey(String base, String gameId) {
+        return base + "__" + gameId;
+    }
+
     private void reloadSettings() {
         ensureContext();
         Context ctx = appContext;
         if (ctx == null) return;
 
-        // Resolve global defaults first.
-        SharedPreferences gp = ctx.getSharedPreferences(GLOBAL_PREFS_FILE, Context.MODE_PRIVATE);
-        int globalMode = gp.getInt(GLOBAL_KEY_MODE, DEFAULT_MODE);
-        int globalIntensity = gp.getInt(GLOBAL_KEY_INTENSITY, DEFAULT_INTENSITY);
-
+        // STRICTLY per-game. No game ⇒ stock defaults; nothing global is
+        // consulted (a per-game vibration setting never leaks app-wide).
         if (containerGameId == null) {
-            cachedMode = globalMode;
-            cachedIntensity = globalIntensity;
+            cachedMode = DEFAULT_MODE;
+            cachedIntensity = DEFAULT_INTENSITY;
             return;
         }
 
-        // Per-game: prefer pc_g_setting<gameId> values. Fall back to legacy
-        // bh_vibration_prefs entries (older builds wrote there) so users
-        // upgrading don't lose their per-container preferences. Final
-        // fallback is the global default. Older imported pc_g_setting
-        // files lacking our keys naturally end up at the global default.
-        SharedPreferences pgp = ctx.getSharedPreferences(
-                String.format(PER_GAME_PREFS_FMT, containerGameId), Context.MODE_PRIVATE);
+        String gid = containerGameId;
+        SharedPreferences own =
+                ctx.getSharedPreferences(GLOBAL_PREFS_FILE, Context.MODE_PRIVATE);
 
-        int legacyMode = gp.getInt(LEGACY_MODE_PREFIX + containerGameId, globalMode);
-        int legacyIntensity = gp.getInt(LEGACY_INTENSITY_PREFIX + containerGameId, globalIntensity);
+        // One-time migration into our own per-game keys, from the two PER-GAME
+        // legacy locations only (never the abandoned unscoped global default):
+        //   1. host-owned pc_g_setting<id> PER_GAME_KEY_* (the buggy co-store)
+        //   2. older bh_vibration_prefs LEGACY_*_PREFIX+gid entries
+        if (!own.contains(pgKey(PER_GAME_KEY_MODE, gid))) {
+            try {
+                SharedPreferences legacyPg = ctx.getSharedPreferences(
+                        String.format(PER_GAME_PREFS_FMT, gid), Context.MODE_PRIVATE);
+                if (legacyPg.contains(PER_GAME_KEY_MODE)
+                        || legacyPg.contains(PER_GAME_KEY_INTENSITY)) {
+                    own.edit()
+                       .putInt(pgKey(PER_GAME_KEY_MODE, gid),
+                               legacyPg.getInt(PER_GAME_KEY_MODE, DEFAULT_MODE))
+                       .putInt(pgKey(PER_GAME_KEY_INTENSITY, gid),
+                               legacyPg.getInt(PER_GAME_KEY_INTENSITY, DEFAULT_INTENSITY))
+                       .apply();
+                } else if (own.contains(LEGACY_MODE_PREFIX + gid)
+                        || own.contains(LEGACY_INTENSITY_PREFIX + gid)) {
+                    own.edit()
+                       .putInt(pgKey(PER_GAME_KEY_MODE, gid),
+                               own.getInt(LEGACY_MODE_PREFIX + gid, DEFAULT_MODE))
+                       .putInt(pgKey(PER_GAME_KEY_INTENSITY, gid),
+                               own.getInt(LEGACY_INTENSITY_PREFIX + gid, DEFAULT_INTENSITY))
+                       .apply();
+                }
+            } catch (Throwable ignored) {
+            }
+        }
 
-        cachedMode = pgp.getInt(PER_GAME_KEY_MODE, legacyMode);
-        cachedIntensity = pgp.getInt(PER_GAME_KEY_INTENSITY, legacyIntensity);
+        cachedMode = own.getInt(pgKey(PER_GAME_KEY_MODE, gid), DEFAULT_MODE);
+        cachedIntensity = own.getInt(pgKey(PER_GAME_KEY_INTENSITY, gid), DEFAULT_INTENSITY);
     }
 
-    private void writeIntGlobal(String key, int val) {
+    private void writeIntOwned(String fullKey, int val) {
         ensureContext();
         Context ctx = appContext;
         if (ctx == null) return;
         ctx.getSharedPreferences(GLOBAL_PREFS_FILE, Context.MODE_PRIVATE)
-                .edit().putInt(key, val).apply();
-    }
-
-    private void writeIntPerGame(String gameId, String key, int val) {
-        ensureContext();
-        Context ctx = appContext;
-        if (ctx == null || gameId == null || gameId.isEmpty()) return;
-        ctx.getSharedPreferences(String.format(PER_GAME_PREFS_FMT, gameId),
-                                  Context.MODE_PRIVATE)
-                .edit().putInt(key, val).apply();
+                .edit().putInt(fullKey, val).apply();
     }
 
     /**

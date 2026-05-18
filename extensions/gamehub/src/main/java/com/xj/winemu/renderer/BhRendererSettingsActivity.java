@@ -36,7 +36,6 @@ public class BhRendererSettingsActivity extends Activity {
     };
 
     private float density = 1f;
-    private boolean ready = false;
 
     public static void launch(Context ctx, String gameId, String gameName) {
         Intent it = new Intent(ctx, BhRendererSettingsActivity.class);
@@ -119,29 +118,28 @@ public class BhRendererSettingsActivity extends Activity {
         btnRow.setOrientation(LinearLayout.HORIZONTAL);
         btnRow.setGravity(Gravity.END);
         btnRow.setLayoutParams(topMargin(dp(8)));
-        Button close = new Button(this);
-        close.setText("Close");
-        close.setOnClickListener(new View.OnClickListener() {
+        // Cancel = discard; Save = single per-game commit. No live writes,
+        // so the seed-time setSelection() callback can't persist a default.
+        Button cancel = new Button(this);
+        cancel.setText("Cancel");
+        cancel.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { finish(); }
+        });
+        Button save = new Button(this);
+        save.setText("Save");
+        save.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 ctl.setMode(clampMode(modeSpinner.getSelectedItemPosition()));
                 finish();
             }
         });
-        btnRow.addView(close);
+        btnRow.addView(cancel);
+        btnRow.addView(save);
         root.addView(btnRow);
 
-        // Wiring + restore
-        modeSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override public void onItemSelected(AdapterView<?> p, View vw, int pos, long id) {
-                if (!ready) return;
-                ctl.setMode(clampMode(pos));
-            }
-            @Override public void onNothingSelected(AdapterView<?> p) { }
-        });
+        // Restore only — no listener (mode spinner has no UI side-effect;
+        // persistence is the Save button's single commit).
         modeSpinner.setSelection(clampMode(ctl.getMode()));
-        modeSpinner.post(new Runnable() {
-            @Override public void run() { ready = true; }
-        });
 
         ScrollView scroller = new ScrollView(this);
         scroller.setVerticalScrollBarEnabled(true);

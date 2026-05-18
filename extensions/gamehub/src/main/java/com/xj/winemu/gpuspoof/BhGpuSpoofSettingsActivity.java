@@ -48,8 +48,6 @@ public class BhGpuSpoofSettingsActivity extends Activity {
 
     private float density = 1f;
 
-    /** Suppresses spinner callbacks while we programmatically restore state. */
-    private boolean ready = false;
 
     public static void launch(Context ctx, String gameId, String gameName) {
         Intent it = new Intent(ctx, BhGpuSpoofSettingsActivity.class);
@@ -176,9 +174,17 @@ public class BhGpuSpoofSettingsActivity extends Activity {
         btnRow.setOrientation(LinearLayout.HORIZONTAL);
         btnRow.setGravity(Gravity.END);
         btnRow.setLayoutParams(topMargin(dp(6)));
-        Button close = new Button(this);
-        close.setText("Close");
-        close.setOnClickListener(new View.OnClickListener() {
+        // Cancel = discard (nothing persisted). Save = single atomic commit
+        // of the current UI selection into the per-game store. No live writes
+        // anymore, so the seed-time spinner callbacks can't persist a default.
+        Button cancel = new Button(this);
+        cancel.setText("Cancel");
+        cancel.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { finish(); }
+        });
+        Button save = new Button(this);
+        save.setText("Save");
+        save.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 persistForMode(ctl, modeSpinner.getSelectedItemPosition(),
                         vendorSpinner, modelSpinner, vendorIn, deviceIn, nameIn);
@@ -186,34 +192,23 @@ public class BhGpuSpoofSettingsActivity extends Activity {
                 finish();
             }
         });
-        btnRow.addView(close);
+        btnRow.addView(cancel);
+        btnRow.addView(save);
         root.addView(btnRow);
 
         // ── Wiring ───────────────────────────────────────────────────────
 
-        // Model spinner: on pick, persist the chosen card (Spoof mode only).
-        modelSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override public void onItemSelected(AdapterView<?> p, View vw, int pos, long id) {
-                if (!ready || modeSpinner.getSelectedItemPosition()
-                        != BhGpuSpoofController.MODE_SPOOF) return;
-                writeCard(ctl, vendorSpinner.getSelectedItemPosition(), pos);
-            }
-            @Override public void onNothingSelected(AdapterView<?> p) { }
-        });
-
-        // Vendor spinner: rebuild Model list for that vendor, keep position 0.
+        // UI-only wiring (NO persistence here — persistence is the Save
+        // button's single commit). Vendor spinner rebuilds the Model list;
+        // Mode spinner toggles which editor is visible. Model spinner and the
+        // Deep checkbox have no UI side-effect, so they carry no listener.
         vendorSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override public void onItemSelected(AdapterView<?> p, View vw, int vIdx, long id) {
                 rebuildModels(modelSpinner, vIdx, 0);
-                if (ready && modeSpinner.getSelectedItemPosition()
-                        == BhGpuSpoofController.MODE_SPOOF) {
-                    writeCard(ctl, vIdx, modelSpinner.getSelectedItemPosition());
-                }
             }
             @Override public void onNothingSelected(AdapterView<?> p) { }
         });
 
-        // Mode spinner: toggle the right editor + persist that mode's value.
         modeSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override public void onItemSelected(AdapterView<?> p, View vw, int pos, long id) {
                 spoofBox.setVisibility(pos == BhGpuSpoofController.MODE_SPOOF
@@ -222,25 +217,8 @@ public class BhGpuSpoofSettingsActivity extends Activity {
                         ? View.VISIBLE : View.GONE);
                 deepCheck.setVisibility(pos == BhGpuSpoofController.MODE_OFF
                         ? View.GONE : View.VISIBLE);
-                if (!ready) return;
-                ctl.setMode(pos);
-                if (pos == BhGpuSpoofController.MODE_SPOOF) {
-                    writeCard(ctl, vendorSpinner.getSelectedItemPosition(),
-                            modelSpinner.getSelectedItemPosition());
-                } else if (pos == BhGpuSpoofController.MODE_CUSTOM) {
-                    persistCustom(ctl, vendorIn, deviceIn, nameIn);
-                }
             }
             @Override public void onNothingSelected(AdapterView<?> p) { }
-        });
-
-        // Deep checkbox: persist live (only once callbacks are armed).
-        deepCheck.setOnCheckedChangeListener(
-                new android.widget.CompoundButton.OnCheckedChangeListener() {
-            @Override public void onCheckedChanged(
-                    android.widget.CompoundButton b, boolean checked) {
-                if (ready) ctl.setDeep(checked);
-            }
         });
 
         // ── Restore persisted state, then arm callbacks ──────────────────
@@ -260,9 +238,6 @@ public class BhGpuSpoofSettingsActivity extends Activity {
         deepCheck.setVisibility(mode == BhGpuSpoofController.MODE_OFF
                 ? View.GONE : View.VISIBLE);
         modeSpinner.setSelection(mode);
-        modelSpinner.post(new Runnable() {
-            @Override public void run() { ready = true; }
-        });
 
         ScrollView scroller = new ScrollView(this);
         scroller.setVerticalScrollBarEnabled(true);

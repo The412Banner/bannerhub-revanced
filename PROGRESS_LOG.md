@@ -2591,3 +2591,6 @@ Same APK toggles both ways cleanly, no regression either direction. Cleanup (`44
 - Watch run 26035851236 → green + 0 SEVERE + renderer/menu patches succeeded 9/9.
 - Then refresh dependent Lite branch `feature/lite-variant-tier1` off the new `gamehub-604-build` (NOT Lite-first) and re-cut the Lite artifacts.
 - M3 device-test on the user's actual **Lite** (`banner.hub`) install — the only open device-test gap (full-pkg is proven bidirectionally).
+
+### CI RESULT — run 26035851236 ✅ GREEN
+`conclusion=success`; all 9 Patch jobs success, `Create GitHub Release` skipped (correct for stable=false). Log-scanned (125 files, 950K): **0 `SEVERE`**, 0 patch failures. alt-AnTuTu job confirms applied: "Legacy renderer conditional swap" / "Legacy renderer libxserver bundle" / "Renderer menu row" / "Renderer settings activity" / "Per-game menu id capture (shared)" + GPU Spoof (DXVK plumbing/menu row/settings) + PC-accurate vibration (label/menu row/settings) — all `succeeded`. APK delivered: `/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-renderer-merged-pre1-Patched-alt-AnTuTu.apk` (116,042,150 B, md5 `75b4cf73def5f71435bbda812542f717`). Merge `01b2f4d` validated on `gamehub-604-build`. **NEXT: refresh Lite branch `feature/lite-variant-tier1` off new gamehub-604-build → M3 device-test on `banner.hub`.**

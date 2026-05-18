@@ -22,12 +22,14 @@ import java.util.zip.ZipFile;
  * GameHub 6.0.4 rewrote its X-server renderer GLES2→Vulkan (libxserver.so)
  * and removed the libwinemu ASurfaceTransaction plane compositor. The
  * "Legacy" mode swaps in the 6.0.2 GLES2-era libxserver.so + libwinemu.so
- * pair (with the JNI bridge: an added native setRenderingEnabled(Z)V on
- * XServer + the setFlipEnabled call sites redirected to it). "New" leaves
- * stock 6.0.4 entirely untouched (zero regression).
+ * pair (the JNI bridge: an added native setRenderingEnabled(Z)V on XServer +
+ * the setFlipEnabled call sites redirected to it). "New" leaves stock 6.0.4
+ * entirely untouched (zero regression).
  *
- * Milestone 1 = this controller + the settings dialog + the menu row. The
- * conditional swap that consults {@link #isLegacyForGame} is Milestone 2.
+ * Device-confirmed (GoW, 2026-05-18): the full 6.0.2 pair loads on 6.0.4 and
+ * the GLES2 renderer self-drives once {@code setRenderingEnabled(true)} is
+ * called — no restoration of the deleted {@code DirectRendering}
+ * orchestration is required.
  *
  * Storage mirrors {@code BhGpuSpoofController}: per-game value in the stock
  * {@code pc_g_setting<gameId>} prefs under {@code bh_renderer_mode}; a global
@@ -94,9 +96,9 @@ public final class BhRendererController {
         if (containerGameId != null) writeIntPerGame(containerGameId, KEY_MODE, mode);
     }
 
-    // ── Milestone-2 entry: is Legacy selected for the launching game? ────
-    // Per-game value, falling back to the global default. Used by the
-    // (future) conditional lib-swap so New mode is provably stock.
+    // ── Is Legacy selected for the launching game? ───────────────────────
+    // Per-game value, falling back to the global default. Drives the
+    // conditional lib-swap so New mode is provably stock.
 
     public boolean isLegacyForGame(String gameId) {
         ensureContext();
@@ -115,7 +117,7 @@ public final class BhRendererController {
         return isLegacyForGame(sniffGameIdFromStack());
     }
 
-    // ── Milestone 2: conditional native-lib load + flip dispatch ─────────
+    // ── Conditional native-lib load + flip dispatch ──────────────────────
     //
     // The renderer choice is FROZEN the moment libxserver is loaded
     // (XServer.<clinit>). libxserver cannot be reloaded, so flip() must use
@@ -125,10 +127,10 @@ public final class BhRendererController {
 
     private static volatile boolean legacyActive = false;
     private static volatile boolean legacyDecided = false;
-    /** FULL-PAIR (throwaway): libwinemu loads first, via several early
-     *  clinit loaders; this guards the one-shot legacy swap. Independent of
-     *  legacyActive/legacyDecided, which stay owned by loadXserver so flip()'s
-     *  frozen-decision contract is unchanged. */
+    /** libwinemu loads first, via several early clinit loaders; this guards
+     *  the one-shot legacy swap. Independent of legacyActive/legacyDecided,
+     *  which stay owned by loadXserver so flip()'s frozen-decision contract
+     *  is unchanged. */
     private static volatile boolean winemuLoaded = false;
 
     /**
@@ -141,59 +143,35 @@ public final class BhRendererController {
      */
     public static void loadXserver(String name) {
         boolean legacy = false;
-        String sniffedGid = null;
         try {
-            sniffedGid = sniffGameIdFromStack();
-            legacy = getInstance().isLegacyForGame(sniffedGid);
+            legacy = getInstance().isLegacyForGame(sniffGameIdFromStack());
         } catch (Throwable t) {
             Log.w(TAG, "loadXserver: legacy resolve failed; using stock", t);
-            BhRendererDiag.log("LOAD", "legacy resolve threw; using stock", t);
         }
-        BhRendererDiag.log("LOAD", "loadXserver entry: name=" + name
-                + " sniffedGameId=" + sniffedGid + " legacyForGame=" + legacy
-                + " legacyDecided(pre)=" + legacyDecided);
         if (legacy) {
             try {
                 File so = resolveLegacyLib("libxserver_legacy.so");
-                BhRendererDiag.log("LOAD", "resolveLegacyLib -> "
-                        + (so == null ? "null" : so.getAbsolutePath()
-                        + " isFile=" + so.isFile()
-                        + " len=" + (so.isFile() ? so.length() : -1)
-                        + " md5=" + BhRendererDiag.md5(so,
-                            BhRendererDiag.EXPECTED_XSERVER_MD5)));
                 if (so != null && so.isFile()) {
                     System.load(so.getAbsolutePath());
                     legacyActive = true;
                     legacyDecided = true;
                     Log.i(TAG, "loaded LEGACY libxserver: " + so.getAbsolutePath());
-                    BhRendererDiag.log("LOAD",
-                            "LOAD_OK legacy libxserver -> legacyActive=true");
-                    BhRendererDiag.startHeartbeat();
-                    BhRendererDiag.log("LOAD", "XSERVER_CLINIT_DONE (legacy)");
                     return;
                 }
                 Log.w(TAG, "legacy libxserver unavailable; falling back to stock");
-                BhRendererDiag.log("LOAD",
-                        "legacy libxserver unavailable; FALLBACK->stock");
             } catch (Throwable t) {
                 Log.w(TAG, "legacy libxserver load failed; falling back to stock", t);
-                BhRendererDiag.log("LOAD",
-                        "LOAD_FAIL legacy libxserver; FALLBACK->stock", t);
             }
         }
         System.loadLibrary(name);
         legacyActive = false;
         legacyDecided = true;
-        BhRendererDiag.log("LOAD", "STOCK loadLibrary(\"" + name
-                + "\") -> legacyActive=false");
-        BhRendererDiag.log("LOAD", "XSERVER_CLINIT_DONE (stock)");
     }
 
     /**
-     * FULL-PAIR (THROWAWAY, user decision 2026-05-18). Replaces every
-     * {@code System.loadLibrary("winemu")} early loader. When the launching
-     * game's pref is Legacy, swaps in the bundled 6.0.2
-     * {@code libwinemu_legacy.so} — test3's proven pair with the 6.0.2
+     * Replaces every {@code System.loadLibrary("winemu")} early loader. When
+     * the launching game's pref is Legacy, swaps in the bundled 6.0.2
+     * {@code libwinemu_legacy.so} — the proven pair with the 6.0.2
      * libxserver — otherwise loads stock {@code "winemu"} bit-identically.
      *
      * Idempotent: libwinemu is pulled by several early {@code <clinit>}
@@ -206,60 +184,49 @@ public final class BhRendererController {
      * legacy lib never regress.
      */
     public static void loadWinemu(String name) {
-        if (winemuLoaded) {
-            BhRendererDiag.log("WINEMU", "loadWinemu re-entry ignored "
-                    + "(already loaded) name=" + name);
-            return;
-        }
+        if (winemuLoaded) return;
         boolean legacy = false;
-        String sniffedGid = null;
         try {
-            sniffedGid = sniffGameIdFromStack();
-            legacy = getInstance().isLegacyForGame(sniffedGid);
+            legacy = getInstance().isLegacyForGame(sniffGameIdFromStack());
         } catch (Throwable t) {
             Log.w(TAG, "loadWinemu: legacy resolve failed; using stock", t);
-            BhRendererDiag.log("WINEMU", "legacy resolve threw; using stock", t);
         }
-        BhRendererDiag.log("WINEMU", "loadWinemu entry: name=" + name
-                + " sniffedGameId=" + sniffedGid + " legacyForGame=" + legacy);
         if (legacy) {
             try {
                 File so = resolveLegacyLib("libwinemu_legacy.so");
-                BhRendererDiag.log("WINEMU", "resolveLegacyLib -> "
-                        + (so == null ? "null" : so.getAbsolutePath()
-                        + " isFile=" + so.isFile()
-                        + " len=" + (so.isFile() ? so.length() : -1)
-                        + " md5=" + BhRendererDiag.md5(so,
-                            BhRendererDiag.EXPECTED_WINEMU_MD5)));
                 if (so != null && so.isFile()) {
                     System.load(so.getAbsolutePath());
                     winemuLoaded = true;
                     Log.i(TAG, "loaded LEGACY libwinemu: " + so.getAbsolutePath());
-                    BhRendererDiag.log("WINEMU", "WINEMU_LOAD_OK legacy libwinemu");
-                    BhRendererDiag.startHeartbeat();
                     return;
                 }
                 Log.w(TAG, "legacy libwinemu unavailable; falling back to stock");
-                BhRendererDiag.log("WINEMU",
-                        "legacy libwinemu unavailable; FALLBACK->stock");
             } catch (Throwable t) {
                 Log.w(TAG, "legacy libwinemu load failed; falling back to stock", t);
-                BhRendererDiag.log("WINEMU",
-                        "WINEMU_LOAD_FAIL legacy libwinemu; FALLBACK->stock", t);
             }
         }
         System.loadLibrary(name);
         winemuLoaded = true;
-        BhRendererDiag.log("WINEMU", "STOCK loadLibrary(\"" + name + "\")");
     }
 
     /**
      * Replaces {@code XServer.setFlipEnabled(Z)V} call sites. Routes to the
      * native the loaded libxserver actually binds: stock 6.0.4 binds
      * {@code setFlipEnabled}, the 6.0.2 legacy lib binds
-     * {@code setRenderingEnabled} (same function, renamed across versions).
-     * Reflective so the extension need not compile-time reference the host
-     * {@code com.winemu.core.server.XServer} class.
+     * {@code setRenderingEnabled}. Reflective so the extension need not
+     * compile-time reference the host {@code com.winemu.core.server.XServer}.
+     *
+     * <p>The two natives are NOT semantically the same despite the
+     * version-rename: 6.0.4 {@code setFlipEnabled(Z)} is the GPU-passthrough
+     * flip (default OFF → driven with {@code false}); 6.0.2
+     * {@code setRenderingEnabled(Z)} is the master switch that turns the
+     * GLES2 renderer ON, formerly driven by the 6.0.4-deleted
+     * {@code com.winemu.core.DirectRendering}. Passing 6.0.4's passthrough
+     * flag ({@code false}) into the 6.0.2 enable switch loads the libs but
+     * never composites (black screen, process alive). So in Legacy mode the
+     * enable bit is forced {@code true} — device-confirmed (GoW, 2026-05-18)
+     * to light the screen; the 6.0.2 renderer self-drives from there. New
+     * mode is unaffected (stock {@code setFlipEnabled} with the real flag).
      */
     public static void flip(Object xserver, boolean enabled) {
         if (xserver == null) return;
@@ -267,45 +234,12 @@ public final class BhRendererController {
                 ? legacyActive
                 : safeIsLegacyForLaunchingGame();
         String fnName = legacy ? "setRenderingEnabled" : "setFlipEnabled";
-        // ── THROWAWAY M3 forced-enable experiment (2026-05-18) ───────────
-        // Root cause from the full-pair device run: 6.0.4 setFlipEnabled =
-        // GPU-passthrough flip (default OFF → false); 6.0.2
-        // setRenderingEnabled = the master switch that turns the GLES2
-        // renderer ON, formerly driven by the 6.0.4-DELETED
-        // com.winemu.core.DirectRendering. We pass 6.0.4's passthrough flag
-        // (false) into 6.0.2's renderer-enable switch → libs load, never
-        // composites, black screen + alive forever. Cheap test: on the
-        // legacy branch, force the enable bit true regardless of the
-        // 6.0.4-side flag. If 6.0.2's drive loop is self-contained in the
-        // lib pair this lights the screen with one line; if still black the
-        // full DirectRendering orchestration port is required. REVERT before
-        // any M2 ship.
         boolean effEnabled = legacy ? true : enabled;
-        BhRendererDiag.log("FLIP", "flip enter: branch=" + fnName
-                + " enabled=" + enabled
-                + (legacy ? " FORCED->true (M3 experiment)" : "")
-                + " legacyDecided=" + legacyDecided
-                + " legacyActive=" + legacyActive
-                + " caller=" + flipCaller());
         try {
             Method fn = xserver.getClass().getMethod(fnName, boolean.class);
             fn.invoke(xserver, effEnabled);
-            BhRendererDiag.log("FLIP", "flip(" + fnName + ") OK"
-                    + " eff=" + effEnabled);
         } catch (Throwable t) {
             Log.w(TAG, "flip(" + fnName + ") failed", t);
-            BhRendererDiag.log("FLIP", "flip(" + fnName + ") FAILED", t);
-        }
-    }
-
-    /** Diagnostic-only: which redirected setFlipEnabled site drove this. */
-    private static String flipCaller() {
-        try {
-            StackTraceElement[] st = Thread.currentThread().getStackTrace();
-            // [0]=getStackTrace [1]=flipCaller [2]=flip [3]=real caller
-            return st.length > 3 ? st[3].toString() : "(unknown)";
-        } catch (Throwable t) {
-            return "(unknown)";
         }
     }
 

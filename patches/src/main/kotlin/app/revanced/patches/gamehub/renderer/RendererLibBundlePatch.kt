@@ -7,32 +7,29 @@ import app.revanced.patches.gamehub.GAMEHUB_VERSION
 import java.io.File
 
 // =========================================================================
-// Milestone 2 — additive bundling of the 6.0.2 GLES2-era libxserver.so.
+// Additive bundling of the 6.0.2 GLES2-era libxserver.so + libwinemu.so.
 //
-// xserver-only-first scope (user decision 2026-05-18): only the renderer's
-// libxserver is gated. libwinemu has 7 early clinit loaders and locks to the
-// first-loaded copy for the whole process, so it stays stock; GoW rendered
-// fine on the full pair so xserver-only is the cheap, ordering-proof first
-// cut. Add libwinemu gating later only if a title proves it needs the 6.0.2
-// ASurfaceTransaction plane compositor.
+// The full 6.0.2 pair is required: xserver-only crashed ~40 s into a Legacy
+// launch (missing the 6.0.2 compositor); the full pair is device-confirmed
+// (GoW, 2026-05-18).
 //
-// This patch is ADDITIVE: it writes the 6.0.2 binary as
-// `libxserver_legacy.so` ALONGSIDE the stock 6.0.4 `libxserver.so`. The
-// stock lib is never touched, so New mode is provably bit-identical to
-// upstream. BhRendererController.loadXserver picks between them at load
+// This patch is ADDITIVE: it writes each 6.0.2 binary as
+// `lib<name>_legacy.so` ALONGSIDE the stock 6.0.4 `lib<name>.so`. The stock
+// libs are never touched, so New mode is provably bit-identical to upstream.
+// BhRendererController.loadXserver / loadWinemu pick between them at load
 // time per the launching game's renderer pref.
 //
-// Bundled binary md5: e8eb894825da66cca0fc59b242ac0ad5 (verified 6.0.2).
+// Bundled binary md5s:
+//   libxserver_legacy.so  e8eb894825da66cca0fc59b242ac0ad5 (verified 6.0.2)
+//   libwinemu_legacy.so   407f274d998335dbce03b2074a187e9f (verified 6.0.2)
 // =========================================================================
 
 private const val RES_DIR = "/legacyrenderer"
 private const val ABI_DIR = "lib/arm64-v8a"
 
-// FULL-PAIR (user decision 2026-05-18): bundle BOTH 6.0.2 libs (test3's
-// proven pair). Each maps stock <name>.so -> bundled <name>_legacy.so,
-// additive (stock never overwritten → New mode provably bit-identical).
-//   libxserver_legacy.so  md5 e8eb894825da66cca0fc59b242ac0ad5
-//   libwinemu_legacy.so   md5 407f274d998335dbce03b2074a187e9f
+// Bundle BOTH 6.0.2 libs (the proven pair). Each maps stock <name>.so ->
+// bundled <name>_legacy.so, additive (stock never overwritten → New mode
+// provably bit-identical).
 private val LEGACY_LIBS = mapOf(
     "libxserver.so" to "libxserver_legacy.so",
     "libwinemu.so" to "libwinemu_legacy.so",

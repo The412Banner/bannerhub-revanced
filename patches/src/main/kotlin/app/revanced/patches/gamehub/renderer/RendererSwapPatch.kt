@@ -17,16 +17,18 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 
 // =========================================================================
-// Milestone 2 — the conditional 6.0.2 libxserver swap + JNI bridge, gated
+// The conditional 6.0.2 libxserver + libwinemu swap + JNI bridge, gated
 // per-game so New mode is provably stock (zero regression).
 //
-// Proven by throwaway test1→test3 (GoW device-confirmed, 2026-05-17):
-//   • 6.0.2 libxserver.so loads on 6.0.4 once XServer carries a native
-//     `setRenderingEnabled(Z)V` (6.0.4 renamed it `setFlipEnabled`); its
-//     JNI_OnLoad RegisterNatives then resolves (10/11 already matched).
-//   • 6.0.4's two `setFlipEnabled(Z)V` call sites must reach the native
-//     the loaded lib actually binds.
-// test3 did all of this ALWAYS-ON. M2 makes it per-game:
+// Device-confirmed end-to-end (GoW, 2026-05-18):
+//   • The 6.0.2 libxserver.so + libwinemu.so pair loads on 6.0.4 once
+//     XServer carries a native `setRenderingEnabled(Z)V` (6.0.4 renamed it
+//     `setFlipEnabled`); its JNI_OnLoad RegisterNatives then resolves
+//     (10/11 already matched).
+//   • 6.0.4's two `setFlipEnabled(Z)V` call sites must reach the native the
+//     loaded lib actually binds, and Legacy must drive the 6.0.2 enable
+//     switch with `true` (see BhRendererController.flip — the two natives
+//     are NOT semantically the same despite the version-rename).
 //
 //   1. addNativeMethod  → XServer gains native setRenderingEnabled(Z)V so
 //      the legacy lib's RegisterNatives can bind when it loads. Harmless
@@ -42,10 +44,11 @@ import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 //      setFlipEnabled (stock lib) or setRenderingEnabled (legacy lib) per
 //      the frozen decision. Static target avoids the self-recursion a
 //      virtual redirect on XServer would cause (see redirectVirtualToStatic).
-//
-// xserver-only-first (user decision 2026-05-18): libwinemu is NOT gated —
-// 7 early clinit loaders lock it to the first-loaded copy; GoW rendered on
-// the full pair so xserver-only is the cheap, ordering-proof first cut.
+//   4. winemu loader    → every System.loadLibrary("winemu") early loader
+//      becomes BhRendererController.loadWinemu. The 6.0.2 pair is required
+//      (xserver-only crashed ~40 s in, missing the 6.0.2 compositor); the
+//      swap is idempotent + always-falls-back so New mode and a
+//      missing/failed legacy lib never regress.
 // =========================================================================
 
 private const val XSERVER  = "Lcom/winemu/core/server/XServer;"
@@ -66,7 +69,6 @@ val rendererSwapPatch = bytecodePatch(
         sharedGamehubExtensionPatch,
         rendererManifestPatch,
         rendererLibBundlePatch,
-        rendererDiagEnvPatch, // THROWAWAY diagnostic — revert before M2 ship
     )
 
     apply {
@@ -104,14 +106,12 @@ val rendererSwapPatch = bytecodePatch(
             "$RENDER_CTL->flip(Ljava/lang/Object;Z)V",
         )
 
-        // (4) FULL-PAIR (user decision 2026-05-18): also gate libwinemu.
-        //     Redirect every System.loadLibrary("winemu") early loader to
-        //     BhRendererController.loadWinemu, which swaps the 6.0.2
-        //     libwinemu_legacy.so when Legacy is active for the launching
-        //     game (test3's proven pair) and is bit-identical stock
-        //     otherwise. Idempotent + always-falls-back so New mode and a
-        //     missing/failed legacy lib never regress. This is the
-        //     deliberate trade-off the xserver-only-first cut avoided:
+        // (4) Also gate libwinemu. Redirect every System.loadLibrary(
+        //     "winemu") early loader to BhRendererController.loadWinemu,
+        //     which swaps the 6.0.2 libwinemu_legacy.so when Legacy is
+        //     active for the launching game (the proven pair) and is
+        //     bit-identical stock otherwise. Idempotent + always-falls-back
+        //     so New mode and a missing/failed legacy lib never regress.
         //     libwinemu's decision can't be strictly per-game (early
         //     loaders), so it resolves per :wine launch via the same
         //     sniff+global path.

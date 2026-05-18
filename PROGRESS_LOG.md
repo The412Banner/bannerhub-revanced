@@ -2442,3 +2442,7 @@ Extracted capture into `extensions/.../common/BhMenuGameId.java` (captureGameId/
 ### 2026-05-17 — Per-game fix #2: cover the library-LIST popup (Vibration's 3rd entry)
 
 Device: GPU Spoof + Renderer now per-game (More Menu/tile popup) but Vibration still global — because Vibration also has a row in the library-LIST popup `Lpzc;->j0(Laub;Z…)` which MenuGameIdCapturePatch didn't cover (GPU Spoof/Renderer have no row there yet). Fix: (1) MenuGameIdCapturePatch + 3rd index-0 capture into `Lpzc;->j0` (static, p0=Laub; mirrors vibration's exact j0 predicate). (2) `BhMenuGameId.resolve()` now 2-pronged: toString token (Lf37 GameDetailArgs) THEN kept-name `com.xiaoji.egggame.game.di.model.game.GameInfo.getServerGameId()` located by VALUE type on the param or its declared fields (Laub.a:GameInfo) — R8-field-name-proof. Build to verify + device-test Vibration per-game from the library popup.
+
+### 2026-05-17 — Vibration per-game ROOT CAUSE: Intent extra key mismatch (1-line fix)
+
+Capture mechanism was fine (GPU Spoof/Renderer per-game proved it). Vibration stayed global because of a pre-existing key mismatch: `BhMenuRowClick` put the id under `"gameId"` but `BhVibrationSettingsActivity` reads `EXTRA_GAME_ID = "bh_vibration.gameId"` → settings activity always got null → `setContainerForSettings(null)` → global. Fixed: putExtra now uses `BhVibrationSettingsActivity.EXTRA_GAME_ID`. (GPU Spoof/Renderer were unaffected — their handler/activity keys already matched.) Build to verify Vibration now per-game from all 3 menus.

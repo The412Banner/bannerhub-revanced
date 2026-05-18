@@ -52,7 +52,10 @@ public final class BhMenuRowClick implements Function1<Object, Object> {
             String gameId = BhMenuGameId.getCaptured();
             if (gameId == null || gameId.isEmpty()) gameId = sniffGameIdFromStack();
             if (gameId != null && !gameId.isEmpty()) {
-                intent.putExtra("gameId", gameId);
+                // BhVibrationSettingsActivity reads EXTRA_GAME_ID
+                // ("bh_vibration.gameId"), NOT "gameId" — using the wrong
+                // key here is why per-game never took effect for vibration.
+                intent.putExtra(BhVibrationSettingsActivity.EXTRA_GAME_ID, gameId);
             }
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
             host.startActivity(intent);

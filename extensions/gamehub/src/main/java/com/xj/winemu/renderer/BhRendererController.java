@@ -267,14 +267,31 @@ public final class BhRendererController {
                 ? legacyActive
                 : safeIsLegacyForLaunchingGame();
         String fnName = legacy ? "setRenderingEnabled" : "setFlipEnabled";
+        // ── THROWAWAY M3 forced-enable experiment (2026-05-18) ───────────
+        // Root cause from the full-pair device run: 6.0.4 setFlipEnabled =
+        // GPU-passthrough flip (default OFF → false); 6.0.2
+        // setRenderingEnabled = the master switch that turns the GLES2
+        // renderer ON, formerly driven by the 6.0.4-DELETED
+        // com.winemu.core.DirectRendering. We pass 6.0.4's passthrough flag
+        // (false) into 6.0.2's renderer-enable switch → libs load, never
+        // composites, black screen + alive forever. Cheap test: on the
+        // legacy branch, force the enable bit true regardless of the
+        // 6.0.4-side flag. If 6.0.2's drive loop is self-contained in the
+        // lib pair this lights the screen with one line; if still black the
+        // full DirectRendering orchestration port is required. REVERT before
+        // any M2 ship.
+        boolean effEnabled = legacy ? true : enabled;
         BhRendererDiag.log("FLIP", "flip enter: branch=" + fnName
-                + " enabled=" + enabled + " legacyDecided=" + legacyDecided
+                + " enabled=" + enabled
+                + (legacy ? " FORCED->true (M3 experiment)" : "")
+                + " legacyDecided=" + legacyDecided
                 + " legacyActive=" + legacyActive
                 + " caller=" + flipCaller());
         try {
             Method fn = xserver.getClass().getMethod(fnName, boolean.class);
-            fn.invoke(xserver, enabled);
-            BhRendererDiag.log("FLIP", "flip(" + fnName + ") OK");
+            fn.invoke(xserver, effEnabled);
+            BhRendererDiag.log("FLIP", "flip(" + fnName + ") OK"
+                    + " eff=" + effEnabled);
         } catch (Throwable t) {
             Log.w(TAG, "flip(" + fnName + ") failed", t);
             BhRendererDiag.log("FLIP", "flip(" + fnName + ") FAILED", t);

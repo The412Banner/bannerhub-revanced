@@ -1,0 +1,78 @@
+package app.revanced.patches.gamehub.misc.offlinecache
+
+import app.revanced.patcher.extensions.addInstructions
+import app.revanced.patcher.firstMethod
+import app.revanced.patcher.patch.bytecodePatch
+import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
+import app.revanced.patches.gamehub.GAMEHUB_VERSION
+import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
+
+// ============================================================================
+// Offline component-picker fix — gof.a delegation.
+//
+// gof.a is the CONFIRMED per-type picker component-list feed (pre5,
+// model-free: invoked with the exact ComponentType online AND offline; stack
+// sz2 picker-VM → zxf → gof.a; return type non-obf
+// BaseResult<EnvListData<EnvLayerEntity>>). It is a tiny static dispatcher:
+//   if ((flags & 4) != 0) page = 200
+//   gof.b(componentType.getType(), 1, page, continuation)   // suspend impl
+//
+// We replace its body with a single delegating call to
+// OfflineComponentList.dispatch(gof, ComponentType, page, Continuation, flags),
+// which:
+//   • OFFLINE → returns a BaseResult synthesised from the on-device saved
+//     catalog (sp_winemu_unified_resources — the user's real downloads),
+//     filtered by ComponentType.type → picker lists them offline.
+//   • ONLINE / any failure → reflectively invokes the original
+//     gof.b(int,int,int,Continuation) and returns its value verbatim
+//     (COROUTINE_SUSPENDED / fresh result passes straight through — online
+//     behaviour byte-identical).
+//
+// Register-safe: no branch, no extra register — `invoke-static {p0..p4}` +
+// `move-result-object p0` + `return-object p0`; the original body becomes
+// unreachable (valid dalvik). gof.a's trivial logic is re-implemented in the
+// extension. Fail-safe by construction: the only non-original path is the
+// offline synthesis, and that is itself fully guarded (returns null → the
+// reflective original is used) so the picker can never be broken.
+// ============================================================================
+
+private const val GOF_CLASS = "Lgof;"
+private const val COMPONENT_TYPE =
+    "Lcom/xiaoji/egggame/common/winemu/bean/ComponentType;"
+private const val LIST =
+    "Lapp/revanced/extension/gamehub/winemu/OfflineComponentList;"
+
+@Suppress("unused")
+val offlineComponentListPatch = bytecodePatch(
+    name = "Offline component picker — local list",
+    description = "Replaces gof.a (the picker's per-type component-list feed) " +
+        "with a delegating call: offline it returns the user's downloaded " +
+        "components (from sp_winemu_unified_resources, filtered by " +
+        "ComponentType) so GPU driver / DXVK / VKD3D / FEXCore / Box64 / " +
+        "container pickers list them offline; online it reflectively invokes " +
+        "the original suspend impl unchanged. Register-safe, fail-safe.",
+) {
+    compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
+    dependsOn(sharedGamehubExtensionPatch)
+
+    apply {
+        // gof.a(Lgof;,ComponentType,I,Lci3;,I)Object — p0=gof p1=ComponentType
+        // p2=page p3=Continuation p4=flags. Replace body with the delegate.
+        firstMethod {
+            definingClass == GOF_CLASS &&
+                name == "a" &&
+                parameterTypes.size == 5 &&
+                parameterTypes[1] == COMPONENT_TYPE &&
+                returnType == "Ljava/lang/Object;"
+        }.apply {
+            addInstructions(
+                0,
+                """
+                    invoke-static {p0, p1, p2, p3, p4}, $LIST->dispatch(Ljava/lang/Object;Ljava/lang/Object;ILjava/lang/Object;I)Ljava/lang/Object;
+                    move-result-object p0
+                    return-object p0
+                """.trimIndent(),
+            )
+        }
+    }
+}

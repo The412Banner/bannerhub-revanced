@@ -46,6 +46,9 @@ private const val APP_CLASS = "Lcom/xiaoji/egggame/BaseAndroidApp;"
 private const val JE6_CLASS = "Lje6;"
 private const val API_DAO_IMPL =
     "Lcom/xiaoji/egggame/core/database/dao/ApiCacheDao_Impl;"
+private const val GOF_CLASS = "Lgof;"
+private const val COMPONENT_TYPE =
+    "Lcom/xiaoji/egggame/common/winemu/bean/ComponentType;"
 private const val CATALOG_PREFS = "sp_winemu_unified_resources"
 private const val DIAG =
     "Lapp/revanced/extension/gamehub/winemu/OfflineDiag;"
@@ -104,6 +107,22 @@ val offlineDiagProbePatch = bytecodePatch(
                 0,
                 "invoke-static {p0}, $DIAG->apiCacheRead(Ljava/lang/Object;)V",
             )
+        }
+
+        // --- 4: gof.a — per-type component-list dispatcher.
+        //   gof.a(Lgof;,ComponentType,I,Lci3;,I)Object → returns
+        //   BaseResult<EnvListData<EnvLayerEntity>>. p1 = ComponentType.
+        //   Confirms (model-free, via the stack) whether THIS is the picker's
+        //   feed and whether it runs offline — the prerequisite before any
+        //   response-shim investment here.
+        firstMethod {
+            definingClass == GOF_CLASS &&
+                name == "a" &&
+                parameterTypes.size == 5 &&
+                parameterTypes[1] == COMPONENT_TYPE &&
+                returnType == "Ljava/lang/Object;"
+        }.apply {
+            addInstructions(0, "invoke-static {p1}, $DIAG->gofA(Ljava/lang/Object;)V")
         }
     }
 }

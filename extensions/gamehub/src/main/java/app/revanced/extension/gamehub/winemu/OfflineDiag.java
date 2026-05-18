@@ -195,4 +195,49 @@ public final class OfflineDiag {
         } catch (Throwable ignored) {
         }
     }
+
+    // Injected at gof.a entry — the per-type component-list dispatcher
+    // (gof.a(gof, ComponentType, page, Cont, flags) → returns
+    // BaseResult<EnvListData<EnvLayerEntity>>). Confirms whether THIS is the
+    // picker's path and whether it's invoked offline, and the stack names the
+    // real caller chain (the picker UI/VM) model-free. p0 = ComponentType.
+    private static volatile int gofCount;
+
+    public static void gofA(Object componentType) {
+        try {
+            if (gofCount >= 40) return;
+            String t = "?";
+            try {
+                if (componentType != null) {
+                    java.lang.reflect.Method gt =
+                            componentType.getClass().getMethod("getType");
+                    Object v = gt.invoke(componentType);
+                    t = componentType + "/type=" + v;
+                }
+            } catch (Throwable ignored) {
+                t = String.valueOf(componentType);
+            }
+            StackTraceElement[] st = new Throwable().getStackTrace();
+            StringBuilder sig = new StringBuilder();
+            StringBuilder pretty = new StringBuilder();
+            int shown = 0;
+            for (int i = 1; i < st.length && shown < 20; i++) {
+                StackTraceElement e = st[i];
+                String cn = e.getClassName();
+                if (cn.startsWith("java.") || cn.startsWith("dalvik.")
+                        || cn.startsWith("android.os.") || cn.startsWith("sun.")) {
+                    continue;
+                }
+                sig.append(cn).append('#').append(e.getMethodName()).append(';');
+                pretty.append("\n    at ").append(cn).append('.')
+                        .append(e.getMethodName())
+                        .append(e.getLineNumber() > 0 ? ":" + e.getLineNumber() : "");
+                shown++;
+            }
+            if (!SEEN.add("GOF|" + sig)) return;
+            gofCount++;
+            mark("GOF.a #" + gofCount + " " + t + pretty);
+        } catch (Throwable ignored) {
+        }
+    }
 }

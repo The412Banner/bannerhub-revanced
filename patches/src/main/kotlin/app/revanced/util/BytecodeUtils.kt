@@ -1337,18 +1337,25 @@ internal fun BytecodePatchContext.addNativeMethod(
         ?: throw PatchException("Class not found for native-method shim: $className")
     val mutableClass = classDefs.getOrReplaceMutable(classDef)
 
+    // Explicitly-typed nulls: dexlib2 overloads the annotation/hidden-api
+    // params (Set<Annotation> vs ImmutableSet), so a bare `null` is an
+    // overload-resolution ambiguity.
+    val noAnnotations: Set<com.android.tools.smali.dexlib2.iface.Annotation>? = null
+    val noHiddenApi: Set<com.android.tools.smali.dexlib2.HiddenApiRestriction>? = null
+    val noImpl: com.android.tools.smali.dexlib2.iface.MethodImplementation? = null
+
     mutableClass.apply {
         if (methods.any { it.name == methodName }) return@apply
         methods.add(
             ImmutableMethod(
                 type,
                 methodName,
-                parameterTypes.map { ImmutableMethodParameter(it, null, null) },
+                parameterTypes.map { ImmutableMethodParameter(it, noAnnotations, null) },
                 returnType,
                 AccessFlags.PUBLIC.value or AccessFlags.FINAL.value or AccessFlags.NATIVE.value,
-                null,
-                null,
-                null,
+                noAnnotations,
+                noHiddenApi,
+                noImpl,
             ).toMutableMethod(),
         )
     }

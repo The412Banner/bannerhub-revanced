@@ -242,20 +242,19 @@ Hooks `vob.b(m7a builder, String path)` — the single static Ktor URL-builder h
 
 Full URLs (paths already starting with `http://` or `https://`) are short-circuited by the helper and pass through untouched, so direct downloads from the catalog's `download_url` fields still resolve to the Worker-authored GitHub-release URLs without the prefix being injected into them.
 
-### `Offline component cache fallback` ⚠ *currently broken on 6.0.4*
+### `Offline component picker — local list`
 
-> **Status:** The patch applies cleanly and is included in v1.0.0-604, but at runtime it doesn't deliver the intended cached-entry fallback. Online behavior is unchanged (the hook only fires on the network-returned-empty path), so this only impacts offline picker contents. Investigation pending — the structural anchors and reflective field lookups apparently survived the 6.0.4 R8 reshuffle but something downstream broke. Safe to leave enabled; safe to disable via `revanced-cli -d "Offline component cache fallback"` if you want it out of a custom build.
+> **Status:** Working — device-confirmed on 6.0.4. Offline, every per-game picker (GPU driver, DXVK, VKD3D, FEXCore/Box64 translators, **and the Wine/Proton container**) lists the components the user has already downloaded, in the same order as online. Online behaviour is byte-identical. Fully fail-safe: any error falls back to the original code path, so the worst case is the pre-patch behaviour, never a crash. Supersedes the earlier `Offline component cache fallback` (an `mci.a` hook that was forensically proven inert on 6.0.4 — wrong subsystem entirely; removed).
 
-Lets the per-game pickers (GPU driver, DXVK, VKD3D, FEXCore, Box64, container) render cached entries when the device is offline. Without this patch, an offline `eci.a(RepoCategory, Continuation)` falls through to Kotlin's `EmptyList` sentinel and the pickers show only the embedded built-in versions — even though `u6o.<init>` already hydrated `xxo.c` (a `ConcurrentHashMap`) from `sp_winemu_unified_resources.xml` at app start with every catalog entry the user has ever seen online.
+The 6.0.4 pickers are fed by `gof.a(ComponentType, …)` (per-type components) and `gof.c(Continuation)` (containers) — the repository methods behind `simulator/v2/getComponentList` / `getContainerList`. Both run even offline; the network fetch simply fails and the picker shows only the server-recommended/built-in set. The user's downloaded components *are* on disk and catalogued in `sp_winemu_unified_resources.xml`, but nothing reads that for the picker offline.
 
-The patch swaps the `sget-object Lz85;->a:Lz85;` instruction at the method's empty-return `:goto_2` block for an `invoke-static` into `PickerCacheFallback.fromXxo(p0, p1)`. The helper:
+This patch replaces `gof.a`'s body with a delegate to `OfflineComponentList.dispatch(...)` and prepends a register-safe conditional short-circuit to `gof.c`:
 
-1. Reflects through `eci.a` (selected by single-letter name plus runtime-type check) to reach the `xxo` registry instance.
-2. Reflects through `xxo.c` (same name + Map sanity check) to reach the cached map.
-3. Filters entries by the requested `RepoCategory.name() + ":"` key prefix (matching the host's `xxo.y(category, name)` key-builder format) and returns an `ArrayList<WinEmuRepo>`.
-4. Returns an empty `ArrayList` (preserving the original method's `Serializable` contract) on any failure, so a malformed or missing cache silently degrades to upstream behavior.
+1. **Online (or any failure):** reflectively invokes the original suspend impl (`gof.b` for components; the unmodified `gof.c` body for containers) and returns its value verbatim — coroutine suspension passes straight through, so online is unchanged.
+2. **Offline:** synthesises the picker's exact return type — `n55(List<EnvLayerEntity>)`, the uniform repo result `zxf.a`/`zxf.c` unwrap — from the on-device `sp_winemu_unified_resources.xml` catalog. `COMPONENT:` entries are filtered by `ComponentType.type`; `CONTAINER:` entries feed the Wine/Proton picker. Each `EnvLayerEntity` is built via `Unsafe.allocateInstance` + reflective field-set (the catalog's `entry` JSON keys are 1:1 with the Kotlin field names).
+3. **Ordering:** entries are stable-sorted by `OfflineComponentOrder` — a generated map of the canonical catalog order (from the Worker's static `simulator/v2/getComponentList`) — so DXVK / GPU-driver (and the rest) appear in the identical order to online (oldest→newest, newest at the bottom, curated `-async`/`-arm64ec` interleaving preserved). Regenerate `OfflineComponentOrder` when the catalog changes (parse `data.list` names in array order).
 
-Online behavior is unchanged: the hook only fires on the original empty-list return path; any non-empty `Uaa` list still flows through the host's existing filter loop. 5.x impact is zero — 5.3.5 BannerHub uses a different `EmuComponents`-based picker that already works offline via `sp_winemu_all_components12`.
+Every step is guarded; on any failure the methods fall through to the original network path, so a missing/[malformed] catalog silently degrades to stock behaviour. A throwaway `bh_offline_list.log` breadcrumb (app-private files dir) records `getList`/`getContainers built=N` for support and can be stripped for a clean ship.
 
 ### `Debug logging`
 

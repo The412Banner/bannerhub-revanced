@@ -2594,3 +2594,17 @@ Same APK toggles both ways cleanly, no regression either direction. Cleanup (`44
 
 ### CI RESULT — run 26035851236 ✅ GREEN
 `conclusion=success`; all 9 Patch jobs success, `Create GitHub Release` skipped (correct for stable=false). Log-scanned (125 files, 950K): **0 `SEVERE`**, 0 patch failures. alt-AnTuTu job confirms applied: "Legacy renderer conditional swap" / "Legacy renderer libxserver bundle" / "Renderer menu row" / "Renderer settings activity" / "Per-game menu id capture (shared)" + GPU Spoof (DXVK plumbing/menu row/settings) + PC-accurate vibration (label/menu row/settings) — all `succeeded`. APK delivered: `/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-renderer-merged-pre1-Patched-alt-AnTuTu.apk` (116,042,150 B, md5 `75b4cf73def5f71435bbda812542f717`). Merge `01b2f4d` validated on `gamehub-604-build`. **NEXT: refresh Lite branch `feature/lite-variant-tier1` off new gamehub-604-build → M3 device-test on `banner.hub`.**
+
+---
+
+## 2026-05-18 — Offline component picker fix (components + ordering + Wine/Proton containers) — DEVICE-CONFIRMED, MERGED
+
+**Problem:** On 6.0.4, offline, the per-game pickers (GPU driver, DXVK, VKD3D, FEX/Box64 translators, Wine/Proton container) showed only the server-recommended/built-in set — never the user's already-downloaded components, despite them being on disk + catalogued in `sp_winemu_unified_resources.xml`. The prior `OfflineComponentCachePatch` (mci.a hook) was forensically proven inert on 6.0.4 (wrong subsystem).
+
+**Root cause (model-free, sink-verified after ~8 refuted hypotheses):** pickers are fed by `gof.a(ComponentType,…)` (components, via `simulator/v2/getComponentList`) and `gof.c(Continuation)` (containers, via `getContainerList`); both run offline but the network fetch fails → empty. `zxf.a`/`zxf.c` unwrap a uniform sealed result `Lo55;` → `Ln55;`(success).a = `List<EnvLayerEntity>` (NOT the `gof.b`-internal `BaseResult`/`Lc91;`). Not `myo`/`j7o`/`api_cache`/`so7` (all empirically eliminated).
+
+**Fix (`offlineComponentListPatch`):** replace `gof.a` body → `OfflineComponentList.dispatch` (offline → `n55(List<EnvLayerEntity>)` synthesised from `sp_winemu_unified_resources` `COMPONENT:` entries filtered by `ComponentType.type`, `Unsafe.allocateInstance` + reflective field-set; online/fail → reflective `gof.b` passthrough). Add `gof.c` index-0 conditional short-circuit → `OfflineComponentList.getContainers()` (`CONTAINER:` entries; Wine/Proton). Stable-sort by `OfflineComponentOrder` (generated canonical catalog order) so DXVK/GPU match online exactly (newest-at-bottom, curated interleaving). Fully fail-safe → original path on any error. Removed dead `OfflineComponentCachePatch` + `PickerCacheFallback`.
+
+**Verification:** device-confirmed on `banner.hub` Normal-Lite offline — `bh_offline_list.log`: `getContainers built=10 OK`, `getList type=1 built=36 / type=2 built=263 / type=3 built=46 / type=4 built=7 OK`; pickers populate with downloads + built-ins, DXVK/GPU correctly ordered; online byte-identical; no regression.
+
+**Merge:** `fix/offline-picker-merge` → `gamehub-604-build` `--no-ff` (`dbd7554`). README patch-catalog section rewritten (was "⚠ currently broken"). NEXT: refresh `feature/lite-variant-tier1` off new `gamehub-604-build`; CI-validate (release.yml prerelease, expect 0 SEVERE).

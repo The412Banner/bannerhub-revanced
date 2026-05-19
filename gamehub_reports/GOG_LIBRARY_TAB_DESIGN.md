@@ -189,4 +189,28 @@ The GOG `getSourceType()` int turned out to be a non-issue: there is no GOG sour
 
 **Phase 0 status: 100% CLOSED — nothing left UNVERIFIED.** Net build = the 3 mechanical edits + API flag in §12.7, with step-3's predicate now pinned to the `ul5` `getGogAppId`-non-empty pattern.
 
-**Phase 1 entry:** none pending — go straight to implementing the 3 edits + default-off flag when authorised.
+**Phase 1 entry:** none pending — but see §12.9, which corrects the edit count/risk before any code.
+
+### 12.9 Pre-implementation trace (2026-05-19) — CORRECTS "3 edits"; no shortcut [CONFIRMED]
+
+User chose **APK-only, always-on** (no API flag — drop §12.7-step-4). Tracing the live filter binding before coding revealed the full discriminator chain:
+
+`tuc.a` (string key) → **`kg5.n(String)→wrc`** (`smali_classes4/kg5.smali:494`, hashCode sparse-switch: `steam→wrc.c, retro→wrc.f, epic→wrc.d, pc→wrc.b, mobile→wrc.e`) → `a5d.I0(wrc)→slug` → game-list filter (`a5d`, I0 callers `19993/20001/22345/22568/52604/52612`).
+
+**Every layer is a fixed 5-way structure with no GOG**, and they interlock:
+- `kg5.n`: no `"gog"` sparse-switch case.
+- `wrc`: 5 constants (b=pc,c=steam,d=epic,e=mobile,f=retro) + synthetic `g:[Lwrc;`, `h:Lff5;`. No GOG.
+- `I0`: 5 slugs. No GOG.
+- `s6d`: 4 screen constants. No GOG.
+
+**No low-risk shortcut.** The only wrc not surfaced as a tab is `e`/"mobile"; repurposing it hijacks mobile-game classification app-wide — rejected. A correct GOG tab therefore needs **~5 interlocked edits**, not 3:
+
+1. `kg5.n` — add `"gog"` sparse-switch case → new wrc GOG constant.
+2. **`wrc` enum** — add 6th constant (`enum` field + `g:[Lwrc;` `$VALUES` entry + `Lff5;` EnumEntries + ordinal/`valueOf`/`values`).
+3. **`s6d` enum** — add GOG screen constant + wire `$filterTabTypeByContentTab : Map<wrc,s6d>` + `isc`/`rtc` ordinal-switch default-safe fallthrough.
+4. `a5d.I0` — add `"gog"` slug case; extend the slug→game filter with the `!getGogAppId().isEmpty()` predicate (pattern from `ul5`).
+5. `y6d` — inject `tuc("gog", <ell from `features_home_profile_platform_tab_gog`>, <s6d gog>)` unconditionally (always-on).
+
+**Revised effort: MODERATE→HIGH.** This is the project's highest-risk patch class — **dual obfuscated-Kotlin enum extension** (`wrc`+`s6d`: VALUES/EnumEntries/ordinal, VerifyError-prone, runtime-only failure) **+ Compose injection**, in a **CI-only build (no local test) where per-patch SEVERE does not fail CI** (silent-ship footgun, see `[[bannerhub-revanced-menu-injection-playbook]]`). Project precedent for a *simpler* single-Compose injection (menu-injection) = pre7→pre17, ~10 device iterations. **This cannot be one-shot-verified by inspection; it must enter the push→CI→device-test→fix loop.** Strong fingerprint-migration candidate (anchor on the `kg5.n` 5-string sparse-switch, the `s6d` `PC/STEAM/EPIC/RETRO_GAMES` names, `LaunchType.GogGameByPcEmulator`, `GameInfo.getGogAppId`).
+
+**Phase 1 reality:** first-cut patches are writable now, but "implemented" ≠ "working" until the CI+device loop validates the dual-enum surgery. Recommend treating this as a normal multi-iteration feature (like vibration/menu-injection), not a drop-in.

@@ -74,7 +74,7 @@ Before any **stable release** is published, every change is **manually debugged 
 
 ## What's new in v1.4.0-604
 
-Four headline changes on top of `v1.3.0-604`. Drop-in update (stable keystore unchanged — installs in place).
+Five headline changes on top of `v1.3.0-604`. Drop-in update (stable keystore unchanged — installs in place).
 
 ### 🎛️ Per-game settings, properly isolated
 
@@ -91,6 +91,10 @@ GameHub 6.0.4 rewrote its X-server renderer GLES2→Vulkan; some games regressed
 ### 🎮 Rumble no longer cuts out after ~2 s
 
 The winebus duration patch is now actually applied at launch. On the 6.0.4 base the v1.3.0 hook landed as unreachable dead code (past a `goto`), so SDL2's ~1 s rumble auto-stop was never defeated; the hook is re-anchored to the env-builder entry. Sustained rumble now holds indefinitely — device-confirmed via GameConTest.exe.
+
+### 📦 Offline component picker
+
+Every per-game component picker — GPU driver, DXVK, VKD3D, FEXCore/Box64 translators, **and the Wine/Proton container** — now lists the components you've already downloaded when offline, in the same catalog order as online. Online behaviour is byte-identical and the patch is fully fail-safe (any error falls back to the stock code path, never a crash). Device-confirmed on 6.0.4. (Full mechanism in the *Offline component picker — local list* patch section below.)
 
 ### Carryover from `v1.3.0-604` and earlier
 

@@ -2715,3 +2715,21 @@ Append-only, `appContext`-guarded, never throws; gated by static volatile `sBcRe
 **Verify on pre7:** set per-game vibration on the game to be launched (e.g. GoW 49908 mode=1 int=100) AND a *different* value on another game → launch → trigger controller rumble in-game → read `bh_vibration.log`. RESOLVE/RUMBLE#1 `gid` must equal the launched game and `mode`/`intensity` must equal *that game's* per-game value (proves dispatch scoped correctly + no app-wide leak).
 
 **Confirmed:** GPU Spoof (pre5) ✅ + Renderer (pre6) ✅ device-confirmed. Vibration store correct; dispatch awaiting pre7 breadcrumb read. **NOT merged** — hold until Vibration confirmed, then merge `fix/per-game-settings-isolation` → `gamehub-604-build` `--no-ff` → refresh `feature/lite-variant-tier1` → README/master-map.
+
+---
+
+## 2026-05-18 — Vibration ~2s-cutoff investigation: durable keepalive/guest trace (pre8)
+
+**Branch:** `fix/per-game-settings-isolation`. CI run **26074175298** GREEN, 0 SEVERE; vibration/menu-id patches succeeded.
+
+**Question:** user testing with GameConTest.exe — rumble stops ~2 s. **Verified by code:** rumble is engineered continuous — `CONTROLLER_RUMBLE_MS=2000` effect re-armed by `RUMBLE_KEEPALIVE_MS=1500` keepalive (runnable 60 ms tick) → must outlast 2 s while the guest holds a non-zero amplitude. A clean ~2 s stop ⇒ exactly one of: (a) guest itself sends (0,0) ~1 s after non-zero = SDL/winebus auto-expiry (keepalive map cleared by the (0,0), correctly no re-arm) → fix is guest-side (winebus duration patch / evshim keepalive); or (b) guest stays non-zero but keepalive isn't re-firing host-side. `DEFAULT_MODE=MODE_CONTROLLER`; keepalive map populated only for CONTROLLER/BOTH via `recordKeepalive`.
+
+**pre8 (`feat(vibration)`):** two capped (`BC_TRACE_CAP=40`) channels appended to `<filesDir>/bh_vibration.log`, independent of the DIAG-stripped `logGuestTransition`:
+- `GUEST slot=<s> <pl>,<ph> -> <nl>,<nh> gap=<ms>` — each real XInput transition; flags non-zero→(0,0) in 800–1300 ms as `[SDL_AUTO_EXPIRY?]`
+- `KEEPALIVE dev=<id> low=<l> high=<h> mode=<m>` — each controller re-arm fire
+Append-only, `appContext`-guarded, never throws; counters cap so the file can't grow unbounded.
+
+### Delivered
+`/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-pergame-pre8-Patched-alt-AnTuTu.apk` (116,062,630 B, md5 `502498644dfc0dae67b23e1096306490`).
+
+**Read on pre8 after the cutoff:** `GUEST` non-zero→(0,0) gap≈1000 ms `[SDL_AUTO_EXPIRY?]` ⇒ guest-side stop (winebus/SDL); `GUEST` stays non-zero + sparse/no `KEEPALIVE` ⇒ host keepalive not firing. Also doubles as the Vibration per-game scope proof (RESOLVE/RUMBLE#1 gid + mode/intensity). GameConTest input mode (held slider vs timed test button) must be noted. **Confirmed:** GPU Spoof (pre5) ✅ + Renderer (pre6) ✅. Vibration scope + 2 s behavior pending pre8 read. **NOT merged.**

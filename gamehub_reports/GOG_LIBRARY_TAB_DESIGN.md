@@ -559,3 +559,17 @@ Starting WS1 revealed the GOG stack depends on a shared `Bh*` download/storage/i
 **M1 device test (next):** install `apk-alt-AnTuTu` (pkg `com.antutu.benchmark.full` — the canonical verification variant) from run 26111421796, then:
 `adb shell am start -n com.antutu.benchmark.full/app.revanced.extension.gamehub.gog.GogMainActivity`
 → tap "Login with GOG" → complete GOG web login → expect the card to flip to the signed-in state (username shown). Capture `getlog com.antutu.benchmark.full` for `BannerHub`/`GogLaunchHelper`/GOG-auth traces. Pass = signed-in card + token persisted (`bh_gog_prefs/access_token`). Then M2 (View Game Library → owned list) and M3 (download a title) in the same loop.
+
+---
+
+## 24. M1 + M2 DEVICE-CONFIRMED (2026-05-19) — login + owned library work, first build, zero fixes
+
+Variant **Normal-GHL** (`gamehub.lite`), build `1.4.0-604-gog-pre1` (run 26111421796), user-installed; `GogMainActivity` launched via `am start`.
+
+- **M1 login — PASS.** Full GOG OAuth completed in `GogLoginActivity` WebView (logcat: `static-login.gog-statics.com` page load → `inputFocused`/`formSubmission` → redirect). `bh_gog_prefs` persisted: `access_token`, `refresh_token`, `user_id`, `bh_gog_expires_in=3600`, `username=The412Banner`.
+- **M2 owned library — PASS.** `bh_gog_prefs` holds **20 distinct GOG game IDs** with `gog_size_*`/`gog_release_*`/`gog_gen_*` metadata — `GogGamesActivity` fetched the real owned library (`embed.gog.com/user/data/games`) + per-game detail.
+- **Stability — PASS.** 0 FATAL/AndroidRuntime/NoClassDefFound/VerifyError since launch. The ~7.5k-LOC port + Epic/Amazon decoupling runs clean at runtime.
+
+**Significance:** WS1 first-cut needed **zero code fixes** through compile, 9-APK build, and M1+M2 runtime — the faithful-lift of the proven BannerHub-3.7.x extension + the GOG-only decoupling surgery held end-to-end. Only **M3 (download+install a title)** remains for Phase 1; then Phase 2 (bridge §19 / production Profile-row WS4-P-A / P-C).
+
+**Next:** M3 — in the GOG library, pick a small title → download → verify install to disk + the Phase-1 `GogLaunchHelper` toast ("installed; in-app launch in a later update"). User-driven (download time); I capture `getlog`+install-path verification.

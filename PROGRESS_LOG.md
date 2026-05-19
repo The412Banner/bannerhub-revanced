@@ -2752,3 +2752,49 @@ Append-only, `appContext`-guarded, never throws; counters cap so the file can't 
 **Verify on pre9:** set GoW 49908 vibration to **Off (mode 0)** (distinct from default MODE_CONTROLLER) → launch → trigger rumble. Pass = `bh_vibration.log` has `RESOLVE gid=49908 src=menuid` AND no rumble (per-game scope actually applied, not coincidental defaults). The ~1 s stutter (Bug 2) will still be present — parked, ignore.
 
 **Confirmed:** GPU Spoof (pre5) ✅ + Renderer (pre6) ✅. Vibration per-game scope pending pre9 re-read. **NOT merged** — hold until Vibration scope confirmed, then merge `fix/per-game-settings-isolation` → `gamehub-604-build` `--no-ff` → refresh `feature/lite-variant-tier1` → README/master-map; Bug 2 stays a parked separate track.
+
+---
+
+## 2026-05-19 — Vibration scope pre9 DEVICE-CONFIRMED; Bug 2 read-only inspection (root cause corrected); pre10 winebus breadcrumbs
+
+**Branch:** `fix/per-game-settings-isolation`. CI run **26075313929** (pre10), artifact-only (stable=false).
+
+### pre9 device read — Vibration per-game scope ✅ CONFIRMED
+`bh_vibration.log` (GoW 49908, 2026-05-18 23:37):
+```
+2026-05-18 23:37:08 RESOLVE gid=49908 src=menuid mode=1 intensity=100
+2026-05-18 23:37:08 RUMBLE#1 gid=49908 mode=1 intensity=100 low=2048 high=2048
+```
+vs pre8 (23:27): `RUMBLE#1 gid=(global)`, no RESOLVE. The pre5 disk-bridge resolve fired in `:wine`; per-game vibration scope works. **All three per-game features now device-confirmed: GPU Spoof pre5 ✅ · Renderer pre6 ✅ · Vibration pre9 ✅.** Branch is at the merge gate — **HELD pending user merge-go** (user explicitly said no merge yet).
+
+### Bug 2 — read-only winebus inspection (user-authorized); earlier hypothesis DISPROVEN
+Replicated `patchWinebusDurationFile()` checks read-only on the live container via the root bridge. The arm64x winebus.so GoW 49908 uses — `…/files/usr/opt/wine_proton10.0-arm64x-2/arm64-v8a/lib/wine/aarch64-unix/winebus.so` (the only arm64 winebus in the 53,279-file tree):
+
+| Gate | Value | Verdict |
+|---|---|---|
+| ELF / `e_machine` | `0xb7` AARCH64 | aarch64 patch path |
+| "SDL_JoystickRumble" | present (×4) | passes pre-gate |
+| ORIGINAL `a3c35eb8 00013fd6` | **exactly 2** | **pattern matches perfectly** |
+| PATCHED `03008012 00013fd6` | **0** | file unpatched |
+| depth / files / skip-dir | 8 / 53279 / none | < 16 / < 100k / not skipped |
+| mtime | 04:51 (= proton-extract) | never rewritten at 23:37 launch |
+
+`patchAarch64Sites()` with `originalCount==2, patchedCount==0` would **succeed** — the aarch64 byte-pattern is correct for Proton10-arm64x. The old note ("pattern not effective on Proton10-arm64x") is **wrong**. Both winebus.so (arm64x + x64) retain extraction mtimes with 0 patched sites ⇒ **`ensureWinebusDurationPatchOnce()` never executes its write**. Hook 4's `invoke-static` at the `Lbg5;->a` env-builder anchor either isn't firing in the 6.0.4 base or throws and is swallowed by the method's `catch(Throwable)`→`Log.w` (rolled out of AnTuTu logcat). **⇒ Bug 2 IS host-side-fixable** — the disk-patcher is simply a no-op; not a guest-side dead end as previously parked. Same *family* as the `:wine`-boundary bugs (env builder runs in `:wine`) but a DISTINCT bug.
+
+### pre10 — durable WINEBUS breadcrumbs (commit 848ba1f)
+Added static `bcWinebus(ctx, …)` (mirrors instance `breadcrumb`) → `<filesDir>/bh_vibration.log`, prefixed `WINEBUS`, at every patcher decision point: hook-fired (ctx + pid), scan guard outcomes, scan summary (root/files/winebus/patched/already/ms), per-file elf/rumble/machine, aarch64+x86_64 original/patched counts + APPLIED/MISMATCH/ALREADY-PATCHED. Log-only, zero patch-behaviour change; `patchAarch64Sites`/`patchX86_64Sites` gained an internal `Context` param (both call sites updated). Brace-balanced, 16 breadcrumb calls.
+
+### MORNING CONTINUATION — exactly where we left off
+1. **Install** the delivered pre10 full alt-AnTuTu APK (pkg `com.antutu.benchmark.full`).
+2. **Launch GoW 49908** (any vibration setting). Then read `bh_vibration.log` and grep `WINEBUS`:
+   - **No `WINEBUS hook fired` line** ⇒ Hook 4's `invoke-static` at `Lbg5;->a` is not executing → re-anchor the patch (R8 map drift / wrong join-setup index / `:wine` proc).
+   - `hook fired` present but **no `scan` line** / `scan EXCEPTION` ⇒ ctx issue or thrown+swallowed.
+   - `scan … winebus=0` ⇒ scan ran but didn't reach the file (tree-root / listFiles perms / timing vs extraction).
+   - `aarch64 MISMATCH` ⇒ (won't happen — inspection proved match, but covered).
+   - `aarch64 APPLIED original=2 …` then **still** ~1 s cutoff ⇒ patch wrote but a *different* winebus.so is loaded at runtime (check live `:wine` `/proc/<pid>/maps`).
+3. Fix whichever branch the breadcrumb pinpoints (most likely: re-anchor Hook 4). Keep Bug 2 a separate track from the per-game merge.
+4. **Per-game merge still HELD** awaiting explicit user go: `fix/per-game-settings-isolation` → `gamehub-604-build` `--no-ff` (author The412Banner, no Claude trailer) → refresh `feature/lite-variant-tier1` → README/PROGRESS_LOG/master-map.
+
+### Delivered
+CI run **26075313929** GREEN, **0 SEVERE**; "PC-accurate vibration" + "Per-game menu id capture (shared)" + GPU Spoof/Renderer/Vibration patches all `succeeded` on alt-AnTuTu (artifact-only, stable=false).
+`/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-pergame-pre10-Patched-alt-AnTuTu.apk` (116,070,822 B, md5 `3547fe9d7ace930562a74fce84519b07`). Full pkg `com.antutu.benchmark.full` (installs alongside `banner.hub` Lite).

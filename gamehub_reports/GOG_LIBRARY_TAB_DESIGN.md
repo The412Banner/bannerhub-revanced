@@ -1,6 +1,6 @@
 # GOG Library Tab — Patch Design Doc
 
-**Status:** CURRENT CONCLUSION = **§13 (cheap path)**. The first-class branded tab (§12) was traced to dual obfuscated-Kotlin **enum surgery** (`wrc`+`s6d`), ~5 interlocked edits, CI+device multi-iteration — user declined that risk. Cheap path: `getGogAppId` is **unused in all game-list classifiers** ⇒ GOG titles **likely already appear in the PC Games tab and launch** (`GogGameByPcEmulator` wired) — probably **ZERO code**, pending one on-device import test. §12 retained as the record/fallback only; its older "MODERATE / 3 edits + API flag" header line was superseded by §12.9 then §13. Branch `feature/gog-explore-tab`.
+**Status:** ⚑ **GREENLIT — full GOG integration scoped in §17 (CURRENT).** Real goal = GOG account login + owned-library + install + launch in v6, delivered as a **standalone GOG screen via a Profile-screen "GOG" account row** (NOT a Library tab — no enum surgery; not the per-game menu). Next = **Phase 0 traces P-A..P-D (P-B priority), no code.** §1–§16 are the trace record that led here (§13 cheap-path / §12 tab both superseded — they solved the wrong layer; backend never existed in 6.0.4, see §14). Branch `feature/gog-explore-tab`.
 **Base:** GameHub 6.0.4, R8 map id `6a5cde6143fc8cf76f6f3a447d0fececd4794d83066e6ead7a9537e6527b057b`.
 **Author:** The412Banner. **Date:** 2026-05-19.
 

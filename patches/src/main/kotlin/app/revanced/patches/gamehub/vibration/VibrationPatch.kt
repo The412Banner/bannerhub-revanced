@@ -6,10 +6,6 @@ import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
 import app.revanced.patches.gamehub.GAMEHUB_VERSION
 import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
-import app.revanced.util.getReference
-import app.revanced.util.indexOfFirstInstructionOrThrow
-import com.android.tools.smali.dexlib2.Opcode
-import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 
 // =========================================================================
 // 6.0.4 R8-mangled class letter map for the vibration patch.
@@ -35,18 +31,8 @@ import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 //                       Kotlin joinToString$default with ":" separator
 //                     - has field `a:Landroid/content/Context;`
 //                   6.0.2 → `Ldg5;`, 6.0.4 → `Lbg5;`.
-// JOIN_HELPER     — Kotlin CollectionsKt's joinToString$default static helper.
-//                   Method name `I0` survived R8 across 6.0.2 → 6.0.4; only
-//                   the class letter shifted.
-//                   6.0.2 → `Lns2;`, 6.0.4 → `Lps2;`.
-// JOIN_LAMBDA     — Function1 type accepted by joinToString$default. Same
-//                   sub-letter shift as JOIN_HELPER.
-//                   6.0.2 → `Low6;`, 6.0.4 → `Lpw6;`.
 private const val PHYSICAL_CLASS = "Lab8;"
 private const val ENV_BUILDER    = "Lbg5;"
-private const val JOIN_HELPER    = "Lps2;"
-private const val JOIN_METHOD    = "I0"
-private const val JOIN_LAMBDA    = "Lpw6;"
 
 private const val VIB_HANDLER =
     "Lcom/xj/winemu/vibration/BhVibrationController;"
@@ -165,13 +151,25 @@ val vibrationPatch = bytecodePatch(
         // ~1s rumble_expiration never fires; an AtomicBoolean gates repeat
         // scans. No LD_PRELOAD, no extra mapping.
         //
-        // Anchor: the joinToString$default arg-setup block (const/16 v16,0x0;
-        // const/16 v17,0x3e; const-string v13,":"; const/4 v14,0x0; const/4
-        // v15,0x0) immediately preceding the JOIN_HELPER->I0 invoke-static/
-        // range. We insert our 2-instruction call just BEFORE that setup.
-        // v0 is `this` (the env builder); v13 holds the Context only until
-        // the setup block (which runs immediately after) re-initialises it
-        // for the join, so the reuse is safe with no branch/label needed.
+        // Anchor: method ENTRY (index 0) of the env builder. The former
+        // anchor used fragile index arithmetic — `joinIdx - 5`, assuming the
+        // five instructions before the joinToString$default invoke-static/
+        // range were the `:`-separator arg-setup block. In the 6.0.4 base
+        // (versionCode 114) the instruction layout differs: `joinIdx - 5`
+        // lands inside the ArrayList-building loop, immediately AFTER an
+        // unconditional `goto` and before a `:cond_*` label, so the two
+        // injected instructions become unreachable dead code and the patch
+        // never runs (confirmed by zero WINEBUS breadcrumbs on a live
+        // launch). Index 0 is unconditionally reached every time the env
+        // builder is invoked at launch — the same guaranteed-reachable spot
+        // Hooks 1–3 use. `ensureWinebusDurationPatchOnce` is AtomicBoolean-
+        // gated so an at-entry call is correct and self-deduplicating.
+        //
+        // `p0` is `this` (the env builder, a high register under .locals 35);
+        // materialise it into v0, read the Context field, call the patcher.
+        // v0 is clobbered, but the method's own first instruction
+        // (`move-object/from16 v0, p0`) re-initialises it immediately after,
+        // so prepending here is safe with no label needed.
         //
         // Ported from TideGear/GameHub-Vibration-Fix Patch 4 (GameNative
         // PR #1214 lineage) with the author's permission.
@@ -179,24 +177,12 @@ val vibrationPatch = bytecodePatch(
         firstMethod {
             definingClass == ENV_BUILDER && name == "a" && returnType == "V"
         }.apply {
-            val joinIdx = indexOfFirstInstructionOrThrow {
-                opcode == Opcode.INVOKE_STATIC_RANGE &&
-                    getReference<MethodReference>()?.let {
-                        it.definingClass == JOIN_HELPER && it.name == JOIN_METHOD
-                    } == true
-            }
-
-            val setupStartIdx = joinIdx - 5
-            require(setupStartIdx >= 0) {
-                "ENV_BUILDER.a join setup block not found (joinIdx=$joinIdx); " +
-                    "expected ≥5 instructions of arg setup before invoke-static/range"
-            }
-
             addInstructions(
-                setupStartIdx,
+                0,
                 """
-                    iget-object v13, v0, $ENV_BUILDER->a:Landroid/content/Context;
-                    invoke-static {v13}, $VIB_HANDLER->ensureWinebusDurationPatchOnce(Landroid/content/Context;)V
+                    move-object/from16 v0, p0
+                    iget-object v0, v0, $ENV_BUILDER->a:Landroid/content/Context;
+                    invoke-static {v0}, $VIB_HANDLER->ensureWinebusDurationPatchOnce(Landroid/content/Context;)V
                 """.trimIndent(),
             )
         }

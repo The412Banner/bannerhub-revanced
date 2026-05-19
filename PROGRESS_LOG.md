@@ -2798,3 +2798,21 @@ Added static `bcWinebus(ctx, …)` (mirrors instance `breadcrumb`) → `<filesDi
 ### Delivered
 CI run **26075313929** GREEN, **0 SEVERE**; "PC-accurate vibration" + "Per-game menu id capture (shared)" + GPU Spoof/Renderer/Vibration patches all `succeeded` on alt-AnTuTu (artifact-only, stable=false).
 `/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-pergame-pre10-Patched-alt-AnTuTu.apk` (116,070,822 B, md5 `3547fe9d7ace930562a74fce84519b07`). Full pkg `com.antutu.benchmark.full` (installs alongside `banner.hub` Lite).
+
+### pre10 DEVICE READ (2026-05-19 04:51, GoW 49908) — Hook 4 DEAD-CODE injection found
+Installed APK md5 `3547fe9d…` = pre10 confirmed (`/data/app/.../base.apk`). `bh_vibration.log` 04:51:24 block has `RESOLVE gid=49908 src=menuid` + `RUMBLE#1 gid=49908` (controller breadcrumbs fire; pre9 per-game scope re-confirmed) but **`grep -c WINEBUS` = 0** — not even the entry breadcrumb.
+Decompiled the delivered pre10 APK (`apktool d -r`): the injected pair landed in `smali_classes5/bg5.smali`, the sole `a(Leco;Ljava/lang/String;Z)V` `.locals 35` env builder (correct method) — but **immediately after an unconditional `goto :goto_4` and before a `:cond_9` label, with no label of its own** ⇒ unreachable dead code ⇒ `ensureWinebusDurationPatchOnce` never called. Root cause = the fragile `setupStartIdx = joinIdx - 5` anchor: in the 6.0.4 base (versionCode 114) `joinIdx - 5` falls inside the ArrayList-building loop, not the `:`-separator arg-setup block. Not a pattern miss, not an R8 letter shift — purely a wrong relative offset. Resolves the prior "patcher never executes" hypothesis with proof.
+
+### pre11 — Hook 4 re-anchored to method entry (index 0)
+Dropped the `joinIdx - 5` arithmetic and the now-dead join-helper machinery (`indexOfFirstInstructionOrThrow`/`getReference`/`Opcode`/`MethodReference` imports, `JOIN_HELPER`/`JOIN_METHOD`/`JOIN_LAMBDA` consts + doc). Hook 4 now injects at **index 0** of `Lbg5;->a` — unconditionally reached every launch, same guaranteed spot Hooks 1–3 use:
+```
+move-object/from16 v0, p0
+iget-object v0, v0, Lbg5;->a:Landroid/content/Context;
+invoke-static {v0}, Lcom/xj/winemu/vibration/BhVibrationController;->ensureWinebusDurationPatchOnce(Landroid/content/Context;)V
+```
+`p0`=this (high reg under `.locals 35`); v0 clobbered but the method's own first instr `move-object/from16 v0, p0` re-inits it immediately. `ensureWinebusDurationPatchOnce` is AtomicBoolean-gated so an at-entry call is correct + self-deduplicating. No labels added (trailing-label footgun N/A at index 0). 1 file, +23/−37.
+
+### MORNING CONTINUATION (updated)
+1. Install pre11 full alt-AnTuTu APK; launch GoW 49908.
+2. `grep WINEBUS bh_vibration.log` — now the entry/scan/per-file/aarch64 breadcrumbs MUST appear. Then follow the same branch table as pre10 (expect `aarch64 APPLIED original=2`; if so and rumble still cuts, check live `:wine` `/proc/<pid>/maps` for which winebus.so is mapped).
+3. Per-game merge still HELD awaiting explicit user go (unchanged).

@@ -1,6 +1,6 @@
 # GOG Library Tab — Patch Design Doc
 
-**Status:** ⚑ **WS1 CI GREEN — CURRENT = §23. Builds clean; M1 device test (user-driven) pending.** Phase 1 (GOG login+library+download, standalone) on `feature/gog-explore-tab`: 19 GOG-only files ported `→app.revanced.extension.gamehub.gog`, decoupled from store-entangled Epic/Amazon infra, `GogLaunchHelper` Phase-1-stubbed, `GogManifestPatch.kt` registers 6 activities. **Compile gate + 9-APK artifact build (`1.4.0-604-gog-pre1`, artifact-only) BOTH passed first attempt, no fixes needed** (runs 26111173073 / 26111421796). Compile/structural risk retired; runtime UNVERIFIED. Deferred Phase 2: GameHub-library/launch bridge (§19 programmatic `xm7.u`), production Profile-row entry (WS4/P-A), P-C. **Next = M1 device test: install `apk-alt-AnTuTu` (com.antutu.benchmark.full) → adb-start GogMainActivity → GOG login.** §1–§22 = trace+scope+port record. Base GameHub 6.0.4.
+**Status:** ⚑ **M1+M2 DEVICE-CONFIRMED — CURRENT = §24.** Phase 1 GOG login + owned-library work on Normal-GHL (`gamehub.lite`), build `1.4.0-604-gog-pre1`, ZERO code fixes through compile→9-APK→M1→M2 (username=The412Banner, 20 owned games, 0 crashes). Remaining Phase 1 = M3 (download+install). Phase 2 deferred (bridge §19 / Profile-row WS4-P-A / P-C). Branch `feature/gog-explore-tab`.
 **Base:** GameHub 6.0.4, R8 map id `6a5cde6143fc8cf76f6f3a447d0fececd4794d83066e6ead7a9537e6527b057b`.
 **Author:** The412Banner. **Date:** 2026-05-19.
 

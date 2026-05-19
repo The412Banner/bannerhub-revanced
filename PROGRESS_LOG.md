@@ -2670,3 +2670,22 @@ Secondary bug (from the one prior successful 05-17 GoW_dxgi.log): DXVK's inline 
 Verified chain: `shared_prefs/bh_menu_gameid.xml` = `<string name="id">49908</string>` (gameId crossed the main→`:wine` boundary — the decisive proof the disk-bridge works); `bh_gpuspoof_dxvk.conf` rewritten at launch (mtime 22:44; was stale 05-17 on pre4) with body `10de:2684` + `customDeviceDesc = NVIDIA GeForce RTX 4090` (full, untruncated — pre4 secondary fix holds); **in-game GPU reads NVIDIA** (previously GameFusion). No `BhGpuSpoof` logcat line (AnTuTu floods/rolls the buffer) — the fresh conf + in-game identity are hard proof the launch apply fired. Root cause (`:wine` process boundary defeats Java statics) and the SharedPreferences disk-bridge fix are both validated. The shared `BhMenuGameId` bridge also corrects Renderer + Vibration launch-scoping (same boundary).
 
 **NOT merged — pending user go.** On go: `fix/per-game-settings-isolation` → `gamehub-604-build` `--no-ff` (author The412Banner, no Claude trailer) → refresh `feature/lite-variant-tier1` off new 604 → update README + master-map (note the `:wine`-boundary lesson + that it fixes all three per-game features).
+
+---
+
+## 2026-05-18 — Renderer: SAME `:wine` boundary bug, fixed (pre6)
+
+**Branch:** `fix/per-game-settings-isolation`. Commit pushed; CI run **26073340887** GREEN, 0 SEVERE; renderer/menu-id/gpu-spoof patches all succeeded.
+
+**Device evidence (GoW 49908 left running on Legacy):** `bh_renderer_prefs.xml` correct (`bh_renderer_mode__49908=1`; leftover unsuffixed `bh_renderer_mode=1` = the OLD global that used to mask this), `bh_menu_gameid.xml`=49908, `libxserver_legacy.so`+`libwinemu_legacy.so` present in APK lib dir — yet `/proc/4566/maps` (running `:wine` pid) showed **STOCK** `libxserver.so`+`libwinemu.so`, NOT `_legacy`. Legacy silently no-op'd to stock.
+
+**Root cause = identical to GPU Spoof.** `loadXserver`/`loadWinemu` (replace `System.loadLibrary` in `XServer.<clinit>`, run in the `:wine` process) resolved gameId via `sniffGameIdFromStack()` ONLY → null because the lib swap fires before WineActivity is registered in `:wine`'s mActivities. Pre-rework this was masked by the global fallback (the leftover unsuffixed key); the strict-per-game rework removed the fallback and unmasked it. The earlier PROGRESS/table claim "Renderer sniff works post-WineActivity" was WRONG — disproven by /proc maps.
+
+**Fix (pre6):** new `BhRendererController.launchGameId()` = `BhMenuGameId.getCaptured()` (pre5 SharedPreferences disk-bridge crosses the main↔`:wine` boundary) then `sniffGameIdFromStack()` fallback — identical order to `BhGpuSpoofController.applyGpuSpoofImpl`. All three launch-resolution sites repointed: `isLegacyForLaunchingGame`, `loadXserver`, `loadWinemu`. Imports `BhMenuGameId`; lint-compiles clean vs android-34.
+
+**Corrected rule:** ANY launch/clinit-time per-game resolver running in the `:wine` process MUST use `BhMenuGameId.getCaptured()` first (disk-bridge), never sniff-only. Sniff-only is safe ONLY for genuinely mid-gameplay hooks (e.g. Vibration's rumble-dispatch).
+
+### Delivered
+`/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-pergame-pre6-Patched-alt-AnTuTu.apk` (116,054,438 B, md5 `06e4ca64e657e0a30ae96e6cd78e2c11`).
+
+**Retest:** GoW set Legacy → launch → leave running → `/proc/<:wine pid>/maps` must show `libxserver_legacy.so`+`libwinemu_legacy.so` (NOT stock); a game NOT set Legacy stays stock (no leak). **Vibration still needs its own device check** (per-game rumble; sniff-at-rumble-time probably OK but verify, don't assume). GPU Spoof pre5 already device-confirmed. **NOT merged** — hold until renderer + vibration device-confirmed.

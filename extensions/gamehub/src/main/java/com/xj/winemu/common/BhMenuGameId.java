@@ -1,7 +1,10 @@
 package com.xj.winemu.common;
 
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.util.Log;
 
+import java.lang.reflect.Method;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -36,20 +39,77 @@ public final class BhMenuGameId {
 
     private static volatile String sCapturedGameId;
 
+    // The menu builders (Lx57;->a / Lted;->f / Lpzc;->j0) run in the MAIN UI
+    // process, but the launch-time consumers (BhGpuSpoofController via the
+    // Lbg5;->a env builder, etc.) run inside com.xj.winemu.WineActivity, which
+    // AndroidManifest pins to a SEPARATE ":wine" process. A static field does
+    // not cross that boundary, so getCaptured() was always null at launch and
+    // the per-game spoof silently no-op'd (store correct, dxvk.conf never
+    // rewritten). SharedPreferences DO cross processes (same as the per-game
+    // store itself), so mirror the captured id to disk on every menu open and
+    // fall back to it when the in-process static is empty.
+    private static final String PREFS_FILE = "bh_menu_gameid";
+    private static final String PREFS_KEY  = "id";
+
     private BhMenuGameId() { }
 
     /** Injected at index 0 of the menu builders with the menu-data param. */
     public static void captureGameId(Object menuData) {
         try {
-            sCapturedGameId = resolve(menuData);
+            String id = resolve(menuData);
+            sCapturedGameId = id;
+            if (id != null && !id.isEmpty()) persist(id);
         } catch (Throwable t) {
             Log.w(TAG, "captureGameId failed", t);
         }
     }
 
-    /** Last captured per-game id, or null (caller falls back to its sniff). */
+    /**
+     * Last captured per-game id, or null (caller falls back to its sniff).
+     * In-process static first; on a miss (e.g. the ":wine" launch process,
+     * where the static was never set) read the disk mirror written by the
+     * menu open in the main process.
+     */
     public static String getCaptured() {
-        return sCapturedGameId;
+        String id = sCapturedGameId;
+        if (id != null && !id.isEmpty()) return id;
+        id = readPersisted();
+        if (id != null && !id.isEmpty()) {
+            sCapturedGameId = id;   // cache for subsequent calls in this process
+            return id;
+        }
+        return null;
+    }
+
+    private static void persist(String id) {
+        try {
+            SharedPreferences sp = prefs();
+            if (sp != null) sp.edit().putString(PREFS_KEY, id).commit();
+        } catch (Throwable t) {
+            Log.w(TAG, "persist failed", t);
+        }
+    }
+
+    private static String readPersisted() {
+        try {
+            SharedPreferences sp = prefs();
+            if (sp != null) return sp.getString(PREFS_KEY, null);
+        } catch (Throwable ignored) { }
+        return null;
+    }
+
+    /** App context via ActivityThread — no Context is plumbed into the row. */
+    private static SharedPreferences prefs() {
+        try {
+            Class<?> at = Class.forName("android.app.ActivityThread");
+            Method m = at.getMethod("currentApplication");
+            Object app = m.invoke(null);
+            if (app instanceof Context) {
+                return ((Context) app).getApplicationContext()
+                        .getSharedPreferences(PREFS_FILE, Context.MODE_PRIVATE);
+            }
+        } catch (Throwable ignored) { }
+        return null;
     }
 
     private static final String GAMEINFO_CLS =

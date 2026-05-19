@@ -5,8 +5,10 @@ import app.revanced.patcher.firstMethod
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
 import app.revanced.patches.gamehub.GAMEHUB_VERSION
+import app.revanced.patches.gamehub.vibration.vibrationMenuRowPatch
 import app.revanced.util.getReference
 import com.android.tools.smali.dexlib2.Opcode
+import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 
@@ -24,12 +26,20 @@ import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 // mode-independent entry point that sidesteps the library-surface problem.
 // The seeded card is kept (works in handheld, harmless) as a second entry.
 //
-// Structural clone of GpuSpoofMenuRowPatch Injection 1 — the device-confirmed
-// menu-injection playbook ([[bannerhub-revanced-menu-injection-playbook]]).
-// Only Menu A is targeted: it uses a raw String label (no Compose resolver,
-// no Unsafe-built Lell, no shared l1 head-block) so there is no dependency
-// on the vibration resolver and zero ANR/verifier surface — one
-// invoke-static hands row construction to the Java helper.
+// Structural 1:1 clone of GpuSpoofMenuRowPatch (all 3 injections) — the
+// device-confirmed menu-injection playbook
+// ([[bannerhub-revanced-menu-injection-playbook]]). Same set of menus as the
+// Renderer / GPU Spoof / Vibration rows:
+//   1. game-details More Menu  (Lx57;->a)        — Liae, raw String label
+//   2. library-tile popup      (ted.f, 7-arg)    — Lscd, raw String label
+//   3. library-list popup      (Lpzc;->j0)       — Lz4e(Lell,Lnw6,int)
+// Injections 1 & 2 use raw String labels (no resolver). Injection 3's Lell
+// label is resolved by the SINGLE shared Lxd3;->l1 hook owned by
+// vibrationMenuRowPatch (its BhMenuRowClick.maybeResolveCustomLabel now maps
+// "string:bh_gog_label" → "GOG") — hence dependsOn(vibrationMenuRowPatch) and
+// NO 2nd l1 head-block (a stacked one ANR'd cold start, playbook 2026-05-17).
+// Each injection hands row construction to a Java helper via one
+// invoke-static — zero register clobbering / verifier surface.
 // =========================================================================
 
 private const val ROW_DATA      = "Liae;"
@@ -46,6 +56,12 @@ val gogMenuRowPatch = bytecodePatch(
         "existing rows so stock behaviour is preserved.",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
+    // Injection 3's Lell label key is resolved by the SINGLE shared
+    // Lxd3;->l1 head-block that vibrationMenuRowPatch owns
+    // (BhMenuRowClick.maybeResolveCustomLabel — now also maps
+    // "string:bh_gog_label" → "GOG"). Depending on it guarantees that one
+    // resolver hook is present and avoids a 2nd, ANR-causing l1 head-block.
+    dependsOn(vibrationMenuRowPatch)
 
     apply {
         // ── game-details More Menu (Lx57;->a) ──────────────────────────────
@@ -91,6 +107,110 @@ val gogMenuRowPatch = bytecodePatch(
         menuMethod.addInstructions(
             lastAddIdx + 1,
             "invoke-static {v4}, $CLICK_HANDLER->appendGogRowTo(Ljava/lang/Object;)V",
+        )
+
+        // ── Injection 2: library-tile popup (ted.f) ────────────────────────
+        // 7-arg method building ≥4 Lscd rows via Lqs2;->H([Object])List.
+        // Rebuild the list with our Lscd row appended (raw String label).
+        val libraryMenuMethod = firstMethod {
+            parameterTypes == listOf("Lued;", "Lpw6;", "Lnw6;", "Z", "Lt9e;", "Lv83;", "I") &&
+                returnType == "V" &&
+                (implementation?.instructions?.count { ins ->
+                    ins.opcode == Opcode.INVOKE_DIRECT &&
+                        (ins as? ReferenceInstruction)?.getReference<MethodReference>()
+                            ?.let { it.definingClass == "Lscd;" && it.name == "<init>" } == true
+                } ?: 0) >= 4 &&
+                (implementation?.instructions?.any { ins ->
+                    ins.opcode == Opcode.INVOKE_STATIC &&
+                        (ins as? ReferenceInstruction)?.getReference<MethodReference>()
+                            ?.let {
+                                it.definingClass == "Lqs2;" && it.name == "H" &&
+                                    it.parameterTypes.toList() == listOf("[Ljava/lang/Object;") &&
+                                    it.returnType == "Ljava/util/List;"
+                            } == true
+                } ?: false)
+        }
+
+        val libInstructions = libraryMenuMethod.implementation!!.instructions.toList()
+        val arraysAsListIdx = libInstructions.indexOfFirst { ins ->
+            ins.opcode == Opcode.INVOKE_STATIC &&
+                (ins as? ReferenceInstruction)?.getReference<MethodReference>()
+                    ?.let {
+                        it.definingClass == "Lqs2;" && it.name == "H" &&
+                            it.parameterTypes.toList() == listOf("[Ljava/lang/Object;") &&
+                            it.returnType == "Ljava/util/List;"
+                    } == true
+        }
+        require(arraysAsListIdx >= 0) {
+            "GogMenuRowPatch: Lqs2;->H call not found in ted.f()"
+        }
+        val moveResultIns = libInstructions[arraysAsListIdx + 1]
+        require(moveResultIns.opcode == Opcode.MOVE_RESULT_OBJECT) {
+            "GogMenuRowPatch: expected move-result-object after Lqs2;->H"
+        }
+        val listReg = (moveResultIns as OneRegisterInstruction).registerA
+        val callSmali = if (listReg <= 15) {
+            "invoke-static {v$listReg}, $CLICK_HANDLER->appendScdRowToTedList(Ljava/lang/Object;)Ljava/util/List;"
+        } else {
+            "invoke-static/range {v$listReg .. v$listReg}, $CLICK_HANDLER->appendScdRowToTedList(Ljava/lang/Object;)Ljava/util/List;"
+        }
+        libraryMenuMethod.addInstructions(
+            arraysAsListIdx + 2,
+            """
+                $callSmali
+                move-result-object v$listReg
+            """.trimIndent(),
+        )
+
+        // ── Injection 3: library-list popup (Lpzc;->j0) ───────────────────
+        // Append our Lz4e row right before the post-build return-object (the
+        // one following the Lx9d;->i() finalize). The row's Lell label key
+        // ("string:bh_gog_label") is resolved by the vibration patch's single
+        // shared Lxd3;->l1 hook — we add NO l1 head-block here (ANR cause).
+        val pzcMethod = firstMethod {
+            parameterTypes == listOf(
+                "Laub;", "Z", "Llvc;", "Llvc;", "Lmob;", "Lmob;",
+                "Lz9;", "Ljn9;", "Lmvc;", "Lmvc;", "Ljvc;",
+            ) &&
+                returnType == "Ljava/util/List;" &&
+                (implementation?.instructions?.any { ins ->
+                    ins.opcode == Opcode.INVOKE_VIRTUAL &&
+                        (ins as? ReferenceInstruction)?.getReference<MethodReference>()
+                            ?.let {
+                                it.definingClass == "Lx9d;" && it.name == "i" &&
+                                    it.returnType == "Lx9d;"
+                            } == true
+                } ?: false)
+        }
+
+        val pzcInstructions = pzcMethod.implementation!!.instructions.toList()
+        val finalizeIdx = pzcInstructions.indexOfLast { ins ->
+            ins.opcode == Opcode.INVOKE_VIRTUAL &&
+                (ins as? ReferenceInstruction)?.getReference<MethodReference>()
+                    ?.let { it.definingClass == "Lx9d;" && it.name == "i" } == true
+        }
+        require(finalizeIdx >= 0) {
+            "GogMenuRowPatch: no Lx9d;->i() finalize call in pzc.j0()"
+        }
+        val pzcReturnIdx = (finalizeIdx until pzcInstructions.size).firstOrNull { i ->
+            pzcInstructions[i].opcode == Opcode.RETURN_OBJECT
+        }
+        require(pzcReturnIdx != null && pzcReturnIdx > finalizeIdx) {
+            "GogMenuRowPatch: no return-object after Lx9d;->i() in pzc.j0()"
+        }
+        val pzcReturnReg =
+            (pzcInstructions[pzcReturnIdx] as OneRegisterInstruction).registerA
+        val pzcCallSmali = if (pzcReturnReg <= 15) {
+            "invoke-static {v$pzcReturnReg}, $CLICK_HANDLER->appendLibraryPopupRow(Ljava/lang/Object;)Ljava/util/List;"
+        } else {
+            "invoke-static/range {v$pzcReturnReg .. v$pzcReturnReg}, $CLICK_HANDLER->appendLibraryPopupRow(Ljava/lang/Object;)Ljava/util/List;"
+        }
+        pzcMethod.addInstructions(
+            pzcReturnIdx,
+            """
+                $pzcCallSmali
+                move-result-object v$pzcReturnReg
+            """.trimIndent(),
         )
     }
 }

@@ -893,3 +893,35 @@ with the single simplest menu. Files: `BhGogMenuRowClick.java`,
 `GogMenuRowPatch.kt`, `GogManifestPatch.kt` (revert). Next: compile gate →
 **grep SEVERE for BOTH `GOG menu row` and `GOG library card`** → pre10 →
 device (any game → More Menu → "GOG" row → GogMainActivity, in both modes).
+
+### 33a. pre10 device CONFIRMED → pre11 (all 3 menus, matching GPU/Renderer/Vib)
+
+pre10 (run 26124180311, `7418f47`, 0 SEVERE — gated) device: **the "GOG"
+row works** in the game-details More Menu and opens GogMainActivity. User
+asks for it in the other per-game menu locations too — same set as
+Renderer / GPU Spoof / Vibration (3 menus). **pre11** promotes
+GogMenuRowPatch from Injection-1-only to a full 1:1 clone of
+GpuSpoofMenuRowPatch:
+
+- **Injection 2** — library-tile popup `ted.f` (7-arg, ≥4 `Lscd` ctors +
+  `Lqs2;->H([Object])List`): rebuild list with an `Lscd(actionId, icon[zz4.k],
+  "GOG", Proxy<Lnw6>)` row appended (raw String label, no resolver). Extension
+  `appendScdRowToTedList` + `newFunction0Proxy` + `safeReturn`.
+- **Injection 3** — library-list popup `Lpzc;->j0` (11-arg → List, has
+  `Lx9d;->i()`): append an `Lz4e(Lell,Lnw6,int)` before the post-finalize
+  return-object. `Lell` Unsafe-allocated, `Ltdi.a`="string:bh_gog_label",
+  `Ltdi.b`=∅. Extension `appendLibraryPopupRow`.
+- **Shared resolver** — added `"string:bh_gog_label" → "GOG"` to
+  `BhMenuRowClick.maybeResolveCustomLabel` (the single `Lxd3;->l1`
+  head-block owned by vibrationMenuRowPatch). `GogMenuRowPatch` now
+  `dependsOn(vibrationMenuRowPatch)` so that one hook is present; **no 2nd
+  l1 block** (stacked one ANR'd cold start, playbook 2026-05-17).
+
+All three injections are byte-identical to the shipped GpuSpoof patch
+(only helper-method names + the sentinel key differ), so risk is low
+despite menu-injection's historical iterate-prone reputation. Files:
+`GogMenuRowPatch.kt` (+Inj 2/3 +dependsOn), `BhGogMenuRowClick.java`
+(+appendScdRowToTedList/appendLibraryPopupRow/newFunction0Proxy/safeReturn),
+`BhMenuRowClick.java` (+GOG key). Next: compile gate → grep SEVERE for
+`GOG menu row` + `GOG library card` → pre11 → device (any game → BOTH
+popup menus + More Menu show "GOG" → GogMainActivity, both modes).

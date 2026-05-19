@@ -629,3 +629,15 @@ User idea: a permanent synthetic "GOG" card in the library grid (among imported/
 **Why this beats deep P-A (§27):** avoids the §12-class obfuscated-Compose injection entirely (reuses GameHub's own card renderer — just seed a DB row); persistence structurally safe; the DB-seed + launch-intercept is **shared with Phase-2 WS5** (the bridge needs the same), so not throwaway like a P-A Profile trace would be. Delivers exactly the user's ask: a permanent always-there GOG entry beside the real games.
 
 **Recommendation: adopt the permanent-card approach as WS4 instead of deep P-A.** Net WS4 = (1) extension app-start hook seeding/maintaining the sentinel row in `GameLibraryDatabase`; (2) `po7` launch-entry short-circuit patch → `GogMainActivity`; (3) reuse bundled GOG logo for the card art. Implementation traces remaining: `extension_type`+bypass-`user_id` value; `po7` launch-entry signature. No code yet.
+
+---
+
+## 29. WS4 BUILT (first-cut, 2026-05-19) — permanent GOG card; seed high-confidence, intercept iterate-prone
+
+Adopted §28 permanent-card over deep P-A. Traces resolved: `user_id`="99999" (FakeUserAccount, authoritative); `extension_type` self-derived at runtime from a real row (fallback 2) — base-bump-resilient, no hardcoded obf int; full schema known; launch dispatch = `po7`.
+
+**Code (branch `feature/gog-explore-tab`):**
+- `extensions/.../gog/GogLibraryCard.java` — pure `android.database` SQLite (no Room): `ensureSeeded(ctx)` idempotent/self-healing sentinel insert into `t_game_library_base`(+`t_game_launch_method`), `id="bh_gog_launcher"`, `server_game_id=0` (§28 sync-invisible → permanent), self-derives ext_type/user_id; `maybeOpenHubById(String)`/`maybeOpenHub(ctx,Object)` launch-intercept helpers (Context via `ActivityThread.currentApplication()` since po7 has none). Fail-safe throughout.
+- `patches/.../gog/GogLibraryCardPatch.kt` — (1) **seed hook** at `com.xiaoji.egggame.MainActivity.onCreate(Bundle)` (exact non-obf anchor, P-B) → `ensureSeeded(p0)`; (2) **intercept** at po7 by-id launch dispatch (structural fingerprint: static `(<self>,String,Lci3;)→Object` body refs kept-name `LaunchType`) → `maybeOpenHubById(p1)`; on hit completes the suspend fn with `kotlin.Unit;->INSTANCE` (correct "completed Unit", not null) so no Wine launch / no exe-validation.
+
+**Verification boundary (honest, per §22):** seed hook = high-confidence (exact anchor, pure-Context, idempotent). Intercept = **iterate-prone** — obfuscated suspend method-pick + Unit-return are inspection-unverifiable; structural anchor + Unit.INSTANCE is the best first-cut. If intercept misses, the card still appears (seeder proves the bulk of WS4) and only tap-behaviour iterates — same shape as WS1's one-bug loop. The seed+intercept work is reusable toward Phase-2 WS5. Next: CI compile gate → artifact pre3 → device (card appears? tap → GOG hub?).

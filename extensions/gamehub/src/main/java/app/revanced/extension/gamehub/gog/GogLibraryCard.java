@@ -1,0 +1,176 @@
+package app.revanced.extension.gamehub.gog;
+
+import android.app.Activity;
+import android.content.Context;
+import android.content.Intent;
+import android.database.Cursor;
+import android.database.sqlite.SQLiteDatabase;
+import android.util.Log;
+
+import java.io.File;
+
+/**
+ * WS4 — permanent synthetic "GOG" card in the game library (design doc §28).
+ *
+ * Seeds one sentinel row into GameHub's own GameLibraryDatabase
+ * (db_game_library.db: t_game_library_base + t_game_launch_method) so a "GOG"
+ * card always renders in the library grid alongside imported/Steam/Epic games.
+ * Tapping it is intercepted upstream (GogLibraryCardPatch hooks po7's launch
+ * dispatch) → opens GogMainActivity instead of a Wine launch.
+ *
+ * Persistence (§28): GameHub only ever single-row-deletes library entries on
+ * explicit user removal; there is NO bulk/server-reconcile delete, and server
+ * sync ignores rows with server_game_id=0. So a server_game_id=0 sentinel is
+ * effectively permanent; ensureSeeded() runs every app start (MainActivity
+ * .onCreate hook) so even a manual delete self-heals.
+ *
+ * Field values are SELF-DERIVED at runtime from any existing real library row
+ * (extension_type, user_id) so this survives base-APK bumps without a
+ * hardcoded obfuscated enum int; falls back to user_id="99999"
+ * (FakeUserAccount bypass id) + extension_type=2 if the library is empty.
+ *
+ * Pure android.database (no Room) — matches the zero-third-party-dep
+ * extension rule. Fail-safe by construction: any error → no-op, never
+ * crashes GameHub.
+ */
+public final class GogLibraryCard {
+
+    private static final String TAG = "BannerHub";
+
+    /** Sentinel game id — also the launch-intercept marker (GogLibraryCardPatch). */
+    public static final String SENTINEL_ID = "bh_gog_launcher";
+
+    private static final String DB_NAME    = "db_game_library.db";
+    private static final String CARD_NAME  = "GOG";
+    private static final String FALLBACK_USER_ID = "99999"; // FakeUserAccount bypass id
+    private static final int    FALLBACK_EXT_TYPE = 2;
+
+    private GogLibraryCard() {}
+
+    // ── seed (idempotent, self-healing) ──────────────────────────────────────
+
+    /** Called at MainActivity.onCreate. Inserts the sentinel if absent. */
+    public static void ensureSeeded(Context ctx) {
+        if (ctx == null) return;
+        SQLiteDatabase db = null;
+        try {
+            File f = ctx.getDatabasePath(DB_NAME);
+            if (f == null || !f.exists()) {
+                Log.i(TAG, "GogLibraryCard: " + DB_NAME + " not present yet — skip seed this start");
+                return;
+            }
+            db = SQLiteDatabase.openDatabase(
+                    f.getAbsolutePath(), null, SQLiteDatabase.OPEN_READWRITE);
+
+            // Already seeded? (idempotent)
+            try (Cursor c = db.rawQuery(
+                    "SELECT 1 FROM t_game_library_base WHERE id=? LIMIT 1",
+                    new String[]{SENTINEL_ID})) {
+                if (c.moveToFirst()) return; // present — nothing to do
+            }
+
+            // Self-derive extension_type + user_id from a real row.
+            String userId = FALLBACK_USER_ID;
+            int extType = FALLBACK_EXT_TYPE;
+            try (Cursor c = db.rawQuery(
+                    "SELECT extension_type,user_id FROM t_game_library_base " +
+                    "WHERE id<>? LIMIT 1", new String[]{SENTINEL_ID})) {
+                if (c.moveToFirst()) {
+                    extType = c.getInt(0);
+                    String u = c.getString(1);
+                    if (u != null && !u.isEmpty()) userId = u;
+                }
+            }
+
+            db.beginTransaction();
+            try {
+                // 1) launch-method row (linked by game id).
+                db.execSQL(
+                    "INSERT INTO t_game_launch_method " +
+                    "(linked_game_id,start_type,start_name) VALUES (?,?,?)",
+                    new Object[]{SENTINEL_ID, 0, CARD_NAME});
+                long lmId;
+                try (Cursor c = db.rawQuery("SELECT last_insert_rowid()", null)) {
+                    c.moveToFirst();
+                    lmId = c.getLong(0);
+                }
+
+                // 2) library row. server_game_id=0 → invisible to server sync
+                //    (the §28 permanence guarantee). Most columns have NOT NULL
+                //    DEFAULT '' so a narrow insert is valid.
+                db.execSQL(
+                    "INSERT INTO t_game_library_base " +
+                    "(id,user_id,server_game_id,extension_type,launch_method_id," +
+                    "game_name,game_source,source_type,`from`) " +
+                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    new Object[]{SENTINEL_ID, userId, 0, extType, lmId,
+                                 CARD_NAME, 0, 0, 0});
+
+                db.setTransactionSuccessful();
+                Log.i(TAG, "GogLibraryCard: seeded sentinel (user_id=" + userId
+                        + " ext_type=" + extType + " lm=" + lmId + ")");
+            } finally {
+                db.endTransaction();
+            }
+        } catch (Throwable t) {
+            // Never crash GameHub over a cosmetic card.
+            Log.e(TAG, "GogLibraryCard.ensureSeeded failed (non-fatal)", t);
+        } finally {
+            if (db != null) try { db.close(); } catch (Throwable ignored) {}
+        }
+    }
+
+    // ── launch intercept ─────────────────────────────────────────────────────
+
+    /**
+     * Called from GogLibraryCardPatch's injection at the head of po7's
+     * launch dispatch. {@code idOrGameInfo} is either the launch id String
+     * or a GameInfo (kept-name class with getId()). Returns true if this is
+     * the sentinel (caller must then abort the normal launch); on true we
+     * have already started GogMainActivity.
+     */
+    public static boolean maybeOpenHub(Context ctx, Object idOrGameInfo) {
+        try {
+            String id = extractId(idOrGameInfo);
+            if (!SENTINEL_ID.equals(id)) return false;
+            if (ctx == null) return true; // is sentinel, but can't launch — still abort
+            Intent i = new Intent(ctx, GogMainActivity.class);
+            if (!(ctx instanceof Activity)) i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx.startActivity(i);
+            Log.i(TAG, "GogLibraryCard: sentinel tapped → GogMainActivity");
+            return true;
+        } catch (Throwable t) {
+            Log.e(TAG, "GogLibraryCard.maybeOpenHub failed (non-fatal)", t);
+            return false; // fail open → normal path, never break launching real games
+        }
+    }
+
+    /**
+     * Context-free variant for the po7 by-id launch dispatch (which has no
+     * Context in scope). Resolves the app Context via ActivityThread — a
+     * stable in-process hook — then defers to {@link #maybeOpenHub}.
+     */
+    public static boolean maybeOpenHubById(String id) {
+        if (!SENTINEL_ID.equals(id)) return false;
+        Context ctx = null;
+        try {
+            @SuppressWarnings("PrivateApi")
+            Class<?> at = Class.forName("android.app.ActivityThread");
+            Object app = at.getMethod("currentApplication").invoke(null);
+            if (app instanceof Context) ctx = (Context) app;
+        } catch (Throwable ignored) {}
+        return maybeOpenHub(ctx, id);
+    }
+
+    private static String extractId(Object o) {
+        if (o == null) return null;
+        if (o instanceof String) return (String) o;
+        try {
+            // GameInfo (kept name com.xiaoji.egggame.game.di.model.game.GameInfo)
+            Object r = o.getClass().getMethod("getId").invoke(o);
+            return r == null ? null : r.toString();
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+}

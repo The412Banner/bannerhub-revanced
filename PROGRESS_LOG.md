@@ -2694,3 +2694,24 @@ Verified chain: `shared_prefs/bh_menu_gameid.xml` = `<string name="id">49908</st
 Live `:wine` process (pid 17125) `/proc/17125/maps`: `libxserver_legacy.so` + `libwinemu_legacy.so` loaded, **NO stock `libxserver.so`/`libwinemu.so` mapped** (pure 6.0.2 legacy pair); wineserver + full wine guest tree alive → sustained, not crashing. pre6 `launchGameId()` (getCaptured disk-bridge → sniff) correctly resolves gameId 49908 in `:wine` at `XServer.<clinit>`; `isLegacyForGame(49908)`→true. The `:wine` boundary defect is fixed for Renderer exactly as for GPU Spoof.
 
 **Confirmed status:** GPU Spoof (pre5) ✅ + Renderer (pre6) ✅ device-confirmed. **Vibration** still needs its own device check (per-game rumble) — sniff-at-rumble-time is expected OK but unverified; do not assume. **NOT merged** — hold until Vibration device-confirmed, then: `fix/per-game-settings-isolation` → `gamehub-604-build` `--no-ff` (The412Banner, no Claude trailer) → refresh `feature/lite-variant-tier1` → README/master-map.
+
+---
+
+## 2026-05-18 — Vibration durable breadcrumb (pre7)
+
+**Branch:** `fix/per-game-settings-isolation`. CI run **26073891283** GREEN, 0 SEVERE; vibration/renderer/gpu-spoof/menu-id patches all succeeded.
+
+**Why:** Vibration has no forensic fingerprint — no per-launch file, no distinct lib, and the AnTuTu logcat flood rolls the `Log.i` markers before they can be read. So unlike GPU Spoof (`dxvk.conf`) and Renderer (`_legacy.so` in `/proc/maps`), there was no on-disk way to prove the rumble-dispatch path resolved the correct per-game scope. (The store itself was verified correct & strict: `bh_vibration_{mode,intensity}__<gid>`; leftover unsuffixed `mode/intensity` = dead old global, not read.)
+
+**pre7 (`feat(vibration)`):** `BhVibrationController.breadcrumb()` appends two one-shot lines per process to `<filesDir>/bh_vibration.log`:
+- `RESOLVE gid=<g> mode=<m> intensity=<i>` — at `maybeResolveContainerFromActivityStack` container resolve
+- `RUMBLE#1 gid=<g> mode=<m> intensity=<i> low=<l> high=<h>` — at first `handleRumble`
+
+Append-only, `appContext`-guarded, never throws; gated by static volatile `sBcResolved`/`sBcRumble`. Production-safe observability (not the stripped diag harness). Lint-clean vs android-34.
+
+### Delivered
+`/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-pergame-pre7-Patched-alt-AnTuTu.apk` (116,107,686 B, md5 `41149852f9982fb23114be1a2084d455`).
+
+**Verify on pre7:** set per-game vibration on the game to be launched (e.g. GoW 49908 mode=1 int=100) AND a *different* value on another game → launch → trigger controller rumble in-game → read `bh_vibration.log`. RESOLVE/RUMBLE#1 `gid` must equal the launched game and `mode`/`intensity` must equal *that game's* per-game value (proves dispatch scoped correctly + no app-wide leak).
+
+**Confirmed:** GPU Spoof (pre5) ✅ + Renderer (pre6) ✅ device-confirmed. Vibration store correct; dispatch awaiting pre7 breadcrumb read. **NOT merged** — hold until Vibration confirmed, then merge `fix/per-game-settings-isolation` → `gamehub-604-build` `--no-ff` → refresh `feature/lite-variant-tier1` → README/master-map.

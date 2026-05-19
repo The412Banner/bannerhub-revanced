@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.3.0-604"><strong>📥 Latest stable: v1.3.0-604</strong></a>
+  <a href="https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.4.0-604"><strong>📥 Latest stable: v1.4.0-604</strong></a>
   ·
   <a href="#patches-applied">Patches</a>
   ·
@@ -51,7 +51,7 @@
 ## Table of contents
 
 1. [AI Disclaimer](#ai-disclaimer)
-2. [What's new in v1.3.0-604](#whats-new-in-v130-604)
+2. [What's new in v1.4.0-604](#whats-new-in-v140-604)
 3. [What this is](#what-this-is)
 4. [Source](#source)
 5. [Variants](#variants)
@@ -72,27 +72,31 @@ This project has no source code — XiaoJi GameHub is closed-source and ships on
 
 Before any **stable release** is published, every change is **manually debugged and tested by me across multiple devices — both rooted and unrooted**. Debugging uses `logcat` output (captured with the [`getlog` Magisk helper](https://github.com/The412Banner/logcat-bridge) on rooted devices, plain `adb logcat` on unrooted) plus the in-app debug log files that the `Debug logging` patch produces. No release is cut until the change has been verified end-to-end on hardware.
 
-## What's new in v1.3.0-604
+## What's new in v1.4.0-604
 
-Two headline changes on top of `v1.2.0-604`. Drop-in update (stable keystore unchanged — installs in place).
+Four headline changes on top of `v1.3.0-604`. Drop-in update (stable keystore unchanged — installs in place).
 
-### 🎮 Preload-free vibration — fixes the x86_64 / Box64 launch-death
+### 🎛️ Per-game settings, properly isolated
 
-The PC-accurate XInput rumble feature no longer ships `libevshim.so` and no longer touches `LD_PRELOAD`. SDL2's ~1 s rumble auto-stop is now defeated by an in-process patch (`BhVibrationController.ensureWinebusDurationPatchOnce`) that rewrites every `winebus.so`'s `SDL_JoystickRumble` duration on disk (aarch64 + x86_64), with nothing extra mapped into the Wine subprocess.
+GPU Spoof, the Legacy renderer toggle, and PC Vibration each now save to BannerHub's own per-game store with explicit **Save / Cancel** buttons. Previously these co-stored state in GameHub's own settings file (which the host rewrites, silently resetting the choice) and mirrored it to a global with a global fallback — so a per-game choice leaked app-wide and into other games. Now each setting is strictly per game in `bh_<feature>_prefs`; an unset game gets the stock default, never another game's value (a one-time read-only migration adopts any legacy value on first read). The captured game id is bridged across the `:wine` process boundary — `WineActivity` runs in `android:process=":wine"`, so the shared `BhMenuGameId` helper mirrors the id to SharedPreferences and reads it back launch-side so per-game scoping actually works.
 
-This **resolves the `c000007b` crash** that prevented x86_64 / Box64 games from launching on builds carrying the old LD_PRELOAD shim. Rumble behaviour is unchanged (defaults to `MODE_CONTROLLER` at 100%; per-game via **PC Vibration Settings**). Device-confirmed.
+### 🪪 GPU Spoof (per game)
 
-### 🪶 BannerHub v6 Lite — a slimmer counterpart for every variant
+A new **GPU Spoof** menu row + dialog reports a chosen GPU identity to DXVK via a per-game `dxvk.conf`: **Off** (default), a **preset** picker (a legacy NVIDIA/AMD/Intel list plus a modern RTX/RX/Arc set), or **Custom** (free vendor / device hex + name). The plumbing force-writes `customVendorId`/`customDeviceId` after the Wine env builder's conditional DXVK block so the spoof always applies, and no-ops entirely when Off. Fixes titles that hard-refuse an "unsupported video card" — e.g. CryEngine (Crysis 2).
 
-Alongside the 9 full APKs, every release now also attaches **9 Lite APKs** (one per variant, `…-Lite.apk`). Each Lite build is ~34.5 MB smaller on disk (≈32%: ~114.5 → ~78.3 MB) — it strips a verified-dead duplicate 20 MB font, the Aliyun carrier-login native lib, the Haima cloud-gaming stack, and the bundled AVIF/HEIC image-codec stack.
+### 🖼️ Legacy renderer toggle (per game)
 
-Removed features: cloud gaming (non-functional under the BannerHub catalog redirect anyway) and the bundled AVIF/HEIC decoder — modern Android still renders HEIF/AVIF via the platform decoder; JPEG/PNG/WebP unaffected. Everything else is byte-identical to the matching full variant. Each Lite uses the **same package name** as its full counterpart, so a Lite APK **installs over (replaces)** the matching full variant — they don't coexist; pick one per package. (Lite APKs are built from the separate, never-merged `feature/lite-variant-tier1` branch and attached to this release manually.)
+GameHub 6.0.4 rewrote its X-server renderer GLES2→Vulkan; some games regressed. A per-game **Renderer** row lets you choose **New** (default — stock 6.0.4 Vulkan, zero patch effect) or **Legacy** (the proven 6.0.2 GLES2-era `libxserver.so` + `libwinemu.so` pair, swapped in via a JNI bridge). Strictly gated per game — an unset game is pure stock, zero regression.
 
-### Carryover from `v1.2.0-604` and earlier
+### 🎮 Rumble no longer cuts out after ~2 s
 
-The full privacy-hardening stack (7 functional patches + public [`PRIVACY.md`](PRIVACY.md)), the always-visible PC Game Settings row in Explorer view, the stable keystore, PC Vibration Settings menu row, and the BannerHub v6 visual rebrand all carry forward unchanged.
+The winebus duration patch is now actually applied at launch. On the 6.0.4 base the v1.3.0 hook landed as unreachable dead code (past a `goto`), so SDL2's ~1 s rumble auto-stop was never defeated; the hook is re-anchored to the env-builder entry. Sustained rumble now holds indefinitely — device-confirmed via GameConTest.exe.
 
-> 📜 Past-release notes for `v1.2.0-604`, `v1.1.0-604`, `v1.0.0-604`, `v1.0.0-602`, `v1.0.1-601`, `v1.0.0-601`, and `v1.0.1-600` are preserved on their respective [release pages](https://github.com/The412Banner/bannerhub-revanced/releases). The README keeps only the latest release in this section to stay focused on what's current.
+### Carryover from `v1.3.0-604` and earlier
+
+Preload-free PC-accurate vibration (no `libevshim`/`LD_PRELOAD`; on-disk `winebus.so` duration patch), the 9 Lite builds (~34.5 MB smaller per variant — strip-by-strip breakdown in [`bannerhub-v6-lite.md`](bannerhub-v6-lite.md)), the full privacy-hardening stack (7 functional patches + public [`PRIVACY.md`](PRIVACY.md)), the always-visible PC Game Settings row in Explorer view, the stable keystore, the PC Vibration Settings menu row, and the BannerHub v6 visual rebrand all carry forward unchanged. Each Lite uses the **same package name** as its full counterpart, so a Lite APK **installs over (replaces)** the matching full variant — pick one per package.
+
+> 📜 Past-release notes for `v1.3.0-604`, `v1.2.0-604`, `v1.1.0-604`, `v1.0.0-604`, `v1.0.0-602`, `v1.0.1-601`, `v1.0.0-601`, and `v1.0.1-600` are preserved on their respective [release pages](https://github.com/The412Banner/bannerhub-revanced/releases). The README keeps only the latest release in this section to stay focused on what's current.
 
 ---
 
@@ -208,6 +212,20 @@ The 10-iteration debugging trail behind landing this patch is recorded in `proje
 ### `PC Vibration Settings label resource` ⭐ *new in v1.1.0-604*
 
 Appends a `bh_pc_vibration_label = "PC Vibration Settings"` entry to `features.home`'s Compose Multiplatform resource bundle (`.cvr` file). Documentation patch — the runtime resolution actually goes through the `Lxd3.l1` short-circuit described above because Compose's resource manifest needs entries the bare `.cvr` doesn't register. Kept anyway so the resource is reachable by any future patch that goes through the proper manifest registration path.
+
+### `GPU Spoof` ⭐ *new in v1.4.0-604*
+
+Adds a **GPU Spoof** row to both per-game popup menus. The dialog offers **Off** (default), a **preset** GPU picker (a legacy NVIDIA/AMD/Intel list plus a modern RTX/RX/Arc set), or **Custom** (free vendor / device hex + name). `GpuSpoofPatch` ("GPU spoof DXVK plumbing") force-writes the chosen `customVendorId`/`customDeviceId` into a per-game `dxvk.conf` and points `DXVK_CONFIG_FILE` at it, injected *after* the Wine env builder's conditional DXVK block so the spoof always applies. No-ops entirely when the game's mode is Off. Fixes titles that hard-refuse an "unsupported video card" (CryEngine — Crysis 2). The `BhGpuSpoofController` owns mode state (Off / preset / custom); storage is the shared strict per-game store (see *Strict per-game settings store* below). Free-text adapter names go only to the `dxvk.conf` file, never the whitespace-splitting inline `DXVK_CONFIG`, so "NVIDIA GeForce RTX 4080" isn't truncated to "NVIDIA".
+
+### `Legacy renderer (GLES2) toggle` ⭐ *new in v1.4.0-604*
+
+GameHub 6.0.4 rewrote its X-server renderer from GLES2 to Vulkan (`libxserver.so`). Some games regressed. A **Renderer** menu row + dialog adds a per-game choice: **New** (default — stock 6.0.4 Vulkan, zero patch effect) or **Legacy** (the proven 6.0.2 GLES2-era `libxserver.so` + `libwinemu.so` pair). `RendererLibBundlePatch` bundles the 6.0.2 libs under a non-clobbering name; `RendererSwapPatch` adds a `setRenderingEnabled` native and routes `XServer`'s `loadLibrary` + `setFlipEnabled` call sites through `BhRendererController` so the swap is gated strictly per game — an unset game is pure stock, zero regression.
+
+### `Strict per-game settings store` ⭐ *new in v1.4.0-604*
+
+GPU Spoof, the Legacy renderer toggle, and PC Vibration all share one per-game persistence model. Each setting is stored **only** in BannerHub's own `bh_<feature>_prefs`, keyed strictly per game (`<base>__<gameId>`). It never writes GameHub's own `pc_g_setting<gameId>` (the host rewrites that, silently resetting our keys) and keeps **no global mirror and no global fallback** (a per-game choice used to leak app-wide / into other games). An unset game yields the stock default — never another game's value; a one-time read-only migration adopts any legacy value on first read. Each settings dialog has explicit **Save** (single atomic commit) and **Cancel** (discard) buttons — no live-write on every spinner/slider change.
+
+`WineActivity` runs in `android:process=":wine"`, so a Java static set in the UI process is invisible to launch-time code. The shared `BhMenuGameId` helper mirrors the captured game id to SharedPreferences with a synchronous commit and reads it back launch-side, so every per-game feature resolves the right game across the process boundary.
 
 ### `Change app icon` ⭐ *new in v1.1.0-604*
 

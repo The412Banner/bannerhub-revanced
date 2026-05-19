@@ -16,6 +16,8 @@ import android.os.VibratorManager;
 import android.util.Log;
 import android.view.InputDevice;
 
+import com.xj.winemu.common.BhMenuGameId;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -397,6 +399,33 @@ public final class BhVibrationController {
      */
     private void maybeResolveContainerFromActivityStack() {
         if (containerGameId != null) return;
+
+        // The rumble path runs in the ":wine" process (WineActivity is
+        // android:process=":wine"); sniffGameIdFromStack() returns null there
+        // (device-proven: RUMBLE#1 logged gid=(global), no RESOLVE — vibration
+        // ran on strict defaults, not the per-game value). The pre-launch menu
+        // stashed the id via MenuGameIdCapturePatch -> BhMenuGameId, which
+        // mirrors it to SharedPreferences crossing the main<->:wine boundary
+        // the same way the per-game store does. Prefer that; fall back to the
+        // stack sniff for the in-game sidebar path. Same order/fix as
+        // BhGpuSpoofController.applyGpuSpoofImpl and BhRendererController.
+        try {
+            String cap = BhMenuGameId.getCaptured();
+            if (cap != null && !cap.isEmpty()) {
+                this.containerGameId = cap;
+                reloadSettings();
+                Log.i(TAG, "container=" + cap + " (BhMenuGameId) mode="
+                        + cachedMode + " intensity=" + cachedIntensity);
+                if (!sBcResolved) {
+                    sBcResolved = true;
+                    breadcrumb("RESOLVE gid=" + cap + " src=menuid mode="
+                            + cachedMode + " intensity=" + cachedIntensity);
+                }
+                return;
+            }
+        } catch (Throwable ignored) {
+        }
+
         try {
             Class<?> atCls = Class.forName("android.app.ActivityThread");
             Method cur = atCls.getMethod("currentActivityThread");

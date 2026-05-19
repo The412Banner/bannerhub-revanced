@@ -2833,3 +2833,13 @@ The Offline component picker (merged `dbd7554` 2026-05-18, ancestor of the v1.4.
 
 ### Final branch state
 `gamehub-604-build` @ `9574522`; `feature/lite-variant-tier1` @ `b689a1a`. Pre-release policy resumes — all builds artifact-only until user says "stable" again.
+
+## 2026-05-19 — Release notes: "separate projects / use at your own risk" warning added
+
+User noticed the live `v1.4.0-604` release description did **not** carry the README's `⚠️ Important — please read before installing` block (README.md:33–45: BannerHub v6 ≠ 3.7.x ≠ Lite, separate package/keystore/backend, no in-place cross-update, WIP / barely tested, USE AT YOUR OWN RISK). Verified absent via grep of the live body (zero matches for `own risk` / `SEPARATE projects` / `read before installing` / etc.); confirmed present only in README.
+
+Fix on both surfaces:
+- **Live `v1.4.0-604` notes** — block spliced verbatim directly under the `## BannerHub v6 1.4.0-604` header (before "A patched build of…") via `gh release edit --notes-file`; re-verified present (lines 3/5/15).
+- **Going-forward template** — same blockquote inserted into `release.yml`'s slim `body: |` block right after the version header, so every future v6 stable emits it automatically. Commit `27d98d4` on `gamehub-604-build` (`4c5ad1a..27d98d4`, 1 file +14), authored The412Banner / the412banner@users.noreply.github.com, no Claude trailer, pushed. No CI trigger (notes-template-only edit).
+
+Branch head: `gamehub-604-build` @ `27d98d4`. (Not added to `gamehub_reports/GAMEHUB_600_MASTER_MAP.md` — that map documents upstream GameHub 6.0 internals, not BannerHub release/doc changes.)

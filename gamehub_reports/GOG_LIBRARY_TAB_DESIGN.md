@@ -475,3 +475,40 @@ The 3.7.x bridge is **half-portable**: the launcher-onResume hook ports verbatim
 - P-A (Profile-row anchor) and P-D (extension build) unaffected by P-B.
 
 **Next:** P-C (now critical — container assignment for a programmatic import), then P-A, then P-D.
+
+---
+
+## 20. PHASE 0 CLOSE-OUT (2026-05-19) — re-scoped per user: prove login/library/download first; defer bridge & entry-point polish
+
+User directive: get **GOG login + library list + downloads** working end-to-end first; defer "how GOG games get added to GameHub's library/launch" (WS5 bridge) until that's proven. Re-prioritisation of Phase 0 follows that logic.
+
+### 20.1 P-A — DEFERRED to WS4 (not a priority-scope blocker)
+
+Profile account-bind rows are the same orphaned-accessor pattern as the tab string: `features_home_profile_{steam,epic}_bind` live only in the 4 large generated resource-accessor classes (`bkl/xjl/vjl/wjl`, ~9.8k L each); no renderer references the keys (renderer uses resolved `Lell;` state slots, cf. §12 `y6d`). Pinning the exact bind-row builder needs a full y6d-class chain trace. **Per the user's own prioritisation:** validating login/library/download only needs the GOG activities to build + launch by *any* entry (temp/dev launcher, `adb am start`, or an existing owned hook). The polished Profile-row injection is **WS4 implementation work, deferred** with WS5 — not Phase-0-blocking. Profile screen composable candidates for later: `bqb/dh0/od0` + `b30` (HomeProfile/ProfileScreen refs).
+
+### 20.2 P-C — DEFERRED with WS5
+
+Wine-container assignment for a programmatic import is bridge work (§19.4). Deferred with WS5 per user.
+
+### 20.3 P-D — GREEN. Dependency-clash risk ELIMINATED. [CONFIRMED]
+
+3.7.x `bannerhub/extension/Gog*.java` dependency surface = **pure platform only**: `android.*` (incl. `android.webkit.WebView` for OAuth), `java.*` (incl. `java.net.HttpURLConnection`, `java.util.zip`), and `org.json` (**Android-built-in**, ships in `android.jar`). **No OkHttp / Gson / Retrofit / Room / AndroidX / Kotlin-stdlib — zero third-party deps.** It was deliberately written platform-only.
+
+bannerhub-revanced extension build (`extensions/gamehub/build.gradle.kts`) = `compileOnly(project(":extensions:gamehub:stub"))` — plain classes compiled against the GameHub API stub, same as the shipped offline-picker/vibration extensions. A zero-third-party-dep Java package drops in with **no reconciliation, no shading, no version clash**. The §17.6 "dep clash MED risk" is **eliminated**, and this is exactly why 3.7.x shipped it cleanly and why it lifts to v6 cleanly.
+
+### 20.4 Re-scoped plan — PHASE 1 (executable, low-risk) vs PHASE 2 (deferred)
+
+**PHASE 1 — GOG login + library + download (priority, now well-understood, LOW risk):**
+- WS1 port GOG module: lift `bannerhub/extension/Gog{Login,Games,GameDetail,Main}Activity.java` + `Gog{DownloadManager,InstallPath,TokenRefresh,Game,CloudSaveManager}.java` ~verbatim into `bannerhub-revanced/extensions/gamehub/` (pure-platform Java; compile vs stub).
+- WS2 OAuth: `GogLoginActivity` added via manifest patch (pattern: VibrationManifestPatch / GpuSpoofManifestPatch).
+- WS3 library/download: `GogGamesActivity` (plain Activity+Views, owned-library via `user/data/games`, `gog_library_cache`) + `GogDownloadManager` multi-CDN.
+- Temp entry for dev/validation (not the production Profile row).
+- **Milestones:** M1 device login (OAuth → token stored). M2 owned library lists in-app. M3 a title downloads+installs to disk. Each device-gated, CI-only.
+
+**PHASE 2 — DEFERRED (per user, after Phase 1 works):** WS4 production Profile-row entry (P-A trace), WS5 bridge = launcher-onResume hook on `MainActivity` (ports, §19) + programmatic `xm7.u` import + P-C container assignment, M4 in-GameHub launch.
+
+### 20.5 Phase 0 verdict
+
+**No blocker anywhere.** Priority scope (Phase 1: login/library/download) is **LOW-risk and fully understood** — pure-platform Java lift + manifest-patched activities + stub build, all proven patterns. All uncertainty (bridge KMP re-implementation, Profile-row anchor) is explicitly isolated in deferred Phase 2. Phase 0 complete.
+
+**Next action:** begin **Phase 1 / WS1** — port the `Gog*.java` set into `extensions/gamehub/` and stand up the OAuth + library activities behind a temp entry. First code of the project. CI-build + device-test loop from M1.

@@ -613,3 +613,19 @@ WS4 = production in-app entry to `GogMainActivity` (the hub that is login pre-au
 - **(B) Interim cheap entry** — ship Phase 1 reachable *now* via a lower-effort global hook (a simpler reachable surface than the deep Profile-Compose tree), defer the polished Profile row. Gets "GOG library + downloads" into users' hands sooner; revisit (A) later.
 
 Phase 1 stays a clean stopping point either way. No code yet for WS4.
+
+---
+
+## 28. PERMANENT GOG CARD — FEASIBILITY TRACE: GREEN, beats deep P-A (2026-05-19)
+
+User idea: a permanent synthetic "GOG" card in the library grid (among imported/Steam/Epic games) that, when tapped, opens `GogMainActivity` instead of launching a Wine game. Scoped trace verdict: **feasible, lower-risk than the §27 deep P-A Profile-Compose trace, and the work is reusable toward Phase-2 WS5.**
+
+**(a) Renders as a card — YES [CONFIRMED].** Full Room schema captured: `t_game_library_base` (`id`,`user_id`,`server_game_id`,`extension_type`,`launch_method_id`,`game_name`,`logo`/`cover_image`/`square_image`,`source_type`,… most `DEFAULT ''`) + `t_game_launch_method` (`linked_game_id`,`start_type`,…). Grid feed = `SELECT * FROM t_game_library_base WHERE extension_type = ? AND user_id = ?`. A minimal sentinel (`id="bh_gog_launcher"`, `game_name="GOG"`, `logo`→bundled `GogLogo1` asset, `server_game_id=0`, linked launch-method row) is a structurally valid card. *Impl unknowns (not blockers):* exact `extension_type` int + the bypass `user_id` (known territory — FakeAuthToken/import-flow).
+
+**(b) Persistence — YES, strong [CONFIRMED].** Only deletes on `t_game_library_base` are single-row: `WHERE _id=?` / `WHERE id=?`. **No bulk delete, no "delete NOT IN server list" reconcile.** Server sync only enriches rows with `server_game_id>0`; a `server_game_id=0` sentinel is invisible to sync. ⇒ effectively permanent (survives launches/restarts/sync), removable only by explicit user delete — and an idempotent app-start re-seed hook makes it self-healing/un-removable. (This was the make-or-break risk → resolved.)
+
+**(c) Launch intercept — YES, tractable [CONFIRMED feasible].** Launch dispatch concentrated in `po7.smali` (18 start_type/LaunchType refs; the card-tap→launch path). Pre-launch exe/container validation lives downstream (`b8o/csh/h8o`, `validator_error_exe_file_not_found`). Inject a sentinel short-circuit at the **launch-entry top**: `if (gameId == "bh_gog_launcher") { startActivity(GogMainActivity); return; }` — fires before any exe/container validation. Reuses P-B's `MainActivity` knowledge + the existing `MenuGameIdCapturePatch`/`BhMenuGameId` id-capture pattern. *Impl unknown:* exact `po7` launch-entry method signature (a y6d-class anchor trace, but po7 is start_type-anchored & non-orphaned ⇒ tractable).
+
+**Why this beats deep P-A (§27):** avoids the §12-class obfuscated-Compose injection entirely (reuses GameHub's own card renderer — just seed a DB row); persistence structurally safe; the DB-seed + launch-intercept is **shared with Phase-2 WS5** (the bridge needs the same), so not throwaway like a P-A Profile trace would be. Delivers exactly the user's ask: a permanent always-there GOG entry beside the real games.
+
+**Recommendation: adopt the permanent-card approach as WS4 instead of deep P-A.** Net WS4 = (1) extension app-start hook seeding/maintaining the sentinel row in `GameLibraryDatabase`; (2) `po7` launch-entry short-circuit patch → `GogMainActivity`; (3) reuse bundled GOG logo for the card art. Implementation traces remaining: `extension_type`+bypass-`user_id` value; `po7` launch-entry signature. No code yet.

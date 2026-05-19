@@ -1,6 +1,6 @@
 # GOG Library Tab — Patch Design Doc
 
-**Status:** PHASE 0 COMPLETE (no code). Verdict: **Option A viable** (GOG data identity exists), refined scope. See §12 — it supersedes the speculative §4/§6. Branch `feature/gog-explore-tab` off `gamehub-604-build` @ `e39ce21`.
+**Status:** PHASE 0 COMPLETE incl. §12.5 (no code). Verdict: **Option A, effort tier MODERATE** — one parameterized grid (no screen-building), GOG tab = 3 mechanical bytecode edits + 1 API flag. See §12 (esp. §12.7); supersedes speculative §4/§6. Branch `feature/gog-explore-tab` off `gamehub-604-build` @ `e39ce21`.
 **Base:** GameHub 6.0.4, R8 map id `6a5cde6143fc8cf76f6f3a447d0fececd4794d83066e6ead7a9537e6527b057b`.
 **Author:** The412Banner. **Date:** 2026-05-19.
 
@@ -162,4 +162,25 @@ Resolve by tracing the `getSourceType`/`getGogAppId` callers (`ajf, dp7, bm6, bh
 - Reuses: `GogGameByPcEmulator` launch (works), GOG icons, `platform_tab_gog` string, `getGogAppId` filter. **Zero new resources, zero enum surgery (pending 12.5 confirmation).**
 - Risk class: single-`tuc`-injection into one Compose builder + a list-filter predicate — **materially smaller than the menu-injection playbook** (no Unsafe, no Proxy, no resolver short-circuit). R8 anchors (`y6d`, `tuc`, `s6d`, `q21`, `r21`) need a letter-map entry + are fingerprint-migration candidates (structural roots: the `base_info_*_games_hidden` literal triple, the `s6d` 4-constant `PC/STEAM/EPIC/RETRO_GAMES` names, `GameInfo.getGogAppId`).
 
-**Phase 1 entry criterion:** answer 12.5 (one trace pass). Then build behind the default-off API flag.
+**Phase 1 entry criterion:** ~~answer 12.5~~ — **DONE, see §12.7.**
+
+### 12.7 §12.5 RESOLVED (2026-05-19) — verdict: MODERATE (not trivial, not huge)
+
+Traced the tab→grid path end to end. **The game grid is ONE parameterized screen — the "build a whole new GOG screen" worst case is OFF the table.** [CONFIRMED]
+
+- `y2d` field `$filterTabTypeByContentTab : Map<Lwrc;, Ls6d;>` — content-tab → `s6d` screen-enum lookup. One grid, selected by `s6d`.
+- Grid filters games via a source classifier in `a5d` (`~:1560-1612`): a `when` returning the source slug — full case set is **`retro / mobile / epic / steam / pc`**. **No `gog` case.** Zero `const-string "gog"` anywhere in the grid/filter classes (`a5d/y2d/otc/po7/dp7`).
+- `s6d` enum = exactly 4 (`PC/STEAM/EPIC/RETRO_GAMES`), no GOG (re-confirmed). s6d-ordinal branch consumers: `isc`, `rtc`.
+
+**So the parameterization exists but its vocabulary has no GOG.** A GOG tab = **3 mechanical bytecode edits + 1 flag**, no screen-building, no Unsafe/Proxy:
+
+1. **`y6d`** — inject `x9d.add(new tuc("gog", <ell from `features_home_profile_platform_tab_gog`>, <s6d gog>))`, gated on the new flag.
+2. **`s6d` enum** — add a GOG constant (Kotlin-enum smali surgery: new `enum` field + `$VALUES` array entry + `valueOf`/`values` upkeep). Mechanical but it *is* enum surgery; the filter map is keyed by `s6d` so a distinct value is the clean route. Wire it into the `$filterTabTypeByContentTab` build + the `isc`/`rtc` ordinal switches' default-safe fallthrough.
+3. **`a5d` source classifier** — add a `gog` case so a game with `getGogAppId()!=null` (or `getSourceType()==<gog int>`) classifies into the GOG tab's grid. (GOG-source int value: still UNVERIFIED — Phase-1 first task, one grep of the `getSourceType`/`getGogAppId` callers.)
+4. **API flag** — `gog_games_visible` in `bannerhub-api/base/getBaseInfo` (default off), read in `q21` + persisted in `r21` alongside the existing 3. API kill-switch, zero risk to the hide-3 semantics.
+
+**Effort tier:** MODERATE — bigger than the §12.6 single-`tuc` hope (enum + classifier extension added), smaller than the §12.5 worst case (no screen built). Reuses the working `GogGameByPcEmulator` launch, GOG icons, `platform_tab_gog` string, parameterized grid. Volatile bits = the `s6d` enum extension + `a5d` classifier edit + the `isc`/`rtc` ordinal switches (must add default-safe handling so an unknown `s6d` never crashes — house fail-safe rule).
+
+**One UNVERIFIED item for Phase 1 task 0:** the integer `getSourceType()` returns for GOG titles (decides the §12.7-step-3 predicate form). Single trace of `ckf`/`dp7`/`po7` `getSourceType` switch tables. Everything else is CONFIRMED.
+
+**Phase 1 entry:** verify the GOG `getSourceType` int, then build the 3 edits + flag behind default-off.

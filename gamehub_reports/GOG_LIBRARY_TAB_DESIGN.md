@@ -597,3 +597,19 @@ pre2 (`1.4.0-604-gog-pre2`, run 26112532244) installed over pre1 in place (login
 **Phase 1 COMPLETE — M1 (login) + M2 (owned library) + M3 (download+install) all device-confirmed.** Total Phase-1 cost: a ~7.5k-LOC faithful lift of the BannerHub-3.7.x GOG extension + GOG-only decoupling, with exactly **one** bug (missing `<service>` registration, §25) across compile→build→M1→M2→M3. The "lift the proven 3.7.x extension, don't re-port GameNative" decision (§18) is vindicated.
 
 **Deferred Phase 2 (unchanged):** WS5 GameHub-library/launch bridge (§19, programmatic `xm7.u`), production Profile-row entry (WS4/P-A), P-C container assignment. Until then, an installed GOG game shows the Phase-1 `GogLaunchHelper` "installed — in-app launch in a later update" toast (by design). Pre-release: artifact-only.
+
+---
+
+## 27. WS4 STARTED — P-A is the §12-class trace, no string shortcut (2026-05-19)
+
+WS4 = production in-app entry to `GogMainActivity` (the hub that is login pre-auth / "View Game Library" post-auth — already built+verified Phase 1). P-A = pin the Profile-screen injection anchor.
+
+**Trace finding [CONFIRMED]:** `features_home_profile_{steam,epic,gog}_{bind,title,desc}` exist only as `"string:..."` literals wrapped by `Ltdi;-><init>(String,Set)` in the **generated Compose resource-accessor classes** `vjl`/`wjl` (e.g. `vjl:4236` for `steam_bind`) — the exact orphaned-accessor pattern as `platform_tab_gog` in `ujl` (§12). No renderer references the keys; the Profile composable consumes resolved `Lell;` objects from static slots (the `pjl.<slot>` pattern `y6d` used for the tab). `gog_{bind,title,desc}` are present-but-orphaned (scaffolded, unwired) — same as the tab string.
+
+**Consequence:** pinning the Profile-row injection point is a **multi-pass obfuscated-Compose trace, same difficulty class as the §12 tab chain** (kg5→y6d→s6d→a5d, ~8 passes): `tdi(steam_bind)` → its `Lell;` static slot → the composable consuming that slot → the Steam/Epic bind-row construction pattern to mirror a GOG row. It is the **menu-row-injection risk tier** (proven: vibration/gpuspoof/renderer), NOT enum surgery — but it is real multi-pass RE + a new bytecode/Compose injection patch + the CI/device loop. No quick string anchor exists.
+
+**Decision fork (same pattern as prior forks):**
+- **(A) Deep P-A** — full Profile-row trace + injection. Highest-fidelity, "designed-for" placement next to Bind-Steam/Epic, reuses the scaffolded `gog_*` strings. Cost: ~§12-scale trace + injection patch + iterations.
+- **(B) Interim cheap entry** — ship Phase 1 reachable *now* via a lower-effort global hook (a simpler reachable surface than the deep Profile-Compose tree), defer the polished Profile row. Gets "GOG library + downloads" into users' hands sooner; revisit (A) later.
+
+Phase 1 stays a clean stopping point either way. No code yet for WS4.

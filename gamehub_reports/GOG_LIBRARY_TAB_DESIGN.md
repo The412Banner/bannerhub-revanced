@@ -271,3 +271,32 @@ GOG integration **already exists in the GameNative / BannerHub-3.7.x lineage** (
 ### 14.4 Status
 
 **Tab work (§12/§13) SHELVED — solves the wrong layer for the stated goal.** Next step is a decision: open a separate "GOG integration port" scoping effort (large), or drop GOG for v6. No code. Branch `feature/gog-explore-tab` holds the full trace record.
+
+---
+
+## 15. GameNative GOG stack audit + port feasibility (2026-05-19)
+
+Audited `/data/data/com.termux/files/home/GameNative` (Kotlin-source lineage; the v6 base is the *unrelated* obfuscated XiaoJi 6.0.4 APK).
+
+### 15.1 Does it have account login + owned library? — YES, full integration [CONFIRMED]
+
+~20 classes under `app/gamenative/service/gog/` + `ui/screen/auth/GOGOAuthActivity.kt` + `ui/screen/library/appscreen/GOGAppScreen.kt`:
+- **Login:** `GOGOAuthActivity` (WebView OAuth, captures GOG redirect auth code) + `GOGAuthManager` (`auth.gog.com/token`, refresh-token lifecycle, credential storage, Galaxy creds).
+- **Owned library:** `GOGApiClient.getGameIds()` → `embed.gog.com/user/data/games`, parses the `"owned"` array = the user's owned-game IDs; `getGameById()` per-game metadata; `transformGameDetails()`.
+- **Plus:** `GOGDownloadManager` (multi-CDN), `GOGManifestParser`, `GOGCloudSavesManager`, Room DAO/entities, full test suite.
+
+Not download-by-id — a complete account → owned-library → download → cloud-save integration.
+
+### 15.2 Port feasibility
+
+**Backend module: portable.** Auth/api/download depend only on standard OkHttp/JSON/Coroutines/Room + ~5 small GameNative utils (`DownloadInfo`, `CdnRankingUtils`, `DownloadSpeedConfig`, `MarkerUtils`, `Net`) — **no coupling to GameNative's Wine/Steam internals**. Bundleable into the 6.0.4 APK as a ReVanced extension package (BannerHub already ships Kotlin/Java extensions: offline-picker, vibration, gpuspoof). `GOGOAuthActivity` addable via manifest patch (BannerHub already manifest-patches).
+
+**The "5th tab next to PC/Steam/Epic/Retro" constraint is the expensive part — two compounding blockers:**
+1. The literal tab still requires the §12.9 **dual obfuscated-Kotlin enum surgery** (`wrc`+`s6d`) the user already rejected.
+2. The in-tab grid is GameHub's **obfuscated Compose**; GameNative's `GOGAppScreen` cannot be dropped in (different Compose tree, DI, game model entirely). The library UI would have to be rebuilt inside GameHub's obfuscated UI.
+
+### 15.3 Tractable shape (drops the literal-tab constraint)
+
+Bundle the GOG backend module + ship `GOGOAuthActivity` and a **standalone GOG library Activity** (reuse GameNative's own `GOGAppScreen` Compose *as a self-contained screen*, not injected into GameHub's UI), reached via a **menu-row injection** (BannerHub-proven: vibration/gpuspoof/renderer menu-row playbooks) instead of a tab. Then bridge installed GOG titles into GameHub's library so the existing `LaunchType.GogGameByPcEmulator` launches them — **the GameNative `GOGGame`/Room ↔ GameHub `GameInfo`/install-model bridge is the genuinely hard, novel piece** (no precedent; needs its own scoping).
+
+**Verdict:** login+library *exists and the backend ports cleanly*; the **literal in-strip GOG tab is the costly constraint** (dual-enum + UI rebuild). Standalone-screen-via-menu-row avoids both rejected/expensive blockers and is the realistic shape — scope ≈ a BannerHub-API/Epic-EOS-class multi-iteration project, dominated by the game-model bridge, not the GOG code. **No code; this is the decision point: hold the literal-tab requirement (expensive) vs accept a standalone GOG screen entry point (tractable).**

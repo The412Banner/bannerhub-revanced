@@ -233,6 +233,17 @@ public final class BhVibrationController {
     private volatile int cachedMode = DEFAULT_MODE;
     private volatile int cachedIntensity = DEFAULT_INTENSITY;
 
+    // Durable forensic breadcrumb. Vibration writes no per-launch file and
+    // loads no distinct lib, so (unlike GPU Spoof's dxvk.conf / Renderer's
+    // _legacy .so in /proc/maps) there is no on-disk proof the rumble path
+    // resolved the right per-game scope — and the AnTuTu logcat flood rolls
+    // the Log.i markers before they can be read. These one-shot flags emit
+    // exactly two lines to <filesDir>/bh_vibration.log per process: the
+    // container resolve and the first non-OFF rumble. Append-only, guarded,
+    // never throws — production-safe observability, not a diag harness.
+    private static volatile boolean sBcResolved = false;
+    private static volatile boolean sBcRumble   = false;
+
     private final HandlerThread workerThread;
     private final Handler worker;
 
@@ -395,6 +406,11 @@ public final class BhVibrationController {
                 this.containerGameId = gid;
                 reloadSettings();
                 Log.i(TAG, "container=" + gid + " mode=" + cachedMode + " intensity=" + cachedIntensity);
+                if (!sBcResolved) {
+                    sBcResolved = true;
+                    breadcrumb("RESOLVE gid=" + gid + " mode=" + cachedMode
+                            + " intensity=" + cachedIntensity);
+                }
                 return;
             }
         } catch (Throwable ignored) { }
@@ -526,6 +542,13 @@ public final class BhVibrationController {
         logGuestTransition(slot, low & 0xFFFF, high & 0xFFFF);
 
         int mode = cachedMode;
+        if (!sBcRumble) {
+            sBcRumble = true;
+            breadcrumb("RUMBLE#1 gid="
+                    + (containerGameId != null ? containerGameId : "(global)")
+                    + " mode=" + mode + " intensity=" + cachedIntensity
+                    + " low=" + (low & 0xFFFF) + " high=" + (high & 0xFFFF));
+        }
         if (mode == MODE_OFF) return true; // swallow everything
 
         // Store per-slot raw values for device aggregation.
@@ -1186,6 +1209,29 @@ public final class BhVibrationController {
      * ActivityThread.currentApplication() gives us a Context without needing
      * any caller to pass one in. Works from any thread after app initialisation.
      */
+    /**
+     * Append one breadcrumb line to {@code <filesDir>/bh_vibration.log}.
+     * Survives the AnTuTu logcat flood so a session can prove the rumble
+     * path scoped to the right game from disk. Never throws.
+     */
+    private void breadcrumb(String line) {
+        try {
+            Context ctx = appContext;
+            if (ctx == null) return;
+            File f = new File(ctx.getFilesDir(), "bh_vibration.log");
+            java.io.FileWriter w = new java.io.FileWriter(f, true);
+            try {
+                w.write(new java.text.SimpleDateFormat(
+                            "yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+                        .format(new java.util.Date())
+                        + " " + line + "\n");
+            } finally {
+                w.close();
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
     private void ensureContext() {
         if (appContext != null) return;
         try {

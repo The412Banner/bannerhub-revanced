@@ -330,3 +330,78 @@ Secondary option: a "Bind GOG" button on the Library screen mirroring Epic's (`s
 ### 16.4 Honest caveat
 
 Like `platform_tab_gog`, the profile `gog_*` strings are orphaned in resource accessors only; the precise Profile-renderer injection anchor needs a Phase-0-class trace (find the composable that builds the Steam/Epic rows; mirror a GOG row) — same method as the §12 `y6d` trace, but the *class of work is the proven menu-row injection*, materially lower risk than the rejected tab. Net: placement question resolved — **Profile account screen, not a tab, not the per-game menu**. Scope unchanged from §15 (dominated by the game-model bridge); the entry-point risk drops from "dual-enum surgery" to "menu-row injection."
+
+---
+
+## 17. FULL INTEGRATION SCOPE — GREENLIT (2026-05-19)
+
+Decision: build GOG account login + owned-library + install + launch in BannerHub v6, **as a standalone GOG screen reached from a Profile-screen "GOG" account row** (§16), reusing the GameNative GOG module (§15). **Not a Library tab** (no §12.9 dual-enum surgery). Project class ≈ BannerHub-API / Epic-EOS: multi-iteration, CI-build + device-test loop, no local test.
+
+### 17.1 Architecture
+
+```
+GameHub 6.0.4 APK (obfuscated; ReVanced-patched)
+ ├─ [bundled extension] app.revanced.extension.gamehub.gog.*  ← ported GameNative GOG module
+ │     GOGAuthManager · GOGApiClient · GOGDownloadManager · GOGManifestParser · GOGDataModels
+ │     (Room → REPLACED with JSON-on-disk store, see 17.3-D)
+ ├─ [manifest patch] GOGOAuthActivity (GameNative, WebView OAuth)
+ ├─ [manifest patch] GogLibraryActivity (GameNative GOGAppScreen, self-contained — NO inject into GameHub Compose)
+ ├─ [bytecode inject] "GOG" row on Profile screen → starts GOGOAuthActivity / GogLibraryActivity
+ └─ [bridge] GogGameRegistrar: installed GOG dir → GameHub's PC-game library+launch (GogGameByPcEmulator)
+```
+
+### 17.2 Workstreams
+
+| WS | Deliverable | Pattern precedent | Risk |
+|---|---|---|---|
+| WS1 | **Port GOG backend module** as a ReVanced extension package (auth/api/download/manifest/datamodels + ~5 utils: DownloadInfo, CdnRankingUtils, DownloadSpeedConfig, MarkerUtils, Net) | offline-picker / vibration extension bundling | MED — dep/version reconciliation (17.3-D) |
+| WS2 | **GOGOAuthActivity** added via manifest patch; GOG client_id/redirect from GameNative; capture auth code | VibrationManifestPatch / GpuSpoofManifestPatch | LOW |
+| WS3 | **GogLibraryActivity** = GameNative `GOGAppScreen` as standalone activity (own Compose, own theme) | new activity, self-contained | MED — Compose/Material deps in extension |
+| WS4 | **Profile-row injection** — "GOG" row next to Bind-Steam/Epic on the Profile screen, opens WS2/WS3 | menu-row playbook (vibration/gpuspoof/renderer) | MED — needs P-A trace; proven class |
+| WS5 | **GogGameRegistrar bridge** — installed GOG game dir → GameHub PC-game record so `LaunchType.GogGameByPcEmulator` launches it in a Wine container | **NONE — novel** | **HIGH — critical path** |
+| WS6 | Build/CI: extension deps, R8/proguard keep rules, APK-size, default-off safety; docs/letter-map/memory | stable-release-pipeline | MED |
+
+**Critical path = WS5.** Everything else is proven-pattern or self-contained; the bridge has no precedent and gates the feature's value (login+list without launch = useless).
+
+### 17.3 Key scope decisions
+
+- **A. Standalone Activity, not Compose injection.** GameNative `GOGAppScreen` ships as its own activity; zero rebuild in GameHub's obfuscated Compose. Avoids the §12.9 / §15.2 UI blocker.
+- **B. Profile row, not tab.** Entry point = §16 menu-row-class injection. Eliminates dual-enum surgery entirely.
+- **C. Reuse GOG auth/api/download verbatim** where the dep surface allows; treat as vendored upstream (track GameNative SHA for future pulls).
+- **D. Drop Room.** GameNative `GOGGameDao`/`@Entity gog_games` → replace with a JSON-on-disk store mirroring the offline-picker pattern (`sp_winemu_*`/file cache). Bundling Room (codegen, schema, DB-version conflict with GameHub's own DBs) into an injected extension is unacceptable risk. This is a real port edit, scoped into WS1.
+- **E. Default-off / fail-safe.** Profile row + activities behave inert on any failure; never crash GameHub (house rule; offline-picker precedent).
+
+### 17.4 Phase 0 — pre-work traces (BLOCKING, no code until closed)
+
+| ID | Trace | Why blocking |
+|---|---|---|
+| P-A | Profile-screen renderer anchor: the composable that builds the Steam/Epic bind rows (mirror target for the GOG row) — same method as the §12 `y6d` trace | WS4 cannot start without the injection anchor |
+| **P-B** | **GameHub PC-game registration + launch contract**: exactly what record/path/container makes `GogGameByPcEmulator` launch a game (GameInfo has no path fields → it's the import pipeline + a Wine-container/prefix record). Trace the existing PC `.exe` import → library → launch chain end to end | **Defines WS5; the make-or-break unknown** |
+| P-C | Wine-container/prefix model for an installed GOG game (which container, drive mapping, where the bridge writes the exe path) | WS5 correctness; cross-`:wine` boundary |
+| P-D | Extension build feasibility: OkHttp / kotlinx-coroutines / kotlinx-serialization versions vs what GameHub already ships; Compose/Material for WS3; R8 keep rules | WS1/WS3 viability; dep-clash is a known APK-merge footgun |
+
+### 17.5 Milestones (each gated by on-device test; CI-only build)
+
+- **M0** Phase-0 traces P-A..P-D closed; this scope refined with concrete anchors.
+- **M1** WS1+WS2: GOG login works standalone (OAuth → token stored); owned-library JSON fetched + logged. *Exit:* device login + library dump in logcat.
+- **M2** WS3+WS4: Profile "GOG" row → login → GogLibraryActivity lists owned games. *Exit:* device sees own GOG library in-app.
+- **M3** WS1 download path: a chosen GOG title downloads+installs to disk. *Exit:* files on device, integrity OK.
+- **M4** **WS5 bridge**: installed GOG game appears in GameHub library and **launches** via `GogGameByPcEmulator` in a Wine container. *Exit:* a real GOG game runs. ← highest-iteration milestone.
+- **M5** WS6 hardening: fail-safe, default-off, APK-size, docs/letter-map/memory; Lite refresh per branching rule.
+
+### 17.6 Risk register
+
+- **WS5 bridge (HIGH):** no precedent; GameHub's import/container model is undocumented (P-B/P-C). Mitigation: spike P-B first; if launch can't be bridged, the feature degrades to "browse/download only" — decide M0 whether that's acceptable.
+- **Dep clash (MED):** extension pulls OkHttp/coroutines/serialization; GameHub ships its own. Mitigation: P-D audit; shade/relocate if needed.
+- **R8 fragility (MED):** WS4 anchor + any bytecode site re-break per base bump → letter-map + fingerprint-migration candidate.
+- **Silent-SEVERE footgun:** a failed patch ships green. Mitigation: explicit post-build asserts (row present, activity registered) per stable-release-checklist.
+- **APK size (LOW-MED):** GOG module + Compose ≈ small vs the 6.0.4 base; Lite must strip or accept.
+- **GOG ToS/login (LOW tech):** standard GOG OAuth as GameNative already does; no new surface.
+
+### 17.7 Effort & non-goals
+
+**Effort:** multi-iteration feature, WS5 dominating (expect M4 to take the most device cycles, cf. menu-injection pre7→pre17). M1–M3 are largely vendored-code + proven patterns. **Non-goals (v1):** GOG cloud saves (module exists — defer), GOG Galaxy features, in-app store/purchase, a Library *tab* (explicitly rejected — Profile entry only).
+
+### 17.8 Next action
+
+Execute **Phase 0 (P-A..P-D)** — four traces, no code. P-B is the priority (it decides whether WS5 is tractable and therefore whether the whole feature is viable beyond browse/download). M0 review after.

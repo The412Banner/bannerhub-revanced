@@ -1,6 +1,6 @@
 # GOG Library Tab — Patch Design Doc
 
-**Status:** ⚑ **PHASE 1 COMPLETE + WS4 (permanent GOG card) FUNCTIONALLY COMPLETE — CURRENT = §32b.** GOG login + owned-library + download/install device-confirmed (pre2). WS4: permanent seeded GOG card → tap → "Launch Game" → GOG hub device-confirmed on Normal-GHL (`gamehub.lite`, pre8); pre9 = orientation polish only (landscape). Intercept = yv3.invoke side-effect + reflective sentinel walk + main-thread gate; real launches byte-for-byte unaffected. Iteration trail: pre3 wrong anchor → pre4 suspend VerifyError (§31) → pre5 silent no-apply → pre6 idiom fix → pre7 yv3 (§32) → pre8 thread-gate (§32a) → pre9 landscape (§32b). Phase 2 still deferred: WS5 launch bridge (§19) / production Profile-row entry (WS4-P-A) / P-C. Branch `feature/gog-explore-tab`.
+**Status:** ⚑ **PHASE 1 COMPLETE; WS4 card = handheld-only (explore mode = separate surface, won't seed); PIVOTED to menu-row entry — CURRENT = §33.** GOG login + owned-library + download/install device-confirmed (pre2). WS4: permanent seeded GOG card → tap → "Launch Game" → GOG hub device-confirmed on Normal-GHL (`gamehub.lite`, pre8); pre9 = orientation polish only (landscape). Intercept = yv3.invoke side-effect + reflective sentinel walk + main-thread gate; real launches byte-for-byte unaffected. Iteration trail: pre3 wrong anchor → pre4 suspend VerifyError (§31) → pre5 silent no-apply → pre6 idiom fix → pre7 yv3 (§32) → pre8 thread-gate (§32a) → pre9 landscape (§32b). Phase 2 still deferred: WS5 launch bridge (§19) / production Profile-row entry (WS4-P-A) / P-C. Branch `feature/gog-explore-tab`.
 **Base:** GameHub 6.0.4, R8 map id `6a5cde6143fc8cf76f6f3a447d0fececd4794d83066e6ead7a9537e6527b057b`.
 **Author:** The412Banner. **Date:** 2026-05-19.
 
@@ -846,3 +846,50 @@ add `android:screenOrientation="sensorLandscape"` to all 6 GOG activities in
 `GogManifestPatch` — matches GameHub's content-screen value and the user's
 landscape usage; no bytecode/fingerprint risk. Next: compile gate → grep GOG
 SEVERE → pre9 → device (GOG flow opens landscape, matching the app).
+
+---
+
+## 33. Explore-mode investigation → PIVOT to menu-row entry; pre10
+
+pre9 device + explore-mode probe (logcat `…163030`, user in explore mode +
+library): seeder ran (`GogLibraryCard: seeded sentinel`) but **zero**
+`buildLibraryInfoWithContext` / GOG / library activity for our row — vs
+handheld where it fires every interaction. **Conclusion: explore mode is a
+separate library surface that never surfaces the local sentinel row.** Making
+the card appear there = the `s6d`/`wrc` dual-enum + Compose-grid (or
+server-feed) work the doc flagged as the project's highest-risk class (§12,
+§13.x) — the path the card approach was chosen to avoid; it is structurally
+mode-bound.
+
+**Decision (user, 2026-05-19): PIVOT to the menu-row entry.** The design
+doc's own recommended production entry (§16/§300/§319) — the BannerHub-proven
+menu-row injection (vibration/gpuspoof/renderer playbook, shipped 3×) — lives
+in the per-game popup, which exists in **both** handheld and explore modes.
+Mode-independent, sidesteps the library surface entirely, opens the already
+device-confirmed `GogMainActivity`.
+
+**pre10 implementation:**
+- `extensions/.../com/xj/winemu/gog/BhGogMenuRowClick.java` — trimmed clone of
+  `BhGpuSpoofMenuRowClick` (Menu A only): `appendGogRowTo(Object)` builds an
+  `Liae(Lo05 icon, "GOG", Proxy<Lpw6> click)` and appends it; click →
+  `resolveTopActivity()` → `startActivity(GogMainActivity)` with
+  NEW_TASK|CLEAR_TOP. Raw String label (no resolver / Unsafe / Lell), no
+  per-game id (hub is global), Proxy-wrapped Function1 for the R8-rename.
+- `patches/.../gog/GogMenuRowPatch.kt` — clone of GpuSpoof **Injection 1
+  only**: fingerprint `Lx57;->a(Lf37;Lpo7;Lv83;I)V` (Iae 3-arg ctor +
+  `Lwhl;->S:Lxrl;`), inject `invoke-static {v4},
+  BhGogMenuRowClick;->appendGogRowTo(Object)V` after the last
+  `Lx9d;->add(Object)Z`. No `dependsOn` (Menu A needs no resolver) → minimal
+  surface. Library-tile popups (ted.f / pzc.j0) deferred — add later only if
+  the More-Menu entry isn't enough.
+- Seeded card + yv3 intercept **kept** (handheld second entry, harmless).
+- pre9 `sensorLandscape` **reverted** (§32c) — user uses explore/portrait
+  too; orientation back to `unspecified` so each GOG screen follows the
+  current mode.
+
+Risk: menu-injection is the playbook's iterate-prone class (pre7→pre17 last
+time), but we are cloning a *device-confirmed* injection 1:1 and starting
+with the single simplest menu. Files: `BhGogMenuRowClick.java`,
+`GogMenuRowPatch.kt`, `GogManifestPatch.kt` (revert). Next: compile gate →
+**grep SEVERE for BOTH `GOG menu row` and `GOG library card`** → pre10 →
+device (any game → More Menu → "GOG" row → GogMainActivity, in both modes).

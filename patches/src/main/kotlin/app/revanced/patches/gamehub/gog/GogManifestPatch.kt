@@ -64,16 +64,15 @@ val gogManifestPatch = resourcePatch(
                         "android:configChanges",
                         "orientation|screenSize|keyboardHidden",
                     )
-                    // §32b: without an explicit orientation these defaulted to
-                    // `unspecified` → portrait, while GameHub runs landscape
-                    // (device-confirmed pre8). GameHub locks its real content
-                    // screens to `sensorLandscape` (its sub-screens use
-                    // `behind` to inherit, but the GOG hub is launched in a
-                    // NEW_TASK from app context — no activity below to inherit
-                    // from, so `behind` would fall back to portrait). Match
-                    // GameHub's content-screen value so the GOG flow opens in
-                    // the same landscape the app is already running in.
-                    setAttribute("android:screenOrientation", "sensorLandscape")
+                    // §32c: pre9 forced `sensorLandscape` here to fix the
+                    // portrait-while-handheld complaint. REVERTED — the user
+                    // also uses GameHub's explore (portrait) mode, so a hard
+                    // landscape lock is wrong there. Leaving orientation
+                    // `unspecified` lets each GOG screen follow the device /
+                    // app orientation (landscape in handheld, portrait in
+                    // explore), which is the "match the mode I'm in" behaviour
+                    // actually wanted. `configChanges` above already keeps the
+                    // activity from recreating on rotation.
                 }
                 app.appendChild(activity)
             }

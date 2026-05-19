@@ -2665,3 +2665,8 @@ Secondary bug (from the one prior successful 05-17 GoW_dxgi.log): DXVK's inline 
 `/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-pergame-pre5-Patched-alt-AnTuTu.apk` (116,095,398 B, md5 `034051d627d0a58905d3e5223eaa1ee8`).
 
 **Retest (GoW 49908):** set NVIDIA → launch → in-game reads NVIDIA not GameFusion; `bh_gpuspoof_dxvk.conf` mtime updates at the launch; new `shared_prefs/bh_menu_gameid.xml` has `<string name="id">49908</string>` (proves gameId crossed into `:wine`); `BhGpuSpoof: GPU spoof active 10de:2704` logged. **NOT merged** — hold until device-confirmed.
+
+### pre5 ✅ DEVICE-CONFIRMED (2026-05-18 22:44, GoW 49908 → NVIDIA RTX 4090)
+Verified chain: `shared_prefs/bh_menu_gameid.xml` = `<string name="id">49908</string>` (gameId crossed the main→`:wine` boundary — the decisive proof the disk-bridge works); `bh_gpuspoof_dxvk.conf` rewritten at launch (mtime 22:44; was stale 05-17 on pre4) with body `10de:2684` + `customDeviceDesc = NVIDIA GeForce RTX 4090` (full, untruncated — pre4 secondary fix holds); **in-game GPU reads NVIDIA** (previously GameFusion). No `BhGpuSpoof` logcat line (AnTuTu floods/rolls the buffer) — the fresh conf + in-game identity are hard proof the launch apply fired. Root cause (`:wine` process boundary defeats Java statics) and the SharedPreferences disk-bridge fix are both validated. The shared `BhMenuGameId` bridge also corrects Renderer + Vibration launch-scoping (same boundary).
+
+**NOT merged — pending user go.** On go: `fix/per-game-settings-isolation` → `gamehub-604-build` `--no-ff` (author The412Banner, no Claude trailer) → refresh `feature/lite-variant-tier1` off new 604 → update README + master-map (note the `:wine`-boundary lesson + that it fixes all three per-game features).

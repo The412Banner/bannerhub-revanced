@@ -22,20 +22,20 @@ import com.android.tools.smali.dexlib2.iface.reference.TypeReference
 //      P-B-confirmed, stable across base bumps): call
 //      GogLibraryCard.ensureSeeded(this). Idempotent + self-healing → the
 //      sentinel row is (re)created every app start.
-//  (2) INTERCEPT — at po7's by-id launch dispatch
-//      `G(Lpo7;Ljava/lang/String;Lci3;)Ljava/lang/Object;` (suspend; p1 = the
-//      launch game-id String; body references the kept-name LaunchType class).
-//      Head guard: if GogLibraryCard.maybeOpenHubById(p1) → GogMainActivity
-//      already started; complete the suspend fn with kotlin.Unit.INSTANCE
-//      (the correct "completed, returned Unit" value — NOT null) so the normal
-//      Wine launch never runs and no exe/container validation fires.
+//  (2) INTERCEPT — at GameHub's two NON-suspend launch orchestrators on the
+//      launch VM (`po7.F0`/`po7.G0`, both `public final (GameInfo)V`), where
+//      the GOG-card tap is dispatched via `vl7.l`'s K/A/B branch. Head guard:
+//      if GogLibraryCard.maybeOpenHubFromLaunchCtx(p1) → GogMainActivity
+//      already started; `return-void` so the normal Wine launch never runs.
+//      Anchoring OFF any suspend fn is deliberate — see the §31 VerifyError.
 //
 // Risk note (per §22 CI+device loop): hook (1) is high-confidence (exact
-// non-obf anchor, pure-Context call). Hook (2) is the iterate-prone piece —
-// the obfuscated suspend method/return is inspection-unverifiable; structural
-// anchor + Unit.INSTANCE return is the best first-cut; device test drives any
-// refinement. If (2) misses, the card still appears (seed proves the bulk of
-// WS4) and only tap-behaviour iterates — same shape as the WS1 one-bug loop.
+// non-obf anchor, pure-Context call). Hook (2) is the iterate-prone piece;
+// the F0/G0 fingerprints are letter-free (kept-name classes only) and the
+// guard is verifier-safe, but which branch the synthetic sentinel routes
+// through is not inspection-determinable, so we guard BOTH and let the
+// device test confirm. If (2) misses, the card still appears (seed proves
+// the bulk of WS4) and only tap-behaviour iterates — the WS1 one-bug loop.
 // =============================================================================
 
 private const val EXT = "Lapp/revanced/extension/gamehub/gog/GogLibraryCard;"
@@ -70,45 +70,71 @@ val gogLibraryCardPatch = bytecodePatch(
             "invoke-static {p0}, $EXT->ensureSeeded(Landroid/content/Context;)V",
         )
 
-        // ── (2) launch intercept — REAL card-tap resolver wel.b ──────────────
-        // pre3 device test (§30): tapping the card hit GameHub's launch-
-        // strategy resolver `wel.b(Lwel;Lw4c;Lci3;)Object` and failed with the
-        // logged string "No strategy found: type=Unknown" — i.e. po7.G was the
-        // WRONG anchor; the card tap dies in wel.b before any per-type
-        // dispatch. Re-anchor on that STABLE (non-obfuscated) string literal:
-        // the suspend method whose body emits "No strategy found: type=".
-        // p1 = the obfuscated launch-context (`w4c`, holds a kept-name
-        // GameInfo). Inject at head → maybeOpenHubFromLaunchCtx(p1)
-        // reflectively pulls the GameInfo/id (obfuscation-proof); sentinel →
-        // GogMainActivity already started, complete the suspend fn with
-        // kotlin.Unit.INSTANCE so the strategy lookup / error never runs.
-        val launchResolver = firstMethod {
-            returnType == "Ljava/lang/Object;" &&
-                parameterTypes.size == 3 &&
-                parameterTypes[2] == "Lci3;" &&
-                (implementation?.instructions?.any { ins ->
-                    ins.opcode == Opcode.CONST_STRING &&
-                        (ins as? ReferenceInstruction)?.reference?.toString()
-                            ?.contains("No strategy found: type=") == true
-                } ?: false)
+        // ── (2) launch intercept — VERIFIER-SAFE non-suspend anchors ─────────
+        // pre4 device (§31): anchoring on the suspend strategy resolver
+        // `wel.b(Lwel;Lw4c;Lci3;)` and prepending at index 0 produced
+        // `java.lang.VerifyError: Verifier rejected class wel`. Kotlin emits a
+        // coroutine state-machine dispatch at a suspend method's head and
+        // resume paths branch back into it, so an index-0 splice is reached
+        // WITHOUT our invoke (result0=Undefined) → class rejected → instant
+        // crash on the GOG card tap. Re-anchor OFF the coroutine entirely.
+        //
+        // The tap is dispatched (via `vl7.l`'s K/A/B branch) into one of
+        // GameHub's two NON-suspend launch orchestrators on the launch VM:
+        //   po7.F0(GameInfo)V  — full path (refs GameInfo.getHasAchievements)
+        //   po7.G0(GameInfo)V  — lean variant (no getHasAchievements)
+        // Both are `public final (GameInfo)V`, reference the kept-name
+        // LaunchType enum + GameInfo.getSteamAppId. Head-guarding them is
+        // verifier-safe: non-suspend, void → early `return-void`; v0 is a
+        // single-clobber before the body re-inits its own regs (the proven
+        // OfflineComponentList gof.c / seed-hook technique). p1 = the
+        // GameInfo; maybeOpenHubFromLaunchCtx pulls the id obfuscation-proof
+        // (deepExtractId → getId()). Fingerprints are letter-free (kept-name
+        // classes only) → base-bump resilient. We guard BOTH because which
+        // branch the synthetic sentinel routes through is not
+        // inspection-determinable (§31).
+        val gameInfoT = "Lcom/xiaoji/egggame/game/di/model/game/GameInfo;"
+        val launchTypeT = "Lcom/xiaoji/egggame/launcher/model/LaunchType;"
+
+        fun bodyRefs(insns: Iterable<*>?, needle: String): Boolean =
+            insns?.any { ins ->
+                (ins as? ReferenceInstruction)?.reference?.toString()
+                    ?.contains(needle) == true
+            } ?: false
+
+        // po7.F0 — full launch path (unique: GameInfo.getHasAchievements).
+        val launchFull = firstMethod {
+            returnType == "V" &&
+                parameterTypes.size == 1 &&
+                parameterTypes[0] == gameInfoT &&
+                bodyRefs(implementation?.instructions, launchTypeT) &&
+                bodyRefs(implementation?.instructions, "$gameInfoT->getHasAchievements")
+        }
+        // po7.G0 — lean variant (refs getSteamAppId, NOT getHasAchievements).
+        val launchLean = firstMethod {
+            returnType == "V" &&
+                parameterTypes.size == 1 &&
+                parameterTypes[0] == gameInfoT &&
+                bodyRefs(implementation?.instructions, launchTypeT) &&
+                bodyRefs(implementation?.instructions, "$gameInfoT->getSteamAppId") &&
+                !bodyRefs(implementation?.instructions, "$gameInfoT->getHasAchievements")
         }
 
-        val orig = launchResolver.getInstruction(0)
-        // p1 = launch-context. v0 = fresh scratch for the boolean + Unit
-        // return; original body re-inits its own regs, so an index-0 v0
-        // clobber before fall-through is safe dalvik (OfflineComponentList
-        // gof.c technique). Suspend completes with Unit.INSTANCE (the correct
-        // "returned Unit" value — not null).
-        launchResolver.addInstructionsWithLabels(
-            0,
-            """
-                invoke-static {p1}, $EXT->maybeOpenHubFromLaunchCtx(Ljava/lang/Object;)Z
-                move-result v0
-                if-eqz v0, :bhOrig
-                sget-object v0, Lkotlin/Unit;->INSTANCE:Lkotlin/Unit;
-                return-object v0
-            """.trimIndent(),
-            ExternalLabel("bhOrig", orig),
-        )
+        // p1 = the GameInfo (only declared param; p0 = this). v0 is freshly
+        // written then either returned-from or re-init by the original head
+        // (move-object/from16 v0, p0) on the non-sentinel fall-through.
+        for (launchEntry in listOf(launchFull, launchLean)) {
+            val origHead = launchEntry.getInstruction(0)
+            launchEntry.addInstructionsWithLabels(
+                0,
+                """
+                    invoke-static {p1}, $EXT->maybeOpenHubFromLaunchCtx(Ljava/lang/Object;)Z
+                    move-result v0
+                    if-eqz v0, :bhOrig
+                    return-void
+                """.trimIndent(),
+                ExternalLabel("bhOrig", origHead),
+            )
+        }
     }
 }

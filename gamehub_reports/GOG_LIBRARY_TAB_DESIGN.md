@@ -651,3 +651,66 @@ pre3 (`1.4.0-604-gog-pre3`) on Normal-GHL: **card appears = seeder CONFIRMED wor
 - **Tap → "No strategy found: type=Unknown, methodId=1"** (screenshot). Root cause: the `po7.G` intercept anchor was WRONG — the card tap dies in the launch-**strategy resolver** `wel.b(Lwel;Lw4c;Lci3;)Object` *before* any per-type dispatch (start_type=0 → Unknown). Re-anchored hook (2) on the **stable non-obf string `"No strategy found: type="`** (uniquely finds `wel.b`); inject at head → `maybeOpenHubFromLaunchCtx(p1)` where p1=`w4c` (holds kept-name `GameInfo` field `c`). New reflective helper `maybeOpenHubFromLaunchCtx` pulls the id obfuscation-proof (own getId() / scan fields for a `…GameInfo` or String id), sentinel → GogMainActivity + suspend-complete `Unit.INSTANCE` so the resolver/error never runs.
 
 Seeder remains high-confidence; the re-anchored intercept is now on a *stable string* (not an obfuscated method guess) so materially more robust than pre3's. Next: compile gate → pre4 artifact → device (art shows? tap → GOG hub?).
+
+---
+
+## 31. WS4 pre4 DEVICE TEST → VerifyError root-caused; pre5 (2026-05-19)
+
+pre4 (`gamehub.lite`, PID 19963, logcat 14:27:54): tapping the GOG card **crashed the app** with:
+
+```
+FATAL EXCEPTION: main
+java.lang.VerifyError: Verifier rejected class wel:
+  java.lang.Object wel.b(wel, w4c, ci3) failed to verify:
+  [0x0] copyRes1 v0 <- result0 type=Undefined  (wel in classes4.dex)
+```
+
+**Root cause (not the long Koin/Compose stack underneath — that's just the
+tap→resolution chain that loads `wel`):** `wel.b(Lwel;Lw4c;Lci3;)Object` is a
+Kotlin **`suspend`** function (`Lci3;` = Continuation; continuation class
+`Lsel;`). pre4's hook (2) re-anchored there and did `addInstructionsWithLabels(0, …)`.
+Kotlin compiles a suspend body as a coroutine state machine whose head is a
+label/dispatch and whose resume paths branch *backward into the method*. After
+the index-0 prepend, the verifier finds a path reaching our `move-result v0`
+**without** flowing through our `invoke-static` (suspend-resume restores regs
+from the Continuation) → `result0` is `Undefined` → the whole class is
+rejected → instant crash the moment the tap resolves `wel`. This is the
+suspend-function sibling of the `[[feedback_revanced_trailing_label]]` /
+`[[feedback_gh600_port_lessons]]` index-0 footgun. **Rule: never prepend raw
+instructions at index 0 of a Kotlin suspend method.** (pre3's `po7.G` and the
+strategy entry `wel.a`/`vl7.l` are *all* suspend — every coroutine anchor here
+is unsafe.)
+
+**pre5 fix (Option 1 — hook the non-suspend caller).** Decompile trace
+(`gamehub_604_decompile`): the card tap is dispatched by `vl7.l(...Lci3;)`
+(suspend) via synthetic trampolines `po7.K`(9315)/`po7.B`→`G0`(9325)/
+`po7.A`→`F0`(9330) into GameHub's two **non-suspend** launch orchestrators on
+the launch VM:
+
+| anchor | shape | unique structural marker |
+|---|---|---|
+| `po7.F0(GameInfo)V` | `public final`, 321-line full path | refs `GameInfo.getHasAchievements` (+`getGameSource`) |
+| `po7.G0(GameInfo)V` | `public final`, 195-line lean variant | refs `GameInfo.getSteamAppId`, **no** `getHasAchievements` |
+
+Both reference the kept-name `LaunchType` enum + `GameInfo.getSteamAppId`.
+Hook (2) now uses two **letter-free** structural fingerprints (kept-name
+classes + the getHasAchievements presence/absence discriminator — base-bump
+resilient, per the §27/§14 fingerprint-migration guidance) and head-guards
+**both** (which branch the synthetic sentinel routes through is not
+inspection-determinable):
+
+```
+invoke-static {p1}, …GogLibraryCard;->maybeOpenHubFromLaunchCtx(Ljava/lang/Object;)Z
+move-result v0
+if-eqz v0, :bhOrig
+return-void
+:bhOrig <original head: move-object/from16 v0, p0>
+```
+
+Verifier-safe: non-suspend `()V`, early `return-void`, single v0 clobber
+before the original head re-inits its own regs (the proven OfflineComponentList
+`gof.c` / seed-hook technique). p1 = the `GameInfo` (only declared param);
+the **existing** `maybeOpenHubFromLaunchCtx` already extracts the id from a
+GameInfo via `deepExtractId`→`extractId`→`getId()`, so **no extension change**.
+Seeder unchanged (still CONFIRMED working). Next: compile gate → pre5 artifact
+→ device (tap → GOG hub, no crash?).

@@ -92,6 +92,11 @@ public final class GogLaunchHelper {
                 return;
             }
             registerInLibrary(activity, dbFile, gameRowId, gogId, safeName, safeCover, exePath);
+            // §37: kick Room's InvalidationTracker so the library Flow re-emits
+            // in the running GameHub process. Our raw write is on a separate
+            // SQLite connection; Room would otherwise stay on its pre-write
+            // snapshot until cold-restart.
+            RoomRefreshHelper.refreshLibrary(activity);
             dispatchLaunch(activity, gameRowId);
             activity.finish();
         } catch (Throwable t) {

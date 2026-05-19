@@ -1,6 +1,6 @@
 # GOG Library Tab — Patch Design Doc
 
-**Status:** ⚑ **PHASE 1 + WS4 COMPLETE; WS5 BUILT (pre14) awaiting device test — CURRENT = §36.** GOG login + owned-library + download/install device-confirmed (pre2). WS4 menu row + retired card + `behind` rotation device-confirmed (pre13). **WS5 (this session, §35–§36):** Approach A killed by 6.0.4 bytecode recon (no `B3` equivalent; import flow is pure Compose-internal — confirmed via live capture of the import button); Approach B (programmatic DB insert) built — `GogLaunchHelper.triggerLaunch` now opens `db_game_library.db` directly via `SQLiteDatabase.openDatabase`, self-derives `extension_type`/`user_id` from existing rows (proven retired-seeder pattern), inserts 2 rows (`t_game_launch_method` with `start_type=1409=LaunchType.GogGameByPcEmulator.id`, `t_game_library_base` with FK), then fires `app_nav_target=local_game_launch` intent to MainActivity which already handles the launch via the existing Wine pipeline. Zero third-party deps; pure `android.database.sqlite` + `org.json`. JSON shape byte-verified against your live God of War row. Branch `feature/gog-explore-tab`.
+**Status:** ⚑ **PHASE 1 + WS4 COMPLETE; WS5 device-tested pre14 → bridge works, library UI didn't refresh in-session → pre15 fix BUILT — CURRENT = §37.** GOG login + owned-library + download/install device-confirmed (pre2). WS4 menu row + retired card + `behind` rotation device-confirmed (pre13). **WS5 (this session, §35–§36):** Approach A killed by 6.0.4 bytecode recon (no `B3` equivalent; import flow is pure Compose-internal — confirmed via live capture of the import button); Approach B (programmatic DB insert) built — `GogLaunchHelper.triggerLaunch` now opens `db_game_library.db` directly via `SQLiteDatabase.openDatabase`, self-derives `extension_type`/`user_id` from existing rows (proven retired-seeder pattern), inserts 2 rows (`t_game_launch_method` with `start_type=1409=LaunchType.GogGameByPcEmulator.id`, `t_game_library_base` with FK), then fires `app_nav_target=local_game_launch` intent to MainActivity which already handles the launch via the existing Wine pipeline. Zero third-party deps; pure `android.database.sqlite` + `org.json`. JSON shape byte-verified against your live God of War row. Branch `feature/gog-explore-tab`.
 **Base:** GameHub 6.0.4, R8 map id `6a5cde6143fc8cf76f6f3a447d0fececd4794d83066e6ead7a9537e6527b057b`.
 **Author:** The412Banner. **Date:** 2026-05-19.
 
@@ -1181,3 +1181,86 @@ Fail-safe: every public-method body is wrapped in `try/catch Throwable` that toa
 - `extensions/gamehub/src/main/java/app/revanced/extension/gamehub/gog/GogGameDetailActivity.java` — 1 call site passes `(exe, gameId, title, imageUrl)`
 - `PROGRESS_LOG.md` — pre14 entry
 - This doc — §35 (recon) + §36 (build) + status header update
+
+## 37. pre15 — Add-to-library refresh bug (raw-write bypasses Room's InvalidationTracker)
+
+### 37.1 The symptom
+
+User device-test of pre14 (2026-05-19):
+- ✅ Download a GOG game → "Add to library" tap → game installs.
+- ✅ The row IS in `t_game_library_base` + `t_game_launch_method` (verified by the fact that on next app launch, the game appears in the library and launches via the Wine pipeline).
+- ✅ Wine launch via `LaunchType.GogGameByPcEmulator` works.
+- ❌ **The library UI does NOT reflect the new game until the app is closed and reopened.** Returning from the Wine container, navigating around, pulling-to-refresh — none of it makes the new game appear in the running GameHub process.
+
+### 37.2 Root cause — Room/SQLite connection split
+
+GameHub's library is **Room-backed**: `Lcom/xiaoji/egggame/game/database/GameLibraryDatabase;` (un-obfuscated `@Database` class) extends R8-renamed `Llyi;` which is `androidx.room.RoomDatabase` (confirmed by its preserved `getInvalidationTracker()Lhsa;` method and abstract `createInvalidationTracker()` + `internalInitInvalidationTracker(...)`). The library Compose surface observes `Flow`/`LiveData` from `GameLibraryBaseDao` / `GameLaunchMethodDao` via Hilt-scoped repository singletons (~10+ smali holders for the DB instance: `Lvu7;`, `Lmp7;`, `Lt17;`, `Ldw3;`, `Laqc;`, `Lmt7;`, `Lvpc;`, …).
+
+`GogLaunchHelper.registerInLibrary()` (pre14) uses `SQLiteDatabase.openDatabase(..., OPEN_READWRITE)` directly. This works because:
+- ✅ It hits the same file (`/data/data/<pkg>/databases/db_game_library.db`).
+- ✅ The 2 INSERTs commit cleanly.
+- ✅ The SQL triggers Room installed on observed tables fire and write into `room_table_modification_log` — **triggers are SQL-level and fire for any connection that writes to the observed table**, not just Room's. So the log is dirty after our write.
+
+BUT — Room's `InvalidationTracker` (`Lhsa;`) only **polls** `room_table_modification_log` when Room itself initiates a write (it polls at the tail of each Room-driven transaction). Our raw write happens on a SEPARATE SQLite connection that Room doesn't know about, so it never triggers the poll. Observers (`Flow`/`LiveData`) stay on their pre-write snapshot. The library UI is genuinely stale until something tells the tracker to re-check.
+
+Cold restart works because the new process re-builds Room → first DAO query reads from disk → Flow emits the new data.
+
+(Note: even if Room had been configured with `setMultiInstanceInvalidation()`, that uses a separate `MultiInstanceInvalidationService` IPC across processes — useless within the same process across two connections. There's no setting that makes Room's tracker observe an arbitrary SQLite-API write.)
+
+### 37.3 Approach picked — reflective tracker kick
+
+After our raw write, reach a live `GameLibraryDatabase` instance and call its `InvalidationTracker.refresh()`. That makes Room poll the modification log, see the dirty tables, and fan out observer notifications → the library `Flow`/`LiveData` re-emit → Compose recomposes → UI updates.
+
+Alternatives considered and rejected:
+- **(a) Write through Room instead of raw SQLite.** Requires reaching the DAO singletons via Hilt (no public accessor), constructing R8-renamed entity types reflectively, AND solving the Kotlin `suspend` Continuation marshalling for the DAO insert. Same reach-the-instance problem with way more code.
+- **(b) Spawn our own second `RoomDatabase` against the same file.** Room expressly disallows two instances for the same file in the same process; even if allowed, `InvalidationTracker` is per-instance — refreshing ours doesn't refresh GameHub's.
+- **(c) Patch MainActivity to re-query the library when receiving our `local_game_launch` intent.** Adds bytecode-level fragility (R8-renamed Compose ViewModel methods) for what's a one-line behavior change. Worse: we'd need to find a public "reload library" entry that GameHub itself uses — finding it has the same Hilt-walk cost as our chosen approach.
+- **(d) `Process.killProcess(myPid())` after launching the Wine container.** Works (cold restart on return), but it kills the user's running GameHub state and is hostile UX.
+- **(e) Hilt `EntryPoints.get(...)` for the DB.** Needs a compile-time EntryPoint interface that the Hilt processor generated bindings for. We have no Hilt processor in our extension build — adding one is real engineering and the EntryPoint name would need to match a binding GameHub's Hilt graph already exposes.
+
+### 37.4 Implementation — `RoomRefreshHelper.refreshLibrary(ctx)`
+
+New file: `extensions/gamehub/.../gog/RoomRefreshHelper.java` (~180 LOC, pure JDK reflection + `android.util.Log`, zero new deps).
+
+**Resolution path** (one-shot then cached on first success):
+1. **Find a live `GameLibraryDatabase`.** BFS-walk instance fields starting at `Application` (Hilt's `SingletonComponentImpl` is held as a field somewhere in there; we don't care about its renamed class name). At each visited object, check `class.getSimpleName()` against `"GameLibraryDatabase"` (or `..._Impl`) — the simple name survives R8 because Room can't obfuscate `@Database` classes (their fully-qualified name is baked into the generated schema hash and the `*_Impl` lookup). Hit returns the DB instance. Container-aware: walks into `Iterable`, `Map`, and Object arrays (Hilt providers commonly hold things in `LinkedHashMap` or `Lazy[]`). Budget-capped at 4000 visited refs.
+2. **Get the tracker.** Reflect for the method named `getInvalidationTracker` on the DB instance's class chain (walks superclasses — the method lives on `Llyi;` = `RoomDatabase`, not on `GameLibraryDatabase` directly). The method name survives R8 because the generated `GameLibraryDatabase_Impl` overrides it.
+3. **Find `refresh()` on the tracker.** R8 renamed it to `a()` on `Lhsa;`, but the signature is unique: among the tracker's *declared* methods (not inherited), only one has zero parameters, void return type, and isn't static/synthetic/bridge. That's `refresh()`. We don't depend on the name `"a"` — we filter by signature, which is stable across R8 mappings.
+4. **Cache** the tracker reference + the resolved `Method` on success. Subsequent calls skip the walk entirely.
+
+**Wire-in** (`GogLaunchHelper.triggerLaunch`):
+```java
+registerInLibrary(activity, dbFile, gameRowId, gogId, safeName, safeCover, exePath);
+RoomRefreshHelper.refreshLibrary(activity);  // §37
+dispatchLaunch(activity, gameRowId);
+activity.finish();
+```
+
+**Fail-safe.** Any reflection miss — DB not in the graph, method not found, invocation throws — logs a `BannerHub` warn and returns. Behavior degrades to pre14 (restart still works). The cached refs are cleared on any future invoke failure (e.g. if the singleton got GC'd in a backgrounded process), so the next call re-walks.
+
+### 37.5 Why this works across R8 mappings
+
+The fragility is in the resolution step, not the call. Once `(tracker, refresh)` is cached, the `refresh.invoke(tracker)` is a normal direct call — same JIT path as if we'd called `Llyi;->getInvalidationTracker()` followed by `Lhsa;->a()V` directly in smali.
+
+The lookups are anchored on **names that R8 demonstrably can't rename**:
+- `GameLibraryDatabase` simple name — preserved (Room schema hash, `*_Impl` name lookup).
+- `getInvalidationTracker` — preserved (`_Impl` override).
+- `refresh()` no-arg void — identified by signature, not name; the signature is unique on `Lhsa;` (the only other declared method is `b(Continuation)Object`).
+
+If a future GameHub release adds a second no-arg void method to InvalidationTracker, the signature filter could pick the wrong one. Mitigation if that ever happens: walk Room's call sites for `Lhsa;->X()V` and switch to matching the most-called one (real `refresh()` has many internal call sites; any new method would have few).
+
+### 37.6 Test plan
+
+1. Install pre15 alt-AnTuTu APK (`com.antutu.benchmark.full`).
+2. Download a GOG game.
+3. Tap "Add to library".
+4. **WITHOUT closing the app**, navigate to the GameHub library tab.
+5. **Pass**: the GOG game is present in the library tile grid immediately.
+6. **Fail-fallback**: confirm row in DB via `getlog sql /data/data/com.antutu.benchmark.full/databases/db_game_library.db "SELECT id,game_name FROM t_game_library_base WHERE id LIKE 'gog_%'"` — if row IS there but library is still stale, reflection found something different than expected; pull `getlog com.antutu.benchmark.full | grep RoomRefresh` for the resolved class names.
+
+### 37.7 Files
+
+- `extensions/gamehub/src/main/java/app/revanced/extension/gamehub/gog/RoomRefreshHelper.java` — NEW
+- `extensions/gamehub/src/main/java/app/revanced/extension/gamehub/gog/GogLaunchHelper.java` — +1 call site, +4 lines comment
+- `PROGRESS_LOG.md` — pre15 entry
+- This doc — §37 (this section) + status header update

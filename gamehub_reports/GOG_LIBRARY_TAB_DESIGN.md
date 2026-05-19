@@ -512,3 +512,18 @@ bannerhub-revanced extension build (`extensions/gamehub/build.gradle.kts`) = `co
 **No blocker anywhere.** Priority scope (Phase 1: login/library/download) is **LOW-risk and fully understood** — pure-platform Java lift + manifest-patched activities + stub build, all proven patterns. All uncertainty (bridge KMP re-implementation, Profile-row anchor) is explicitly isolated in deferred Phase 2. Phase 0 complete.
 
 **Next action:** begin **Phase 1 / WS1** — port the `Gog*.java` set into `extensions/gamehub/` and stand up the OAuth + library activities behind a temp entry. First code of the project. CI-build + device-test loop from M1.
+
+---
+
+## 21. WS1 SCOPE CORRECTION (2026-05-19) — port closure is 21 files / ~8k LOC, not "~9"
+
+Starting WS1 revealed the GOG stack depends on a shared `Bh*` download/storage/install infra layer (also used by the Epic/Amazon stacks). Precise GOG-only transitive closure (Epic/Amazon stacks pruned; comments/strings stripped from ref-scan):
+
+- **GOG core (10):** GogLoginActivity·GogGamesActivity·GogGameDetailActivity·GogMainActivity·GogDownloadManager·GogCloudSaveManager·GogInstallPath·GogTokenRefresh·GogGame·GogLaunchHelper.
+- **Shared infra (11):** BhCdnHelper·BhDownloadConfig·BhDownloadService·BhDownloadsActivity·BhInstallConfirmDialog·BhStorageHelper·BhStorageMigration·BhStoragePath·FolderPickerActivity·BhEpicEosDetector·BhEpicSidecar (last two = generic install-path EOS checks the shared service touches; small, kept verbatim for fidelity).
+
+**Total: 21 files / ~8,013 LOC.** Zero third-party deps across the whole closure (P-D holds) — uniform package move is mechanically safe (intra-set refs are same-package, no imports; closure is complete by construction). §20's "~9 files" was the GOG core only; real WS1 ≈ 2× that. Still a faithful lift (shipped/proven 3.7.x code), not a rewrite — risk class unchanged, volume corrected.
+
+**Phase-1 adaptations during the lift:** (a) package `app.revanced.extension.gamehub` → `…gamehub.gog` (all 21 uniformly); (b) `GogLaunchHelper` → Phase-1 stub (same API, body logs "bridge deferred to Phase 2" — keeps GogGames/GogGameDetail compiling without the deferred WS5 bridge); (c) `GogMainActivity.onResume` `pending_gog_exe`→finish() handoff neutralized (Phase-2 bridge coupling); (d) Kotlin manifest patch registers the activities; (e) temp dev entry = `GogMainActivity` exported for `adb am start` (production Profile-row = deferred WS4/P-A).
+
+**Verification reality:** CI-only build, no local compile, silent-SEVERE footgun. An 8k-LOC faithful lift cannot be inspection-verified — **first CI build is the M1 gate**; treat as unverified until CI-green + device login test.

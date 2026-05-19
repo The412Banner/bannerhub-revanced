@@ -739,3 +739,63 @@ degrades to "card still appears, tap-behaviour iterates" (§22) instead of
 nuking the whole patch — the silent-ship footgun is now structurally
 neutralised. Next: compile gate → pre6 artifact → device (card appears? tap →
 GOG hub, no crash?).
+
+---
+
+## 32. WS4 pre6 DEVICE TEST → real launch path found; pre7 (yv3.invoke) (2026-05-19)
+
+pre6 (run 26119508288, `eed0c8a`) **GOG patch applied cleanly** (0 SEVERE, all
+variants — the pre5 footgun confirmed fixed) and the card + seeder are
+**CONFIRMED** on device: the "GOG" card renders in the library; tapping it
+opens GameHub's game-detail dialog (title "GOG", "Launch Game"). **No crash**
+(pre4 VerifyError gone). But hitting **Launch Game** shows
+`No strategy found: type=Unknown, methodId=4` in the dialog.
+
+`getlog gamehub.lite` (15:23) — decisive: the launch is an **interceptor
+chain**, and our F0/G0 guard never ran (zero `GogLibraryCard` log lines):
+
+```
+CommonGame: buildLibraryInfoWithContext GOG , startType = 0
+CommonGame: op=typeFilteredStrategies type=Unknown strategies=        (empty)
+CommonGame: interceptor=wel order=1000 …
+r5c_CommonGame: shouldPatchSteamPaths result=Failure(No strategy found: type=Unknown, methodId=4)
+CommonGame: interceptor=o3h order=990 … no4 930 … nyk 920 … h8h 25 … esk 12 … lsa 12 … l8l 11 … sr0 10 … nga 0
+CommonGame: op=LaunchRouter.launch type=Unknown costMs=2 result=t5c
+```
+
+**Root cause:** the GOG-card tap → game-detail dialog → "Launch Game" does NOT
+go through `po7.F0/G0` (the §31 pre5/pre6 anchor was simply the wrong path —
+that's a different launch surface). It goes through GameHub's **LaunchRouter**
+ordered interceptor chain; `wel` (order 1000) resolves strategies first and
+fails because the sentinel row has `startType=0 → LaunchType Unknown` and
+`typeFilteredStrategies type=Unknown` is empty. pre6's try/catch correctly
+degraded (card still works) but masked that F0/G0 matched nothing on this path.
+
+**pre7 anchor (decompile-confirmed).** The non-obf log strings
+(`buildLibraryInfoWithContext`, `shouldPatchSteamPaths`) localise it:
+`buildLibraryInfoWithContext ` is a CONST_STRING in `smali_classes4/yv3.smali`,
+inside `yv3.invoke()Ljava/lang/Object;` — a synthetic multiplexed
+**Function0** lambda (`implements Lnw6;`, fields `a:I` selector + `b:Lt07;`;
+`t07.a = …game.GameInfo`, `t07.b = LaunchMethod`). `invoke()` is **NOT a
+coroutine** (no Continuation) → index-0 prepend is verifier-safe (the precise
+property the §31 suspend `wel.b` lacked), and it runs on the launch path with
+the game in hand (logged ~6 ms before the failure). Fingerprint = pre4-proven
+stable CONST_STRING match (`"buildLibraryInfoWithContext "`) + no-arg
+`invoke()Object` shape — letter-free.
+
+**Intercept = minimal side-effect.** One instruction at index 0:
+`invoke-static {p0}, GogLibraryCard;->openHubIfSentinel(Ljava/lang/Object;)V`
+(p0 = the lambda; no move-result, no branch, no return change, zero register
+clobber). New extension `openHubIfSentinel` does a bounded/fail-safe/identity-
+cycle-guarded reflective walk (`findSentinel`, depth ≤3, stops at any
+`…GameInfo` with an exact `getId()` == `bh_gog_launcher` check, skips
+java/kotlin/android) from the lambda → `t07` → `GameInfo`; on the sentinel it
+opens `GogMainActivity` (de-duplicated 4 s; `yv3.invoke` fires repeatedly per
+tap). The original launch then proceeds and harmlessly logs "No strategy
+found" *behind* the now-foregrounded GOG hub — so no return-value/abort logic
+is needed and **real game launches are byte-for-byte unaffected** (id mismatch
+→ immediate `false`). Seed hook (1) unchanged; hook (2) still try/catch'd
+(§22). Files: `GogLibraryCard.java` (+openHubIfSentinel/findSentinel),
+`GogLibraryCardPatch.kt` (hook 2 rewrite). Next: compile gate → **verify 0
+SEVERE on the GOG patch** → pre7 artifact → device (tap "Launch Game" → GOG
+hub opens, real games still launch?).

@@ -221,4 +221,68 @@ public final class GogLibraryCard {
             return null;
         }
     }
+
+    // ── launch-router intercept (yv3.invoke head) ────────────────────────────
+    // §32: the GOG card tap → game-detail dialog → "Launch Game" routes through
+    // GameHub's LaunchRouter interceptor chain, NOT po7.F0/G0 (logcat
+    // 2026-05-19: `buildLibraryInfoWithContext GOG , startType = 0` then
+    // `No strategy found: type=Unknown`). The first non-suspend point with the
+    // game in hand is the multiplexed launch lambda yv3.invoke() (anchored by
+    // the stable non-obf string "buildLibraryInfoWithContext "). It holds the
+    // launch context (t07 → GameInfo). Side-effect-only: if that game is the
+    // sentinel we open GogMainActivity and let the original launch proceed —
+    // it harmlessly logs "No strategy found" behind the now-foregrounded hub.
+    // Never touches control flow / return / registers (minimal verifier-safe
+    // intercept), fully fail-safe, de-duplicated (yv3.invoke fires repeatedly).
+
+    private static volatile long sLastHubLaunchMs = 0L;
+
+    public static void openHubIfSentinel(Object launchLambda) {
+        try {
+            java.util.Set<Object> seen = java.util.Collections.newSetFromMap(
+                    new java.util.IdentityHashMap<Object, Boolean>());
+            if (!findSentinel(launchLambda, 0, seen)) return;
+            long now = android.os.SystemClock.elapsedRealtime();
+            if (now - sLastHubLaunchMs < 4000L) return; // dedupe rapid re-fires
+            sLastHubLaunchMs = now;
+            maybeOpenHubById(SENTINEL_ID); // resolves Context via ActivityThread
+        } catch (Throwable t) {
+            Log.e(TAG, "GogLibraryCard.openHubIfSentinel failed (non-fatal)", t);
+        }
+    }
+
+    /**
+     * Bounded reflective search for the sentinel GameInfo/id in an object
+     * graph. Stops at any {@code …GameInfo} (exact getId() check, no deeper),
+     * skips primitives/arrays and java/kotlin/android types, identity-cycle
+     * guarded, depth-capped — so a real game resolves to one getId() compare
+     * then false, with no behaviour change for non-sentinel launches.
+     */
+    private static boolean findSentinel(Object o, int depth, java.util.Set<Object> seen) {
+        if (o == null || depth > 3 || !seen.add(o)) return false;
+        if (o instanceof String) return SENTINEL_ID.equals(o);
+        Class<?> c = o.getClass();
+        String cn = c.getName();
+        if (cn.endsWith(".GameInfo")) return SENTINEL_ID.equals(extractId(o));
+        if (c.isArray() || cn.startsWith("android.") || cn.startsWith("java.")
+                || cn.startsWith("kotlin.")) return false;
+        for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+            Class<?> ft = f.getType();
+            if (ft.isPrimitive()) continue;
+            String tn = ft.getName();
+            if ((tn.startsWith("java.") && !"java.lang.String".equals(tn))
+                    || tn.startsWith("kotlin.") || tn.startsWith("android.")) continue;
+            try {
+                f.setAccessible(true);
+                Object v = f.get(o);
+                if (v instanceof String) {
+                    if (SENTINEL_ID.equals(v)) return true;
+                    continue;
+                }
+                if (findSentinel(v, depth + 1, seen)) return true;
+            } catch (Throwable ignored) {
+            }
+        }
+        return false;
+    }
 }

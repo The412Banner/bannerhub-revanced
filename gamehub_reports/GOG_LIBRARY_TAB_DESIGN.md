@@ -1,6 +1,6 @@
 # GOG Library Tab — Patch Design Doc
 
-**Status:** PHASE 0 COMPLETE incl. §12.5 (no code). Verdict: **Option A, effort tier MODERATE** — one parameterized grid (no screen-building), GOG tab = 3 mechanical bytecode edits + 1 API flag. See §12 (esp. §12.7); supersedes speculative §4/§6. Branch `feature/gog-explore-tab` off `gamehub-604-build` @ `e39ce21`.
+**Status:** PHASE 0 100% CLOSED — nothing UNVERIFIED (no code). Verdict: **Option A, effort tier MODERATE** — one parameterized grid (no screen-building), GOG tab = 3 mechanical bytecode edits + 1 API flag; GOG filter predicate pinned to `!getGogAppId().isEmpty()` (pattern already in `ul5`). See §12 (esp. §12.7–§12.8); supersedes speculative §4/§6. Branch `feature/gog-explore-tab` off `gamehub-604-build` @ `e39ce21`.
 **Base:** GameHub 6.0.4, R8 map id `6a5cde6143fc8cf76f6f3a447d0fececd4794d83066e6ead7a9537e6527b057b`.
 **Author:** The412Banner. **Date:** 2026-05-19.
 
@@ -181,6 +181,12 @@ Traced the tab→grid path end to end. **The game grid is ONE parameterized scre
 
 **Effort tier:** MODERATE — bigger than the §12.6 single-`tuc` hope (enum + classifier extension added), smaller than the §12.5 worst case (no screen built). Reuses the working `GogGameByPcEmulator` launch, GOG icons, `platform_tab_gog` string, parameterized grid. Volatile bits = the `s6d` enum extension + `a5d` classifier edit + the `isc`/`rtc` ordinal switches (must add default-safe handling so an unknown `s6d` never crashes — house fail-safe rule).
 
-**One UNVERIFIED item for Phase 1 task 0:** the integer `getSourceType()` returns for GOG titles (decides the §12.7-step-3 predicate form). Single trace of `ckf`/`dp7`/`po7` `getSourceType` switch tables. Everything else is CONFIRMED.
+### 12.8 Last UNVERIFIED item RESOLVED (2026-05-19) — GOG predicate is trivial [CONFIRMED]
 
-**Phase 1 entry:** verify the GOG `getSourceType` int, then build the 3 edits + flag behind default-off.
+The GOG `getSourceType()` int turned out to be a non-issue: there is no GOG sourceType int. `ul5:~4141` is the canonical source discriminator — an **app-id precedence chain**: `getSteamAppId()` non-empty → steam; else `getEpicAppId()` non-empty → epic; else **`getGogAppId()` non-empty → gog**; else fallback. (`getSourceType()` int compares in `a5d:37312` etc. are a secondary signal only.)
+
+**So the §12.7-step-3 GOG filter predicate = `!GameInfo.getGogAppId().isEmpty()`** — parallel to steam/epic, and the exact precedence pattern is **already coded in `ul5`** to copy verbatim. Best-case form: no enum-of-sourcetypes work, no int to discover.
+
+**Phase 0 status: 100% CLOSED — nothing left UNVERIFIED.** Net build = the 3 mechanical edits + API flag in §12.7, with step-3's predicate now pinned to the `ul5` `getGogAppId`-non-empty pattern.
+
+**Phase 1 entry:** none pending — go straight to implementing the 3 edits + default-off flag when authorised.

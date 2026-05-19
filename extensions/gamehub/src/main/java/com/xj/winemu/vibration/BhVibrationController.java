@@ -1296,6 +1296,32 @@ public final class BhVibrationController {
         }
     }
 
+    /**
+     * Static breadcrumb writer for the winebus patcher (which runs in static
+     * context from Hook 4 at the {@code Lbg5;->a} env-builder site, possibly
+     * in the {@code :wine} process). Mirrors {@link #breadcrumb(String)} but
+     * takes an explicit Context and prefixes "WINEBUS " so the on-disk
+     * {@code bh_vibration.log} proves whether the disk-patcher actually fired
+     * and what it found — the Log.i lines roll out of the AnTuTu buffer.
+     * Never throws.
+     */
+    static void bcWinebus(Context ctx, String line) {
+        try {
+            if (ctx == null) return;
+            File f = new File(ctx.getFilesDir(), "bh_vibration.log");
+            java.io.FileWriter w = new java.io.FileWriter(f, true);
+            try {
+                w.write(new java.text.SimpleDateFormat(
+                            "yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+                        .format(new java.util.Date())
+                        + " WINEBUS " + line + "\n");
+            } finally {
+                w.close();
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
     private void ensureContext() {
         if (appContext != null) return;
         try {
@@ -1320,24 +1346,41 @@ public final class BhVibrationController {
     // subprocess address space / destabilising box64 under new-WoW64.
     // ─────────────────────────────────────────────────────────────────────
     public static void ensureWinebusDurationPatchOnce(Context ctx) {
+        // Breadcrumb #1: proves whether Hook 4's injected invoke-static at the
+        // Lbg5;->a env-builder anchor actually executes (and with a Context).
+        bcWinebus(ctx, "hook fired ctx=" + (ctx != null)
+                + " proc=" + android.os.Process.myPid());
         try {
             if (ctx != null) ensureWinebusDurationPatch(ctx);
         } catch (Throwable t) {
+            bcWinebus(ctx, "hook EXCEPTION " + t);
             Log.w(TAG, "ensureWinebusDurationPatchOnce failed", t);
         }
     }
 
     private static void ensureWinebusDurationPatch(Context ctx) {
-        if (!WINEBUS_DURATION_PATCH_ATTEMPTED.compareAndSet(false, true)) return;
+        if (!WINEBUS_DURATION_PATCH_ATTEMPTED.compareAndSet(false, true)) {
+            bcWinebus(ctx, "scan skipped: already attempted this process");
+            return;
+        }
         try {
             File root = ctx.getFilesDir();
             if (root == null || !root.isDirectory()) {
+                bcWinebus(ctx, "scan skipped: no files dir");
                 Log.i(TAG, "winebus duration patch skipped: no files dir");
                 return;
             }
 
             int[] stats = new int[4]; // files visited, winebus found, patched, already patched
+            long t0 = System.currentTimeMillis();
             scanWinebusFiles(ctx, root, 0, stats);
+            long dt = System.currentTimeMillis() - t0;
+            // Breadcrumb #2: scan summary — files visited (vs MAX_FILES 100000),
+            // winebus.so found, patched this run, already-patched.
+            bcWinebus(ctx, "scan root=" + root.getAbsolutePath()
+                    + " files=" + stats[0] + " winebus=" + stats[1]
+                    + " patched=" + stats[2] + " already=" + stats[3]
+                    + " ms=" + dt);
             Log.i(TAG, "winebus duration patch scan files=" + stats[0]
                     + " winebus=" + stats[1]
                     + " patched=" + stats[2]
@@ -1347,6 +1390,7 @@ public final class BhVibrationController {
             }
         } catch (Throwable t) {
             WINEBUS_DURATION_PATCH_ATTEMPTED.set(false);
+            bcWinebus(ctx, "scan EXCEPTION " + t);
             Log.w(TAG, "winebus duration patch scan failed", t);
         }
     }
@@ -1390,6 +1434,7 @@ public final class BhVibrationController {
     private static int patchWinebusDurationFile(Context ctx, File file) throws IOException {
         long len = file.length();
         if (len < WINEBUS_ORIGINAL_SITE.length || len > WINEBUS_PATCH_MAX_BYTES) {
+            bcWinebus(ctx, "file skip bad-size=" + len + " " + file.getAbsolutePath());
             Log.i(TAG, "winebus duration patch skipped unexpected size="
                     + len + " path=" + file.getAbsolutePath());
             return 0;
@@ -1398,17 +1443,24 @@ public final class BhVibrationController {
         byte[] blob = new byte[(int) len];
         try (RandomAccessFile raf = new RandomAccessFile(file, "rw")) {
             raf.readFully(blob);
-            if (!startsWith(blob, WINEBUS_ELF_MAGIC) || indexOf(blob, WINEBUS_RUMBLE_STRING, 0) < 0) {
+            boolean elf = startsWith(blob, WINEBUS_ELF_MAGIC);
+            boolean rumble = indexOf(blob, WINEBUS_RUMBLE_STRING, 0) >= 0;
+            if (!elf || !rumble) {
+                bcWinebus(ctx, "file skip non-target elf=" + elf
+                        + " rumble=" + rumble + " " + file.getAbsolutePath());
                 Log.i(TAG, "winebus duration patch skipped non-target path=" + file.getAbsolutePath());
                 return 0;
             }
 
             int machine = readElfMachine(blob);
+            // Breadcrumb #3: a real winebus.so reached the arch dispatch.
+            bcWinebus(ctx, "file target size=" + len + " mach=0x"
+                    + Integer.toHexString(machine) + " " + file.getAbsolutePath());
             if (machine == ELF_MACHINE_AARCH64) {
-                return patchAarch64Sites(file, blob, raf);
+                return patchAarch64Sites(ctx, file, blob, raf);
             }
             if (machine == ELF_MACHINE_X86_64) {
-                int result = patchX86_64Sites(file, blob, raf);
+                int result = patchX86_64Sites(ctx, file, blob, raf);
                 if (result == 0) {
                     // Pattern didn't match — dump for offline pattern refinement.
                     dumpForOfflineAnalysis(ctx, file, blob, "x86_64");
@@ -1416,6 +1468,8 @@ public final class BhVibrationController {
                 return result;
             }
 
+            bcWinebus(ctx, "file skip unknown e_machine=0x"
+                    + Integer.toHexString(machine) + " " + file.getAbsolutePath());
             Log.i(TAG, "winebus duration patch skipped unknown e_machine=0x"
                     + Integer.toHexString(machine) + " path=" + file.getAbsolutePath());
             return 0;
@@ -1427,16 +1481,19 @@ public final class BhVibrationController {
         return (blob[18] & 0xff) | ((blob[19] & 0xff) << 8);
     }
 
-    private static int patchAarch64Sites(File file, byte[] blob, RandomAccessFile raf) throws IOException {
+    private static int patchAarch64Sites(Context ctx, File file, byte[] blob, RandomAccessFile raf) throws IOException {
         int[] originalHits = new int[4];
         int originalCount = collectHits(blob, WINEBUS_ORIGINAL_SITE, originalHits);
         int patchedCount = collectHits(blob, WINEBUS_PATCHED_SITE, null);
 
         if (originalCount == 0 && patchedCount == 2) {
+            bcWinebus(ctx, "aarch64 ALREADY-PATCHED original=0 patched=2 " + file.getAbsolutePath());
             Log.i(TAG, "winebus duration patch already applied path=" + file.getAbsolutePath());
             return 2;
         }
         if (originalCount != 2) {
+            bcWinebus(ctx, "aarch64 MISMATCH original=" + originalCount
+                    + " patched=" + patchedCount + " " + file.getAbsolutePath());
             Log.i(TAG, "winebus duration patch skipped pattern mismatch original="
                     + originalCount + " patched=" + patchedCount
                     + " path=" + file.getAbsolutePath());
@@ -1447,22 +1504,28 @@ public final class BhVibrationController {
             raf.seek(originalHits[i]);
             raf.write(WINEBUS_PATCHED_LOAD);
         }
+        bcWinebus(ctx, "aarch64 APPLIED original=2 offsets=0x"
+                + Integer.toHexString(originalHits[0]) + ",0x"
+                + Integer.toHexString(originalHits[1]) + " " + file.getAbsolutePath());
         Log.i(TAG, "winebus duration patch applied path=" + file.getAbsolutePath()
                 + " offsets=0x" + Integer.toHexString(originalHits[0])
                 + ",0x" + Integer.toHexString(originalHits[1]));
         return 1;
     }
 
-    private static int patchX86_64Sites(File file, byte[] blob, RandomAccessFile raf) throws IOException {
+    private static int patchX86_64Sites(Context ctx, File file, byte[] blob, RandomAccessFile raf) throws IOException {
         int[] hits = new int[8];
         int originalCount = collectWildcardHits(blob, X86_64_PATTERN, X86_64_PATTERN_FIXED, hits);
         int patchedCount = collectHits(blob, X86_64_PATCHED_PATTERN, null);
 
         if (originalCount == 0 && patchedCount == 2) {
+            bcWinebus(ctx, "x86_64 ALREADY-PATCHED original=0 patched=2 " + file.getAbsolutePath());
             Log.i(TAG, "winebus duration patch already applied path=" + file.getAbsolutePath());
             return 2;
         }
         if (originalCount != 2) {
+            bcWinebus(ctx, "x86_64 MISMATCH original=" + originalCount
+                    + " patched=" + patchedCount + " " + file.getAbsolutePath());
             Log.i(TAG, "winebus duration patch skipped pattern mismatch (x86_64)"
                     + " original=" + originalCount + " patched=" + patchedCount
                     + " path=" + file.getAbsolutePath());
@@ -1473,6 +1536,9 @@ public final class BhVibrationController {
             raf.seek(hits[i]);
             raf.write(X86_64_PATCHED_LOAD);
         }
+        bcWinebus(ctx, "x86_64 APPLIED original=2 offsets=0x"
+                + Integer.toHexString(hits[0]) + ",0x"
+                + Integer.toHexString(hits[1]) + " " + file.getAbsolutePath());
         Log.i(TAG, "winebus duration patch applied (x86_64) path=" + file.getAbsolutePath()
                 + " offsets=0x" + Integer.toHexString(hits[0])
                 + ",0x" + Integer.toHexString(hits[1]));

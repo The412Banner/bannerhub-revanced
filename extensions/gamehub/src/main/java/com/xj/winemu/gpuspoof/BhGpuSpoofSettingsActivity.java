@@ -48,6 +48,17 @@ public class BhGpuSpoofSettingsActivity extends Activity {
 
     private float density = 1f;
 
+    /**
+     * Vendor index the Model spinner was last (re)built for. Spinner.setSelection()
+     * fires onItemSelected asynchronously on the next layout pass — AFTER we
+     * attach the listener — so the restore-time vendorSpinner.setSelection(vSel)
+     * still triggers a spurious callback that would rebuild the model list with
+     * sel=0 and lose the restored card. Guarding the listener on an actual
+     * vendor change makes that deferred callback a no-op (vIdx == lastVendorIdx),
+     * regardless of listener-attach timing.
+     */
+    private int lastVendorIdx = -1;
+
 
     public static void launch(Context ctx, String gameId, String gameName) {
         Intent it = new Intent(ctx, BhGpuSpoofSettingsActivity.class);
@@ -224,6 +235,11 @@ public class BhGpuSpoofSettingsActivity extends Activity {
         // side-effect so they carry no listener.
         vendorSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override public void onItemSelected(AdapterView<?> p, View vw, int vIdx, long id) {
+                // Ignore the deferred callback from the restore-time
+                // setSelection(vSel): the model list is already built for
+                // this vendor with the saved card selected. Only a real
+                // vendor change (different index) resets the model to 0.
+                if (vIdx == lastVendorIdx) return;
                 rebuildModels(modelSpinner, vIdx, 0);
             }
             @Override public void onNothingSelected(AdapterView<?> p) { }
@@ -271,6 +287,7 @@ public class BhGpuSpoofSettingsActivity extends Activity {
 
     /** Repopulates the Model spinner for a vendor and selects {@code sel}. */
     private void rebuildModels(Spinner modelSpinner, int vendorIdx, int sel) {
+        lastVendorIdx = vendorIdx;
         String[] models = BhGpuCards.modelNames(vendorIdx);
         modelSpinner.setAdapter(smallAdapter(models));
         if (sel < 0 || sel >= models.length) sel = 0;

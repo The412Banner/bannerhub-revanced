@@ -2608,3 +2608,20 @@ Same APK toggles both ways cleanly, no regression either direction. Cleanup (`44
 **Verification:** device-confirmed on `banner.hub` Normal-Lite offline — `bh_offline_list.log`: `getContainers built=10 OK`, `getList type=1 built=36 / type=2 built=263 / type=3 built=46 / type=4 built=7 OK`; pickers populate with downloads + built-ins, DXVK/GPU correctly ordered; online byte-identical; no regression.
 
 **Merge:** `fix/offline-picker-merge` → `gamehub-604-build` `--no-ff` (`dbd7554`). README patch-catalog section rewritten (was "⚠ currently broken"). NEXT: refresh `feature/lite-variant-tier1` off new `gamehub-604-build`; CI-validate (release.yml prerelease, expect 0 SEVERE).
+
+---
+
+## 2026-05-18 — Per-game settings isolation: GPU Spoof model STILL resets to first entry (pre3)
+
+**Branch:** `fix/per-game-settings-isolation` (off `gamehub-604-build`).
+
+**Symptom (device, pre2 build `9ccbf47`):** GPU Spoof — pick vendor + model → Save → reopen → mode/vendor restore correctly but the **Model spinner snaps back to the first/top entry**. pre2's fix (move spinner listeners to *after* the restore block) did not resolve it.
+
+**Root cause:** `Spinner.setSelection(int)` does **not** invoke `onItemSelected` synchronously — AdapterView defers the selection callback to the next layout pass. So the restore-time `vendorSpinner.setSelection(vSel)` queues a callback that fires *after* the (already-attached) vendor listener is live, runs `rebuildModels(modelSpinner, vIdx, 0)`, and clobbers the just-restored model back to index 0. Listener-attach ordering can't fix an async callback.
+
+**Fix (pre3):** make the vendor listener idempotent. Added field `lastVendorIdx`, set inside `rebuildModels()` to the vendor it just built for. The vendor listener early-returns when `vIdx == lastVendorIdx` (the deferred restore callback → no-op, model preserved); only an actual vendor change (different index) rebuilds the model list with sel=0. Robust regardless of listener-attach timing. Renderer/Vibration unaffected (no cascading model spinner).
+
+**Lesson:** `Spinner.setSelection()` callbacks are asynchronous (next layout) — guarding by listener-attach order is insufficient; guard the listener body on a real value change instead.
+
+### Artifact-only CI
+`gh workflow run release.yml --ref fix/per-game-settings-isolation -f version=1.3.0-604-pergame-pre3` (stable defaulted false = artifact-only prerelease). Expect green + 0 SEVERE; deliver alt-AnTuTu APK. Retest: GPU Spoof Spoof-mode → vendor+model → Save → reopen shows the exact card; per-game isolation + in-game apply intact.

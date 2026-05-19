@@ -1,6 +1,6 @@
 # GOG Library Tab — Patch Design Doc
 
-**Status:** ⚑ **GREENLIT — full GOG integration scoped in §17 (CURRENT).** Real goal = GOG account login + owned-library + install + launch in v6, delivered as a **standalone GOG screen via a Profile-screen "GOG" account row** (NOT a Library tab — no enum surgery; not the per-game menu). Next = **Phase 0 traces P-A..P-D (P-B priority), no code.** §1–§16 are the trace record that led here (§13 cheap-path / §12 tab both superseded — they solved the wrong layer; backend never existed in 6.0.4, see §14). Branch `feature/gog-explore-tab`.
+**Status:** ⚑ **GREENLIT. CURRENT = §18 (sourcing) + §17 (scope).** Build GOG account login + owned-library + install + launch in v6 by **lifting the already-shipped BannerHub-3.7.x Java GOG extension** (`bannerhub/extension/Gog*.java`: login, owned-library, POJO/no-Room, `GogLaunchHelper` bridge that piggybacks GameHub's own PC-import dialog) and **re-anchoring ~3 base-coupled hooks 5.3.5→6.0.4** — NOT a fresh GameNative port. Entry = Profile-screen "GOG" row (no tab/enum surgery). §18 collapsed §17's workstreams (WS5 HIGH→MED). Next = **Phase 0 P-A/P-C/P-D + P-B reframed = "find 6.0.4's `g3()`/EditImportedGameInfoDialog equivalent", no code.** §1–§16 = trace record (§12 tab/§13 cheap-path superseded; §14 = no native backend in 6.0.4). Branch `feature/gog-explore-tab`.
 **Base:** GameHub 6.0.4, R8 map id `6a5cde6143fc8cf76f6f3a447d0fececd4794d83066e6ead7a9537e6527b057b`.
 **Author:** The412Banner. **Date:** 2026-05-19.
 

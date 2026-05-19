@@ -3114,3 +3114,20 @@ invoke-static {v0}, Lcom/xj/winemu/vibration/BhVibrationController;->ensureWineb
 1. Install pre11 full alt-AnTuTu APK; launch GoW 49908.
 2. `grep WINEBUS bh_vibration.log` — now the entry/scan/per-file/aarch64 breadcrumbs MUST appear. Then follow the same branch table as pre10 (expect `aarch64 APPLIED original=2`; if so and rumble still cuts, check live `:wine` `/proc/<pid>/maps` for which winebus.so is mapped).
 3. Per-game merge still HELD awaiting explicit user go (unchanged).
+
+## 2026-05-19 — 🚀 v1.4.0-604 STABLE SHIPPED
+
+### pre11 DEVICE-CONFIRMED + Bug 2 cured
+pre11 (Hook 4 re-anchored to `Lbg5;->a` index 0) device-confirmed 05:05 (GoW 49908): `bh_vibration.log` shows `WINEBUS hook fired`, `x86_64 APPLIED original=2`, `aarch64 APPLIED original=2`, `scan patched=2`; later `:wine` procs report `ALREADY-PATCHED` (disk patch persists + survives the main↔`:wine` boundary). Bug 2 (~2 s rumble cutoff) **cured** — GameConTest.exe 05:14 run: heavy motor held ~5 s, light motor ~7 s, **zero `[SDL_AUTO_EXPIRY?]` flags** (vs the unpatched `gap≈1000ms` signature), KEEPALIVE lines now present. User confirmed "longer than 2 seconds."
+
+### Merge + stable cut
+- `fix/per-game-settings-isolation` → `gamehub-604-build` `--no-ff` merge `0dcd910` (19 commits `3d85d45`→`1bb5156`; author The412Banner, no Claude trailer). Lite refreshed via `--no-ff` `c3f4619`; 4 strips verified intact.
+- README stale vibration-storage paragraph corrected (`7add007`); v1.4.0-604 release notes + README What's-new authored (`6800fdc`): GPU Spoof / Legacy renderer / strict per-game store / rumble-cutoff fix, `release.yml` "On top of" bumped v1.2.0→v1.3.0 (was stale), version literal parameterized.
+- Stable cut: `release.yml` dispatch `--ref gamehub-604-build -f version=1.4.0-604 -f stable=true` → run [`26089552265`](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26089552265) **0 SEVERE**, cert SHA-256 `10895a311fe04f95f82e4da5c9a6c041ba9282bf211f1b578fe1cbeb894ce0ba` **unchanged** (in-place updates intact). Lite artifact-only run [`26089555381`](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26089555381) **0 SEVERE**, 9 Lite APKs `gh release upload`ed.
+- **21 release assets**: 9 full `BannerHub-V6-1.4.0-604-Patched-*.apk` + 9 `…-Lite.apk` + 3 `.rvp`. Release live, not draft/prerelease.
+
+### Offline component picker omission — corrected
+The Offline component picker (merged `dbd7554` 2026-05-18, ancestor of the v1.4.0-604 tag `6800fdc`) was missing from the initial v1.4.0 What's-new (drafted scoped to per-game work). Added on all three surfaces: live release notes (`gh release edit`), `release.yml` template + README subsection (`9574522`), re-synced to Lite (`b689a1a`). README headline "Four"→"Five".
+
+### Final branch state
+`gamehub-604-build` @ `9574522`; `feature/lite-variant-tier1` @ `b689a1a`. Pre-release policy resumes — all builds artifact-only until user says "stable" again.

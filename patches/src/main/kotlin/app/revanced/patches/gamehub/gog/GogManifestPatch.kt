@@ -67,6 +67,32 @@ val gogManifestPatch = resourcePatch(
                 }
                 app.appendChild(activity)
             }
+
+            // BhDownloadService is an android.app.Service (foreground download
+            // worker, startForeground + dataSync). Activities alone are not
+            // enough — an unregistered Service silently fails to start, which
+            // is why M3 downloads did not begin. Mirror the proven
+            // BannerHub-3.7.x registration (foregroundServiceType="dataSync",
+            // exported=false). Required perms (INTERNET, FOREGROUND_SERVICE,
+            // POST_NOTIFICATIONS, FOREGROUND_SERVICE_DATA_SYNC) are already
+            // declared by the base GameHub 6.0.4 manifest — no perm patch.
+            val serviceName = "$PKG.BhDownloadService"
+            val services = app.getElementsByTagName("service")
+            var serviceExists = false
+            for (i in 0 until services.length) {
+                if ((services.item(i) as Element).getAttribute("android:name") == serviceName) {
+                    serviceExists = true
+                    break
+                }
+            }
+            if (!serviceExists) {
+                val service = dom.createElement("service").apply {
+                    setAttribute("android:name", serviceName)
+                    setAttribute("android:exported", "false")
+                    setAttribute("android:foregroundServiceType", "dataSync")
+                }
+                app.appendChild(service)
+            }
         }
     }
 }

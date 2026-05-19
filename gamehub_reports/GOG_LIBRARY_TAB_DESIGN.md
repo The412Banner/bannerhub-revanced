@@ -573,3 +573,13 @@ Variant **Normal-GHL** (`gamehub.lite`), build `1.4.0-604-gog-pre1` (run 2611142
 **Significance:** WS1 first-cut needed **zero code fixes** through compile, 9-APK build, and M1+M2 runtime — the faithful-lift of the proven BannerHub-3.7.x extension + the GOG-only decoupling surgery held end-to-end. Only **M3 (download+install a title)** remains for Phase 1; then Phase 2 (bridge §19 / production Profile-row WS4-P-A / P-C).
 
 **Next:** M3 — in the GOG library, pick a small title → download → verify install to disk + the Phase-1 `GogLaunchHelper` toast ("installed; in-app launch in a later update"). User-driven (download time); I capture `getlog`+install-path verification.
+
+---
+
+## 25. M3 BUG FOUND+FIXED (2026-05-19) — GogManifestPatch missed the BhDownloadService <service>
+
+User reported "download is not starting." Root cause (caught by M3 testing, exactly its purpose): `GogManifestPatch` registered the 6 **activities** but **not** `BhDownloadService`, which `extends android.app.Service` (foreground, `startForeground`, `dataSync`). An unregistered Service silently fails to start → no download. Bug in the WS1 first-cut manifest patch (§22).
+
+**Fix:** `GogManifestPatch.kt` now also appends `<service android:name="app.revanced.extension.gamehub.gog.BhDownloadService" android:exported="false" android:foregroundServiceType="dataSync"/>` (idempotent), mirroring the proven BannerHub-3.7.x decl (`bannerhub/patches/AndroidManifest.xml:166`). No permission patch needed — base GameHub 6.0.4 manifest already declares INTERNET / FOREGROUND_SERVICE / POST_NOTIFICATIONS / FOREGROUND_SERVICE_DATA_SYNC. Verified only `BhDownloadService` needs registration (no other Service/Receiver/Provider in the ported set).
+
+**Note:** M1/M2 still valid (login/library don't touch the service). Rebuild `1.4.0-604-gog-pre2` for M3 retest.

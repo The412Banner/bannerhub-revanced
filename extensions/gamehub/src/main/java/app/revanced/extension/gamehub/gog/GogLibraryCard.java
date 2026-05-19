@@ -239,6 +239,15 @@ public final class GogLibraryCard {
 
     public static void openHubIfSentinel(Object launchLambda) {
         try {
+            // §32a: yv3.invoke(buildLibraryInfoWithContext) runs for the
+            // sentinel BOTH at library precompute (background thread, app
+            // start) and on the user's "Launch Game" press (main/UI thread)
+            // — confirmed by logcat TID: bg 20830/20894 at startup vs main
+            // 20830/20830 on tap. Only the user-initiated launch is on the
+            // main thread, so gate on it: this suppresses the premature
+            // auto-open on app start while still firing on the real tap.
+            if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper())
+                return;
             java.util.Set<Object> seen = java.util.Collections.newSetFromMap(
                     new java.util.IdentityHashMap<Object, Boolean>());
             if (!findSentinel(launchLambda, 0, seen)) return;

@@ -799,3 +799,29 @@ is needed and **real game launches are byte-for-byte unaffected** (id mismatch
 `GogLibraryCardPatch.kt` (hook 2 rewrite). Next: compile gate → **verify 0
 SEVERE on the GOG patch** → pre7 artifact → device (tap "Launch Game" → GOG
 hub opens, real games still launch?).
+
+### 32a. pre7 device → intercept WORKS, but premature auto-open; pre8 (main-thread gate)
+
+pre7 (run 26120382093, `8657a9b`, 0 SEVERE — gated) device: **the intercept
+works** — manually (back → library → tap card → Launch Game) **opens the GOG
+sign-in / library**. ✅ The yv3.invoke anchor + reflective sentinel walk +
+GogMainActivity launch is correct. **But** it also opens **automatically right
+after app start**, before the user can press Launch. Re-reading the §32 logcat
+pins it precisely by **TID**: `buildLibraryInfoWithContext GOG` runs for the
+sentinel BOTH at library precompute — **background thread** (`20830/20894`,
+15:22:01, ~3 s before any tap) — and on the user's Launch press — **main/UI
+thread** (`20830/20830`, 15:22:04 & :06). yv3.invoke is multiplexed and the
+buildLibraryInfoWithContext case itself runs in both contexts, so case/selector
+scoping can't separate them; the **thread** does, robustly (thread identity is
+not obfuscated, no smali fragility).
+
+**pre8 fix (extension-only, no patch/build-fragility change):** first line of
+`openHubIfSentinel` —
+`if (Looper.myLooper() != Looper.getMainLooper()) return;`. The background
+library-precompute call is suppressed; the main-thread user Launch press still
+fires. Card-tap→dialog open logs no buildLibraryInfoWithContext (only the
+bg startup one + the main launch ones), so the dialog still opens normally and
+the hub fires only on the actual Launch action. Head injection / fingerprint /
+seed hook all unchanged. Files: `GogLibraryCard.java` (+main-thread guard).
+Next: compile gate → grep GOG SEVERE → pre8 → device (no auto-open on start;
+Launch Game → GOG hub; real games unaffected).

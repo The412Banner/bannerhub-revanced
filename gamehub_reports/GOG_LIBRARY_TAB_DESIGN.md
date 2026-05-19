@@ -527,3 +527,22 @@ Starting WS1 revealed the GOG stack depends on a shared `Bh*` download/storage/i
 **Phase-1 adaptations during the lift:** (a) package `app.revanced.extension.gamehub` → `…gamehub.gog` (all 21 uniformly); (b) `GogLaunchHelper` → Phase-1 stub (same API, body logs "bridge deferred to Phase 2" — keeps GogGames/GogGameDetail compiling without the deferred WS5 bridge); (c) `GogMainActivity.onResume` `pending_gog_exe`→finish() handoff neutralized (Phase-2 bridge coupling); (d) Kotlin manifest patch registers the activities; (e) temp dev entry = `GogMainActivity` exported for `adb am start` (production Profile-row = deferred WS4/P-A).
 
 **Verification reality:** CI-only build, no local compile, silent-SEVERE footgun. An 8k-LOC faithful lift cannot be inspection-verified — **first CI build is the M1 gate**; treat as unverified until CI-green + device login test.
+
+---
+
+## 22. WS1 FIRST-CUT DONE (2026-05-19) — ported, decoupled, manifest-wired; UNVERIFIED pending CI
+
+§21's "21-file verbatim lift" hit a real complication caught by inspection (not blind-committed): the shared `Bh*` infra is **store-entangled** — `BhDownloadService` (`switch(store)` → runEpic/runGog/runAmazon) and `BhDownloadsActivity` (`openDetailScreen` per-store routing) hard-reference the Epic/Amazon stacks as code. v6 is GOG-only, so verbatim lift was wrong; surgical GOG-only decoupling was required (faithful-lift principle yields to "Phase 1 is GOG-only by design"). Decisive precheck: `runGog` and all GOG-set files use **none** of the Epic/Amazon-named helpers → clean excision possible.
+
+**Done this session (branch `feature/gog-explore-tab`, `extensions/gamehub/.../gamehub/gog/`):**
+- 19 files ported, uniform package `app.revanced.extension.gamehub.gog`; **closure self-contained, zero unresolved cross-refs, braces balanced** (inspection-verified).
+- `BhDownloadService`: `case "EPIC"`/`"AMAZON"` + `runEpic`/`runAmazon` methods excised via brace-matching; `runGog` + GOG path intact; 0 Epic/Amazon refs.
+- `BhDownloadsActivity`: `openDetailScreen` EPIC/AMAZON routing branches excised; GOG branch intact.
+- `BhEpicSidecar`/`BhEpicEosDetector` dropped (orphaned once `runEpic` gone) → 21→19 files.
+- `GogLaunchHelper` → Phase-1 stub (API preserved; bridge deferred §19/§21).
+- `GogMainActivity.onResume` → Phase-2 `pending_gog_exe`→finish() hand-off neutralized.
+- `patches/.../gamehub/gog/GogManifestPatch.kt` (resourcePatch, mirrors `vibrationManifestPatch`) registers 6 activities; `GogMainActivity` exported **Phase-1-only** as the temp `adb am start` dev entry (production Profile-row = deferred WS4/P-A). Extension classes ride into the APK via the always-applied `sharedGamehubExtensionPatch` (whole `extensions/gamehub` module → `.rve`).
+
+**Verification boundary (honest):** all checks are **inspection-level** (self-containment, brace balance, uniform package, no unresolved symbols). CI-only build, no local compile, silent-SEVERE footgun — **this is a first-cut, NOT verified working.** Residual risks: subtle javac errors, unused-private warnings from the excisions, stub Toast threading, patch auto-discovery. **First CI build = the M1 gate**; treat WS1 as unverified until CI-green, then device login test (M1).
+
+**Next:** trigger a CI build of `feature/gog-explore-tab`; on green, device-test M1 (`adb shell am start -n <pkg>/app.revanced.extension.gamehub.gog.GogMainActivity` → GOG login). Iterate fixes per the CI+device loop.

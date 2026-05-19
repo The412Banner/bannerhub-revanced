@@ -1,6 +1,6 @@
 # GOG Library Tab — Patch Design Doc
 
-**Status:** PHASE 0 100% CLOSED — nothing UNVERIFIED (no code). Verdict: **Option A, effort tier MODERATE** — one parameterized grid (no screen-building), GOG tab = 3 mechanical bytecode edits + 1 API flag; GOG filter predicate pinned to `!getGogAppId().isEmpty()` (pattern already in `ul5`). See §12 (esp. §12.7–§12.8); supersedes speculative §4/§6. Branch `feature/gog-explore-tab` off `gamehub-604-build` @ `e39ce21`.
+**Status:** CURRENT CONCLUSION = **§13 (cheap path)**. The first-class branded tab (§12) was traced to dual obfuscated-Kotlin **enum surgery** (`wrc`+`s6d`), ~5 interlocked edits, CI+device multi-iteration — user declined that risk. Cheap path: `getGogAppId` is **unused in all game-list classifiers** ⇒ GOG titles **likely already appear in the PC Games tab and launch** (`GogGameByPcEmulator` wired) — probably **ZERO code**, pending one on-device import test. §12 retained as the record/fallback only; its older "MODERATE / 3 edits + API flag" header line was superseded by §12.9 then §13. Branch `feature/gog-explore-tab`.
 **Base:** GameHub 6.0.4, R8 map id `6a5cde6143fc8cf76f6f3a447d0fececd4794d83066e6ead7a9537e6527b057b`.
 **Author:** The412Banner. **Date:** 2026-05-19.
 

@@ -546,3 +546,16 @@ Starting WS1 revealed the GOG stack depends on a shared `Bh*` download/storage/i
 **Verification boundary (honest):** all checks are **inspection-level** (self-containment, brace balance, uniform package, no unresolved symbols). CI-only build, no local compile, silent-SEVERE footgun — **this is a first-cut, NOT verified working.** Residual risks: subtle javac errors, unused-private warnings from the excisions, stub Toast threading, patch auto-discovery. **First CI build = the M1 gate**; treat WS1 as unverified until CI-green, then device login test (M1).
 
 **Next:** trigger a CI build of `feature/gog-explore-tab`; on green, device-test M1 (`adb shell am start -n <pkg>/app.revanced.extension.gamehub.gog.GogMainActivity` → GOG login). Iterate fixes per the CI+device loop.
+
+---
+
+## 23. WS1 CI GREEN (2026-05-19) — both gates pass first attempt; M1 device test pending
+
+- **Compile gate** `build_pull_request.yml` run [26111173073](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26111173073) — **success**. The ~7.5k-LOC WS1 port + Epic/Amazon decoupling + `GogManifestPatch` compile clean first pass.
+- **Artifact build** `release.yml` run [26111421796](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26111421796), `version=1.4.0-604-gog-pre1`, `stable=false` — **success**; 9 variant APKs (~108MB) as artifacts; "Create GitHub Release" **skipped** (correct — pre-release policy, artifact-only). No code fixes were needed (notable for a port this size in a no-local-test project).
+
+**Status:** WS1 first-cut **builds clean**. Structural/compile risk retired. Still UNVERIFIED at runtime — M1 = on-device GOG login, user-driven (interactive WebView OAuth).
+
+**M1 device test (next):** install `apk-alt-AnTuTu` (pkg `com.antutu.benchmark.full` — the canonical verification variant) from run 26111421796, then:
+`adb shell am start -n com.antutu.benchmark.full/app.revanced.extension.gamehub.gog.GogMainActivity`
+→ tap "Login with GOG" → complete GOG web login → expect the card to flip to the signed-in state (username shown). Capture `getlog com.antutu.benchmark.full` for `BannerHub`/`GogLaunchHelper`/GOG-auth traces. Pass = signed-in card + token persisted (`bh_gog_prefs/access_token`). Then M2 (View Game Library → owned list) and M3 (download a title) in the same loop.

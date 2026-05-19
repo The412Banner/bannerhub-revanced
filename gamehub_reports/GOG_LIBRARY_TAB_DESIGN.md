@@ -1,6 +1,6 @@
 # GOG Library Tab — Patch Design Doc
 
-**Status:** ⚑ **PHASE 1 COMPLETE — CURRENT = §26.** GOG login + owned-library + download/install ALL device-confirmed on Normal-GHL (`gamehub.lite`, build `1.4.0-604-gog-pre2`). GunSlugs installed 86MB/580 files. Exactly ONE bug across the whole ~7.5k-LOC port (§25 missing <service>, fixed). Phase 2 deferred: WS5 launch bridge (§19) / production Profile-row entry (WS4-P-A) / P-C. Branch `feature/gog-explore-tab`.
+**Status:** ⚑ **PHASE 1 COMPLETE + WS4 (permanent GOG card) FUNCTIONALLY COMPLETE — CURRENT = §32b.** GOG login + owned-library + download/install device-confirmed (pre2). WS4: permanent seeded GOG card → tap → "Launch Game" → GOG hub device-confirmed on Normal-GHL (`gamehub.lite`, pre8); pre9 = orientation polish only (landscape). Intercept = yv3.invoke side-effect + reflective sentinel walk + main-thread gate; real launches byte-for-byte unaffected. Iteration trail: pre3 wrong anchor → pre4 suspend VerifyError (§31) → pre5 silent no-apply → pre6 idiom fix → pre7 yv3 (§32) → pre8 thread-gate (§32a) → pre9 landscape (§32b). Phase 2 still deferred: WS5 launch bridge (§19) / production Profile-row entry (WS4-P-A) / P-C. Branch `feature/gog-explore-tab`.
 **Base:** GameHub 6.0.4, R8 map id `6a5cde6143fc8cf76f6f3a447d0fececd4794d83066e6ead7a9537e6527b057b`.
 **Author:** The412Banner. **Date:** 2026-05-19.
 
@@ -825,3 +825,24 @@ the hub fires only on the actual Launch action. Head injection / fingerprint /
 seed hook all unchanged. Files: `GogLibraryCard.java` (+main-thread guard).
 Next: compile gate → grep GOG SEVERE → pre8 → device (no auto-open on start;
 Launch Game → GOG hub; real games unaffected).
+
+### 32b. pre8 device → WS4 FUNCTIONALLY COMPLETE; pre9 (orientation polish)
+
+pre8 (run 26121495276, `b01d286`, 0 SEVERE — gated) device: **all three pass.**
+No auto-open on app start (main-thread gate works); GOG card → Launch Game →
+GOG sign-in/library opens; real games unaffected. **WS4 core is functionally
+complete**: permanent seeded GOG card → tap → "Launch Game" → GOG hub, with
+the launch-router fallthrough failing harmlessly behind it and zero impact on
+real launches. Seeder + intercept + dedupe + thread-gate all confirmed.
+
+Sole remaining nit: `GogMainActivity` (and the other GOG activities) open in
+**portrait** while GameHub runs **landscape**. Cause: `GogManifestPatch`
+registered them with a theme + `configChanges` but **no
+`android:screenOrientation`** → `unspecified` → portrait. GameHub locks its
+real content screens to `sensorLandscape` (sub-screens use `behind` to inherit,
+but the GOG hub is launched in a NEW_TASK from app context — nothing below to
+inherit, so `behind` would still fall to portrait). **pre9 (manifest-only):**
+add `android:screenOrientation="sensorLandscape"` to all 6 GOG activities in
+`GogManifestPatch` — matches GameHub's content-screen value and the user's
+landscape usage; no bytecode/fingerprint risk. Next: compile gate → grep GOG
+SEVERE → pre9 → device (GOG flow opens landscape, matching the app).

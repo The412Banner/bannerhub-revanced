@@ -2733,3 +2733,22 @@ Append-only, `appContext`-guarded, never throws; counters cap so the file can't 
 `/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-pergame-pre8-Patched-alt-AnTuTu.apk` (116,062,630 B, md5 `502498644dfc0dae67b23e1096306490`).
 
 **Read on pre8 after the cutoff:** `GUEST` non-zero→(0,0) gap≈1000 ms `[SDL_AUTO_EXPIRY?]` ⇒ guest-side stop (winebus/SDL); `GUEST` stays non-zero + sparse/no `KEEPALIVE` ⇒ host keepalive not firing. Also doubles as the Vibration per-game scope proof (RESOLVE/RUMBLE#1 gid + mode/intensity). GameConTest input mode (held slider vs timed test button) must be noted. **Confirmed:** GPU Spoof (pre5) ✅ + Renderer (pre6) ✅. Vibration scope + 2 s behavior pending pre8 read. **NOT merged.**
+
+---
+
+## 2026-05-18 — Vibration: two bugs found from pre8 trace; per-game scope fixed (pre9)
+
+**Branch:** `fix/per-game-settings-isolation`. CI run **26074438727** GREEN, 0 SEVERE; vibration/menu-id patches succeeded.
+
+**pre8 `bh_vibration.log` (GameConTest.exe, 23:27):** `RUMBLE#1 gid=(global) mode=1 intensity=100`, **NO RESOLVE line**, repeated `GUEST slot=0 65535,0 -> 0,0 gap≈1000ms [SDL_AUTO_EXPIRY?]`, **ZERO KEEPALIVE lines**.
+
+**Bug 1 — per-game scope broken (same `:wine` defect, 3rd feature):** no RESOLVE + `gid=(global)` ⇒ `maybeResolveContainerFromActivityStack()` never resolved (sniff null in `:wine`); vibration ran on strict defaults (`DEFAULT_MODE=MODE_CONTROLLER=1`, `DEFAULT_INTENSITY=100`), NOT the per-game 49908 value (values coincide but unscoped — an Off-set game would still rumble). The earlier "vibration resolves at rumble-time post-WineActivity" reasoning was wrong — device disproved it (same as the renderer surprise). **Fixed (pre9):** `maybeResolveContainerFromActivityStack()` now prefers `BhMenuGameId.getCaptured()` (pre5 SharedPreferences disk-bridge) before the stack sniff; imports `BhMenuGameId`; emits `RESOLVE … src=menuid`. Identical fix to GPU Spoof pre5 / Renderer pre6. Lint-clean. **Final rule: every per-game resolver runs in `:wine` where sniff is null — all three needed the disk-bridge; no `:wine`-side sniff-only path is ever safe.**
+
+**Bug 2 — ~2 s cutoff = guest-side SDL/winebus ~1 s auto-expiry, NOT host keepalive:** GUEST trace shows the guest itself sending `(0,0)` ~1000 ms after each non-zero; zero KEEPALIVE is *correct* (`recordKeepalive(…,0,0)` clears the entry when the guest zeroes, so the host rightly doesn't re-arm — re-arming would rumble during intended silence). Host keepalive cannot fix this; the stop originates in Wine ⇒ the preload-free `winebus.so` duration patch is not effective in this Proton10-arm64x GoW (49908) container. **PARKED by user** — separate track, revisit after the per-game work is merged. Not a host-side change.
+
+### Delivered
+`/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-pergame-pre9-Patched-alt-AnTuTu.apk` (116,037,995 B, md5 `8b7d24e1c077fc5171a040844266ae7e`).
+
+**Verify on pre9:** set GoW 49908 vibration to **Off (mode 0)** (distinct from default MODE_CONTROLLER) → launch → trigger rumble. Pass = `bh_vibration.log` has `RESOLVE gid=49908 src=menuid` AND no rumble (per-game scope actually applied, not coincidental defaults). The ~1 s stutter (Bug 2) will still be present — parked, ignore.
+
+**Confirmed:** GPU Spoof (pre5) ✅ + Renderer (pre6) ✅. Vibration per-game scope pending pre9 re-read. **NOT merged** — hold until Vibration scope confirmed, then merge `fix/per-game-settings-isolation` → `gamehub-604-build` `--no-ff` → refresh `feature/lite-variant-tier1` → README/master-map; Bug 2 stays a parked separate track.

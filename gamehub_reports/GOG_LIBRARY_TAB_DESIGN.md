@@ -241,3 +241,33 @@ A "GOG" badge/label on GOG titles *within* the PC tab, or a GOG filter-chip on t
 **Verify §13.1 on-device first. Most probable result: nothing to build.** This is the rational cheap path — confirm the latent behavior before writing any code; only fall to the single-predicate edit if the import test proves GOG titles are actively excluded. The §12.9 dual-enum tab remains documented if a first-class branded tab is ever wanted, but it is not the cheap path and is not recommended unless the maintenance cost is explicitly accepted.
 
 **Next action:** on-device GOG import test (no code). Branch state unchanged; design doc only.
+
+---
+
+## 14. PIVOTAL (2026-05-19) — real goal = GOG account login + owned library; backend DOES NOT EXIST in 6.0.4
+
+User clarified the actual requirement: **GOG account login + display the user's GOG-owned library** (not "show already-imported GOG games"). This recharacterizes the whole doc. §1–§13 addressed the *tab surface*; the real problem is the *backend*.
+
+### 14.1 Decisive backend audit [CONFIRMED]
+
+| Store | Native SDK | Backend footprint | Acct login + library + download |
+|---|---|---|---|
+| Steam | `libsteamkit_core.so` | full | ✅ in base |
+| Epic | `libepickit_core.so` | 373 epic classes + 289 `uniffi/epickit` | ✅ in base |
+| **GOG** | **none** (`libgog*`/`libgalaxy*` absent) | **1 gog-named class total** | ❌ **absent** |
+
+Also CONFIRMED absent in 6.0.4: GOG API hosts (no `gog.com`/`embed.gog.com`/Galaxy API in smali or assets), GOG OAuth, GOG auth deep-link/scheme. Present for GOG = **only** `LaunchType.GogGameByPcEmulator` (run a GOG `.exe` via Wine *if files already on disk*), GOG icons, and the **orphaned** `features_home_profile_gog_{bind,title,desc}` strings (dead UI scaffolding, no login flow behind them).
+
+### 14.2 Consequence
+
+The goal is **not** a ReVanced patch / config / enum / tab problem. There is nothing to unhide, surface, or inject — the GOG account/library/download capability **was never built into the XiaoJi GameHub 6.0.4 base**. §12 (tab) and §13 (PC-tab fallthrough) are both moot for the *stated* goal: a tab with no backend lists nothing; PC-tab fallthrough only helps games already side-loaded, not account-owned library.
+
+Achieving login + owned-library = **building a full GOG integration**, comparable in scope to what `libepickit_core.so` (4.6 MB Rust SDK + 289 classes) provides for Epic: (1) GOG OAuth (`auth.gog.com`/`embed.gog.com`), (2) GOG API client for owned-library + metadata, (3) GOG DRM-free/Galaxy-CDN downloader, (4) UI + wiring. That is a major feature, not a bytecode tweak.
+
+### 14.3 Realistic path forward (not in this doc's scope to execute)
+
+GOG integration **already exists in the GameNative / BannerHub-3.7.x lineage** (a *different* codebase from the XiaoJi 6.0.4 base v6 patches): see project memories `[[project_bannerhub_gog_download]]` (multi-CDN GOG download stack, shipped BannerHub v3.7.3) and `[[project_gamenative_store_port_backlog]]` (clean GOG fixes surveyed). So the viable route is a **port of the GameNative/3.7.x GOG stack into the 6.0.4 base**, on the order of the Epic-EOS investigation (`[[project_bannerhub_epic_eos_investigation]]`) — a real integration project with its own scoping. Open sub-question for that effort: whether the 3.7.x/GameNative GOG stack includes *account login + owned-library listing* or only *download-by-known-id* (the 3.7.x memory documents a download stack + picker, not explicitly OAuth/library) — assess before committing.
+
+### 14.4 Status
+
+**Tab work (§12/§13) SHELVED — solves the wrong layer for the stated goal.** Next step is a decision: open a separate "GOG integration port" scoping effort (large), or drop GOG for v6. No code. Branch `feature/gog-explore-tab` holds the full trace record.

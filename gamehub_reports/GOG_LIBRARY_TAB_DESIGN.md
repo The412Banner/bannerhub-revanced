@@ -214,3 +214,30 @@ User chose **APK-only, always-on** (no API flag — drop §12.7-step-4). Tracing
 **Revised effort: MODERATE→HIGH.** This is the project's highest-risk patch class — **dual obfuscated-Kotlin enum extension** (`wrc`+`s6d`: VALUES/EnumEntries/ordinal, VerifyError-prone, runtime-only failure) **+ Compose injection**, in a **CI-only build (no local test) where per-patch SEVERE does not fail CI** (silent-ship footgun, see `[[bannerhub-revanced-menu-injection-playbook]]`). Project precedent for a *simpler* single-Compose injection (menu-injection) = pre7→pre17, ~10 device iterations. **This cannot be one-shot-verified by inspection; it must enter the push→CI→device-test→fix loop.** Strong fingerprint-migration candidate (anchor on the `kg5.n` 5-string sparse-switch, the `s6d` `PC/STEAM/EPIC/RETRO_GAMES` names, `LaunchType.GogGameByPcEmulator`, `GameInfo.getGogAppId`).
 
 **Phase 1 reality:** first-cut patches are writable now, but "implemented" ≠ "working" until the CI+device loop validates the dual-enum surgery. Recommend treating this as a normal multi-iteration feature (like vibration/menu-injection), not a drop-in.
+
+---
+
+## 13. Cheap alternative (2026-05-19) — user chose "cheaper path first"
+
+User declined the dual-enum-surgery tab (§12.9 too risky) and asked to scope a lower-risk way to give GOG access. Decisive trace finding:
+
+**`GameInfo.getGogAppId()` is referenced ZERO times in every game-list classifier** (`hc5/qra/nfj/t2g/vl7/lb3` — all `gog=0`; only `getSteamAppId`/`getEpicAppId` drive categorization). App-wide, `getGogAppId` appears only in `ul5:~4141` (appid-string precedence resolver) and `ajf:878` (launch mapper). [CONFIRMED]
+
+### 13.1 Most likely reality: GOG already works, just unbranded — ZERO code
+
+The game-list classifiers special-case **only** Steam and Epic; a title with no steam/epic id falls to the **PC/Wine default category**. A GOG-only game (`getGogAppId` set, no steam/epic id) therefore **[INFERRED]** already classifies into the **PC Games** tab — and the `LaunchType.GogGameByPcEmulator` path is fully wired **[CONFIRMED]**, so it should launch. Net: GOG import → appears under *PC Games* → launches. No patch, no risk.
+
+**This is INFERRED, not byte-proven** (not traced one game end-to-end through the list filter). It is **cheaply and definitively verifiable on-device** (project norm): import a GOG title, confirm it shows in PC Games and launches. Outcomes:
+- **Works** → feature is "already shipped, unlabeled." Zero code. Done. Optionally §13.2.
+- **Appears but won't launch** → small launch-mapper edit in `ajf` (the one place GOG launch is mapped). Low risk.
+- **Doesn't appear at all** → the PC classifier explicitly excludes gog ids → widen ONE predicate to admit `!getGogAppId().isEmpty()` (the `ul5` pattern). Single-instruction-class edit, ShowPcGameSettingsRow risk tier. Still no enum surgery.
+
+### 13.2 Optional polish (only if 13.1 confirms and a visual cue is wanted)
+
+A "GOG" badge/label on GOG titles *within* the PC tab, or a GOG filter-chip on the PC screen — additive UI, no enum/tab surgery, far below §12.9 risk. Scope separately on demand; not needed for functional access.
+
+### 13.3 Recommendation
+
+**Verify §13.1 on-device first. Most probable result: nothing to build.** This is the rational cheap path — confirm the latent behavior before writing any code; only fall to the single-predicate edit if the import test proves GOG titles are actively excluded. The §12.9 dual-enum tab remains documented if a first-class branded tab is ever wanted, but it is not the cheap path and is not recommended unless the maintenance cost is explicitly accepted.
+
+**Next action:** on-device GOG import test (no code). Branch state unchanged; design doc only.

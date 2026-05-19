@@ -243,6 +243,14 @@ public final class BhVibrationController {
     // never throws — production-safe observability, not a diag harness.
     private static volatile boolean sBcResolved = false;
     private static volatile boolean sBcRumble   = false;
+    // Capped loop traces (keep the log small but enough to see the cadence):
+    // guest XInput transitions (does the guest itself send (0,0) ~1 s after a
+    // non-zero = SDL auto-expiry?) and keepalive refresh fires (is the
+    // controller being re-armed before the 2 s effect lapses?). Together they
+    // explain a "stops after ~2 s" report: guest-stop vs keepalive-not-firing.
+    private static final int BC_TRACE_CAP = 40;
+    private static volatile int sBcGuest = 0;
+    private static volatile int sBcKeep  = 0;
 
     private final HandlerThread workerThread;
     private final Handler worker;
@@ -326,6 +334,13 @@ public final class BhVibrationController {
                         InputDevice dev = InputDevice.getDevice(r[0]);
                         if (dev != null) {
                             dispatchControllerInternal(dev, r[1], r[2], /*log*/ false);
+                        }
+                        if (sBcKeep < BC_TRACE_CAP) {
+                            sBcKeep++;
+                            breadcrumb("KEEPALIVE dev=" + r[0]
+                                    + " low=" + r[1] + " high=" + r[2]
+                                    + " mode=" + cachedMode
+                                    + (dev == null ? " (device gone)" : ""));
                         }
                     }
                 }
@@ -540,6 +555,26 @@ public final class BhVibrationController {
         // which is the bug GameNative PR #1214's evshim keepalive fixes. Read prev
         // state BEFORE the OFF early-return so the trace stays accurate across modes.
         logGuestTransition(slot, low & 0xFFFF, high & 0xFFFF);
+
+        // Durable guest-transition trace (independent of the DIAG-stripped
+        // logGuestTransition). slotLow/High/Stamp still hold the PREVIOUS
+        // frame here (overwritten further down). Log only real changes, with
+        // the gap; flag a non-zero -> (0,0) in the ~1 s window as suspected
+        // SDL auto-expiry. Capped so the file can't grow unbounded.
+        if (sBcGuest < BC_TRACE_CAP) {
+            int nl = low & 0xFFFF, nh = high & 0xFFFF;
+            int pl = slotLow.get(slot), ph = slotHigh.get(slot);
+            if (pl != nl || ph != nh) {
+                long pw = slotStamp.get(slot);
+                long gap = pw > 0 ? (SystemClock.uptimeMillis() - pw) : -1L;
+                boolean expiry = (pl | ph) != 0 && (nl | nh) == 0
+                        && gap >= 800L && gap <= 1300L;
+                sBcGuest++;
+                breadcrumb("GUEST slot=" + slot + " " + pl + "," + ph
+                        + " -> " + nl + "," + nh + " gap=" + gap + "ms"
+                        + (expiry ? " [SDL_AUTO_EXPIRY?]" : ""));
+            }
+        }
 
         int mode = cachedMode;
         if (!sBcRumble) {

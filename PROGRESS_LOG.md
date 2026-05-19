@@ -2608,3 +2608,211 @@ Same APK toggles both ways cleanly, no regression either direction. Cleanup (`44
 **Verification:** device-confirmed on `banner.hub` Normal-Lite offline — `bh_offline_list.log`: `getContainers built=10 OK`, `getList type=1 built=36 / type=2 built=263 / type=3 built=46 / type=4 built=7 OK`; pickers populate with downloads + built-ins, DXVK/GPU correctly ordered; online byte-identical; no regression.
 
 **Merge:** `fix/offline-picker-merge` → `gamehub-604-build` `--no-ff` (`dbd7554`). README patch-catalog section rewritten (was "⚠ currently broken"). NEXT: refresh `feature/lite-variant-tier1` off new `gamehub-604-build`; CI-validate (release.yml prerelease, expect 0 SEVERE).
+
+---
+
+## 2026-05-18 — Per-game settings isolation: GPU Spoof model STILL resets to first entry (pre3)
+
+**Branch:** `fix/per-game-settings-isolation` (off `gamehub-604-build`).
+
+**Symptom (device, pre2 build `9ccbf47`):** GPU Spoof — pick vendor + model → Save → reopen → mode/vendor restore correctly but the **Model spinner snaps back to the first/top entry**. pre2's fix (move spinner listeners to *after* the restore block) did not resolve it.
+
+**Root cause:** `Spinner.setSelection(int)` does **not** invoke `onItemSelected` synchronously — AdapterView defers the selection callback to the next layout pass. So the restore-time `vendorSpinner.setSelection(vSel)` queues a callback that fires *after* the (already-attached) vendor listener is live, runs `rebuildModels(modelSpinner, vIdx, 0)`, and clobbers the just-restored model back to index 0. Listener-attach ordering can't fix an async callback.
+
+**Fix (pre3):** make the vendor listener idempotent. Added field `lastVendorIdx`, set inside `rebuildModels()` to the vendor it just built for. The vendor listener early-returns when `vIdx == lastVendorIdx` (the deferred restore callback → no-op, model preserved); only an actual vendor change (different index) rebuilds the model list with sel=0. Robust regardless of listener-attach timing. Renderer/Vibration unaffected (no cascading model spinner).
+
+**Lesson:** `Spinner.setSelection()` callbacks are asynchronous (next layout) — guarding by listener-attach order is insufficient; guard the listener body on a real value change instead.
+
+### Artifact-only CI
+`gh workflow run release.yml --ref fix/per-game-settings-isolation -f version=1.3.0-604-pergame-pre3` (stable defaulted false = artifact-only prerelease). Expect green + 0 SEVERE; deliver alt-AnTuTu APK. Retest: GPU Spoof Spoof-mode → vendor+model → Save → reopen shows the exact card; per-game isolation + in-game apply intact.
+
+---
+
+## 2026-05-18 — GPU Spoof not applied at launch + customDeviceDesc truncation (pre4)
+
+**Branch:** `fix/per-game-settings-isolation`.
+
+**Symptom (device):** God of War (gameId 49908) set to NVIDIA RTX 4080 via per-game menu, but in-game still reports the real Adreno identity "GameFusion".
+
+**Diagnosis (root-bridge forensics):** per-game store is *correct* — `bh_gpuspoof_prefs.xml` (mtime 22:04 = launch) has `bh_gpuspoof_mode__49908=1`, `device__49908=2704`, `name__49908=NVIDIA GeForce RTX 4080`; the new system correctly does NOT write `pc_g_setting49908.xml` (its `bh_gpuspoof_*` keys are orphaned legacy, unsuffixed, mode=0, file mtime 09:24). But the launch-time apply did not fire: `bh_gpuspoof_dxvk.conf` + `GoW_*.log` stale from 05-17, zero `BhGpuSpoof` logcat. Cause: `applyGpuSpoofImpl()` resolved gameId via `sniffGameIdFromStack()` *only*; the `Lbg5;->a` env builder runs before `WineActivity` is in `ActivityThread.mActivities`, so sniff → null → `containerGameId=null` → mode OFF → silent no-op (no conf write). The menu-row click already resolves via `BhMenuGameId.getCaptured()` (→ correct store keying), but the controller's launch path never consulted it.
+
+Secondary bug (from the one prior successful 05-17 GoW_dxgi.log): DXVK's inline `DXVK_CONFIG` value parser splits on whitespace, so `dxgi.customDeviceDesc = NVIDIA GeForce RTX 4080` was truncated to `NVIDIA`. IDs (space-free) applied fine.
+
+**Fix (pre4):**
+1. **Launch gameId capture.** `applyGpuSpoofImpl()` now resolves `gid = BhMenuGameId.getCaptured()` first, falling back to `sniffGameIdFromStack()` — identical order to `BhGpuSpoofMenuRowClick`. The shared `MenuGameIdCapturePatch` (already a dependency of the GPU Spoof menu row) stashes the id when the user opens the per-game menu, so the launch path now scopes to the right game even though WineActivity isn't yet on the stack.
+2. **customDeviceDesc truncation.** Inline `DXVK_CONFIG` env now carries ONLY the space-free numeric IDs (dxgi/d3d9/dxvk customVendorId/customDeviceId). The space-containing `dxgi.customDeviceDesc` is written only into the dxvk.conf file body (file parser handles spaces); `DXVK_CONFIG_FILE` points at it and DXVK keeps the file value since the env no longer overrides that key.
+
+### Artifact-only CI
+`gh workflow run release.yml --ref fix/per-game-settings-isolation -f version=1.3.0-604-pergame-pre4` (stable false). Retest: GoW set NVIDIA → launch → in-game GPU reads NVIDIA (not GameFusion); `bh_gpuspoof_dxvk.conf` rewritten at launch with full `customDeviceDesc`; `BhGpuSpoof: GPU spoof active 10de:2704` in logcat; per-game isolation + model-persistence (pre3) intact.
+
+---
+
+## 2026-05-18 — GPU Spoof: ROOT CAUSE = main↔`:wine` process boundary (pre5)
+
+**Branch:** `fix/per-game-settings-isolation`. Commit `292fba6`. CI run **26072733452** GREEN, 0 SEVERE.
+
+**pre4 device test FAILED — same symptom:** GoW (49908) set NVIDIA RTX 4080, launched 22:23. Forensics: `bh_gpuspoof_prefs.xml`@22:23 CORRECT (`mode__49908=1 device__49908=2704 name__49908=NVIDIA GeForce RTX 4080`); `bh_gpuspoof_dxvk.conf` STALE 05-17 18:00 (NOT rewritten at launch); `launchLog49908.txt`@22:23 has NO DXVK_CONFIG/VK_ICD/GAMESCOPE env.
+
+**ROOT CAUSE (decompiled AndroidManifest):** `com.xj.winemu.WineActivity` is declared `android:process=":wine"`. The pre4 fix (`BhMenuGameId.getCaptured()` at launch) **cannot work by construction**: `captureGameId()` fires on menu-open in the MAIN UI process and sets the `static volatile sCapturedGameId`; the env builder `Lbg5;->a` runs inside WineActivity in the **separate `:wine` process** where that static is unset. `getCaptured()`→null, `sniffGameIdFromStack()`→null (pre-registration) ⇒ `containerGameId=null` ⇒ strict-per-game store yields `MODE_OFF` ⇒ early-return BEFORE the unconditional conf write ⇒ stale conf, stock adapter. The disk-backed store crosses processes fine; only the gameId KEY was lost.
+
+**Confirmed against the user's "worked fine" build** (run 26064254882 = branch `test/offline-picker-merge-lite` @ `06fdd05`): that commit does NOT contain the strict-per-game rework; its `reloadSettings()` still reads the **GLOBAL** `bh_gpuspoof_prefs` fallback. So it "worked" by applying the spoof globally at launch — the `:wine` defect existed there too, just masked by the global fallback. Removing that fallback for true per-game isolation (kills app-wide leak + DiRT3 deep-blackscreen) UNMASKED the latent defect. Not a regression; the old design never truly scoped per-game at launch.
+
+**Fix (pre5, `292fba6`):** `BhMenuGameId` now mirrors the captured id to SharedPreferences (`bh_menu_gameid`/`id`, synchronous `.commit()`) on every `captureGameId`, and `getCaptured()` falls back to that disk value (caching into the static) when the in-process static is empty. SharedPreferences cross `:wine` exactly like the per-game store. Extension-only, no patch/anchor change; lint-compiles clean vs android-34. Fixes GPU Spoof + Renderer + Vibration in one shared place (all three share this capture).
+
+**Lesson:** `WineActivity` = `:wine` process. ANY Java static set in the UI/menu process is invisible to launch-time code (`Lbg5;->a` / `applyGpuSpoof`). Cross the process boundary via disk (SharedPreferences/file), never a static.
+
+### Delivered
+`/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-pergame-pre5-Patched-alt-AnTuTu.apk` (116,095,398 B, md5 `034051d627d0a58905d3e5223eaa1ee8`).
+
+**Retest (GoW 49908):** set NVIDIA → launch → in-game reads NVIDIA not GameFusion; `bh_gpuspoof_dxvk.conf` mtime updates at the launch; new `shared_prefs/bh_menu_gameid.xml` has `<string name="id">49908</string>` (proves gameId crossed into `:wine`); `BhGpuSpoof: GPU spoof active 10de:2704` logged. **NOT merged** — hold until device-confirmed.
+
+### pre5 ✅ DEVICE-CONFIRMED (2026-05-18 22:44, GoW 49908 → NVIDIA RTX 4090)
+Verified chain: `shared_prefs/bh_menu_gameid.xml` = `<string name="id">49908</string>` (gameId crossed the main→`:wine` boundary — the decisive proof the disk-bridge works); `bh_gpuspoof_dxvk.conf` rewritten at launch (mtime 22:44; was stale 05-17 on pre4) with body `10de:2684` + `customDeviceDesc = NVIDIA GeForce RTX 4090` (full, untruncated — pre4 secondary fix holds); **in-game GPU reads NVIDIA** (previously GameFusion). No `BhGpuSpoof` logcat line (AnTuTu floods/rolls the buffer) — the fresh conf + in-game identity are hard proof the launch apply fired. Root cause (`:wine` process boundary defeats Java statics) and the SharedPreferences disk-bridge fix are both validated. The shared `BhMenuGameId` bridge also corrects Renderer + Vibration launch-scoping (same boundary).
+
+**NOT merged — pending user go.** On go: `fix/per-game-settings-isolation` → `gamehub-604-build` `--no-ff` (author The412Banner, no Claude trailer) → refresh `feature/lite-variant-tier1` off new 604 → update README + master-map (note the `:wine`-boundary lesson + that it fixes all three per-game features).
+
+---
+
+## 2026-05-18 — Renderer: SAME `:wine` boundary bug, fixed (pre6)
+
+**Branch:** `fix/per-game-settings-isolation`. Commit pushed; CI run **26073340887** GREEN, 0 SEVERE; renderer/menu-id/gpu-spoof patches all succeeded.
+
+**Device evidence (GoW 49908 left running on Legacy):** `bh_renderer_prefs.xml` correct (`bh_renderer_mode__49908=1`; leftover unsuffixed `bh_renderer_mode=1` = the OLD global that used to mask this), `bh_menu_gameid.xml`=49908, `libxserver_legacy.so`+`libwinemu_legacy.so` present in APK lib dir — yet `/proc/4566/maps` (running `:wine` pid) showed **STOCK** `libxserver.so`+`libwinemu.so`, NOT `_legacy`. Legacy silently no-op'd to stock.
+
+**Root cause = identical to GPU Spoof.** `loadXserver`/`loadWinemu` (replace `System.loadLibrary` in `XServer.<clinit>`, run in the `:wine` process) resolved gameId via `sniffGameIdFromStack()` ONLY → null because the lib swap fires before WineActivity is registered in `:wine`'s mActivities. Pre-rework this was masked by the global fallback (the leftover unsuffixed key); the strict-per-game rework removed the fallback and unmasked it. The earlier PROGRESS/table claim "Renderer sniff works post-WineActivity" was WRONG — disproven by /proc maps.
+
+**Fix (pre6):** new `BhRendererController.launchGameId()` = `BhMenuGameId.getCaptured()` (pre5 SharedPreferences disk-bridge crosses the main↔`:wine` boundary) then `sniffGameIdFromStack()` fallback — identical order to `BhGpuSpoofController.applyGpuSpoofImpl`. All three launch-resolution sites repointed: `isLegacyForLaunchingGame`, `loadXserver`, `loadWinemu`. Imports `BhMenuGameId`; lint-compiles clean vs android-34.
+
+**Corrected rule:** ANY launch/clinit-time per-game resolver running in the `:wine` process MUST use `BhMenuGameId.getCaptured()` first (disk-bridge), never sniff-only. Sniff-only is safe ONLY for genuinely mid-gameplay hooks (e.g. Vibration's rumble-dispatch).
+
+### Delivered
+`/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-pergame-pre6-Patched-alt-AnTuTu.apk` (116,054,438 B, md5 `06e4ca64e657e0a30ae96e6cd78e2c11`).
+
+**Retest:** GoW set Legacy → launch → leave running → `/proc/<:wine pid>/maps` must show `libxserver_legacy.so`+`libwinemu_legacy.so` (NOT stock); a game NOT set Legacy stays stock (no leak). **Vibration still needs its own device check** (per-game rumble; sniff-at-rumble-time probably OK but verify, don't assume). GPU Spoof pre5 already device-confirmed. **NOT merged** — hold until renderer + vibration device-confirmed.
+
+### pre6 RENDERER ✅ DEVICE-CONFIRMED (2026-05-18 23:07, GoW 49908 Legacy, running)
+Live `:wine` process (pid 17125) `/proc/17125/maps`: `libxserver_legacy.so` + `libwinemu_legacy.so` loaded, **NO stock `libxserver.so`/`libwinemu.so` mapped** (pure 6.0.2 legacy pair); wineserver + full wine guest tree alive → sustained, not crashing. pre6 `launchGameId()` (getCaptured disk-bridge → sniff) correctly resolves gameId 49908 in `:wine` at `XServer.<clinit>`; `isLegacyForGame(49908)`→true. The `:wine` boundary defect is fixed for Renderer exactly as for GPU Spoof.
+
+**Confirmed status:** GPU Spoof (pre5) ✅ + Renderer (pre6) ✅ device-confirmed. **Vibration** still needs its own device check (per-game rumble) — sniff-at-rumble-time is expected OK but unverified; do not assume. **NOT merged** — hold until Vibration device-confirmed, then: `fix/per-game-settings-isolation` → `gamehub-604-build` `--no-ff` (The412Banner, no Claude trailer) → refresh `feature/lite-variant-tier1` → README/master-map.
+
+---
+
+## 2026-05-18 — Vibration durable breadcrumb (pre7)
+
+**Branch:** `fix/per-game-settings-isolation`. CI run **26073891283** GREEN, 0 SEVERE; vibration/renderer/gpu-spoof/menu-id patches all succeeded.
+
+**Why:** Vibration has no forensic fingerprint — no per-launch file, no distinct lib, and the AnTuTu logcat flood rolls the `Log.i` markers before they can be read. So unlike GPU Spoof (`dxvk.conf`) and Renderer (`_legacy.so` in `/proc/maps`), there was no on-disk way to prove the rumble-dispatch path resolved the correct per-game scope. (The store itself was verified correct & strict: `bh_vibration_{mode,intensity}__<gid>`; leftover unsuffixed `mode/intensity` = dead old global, not read.)
+
+**pre7 (`feat(vibration)`):** `BhVibrationController.breadcrumb()` appends two one-shot lines per process to `<filesDir>/bh_vibration.log`:
+- `RESOLVE gid=<g> mode=<m> intensity=<i>` — at `maybeResolveContainerFromActivityStack` container resolve
+- `RUMBLE#1 gid=<g> mode=<m> intensity=<i> low=<l> high=<h>` — at first `handleRumble`
+
+Append-only, `appContext`-guarded, never throws; gated by static volatile `sBcResolved`/`sBcRumble`. Production-safe observability (not the stripped diag harness). Lint-clean vs android-34.
+
+### Delivered
+`/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-pergame-pre7-Patched-alt-AnTuTu.apk` (116,107,686 B, md5 `41149852f9982fb23114be1a2084d455`).
+
+**Verify on pre7:** set per-game vibration on the game to be launched (e.g. GoW 49908 mode=1 int=100) AND a *different* value on another game → launch → trigger controller rumble in-game → read `bh_vibration.log`. RESOLVE/RUMBLE#1 `gid` must equal the launched game and `mode`/`intensity` must equal *that game's* per-game value (proves dispatch scoped correctly + no app-wide leak).
+
+**Confirmed:** GPU Spoof (pre5) ✅ + Renderer (pre6) ✅ device-confirmed. Vibration store correct; dispatch awaiting pre7 breadcrumb read. **NOT merged** — hold until Vibration confirmed, then merge `fix/per-game-settings-isolation` → `gamehub-604-build` `--no-ff` → refresh `feature/lite-variant-tier1` → README/master-map.
+
+---
+
+## 2026-05-18 — Vibration ~2s-cutoff investigation: durable keepalive/guest trace (pre8)
+
+**Branch:** `fix/per-game-settings-isolation`. CI run **26074175298** GREEN, 0 SEVERE; vibration/menu-id patches succeeded.
+
+**Question:** user testing with GameConTest.exe — rumble stops ~2 s. **Verified by code:** rumble is engineered continuous — `CONTROLLER_RUMBLE_MS=2000` effect re-armed by `RUMBLE_KEEPALIVE_MS=1500` keepalive (runnable 60 ms tick) → must outlast 2 s while the guest holds a non-zero amplitude. A clean ~2 s stop ⇒ exactly one of: (a) guest itself sends (0,0) ~1 s after non-zero = SDL/winebus auto-expiry (keepalive map cleared by the (0,0), correctly no re-arm) → fix is guest-side (winebus duration patch / evshim keepalive); or (b) guest stays non-zero but keepalive isn't re-firing host-side. `DEFAULT_MODE=MODE_CONTROLLER`; keepalive map populated only for CONTROLLER/BOTH via `recordKeepalive`.
+
+**pre8 (`feat(vibration)`):** two capped (`BC_TRACE_CAP=40`) channels appended to `<filesDir>/bh_vibration.log`, independent of the DIAG-stripped `logGuestTransition`:
+- `GUEST slot=<s> <pl>,<ph> -> <nl>,<nh> gap=<ms>` — each real XInput transition; flags non-zero→(0,0) in 800–1300 ms as `[SDL_AUTO_EXPIRY?]`
+- `KEEPALIVE dev=<id> low=<l> high=<h> mode=<m>` — each controller re-arm fire
+Append-only, `appContext`-guarded, never throws; counters cap so the file can't grow unbounded.
+
+### Delivered
+`/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-pergame-pre8-Patched-alt-AnTuTu.apk` (116,062,630 B, md5 `502498644dfc0dae67b23e1096306490`).
+
+**Read on pre8 after the cutoff:** `GUEST` non-zero→(0,0) gap≈1000 ms `[SDL_AUTO_EXPIRY?]` ⇒ guest-side stop (winebus/SDL); `GUEST` stays non-zero + sparse/no `KEEPALIVE` ⇒ host keepalive not firing. Also doubles as the Vibration per-game scope proof (RESOLVE/RUMBLE#1 gid + mode/intensity). GameConTest input mode (held slider vs timed test button) must be noted. **Confirmed:** GPU Spoof (pre5) ✅ + Renderer (pre6) ✅. Vibration scope + 2 s behavior pending pre8 read. **NOT merged.**
+
+---
+
+## 2026-05-18 — Vibration: two bugs found from pre8 trace; per-game scope fixed (pre9)
+
+**Branch:** `fix/per-game-settings-isolation`. CI run **26074438727** GREEN, 0 SEVERE; vibration/menu-id patches succeeded.
+
+**pre8 `bh_vibration.log` (GameConTest.exe, 23:27):** `RUMBLE#1 gid=(global) mode=1 intensity=100`, **NO RESOLVE line**, repeated `GUEST slot=0 65535,0 -> 0,0 gap≈1000ms [SDL_AUTO_EXPIRY?]`, **ZERO KEEPALIVE lines**.
+
+**Bug 1 — per-game scope broken (same `:wine` defect, 3rd feature):** no RESOLVE + `gid=(global)` ⇒ `maybeResolveContainerFromActivityStack()` never resolved (sniff null in `:wine`); vibration ran on strict defaults (`DEFAULT_MODE=MODE_CONTROLLER=1`, `DEFAULT_INTENSITY=100`), NOT the per-game 49908 value (values coincide but unscoped — an Off-set game would still rumble). The earlier "vibration resolves at rumble-time post-WineActivity" reasoning was wrong — device disproved it (same as the renderer surprise). **Fixed (pre9):** `maybeResolveContainerFromActivityStack()` now prefers `BhMenuGameId.getCaptured()` (pre5 SharedPreferences disk-bridge) before the stack sniff; imports `BhMenuGameId`; emits `RESOLVE … src=menuid`. Identical fix to GPU Spoof pre5 / Renderer pre6. Lint-clean. **Final rule: every per-game resolver runs in `:wine` where sniff is null — all three needed the disk-bridge; no `:wine`-side sniff-only path is ever safe.**
+
+**Bug 2 — ~2 s cutoff = guest-side SDL/winebus ~1 s auto-expiry, NOT host keepalive:** GUEST trace shows the guest itself sending `(0,0)` ~1000 ms after each non-zero; zero KEEPALIVE is *correct* (`recordKeepalive(…,0,0)` clears the entry when the guest zeroes, so the host rightly doesn't re-arm — re-arming would rumble during intended silence). Host keepalive cannot fix this; the stop originates in Wine ⇒ the preload-free `winebus.so` duration patch is not effective in this Proton10-arm64x GoW (49908) container. **PARKED by user** — separate track, revisit after the per-game work is merged. Not a host-side change.
+
+### Delivered
+`/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-pergame-pre9-Patched-alt-AnTuTu.apk` (116,037,995 B, md5 `8b7d24e1c077fc5171a040844266ae7e`).
+
+**Verify on pre9:** set GoW 49908 vibration to **Off (mode 0)** (distinct from default MODE_CONTROLLER) → launch → trigger rumble. Pass = `bh_vibration.log` has `RESOLVE gid=49908 src=menuid` AND no rumble (per-game scope actually applied, not coincidental defaults). The ~1 s stutter (Bug 2) will still be present — parked, ignore.
+
+**Confirmed:** GPU Spoof (pre5) ✅ + Renderer (pre6) ✅. Vibration per-game scope pending pre9 re-read. **NOT merged** — hold until Vibration scope confirmed, then merge `fix/per-game-settings-isolation` → `gamehub-604-build` `--no-ff` → refresh `feature/lite-variant-tier1` → README/master-map; Bug 2 stays a parked separate track.
+
+---
+
+## 2026-05-19 — Vibration scope pre9 DEVICE-CONFIRMED; Bug 2 read-only inspection (root cause corrected); pre10 winebus breadcrumbs
+
+**Branch:** `fix/per-game-settings-isolation`. CI run **26075313929** (pre10), artifact-only (stable=false).
+
+### pre9 device read — Vibration per-game scope ✅ CONFIRMED
+`bh_vibration.log` (GoW 49908, 2026-05-18 23:37):
+```
+2026-05-18 23:37:08 RESOLVE gid=49908 src=menuid mode=1 intensity=100
+2026-05-18 23:37:08 RUMBLE#1 gid=49908 mode=1 intensity=100 low=2048 high=2048
+```
+vs pre8 (23:27): `RUMBLE#1 gid=(global)`, no RESOLVE. The pre5 disk-bridge resolve fired in `:wine`; per-game vibration scope works. **All three per-game features now device-confirmed: GPU Spoof pre5 ✅ · Renderer pre6 ✅ · Vibration pre9 ✅.** Branch is at the merge gate — **HELD pending user merge-go** (user explicitly said no merge yet).
+
+### Bug 2 — read-only winebus inspection (user-authorized); earlier hypothesis DISPROVEN
+Replicated `patchWinebusDurationFile()` checks read-only on the live container via the root bridge. The arm64x winebus.so GoW 49908 uses — `…/files/usr/opt/wine_proton10.0-arm64x-2/arm64-v8a/lib/wine/aarch64-unix/winebus.so` (the only arm64 winebus in the 53,279-file tree):
+
+| Gate | Value | Verdict |
+|---|---|---|
+| ELF / `e_machine` | `0xb7` AARCH64 | aarch64 patch path |
+| "SDL_JoystickRumble" | present (×4) | passes pre-gate |
+| ORIGINAL `a3c35eb8 00013fd6` | **exactly 2** | **pattern matches perfectly** |
+| PATCHED `03008012 00013fd6` | **0** | file unpatched |
+| depth / files / skip-dir | 8 / 53279 / none | < 16 / < 100k / not skipped |
+| mtime | 04:51 (= proton-extract) | never rewritten at 23:37 launch |
+
+`patchAarch64Sites()` with `originalCount==2, patchedCount==0` would **succeed** — the aarch64 byte-pattern is correct for Proton10-arm64x. The old note ("pattern not effective on Proton10-arm64x") is **wrong**. Both winebus.so (arm64x + x64) retain extraction mtimes with 0 patched sites ⇒ **`ensureWinebusDurationPatchOnce()` never executes its write**. Hook 4's `invoke-static` at the `Lbg5;->a` env-builder anchor either isn't firing in the 6.0.4 base or throws and is swallowed by the method's `catch(Throwable)`→`Log.w` (rolled out of AnTuTu logcat). **⇒ Bug 2 IS host-side-fixable** — the disk-patcher is simply a no-op; not a guest-side dead end as previously parked. Same *family* as the `:wine`-boundary bugs (env builder runs in `:wine`) but a DISTINCT bug.
+
+### pre10 — durable WINEBUS breadcrumbs (commit 848ba1f)
+Added static `bcWinebus(ctx, …)` (mirrors instance `breadcrumb`) → `<filesDir>/bh_vibration.log`, prefixed `WINEBUS`, at every patcher decision point: hook-fired (ctx + pid), scan guard outcomes, scan summary (root/files/winebus/patched/already/ms), per-file elf/rumble/machine, aarch64+x86_64 original/patched counts + APPLIED/MISMATCH/ALREADY-PATCHED. Log-only, zero patch-behaviour change; `patchAarch64Sites`/`patchX86_64Sites` gained an internal `Context` param (both call sites updated). Brace-balanced, 16 breadcrumb calls.
+
+### MORNING CONTINUATION — exactly where we left off
+1. **Install** the delivered pre10 full alt-AnTuTu APK (pkg `com.antutu.benchmark.full`).
+2. **Launch GoW 49908** (any vibration setting). Then read `bh_vibration.log` and grep `WINEBUS`:
+   - **No `WINEBUS hook fired` line** ⇒ Hook 4's `invoke-static` at `Lbg5;->a` is not executing → re-anchor the patch (R8 map drift / wrong join-setup index / `:wine` proc).
+   - `hook fired` present but **no `scan` line** / `scan EXCEPTION` ⇒ ctx issue or thrown+swallowed.
+   - `scan … winebus=0` ⇒ scan ran but didn't reach the file (tree-root / listFiles perms / timing vs extraction).
+   - `aarch64 MISMATCH` ⇒ (won't happen — inspection proved match, but covered).
+   - `aarch64 APPLIED original=2 …` then **still** ~1 s cutoff ⇒ patch wrote but a *different* winebus.so is loaded at runtime (check live `:wine` `/proc/<pid>/maps`).
+3. Fix whichever branch the breadcrumb pinpoints (most likely: re-anchor Hook 4). Keep Bug 2 a separate track from the per-game merge.
+4. **Per-game merge still HELD** awaiting explicit user go: `fix/per-game-settings-isolation` → `gamehub-604-build` `--no-ff` (author The412Banner, no Claude trailer) → refresh `feature/lite-variant-tier1` → README/PROGRESS_LOG/master-map.
+
+### Delivered
+CI run **26075313929** GREEN, **0 SEVERE**; "PC-accurate vibration" + "Per-game menu id capture (shared)" + GPU Spoof/Renderer/Vibration patches all `succeeded` on alt-AnTuTu (artifact-only, stable=false).
+`/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-pergame-pre10-Patched-alt-AnTuTu.apk` (116,070,822 B, md5 `3547fe9d7ace930562a74fce84519b07`). Full pkg `com.antutu.benchmark.full` (installs alongside `banner.hub` Lite).
+
+### pre10 DEVICE READ (2026-05-19 04:51, GoW 49908) — Hook 4 DEAD-CODE injection found
+Installed APK md5 `3547fe9d…` = pre10 confirmed (`/data/app/.../base.apk`). `bh_vibration.log` 04:51:24 block has `RESOLVE gid=49908 src=menuid` + `RUMBLE#1 gid=49908` (controller breadcrumbs fire; pre9 per-game scope re-confirmed) but **`grep -c WINEBUS` = 0** — not even the entry breadcrumb.
+Decompiled the delivered pre10 APK (`apktool d -r`): the injected pair landed in `smali_classes5/bg5.smali`, the sole `a(Leco;Ljava/lang/String;Z)V` `.locals 35` env builder (correct method) — but **immediately after an unconditional `goto :goto_4` and before a `:cond_9` label, with no label of its own** ⇒ unreachable dead code ⇒ `ensureWinebusDurationPatchOnce` never called. Root cause = the fragile `setupStartIdx = joinIdx - 5` anchor: in the 6.0.4 base (versionCode 114) `joinIdx - 5` falls inside the ArrayList-building loop, not the `:`-separator arg-setup block. Not a pattern miss, not an R8 letter shift — purely a wrong relative offset. Resolves the prior "patcher never executes" hypothesis with proof.
+
+### pre11 — Hook 4 re-anchored to method entry (index 0)
+Dropped the `joinIdx - 5` arithmetic and the now-dead join-helper machinery (`indexOfFirstInstructionOrThrow`/`getReference`/`Opcode`/`MethodReference` imports, `JOIN_HELPER`/`JOIN_METHOD`/`JOIN_LAMBDA` consts + doc). Hook 4 now injects at **index 0** of `Lbg5;->a` — unconditionally reached every launch, same guaranteed spot Hooks 1–3 use:
+```
+move-object/from16 v0, p0
+iget-object v0, v0, Lbg5;->a:Landroid/content/Context;
+invoke-static {v0}, Lcom/xj/winemu/vibration/BhVibrationController;->ensureWinebusDurationPatchOnce(Landroid/content/Context;)V
+```
+`p0`=this (high reg under `.locals 35`); v0 clobbered but the method's own first instr `move-object/from16 v0, p0` re-inits it immediately. `ensureWinebusDurationPatchOnce` is AtomicBoolean-gated so an at-entry call is correct + self-deduplicating. No labels added (trailing-label footgun N/A at index 0). 1 file, +23/−37.
+
+### MORNING CONTINUATION (updated)
+1. Install pre11 full alt-AnTuTu APK; launch GoW 49908.
+2. `grep WINEBUS bh_vibration.log` — now the entry/scan/per-file/aarch64 breadcrumbs MUST appear. Then follow the same branch table as pre10 (expect `aarch64 APPLIED original=2`; if so and rumble still cuts, check live `:wine` `/proc/<pid>/maps` for which winebus.so is mapped).
+3. Per-game merge still HELD awaiting explicit user go (unchanged).

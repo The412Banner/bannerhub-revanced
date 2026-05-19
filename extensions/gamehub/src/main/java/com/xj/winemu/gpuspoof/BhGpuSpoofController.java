@@ -6,6 +6,8 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.util.Log;
 
+import com.xj.winemu.common.BhMenuGameId;
+
 import java.io.File;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -116,17 +118,21 @@ public final class BhGpuSpoofController {
     public String  getName()   { return cachedName; }
     public boolean getDeep()   { return cachedDeep; }
 
+    // STRICT PER-GAME: state is written ONLY to our own bh_gpuspoof_prefs file,
+    // keyed per-game (KEY + "__" + gameId). NEVER global, NEVER the host-owned
+    // pc_g_setting<id> (host rewrites that → reset-to-default bug). No game in
+    // scope ⇒ nothing is persisted (a spoof set for one game stays that game's
+    // only — it never leaks to other games or app-wide).
+
     public void setDeep(boolean deep) {
         this.cachedDeep = deep;
-        writeBoolGlobal(KEY_DEEP, deep);
-        if (containerGameId != null) writeBoolPerGame(containerGameId, KEY_DEEP, deep);
+        if (containerGameId != null) writeBoolOwned(pgKey(KEY_DEEP, containerGameId), deep);
     }
 
     public void setMode(int mode) {
         if (mode < 0 || mode > MODE_MAX) return;
         this.cachedMode = mode;
-        writeIntGlobal(KEY_MODE, mode);
-        if (containerGameId != null) writeIntPerGame(containerGameId, KEY_MODE, mode);
+        if (containerGameId != null) writeIntOwned(pgKey(KEY_MODE, containerGameId), mode);
     }
 
     /** Custom vendor/device/name — only meaningful when mode == MODE_CUSTOM. */
@@ -134,13 +140,10 @@ public final class BhGpuSpoofController {
         this.cachedVendor = sanitizeHex(vendorHex);
         this.cachedDevice = sanitizeHex(deviceHex);
         this.cachedName   = name == null ? "" : name.trim();
-        writeStringGlobal(KEY_VENDOR, cachedVendor);
-        writeStringGlobal(KEY_DEVICE, cachedDevice);
-        writeStringGlobal(KEY_NAME,   cachedName);
         if (containerGameId != null) {
-            writeStringPerGame(containerGameId, KEY_VENDOR, cachedVendor);
-            writeStringPerGame(containerGameId, KEY_DEVICE, cachedDevice);
-            writeStringPerGame(containerGameId, KEY_NAME,   cachedName);
+            writeStringOwned(pgKey(KEY_VENDOR, containerGameId), cachedVendor);
+            writeStringOwned(pgKey(KEY_DEVICE, containerGameId), cachedDevice);
+            writeStringOwned(pgKey(KEY_NAME,   containerGameId), cachedName);
         }
     }
 
@@ -178,9 +181,17 @@ public final class BhGpuSpoofController {
         Context ctx = appContext;
         if (ctx == null || envVars == null) return;
 
-        // Scope to the game that is launching (its WineActivity is in the
-        // stack with a "gameId" Intent extra by the time the env is built).
-        String gid = sniffGameIdFromStack();
+        // Scope to the launching game. The env builder Lbg5;->a often runs
+        // BEFORE WineActivity is registered in ActivityThread.mActivities, so
+        // sniffGameIdFromStack() returns null at launch and the spoof would
+        // silently no-op as "global → off" (observed: store correct but
+        // bh_gpuspoof_dxvk.conf never rewritten, game keeps real adapter).
+        // MenuGameIdCapturePatch already stashed the id when the user opened
+        // the per-game menu to set the spoof, so prefer that — identical
+        // resolution order to BhGpuSpoofMenuRowClick — and only fall back to
+        // the stack sniff (covers the in-game sidebar path).
+        String gid = BhMenuGameId.getCaptured();
+        if (gid == null || gid.isEmpty()) gid = sniffGameIdFromStack();
         setContainerForSettings(gid);
 
         if (cachedMode == MODE_OFF) {
@@ -210,20 +221,32 @@ public final class BhGpuSpoofController {
         // DXGI (D3D10/11), D3D9 and generic dxvk.* keys are all set so the
         // adapter-identity surface CryEngine reads is covered regardless of
         // which DXVK frontend the title uses.
+        // DXVK's inline DXVK_CONFIG parser tokenises each value on whitespace,
+        // so a free-text string like "NVIDIA GeForce RTX 4080" is truncated at
+        // the first space (verified in GoW_dxgi.log: customDeviceDesc came
+        // through as just "NVIDIA"). The space-free numeric IDs survive. So
+        // the inline channel carries ONLY the IDs; the human-readable
+        // customDeviceDesc rides the CONFIG FILE below (the dxvk.conf file
+        // parser handles spaces), pointed at by DXVK_CONFIG_FILE.
         StringBuilder inline = new StringBuilder();
         appendKv(inline, "dxgi.customVendorId", vendor);
         appendKv(inline, "dxgi.customDeviceId", device);
-        if (!desc.isEmpty()) appendKv(inline, "dxgi.customDeviceDesc", desc);
         appendKv(inline, "d3d9.customVendorId", vendor);
         appendKv(inline, "d3d9.customDeviceId", device);
         appendKv(inline, "dxvk.customVendorId", vendor);
         appendKv(inline, "dxvk.customDeviceId", device);
         String dxvkConfig = inline.toString();
 
-        // Belt-and-braces: also write a file and point DXVK_CONFIG_FILE at it,
-        // in case a future container's DXVK predates DXVK_CONFIG or the path
-        // does happen to be guest-visible. Newline-separated for the file.
-        String fileBody = dxvkConfig.replace(';', '\n');
+        // Config FILE body: the same IDs (newline-separated) PLUS the
+        // space-containing customDeviceDesc, which only the file parser
+        // reads correctly. DXVK loads the file then lets DXVK_CONFIG env
+        // override per-key; customDeviceDesc isn't in the env so the file's
+        // full value stands. Point DXVK_CONFIG_FILE at it below.
+        StringBuilder fileSb = new StringBuilder(dxvkConfig.replace(';', '\n'));
+        if (!desc.isEmpty()) {
+            fileSb.append("dxgi.customDeviceDesc = ").append(desc).append('\n');
+        }
+        String fileBody = fileSb.toString();
         String confPath = null;
         try {
             File out = new File(ctx.getFilesDir(), "bh_gpuspoof_dxvk.conf");
@@ -446,73 +469,76 @@ public final class BhGpuSpoofController {
     // Settings I/O — mirrors BhVibrationController
     // ─────────────────────────────────────────────────────────────────────
 
+    /** Per-game key inside our OWN bh_gpuspoof_prefs file. */
+    private static String pgKey(String base, String gameId) {
+        return base + "__" + gameId;
+    }
+
     private void reloadSettings() {
         ensureContext();
         Context ctx = appContext;
         if (ctx == null) return;
 
-        SharedPreferences gp = ctx.getSharedPreferences(GLOBAL_PREFS_FILE, Context.MODE_PRIVATE);
-        int     gMode   = gp.getInt(KEY_MODE, DEFAULT_MODE);
-        String  gVendor = gp.getString(KEY_VENDOR, "");
-        String  gDevice = gp.getString(KEY_DEVICE, "");
-        String  gName   = gp.getString(KEY_NAME, "");
-        boolean gDeep   = gp.getBoolean(KEY_DEEP, false);
-
+        // No game in scope ⇒ stock defaults, nothing persisted/applied.
+        // (Strictly per-game: no global value exists or is consulted.)
         if (containerGameId == null) {
-            cachedMode = gMode; cachedVendor = gVendor; cachedDevice = gDevice;
-            cachedName = gName; cachedDeep = gDeep;
+            cachedMode = DEFAULT_MODE; cachedVendor = ""; cachedDevice = "";
+            cachedName = ""; cachedDeep = false;
             return;
         }
 
-        SharedPreferences pgp = ctx.getSharedPreferences(
-                String.format(PER_GAME_PREFS_FMT, containerGameId), Context.MODE_PRIVATE);
-        cachedMode   = pgp.getInt(KEY_MODE, gMode);
-        cachedVendor = pgp.getString(KEY_VENDOR, gVendor);
-        cachedDevice = pgp.getString(KEY_DEVICE, gDevice);
-        cachedName   = pgp.getString(KEY_NAME, gName);
-        cachedDeep   = pgp.getBoolean(KEY_DEEP, gDeep);
+        String gid = containerGameId;
+        SharedPreferences own =
+                ctx.getSharedPreferences(GLOBAL_PREFS_FILE, Context.MODE_PRIVATE);
+
+        // One-time migration: if this game has no entry in our own store yet,
+        // adopt its legacy value from the host-owned pc_g_setting<id> co-store
+        // (the old buggy location) so an already-set game keeps its choice.
+        // We do NOT read the abandoned unsuffixed "global" keys.
+        if (!own.contains(pgKey(KEY_MODE, gid))) {
+            try {
+                SharedPreferences legacy = ctx.getSharedPreferences(
+                        String.format(PER_GAME_PREFS_FMT, gid), Context.MODE_PRIVATE);
+                if (legacy.contains(KEY_MODE)) {
+                    own.edit()
+                       .putInt(pgKey(KEY_MODE, gid),   legacy.getInt(KEY_MODE, DEFAULT_MODE))
+                       .putString(pgKey(KEY_VENDOR, gid), legacy.getString(KEY_VENDOR, ""))
+                       .putString(pgKey(KEY_DEVICE, gid), legacy.getString(KEY_DEVICE, ""))
+                       .putString(pgKey(KEY_NAME, gid),   legacy.getString(KEY_NAME, ""))
+                       .putBoolean(pgKey(KEY_DEEP, gid),  legacy.getBoolean(KEY_DEEP, false))
+                       .apply();
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+
+        cachedMode   = own.getInt(pgKey(KEY_MODE, gid), DEFAULT_MODE);
+        cachedVendor = own.getString(pgKey(KEY_VENDOR, gid), "");
+        cachedDevice = own.getString(pgKey(KEY_DEVICE, gid), "");
+        cachedName   = own.getString(pgKey(KEY_NAME, gid), "");
+        cachedDeep   = own.getBoolean(pgKey(KEY_DEEP, gid), false);
     }
 
-    private void writeBoolGlobal(String key, boolean val) {
+    // Owned-store writers (bh_gpuspoof_prefs, full per-game key) — host-proof.
+    private void writeBoolOwned(String fullKey, boolean val) {
         Context ctx = ctxOrNull();
         if (ctx == null) return;
         ctx.getSharedPreferences(GLOBAL_PREFS_FILE, Context.MODE_PRIVATE)
-                .edit().putBoolean(key, val).apply();
+                .edit().putBoolean(fullKey, val).apply();
     }
 
-    private void writeBoolPerGame(String gameId, String key, boolean val) {
-        Context ctx = ctxOrNull();
-        if (ctx == null || gameId == null || gameId.isEmpty()) return;
-        ctx.getSharedPreferences(String.format(PER_GAME_PREFS_FMT, gameId), Context.MODE_PRIVATE)
-                .edit().putBoolean(key, val).apply();
-    }
-
-    private void writeIntGlobal(String key, int val) {
+    private void writeIntOwned(String fullKey, int val) {
         Context ctx = ctxOrNull();
         if (ctx == null) return;
         ctx.getSharedPreferences(GLOBAL_PREFS_FILE, Context.MODE_PRIVATE)
-                .edit().putInt(key, val).apply();
+                .edit().putInt(fullKey, val).apply();
     }
 
-    private void writeIntPerGame(String gameId, String key, int val) {
-        Context ctx = ctxOrNull();
-        if (ctx == null || gameId == null || gameId.isEmpty()) return;
-        ctx.getSharedPreferences(String.format(PER_GAME_PREFS_FMT, gameId), Context.MODE_PRIVATE)
-                .edit().putInt(key, val).apply();
-    }
-
-    private void writeStringGlobal(String key, String val) {
+    private void writeStringOwned(String fullKey, String val) {
         Context ctx = ctxOrNull();
         if (ctx == null) return;
         ctx.getSharedPreferences(GLOBAL_PREFS_FILE, Context.MODE_PRIVATE)
-                .edit().putString(key, val).apply();
-    }
-
-    private void writeStringPerGame(String gameId, String key, String val) {
-        Context ctx = ctxOrNull();
-        if (ctx == null || gameId == null || gameId.isEmpty()) return;
-        ctx.getSharedPreferences(String.format(PER_GAME_PREFS_FMT, gameId), Context.MODE_PRIVATE)
-                .edit().putString(key, val).apply();
+                .edit().putString(fullKey, val).apply();
     }
 
     private Context ctxOrNull() {

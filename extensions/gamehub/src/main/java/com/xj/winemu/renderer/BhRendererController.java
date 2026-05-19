@@ -7,6 +7,8 @@ import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.util.Log;
 
+import com.xj.winemu.common.BhMenuGameId;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
@@ -89,32 +91,26 @@ public final class BhRendererController {
 
     public int getMode() { return cachedMode; }
 
+    // STRICT PER-GAME: written ONLY to our own bh_renderer_prefs, keyed
+    // per-game (KEY + "__" + gameId). Never global, never the host-owned
+    // pc_g_setting<id> (host rewrites that → reset bug). No game ⇒ no write.
     public void setMode(int mode) {
         if (mode < 0 || mode > MODE_MAX) return;
         this.cachedMode = mode;
-        writeIntGlobal(KEY_MODE, mode);
-        if (containerGameId != null) writeIntPerGame(containerGameId, KEY_MODE, mode);
+        if (containerGameId != null) writeIntOwned(pgKey(KEY_MODE, containerGameId), mode);
     }
 
     // ── Is Legacy selected for the launching game? ───────────────────────
-    // Per-game value, falling back to the global default. Drives the
-    // conditional lib-swap so New mode is provably stock.
-
+    // STRICTLY per-game. No global fallback: a game with no per-game value
+    // is stock (New). Drives the conditional lib-swap.
     public boolean isLegacyForGame(String gameId) {
-        ensureContext();
-        Context ctx = appContext;
-        if (ctx == null) return false;
-        int global = ctx.getSharedPreferences(GLOBAL_PREFS_FILE, Context.MODE_PRIVATE)
-                .getInt(KEY_MODE, DEFAULT_MODE);
-        if (gameId == null || gameId.isEmpty()) return global == MODE_LEGACY;
-        int v = ctx.getSharedPreferences(String.format(PER_GAME_PREFS_FMT, gameId),
-                Context.MODE_PRIVATE).getInt(KEY_MODE, global);
-        return v == MODE_LEGACY;
+        if (gameId == null || gameId.isEmpty()) return false;
+        return resolveModeForGame(gameId) == MODE_LEGACY;
     }
 
     /** Convenience for a launch-time hook: resolves the gameId itself. */
     public boolean isLegacyForLaunchingGame() {
-        return isLegacyForGame(sniffGameIdFromStack());
+        return isLegacyForGame(launchGameId());
     }
 
     // ── Conditional native-lib load + flip dispatch ──────────────────────
@@ -144,7 +140,7 @@ public final class BhRendererController {
     public static void loadXserver(String name) {
         boolean legacy = false;
         try {
-            legacy = getInstance().isLegacyForGame(sniffGameIdFromStack());
+            legacy = getInstance().isLegacyForGame(launchGameId());
         } catch (Throwable t) {
             Log.w(TAG, "loadXserver: legacy resolve failed; using stock", t);
         }
@@ -187,7 +183,7 @@ public final class BhRendererController {
         if (winemuLoaded) return;
         boolean legacy = false;
         try {
-            legacy = getInstance().isLegacyForGame(sniffGameIdFromStack());
+            legacy = getInstance().isLegacyForGame(launchGameId());
         } catch (Throwable t) {
             Log.w(TAG, "loadWinemu: legacy resolve failed; using stock", t);
         }
@@ -298,34 +294,54 @@ public final class BhRendererController {
 
     // ── Settings I/O — mirrors BhGpuSpoofController ──────────────────────
 
+    /** Per-game key inside our OWN bh_renderer_prefs file. */
+    private static String pgKey(String base, String gameId) {
+        return base + "__" + gameId;
+    }
+
+    /**
+     * Resolve a game's mode from our OWN store only. One-time migration:
+     * adopt the legacy host-owned pc_g_setting&lt;id&gt; value if our store
+     * has none yet. No global fallback — absent ⇒ DEFAULT_MODE (stock).
+     */
+    private int resolveModeForGame(String gameId) {
+        ensureContext();
+        Context ctx = appContext;
+        if (ctx == null || gameId == null || gameId.isEmpty()) return DEFAULT_MODE;
+        SharedPreferences own =
+                ctx.getSharedPreferences(GLOBAL_PREFS_FILE, Context.MODE_PRIVATE);
+        String k = pgKey(KEY_MODE, gameId);
+        if (!own.contains(k)) {
+            try {
+                SharedPreferences legacy = ctx.getSharedPreferences(
+                        String.format(PER_GAME_PREFS_FMT, gameId), Context.MODE_PRIVATE);
+                if (legacy.contains(KEY_MODE)) {
+                    int lv = legacy.getInt(KEY_MODE, DEFAULT_MODE);
+                    own.edit().putInt(k, lv).apply();
+                    return lv;
+                }
+            } catch (Throwable ignored) {
+            }
+            return DEFAULT_MODE;
+        }
+        return own.getInt(k, DEFAULT_MODE);
+    }
+
     private void reloadSettings() {
         ensureContext();
         Context ctx = appContext;
         if (ctx == null) return;
-
-        int gMode = ctx.getSharedPreferences(GLOBAL_PREFS_FILE, Context.MODE_PRIVATE)
-                .getInt(KEY_MODE, DEFAULT_MODE);
-        if (containerGameId == null) {
-            cachedMode = gMode;
-            return;
-        }
-        cachedMode = ctx.getSharedPreferences(
-                String.format(PER_GAME_PREFS_FMT, containerGameId), Context.MODE_PRIVATE)
-                .getInt(KEY_MODE, gMode);
+        // No game ⇒ stock default; nothing global exists or is consulted.
+        cachedMode = (containerGameId == null)
+                ? DEFAULT_MODE
+                : resolveModeForGame(containerGameId);
     }
 
-    private void writeIntGlobal(String key, int val) {
+    private void writeIntOwned(String fullKey, int val) {
         Context ctx = ctxOrNull();
         if (ctx == null) return;
         ctx.getSharedPreferences(GLOBAL_PREFS_FILE, Context.MODE_PRIVATE)
-                .edit().putInt(key, val).apply();
-    }
-
-    private void writeIntPerGame(String gameId, String key, int val) {
-        Context ctx = ctxOrNull();
-        if (ctx == null || gameId == null || gameId.isEmpty()) return;
-        ctx.getSharedPreferences(String.format(PER_GAME_PREFS_FMT, gameId), Context.MODE_PRIVATE)
-                .edit().putInt(key, val).apply();
+                .edit().putInt(fullKey, val).apply();
     }
 
     private Context ctxOrNull() {
@@ -345,6 +361,25 @@ public final class BhRendererController {
         } catch (Throwable t) {
             Log.w(TAG, "ensureContext failed", t);
         }
+    }
+
+    /**
+     * Launch-time gameId resolver. The renderer lib swap happens in
+     * {@code XServer.<clinit>} inside the ":wine" process (WineActivity is
+     * android:process=":wine"), and that runs BEFORE WineActivity is
+     * registered in that process's ActivityThread.mActivities — so
+     * {@link #sniffGameIdFromStack()} returns null there and the per-game
+     * Legacy choice silently no-ops (stock libs load). The pre-launch menu
+     * stashed the id via MenuGameIdCapturePatch → BhMenuGameId, which mirrors
+     * it to SharedPreferences (crosses the main↔:wine process boundary the
+     * same way the per-game store does). Prefer that; fall back to the stack
+     * sniff for the in-game sidebar path. Identical order to
+     * BhGpuSpoofController.applyGpuSpoofImpl.
+     */
+    static String launchGameId() {
+        String gid = BhMenuGameId.getCaptured();
+        if (gid == null || gid.isEmpty()) gid = sniffGameIdFromStack();
+        return gid;
     }
 
     /** If a WineActivity is in the stack, grab its gameId Intent extra. */

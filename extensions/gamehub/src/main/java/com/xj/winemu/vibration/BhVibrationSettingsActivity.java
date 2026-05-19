@@ -194,25 +194,31 @@ public class BhVibrationSettingsActivity extends Activity {
         btnRowLp.topMargin = dp(8);
         btnRow.setLayoutParams(btnRowLp);
 
-        Button close = new Button(this);
-        close.setText("Close");
-        close.setOnClickListener(new View.OnClickListener() {
+        // Cancel = discard; Save = single per-game commit. No live writes,
+        // so seed-time spinner/seekbar callbacks can't persist a default.
+        Button cancel = new Button(this);
+        cancel.setText("Cancel");
+        cancel.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) { finish(); }
         });
-        btnRow.addView(close);
+        Button save = new Button(this);
+        save.setText("Save");
+        save.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                ctl.setMode(clampMode(modeSpinner.getSelectedItemPosition()));
+                ctl.setIntensity(bar.getProgress());
+                finish();
+            }
+        });
+        btnRow.addView(cancel);
+        btnRow.addView(save);
         root.addView(btnRow);
 
-        // Wire change handlers → save immediately, no commit button needed.
-        modeSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override public void onItemSelected(AdapterView<?> parent, View view, int pos, long id) {
-                ctl.setMode(pos);
-            }
-            @Override public void onNothingSelected(AdapterView<?> parent) { }
-        });
+        // UI-only: keep the live "%" label; NO persistence here (Save commits).
+        // Mode spinner has no UI side-effect, so it carries no listener.
         bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar sb, int progress, boolean fromUser) {
                 intValue.setText(progress + "%");
-                if (fromUser) ctl.setIntensity(progress);
             }
             @Override public void onStartTrackingTouch(SeekBar sb) { }
             @Override public void onStopTrackingTouch(SeekBar sb) { }

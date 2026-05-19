@@ -16,6 +16,8 @@ import android.os.VibratorManager;
 import android.util.Log;
 import android.view.InputDevice;
 
+import com.xj.winemu.common.BhMenuGameId;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -233,6 +235,25 @@ public final class BhVibrationController {
     private volatile int cachedMode = DEFAULT_MODE;
     private volatile int cachedIntensity = DEFAULT_INTENSITY;
 
+    // Durable forensic breadcrumb. Vibration writes no per-launch file and
+    // loads no distinct lib, so (unlike GPU Spoof's dxvk.conf / Renderer's
+    // _legacy .so in /proc/maps) there is no on-disk proof the rumble path
+    // resolved the right per-game scope — and the AnTuTu logcat flood rolls
+    // the Log.i markers before they can be read. These one-shot flags emit
+    // exactly two lines to <filesDir>/bh_vibration.log per process: the
+    // container resolve and the first non-OFF rumble. Append-only, guarded,
+    // never throws — production-safe observability, not a diag harness.
+    private static volatile boolean sBcResolved = false;
+    private static volatile boolean sBcRumble   = false;
+    // Capped loop traces (keep the log small but enough to see the cadence):
+    // guest XInput transitions (does the guest itself send (0,0) ~1 s after a
+    // non-zero = SDL auto-expiry?) and keepalive refresh fires (is the
+    // controller being re-armed before the 2 s effect lapses?). Together they
+    // explain a "stops after ~2 s" report: guest-stop vs keepalive-not-firing.
+    private static final int BC_TRACE_CAP = 40;
+    private static volatile int sBcGuest = 0;
+    private static volatile int sBcKeep  = 0;
+
     private final HandlerThread workerThread;
     private final Handler worker;
 
@@ -316,6 +337,13 @@ public final class BhVibrationController {
                         if (dev != null) {
                             dispatchControllerInternal(dev, r[1], r[2], /*log*/ false);
                         }
+                        if (sBcKeep < BC_TRACE_CAP) {
+                            sBcKeep++;
+                            breadcrumb("KEEPALIVE dev=" + r[0]
+                                    + " low=" + r[1] + " high=" + r[2]
+                                    + " mode=" + cachedMode
+                                    + (dev == null ? " (device gone)" : ""));
+                        }
                     }
                 }
                 // Device side: if any slot has amplitude and refresh interval elapsed, re-arm.
@@ -371,6 +399,33 @@ public final class BhVibrationController {
      */
     private void maybeResolveContainerFromActivityStack() {
         if (containerGameId != null) return;
+
+        // The rumble path runs in the ":wine" process (WineActivity is
+        // android:process=":wine"); sniffGameIdFromStack() returns null there
+        // (device-proven: RUMBLE#1 logged gid=(global), no RESOLVE — vibration
+        // ran on strict defaults, not the per-game value). The pre-launch menu
+        // stashed the id via MenuGameIdCapturePatch -> BhMenuGameId, which
+        // mirrors it to SharedPreferences crossing the main<->:wine boundary
+        // the same way the per-game store does. Prefer that; fall back to the
+        // stack sniff for the in-game sidebar path. Same order/fix as
+        // BhGpuSpoofController.applyGpuSpoofImpl and BhRendererController.
+        try {
+            String cap = BhMenuGameId.getCaptured();
+            if (cap != null && !cap.isEmpty()) {
+                this.containerGameId = cap;
+                reloadSettings();
+                Log.i(TAG, "container=" + cap + " (BhMenuGameId) mode="
+                        + cachedMode + " intensity=" + cachedIntensity);
+                if (!sBcResolved) {
+                    sBcResolved = true;
+                    breadcrumb("RESOLVE gid=" + cap + " src=menuid mode="
+                            + cachedMode + " intensity=" + cachedIntensity);
+                }
+                return;
+            }
+        } catch (Throwable ignored) {
+        }
+
         try {
             Class<?> atCls = Class.forName("android.app.ActivityThread");
             Method cur = atCls.getMethod("currentActivityThread");
@@ -395,6 +450,11 @@ public final class BhVibrationController {
                 this.containerGameId = gid;
                 reloadSettings();
                 Log.i(TAG, "container=" + gid + " mode=" + cachedMode + " intensity=" + cachedIntensity);
+                if (!sBcResolved) {
+                    sBcResolved = true;
+                    breadcrumb("RESOLVE gid=" + gid + " mode=" + cachedMode
+                            + " intensity=" + cachedIntensity);
+                }
                 return;
             }
         } catch (Throwable ignored) { }
@@ -404,12 +464,15 @@ public final class BhVibrationController {
      *  When a game is in scope, writes go to that game's pc_g_setting<gameId>
      *  file (so Export Config picks them up). Always also updates the
      *  global default in bh_vibration_prefs. */
+    // STRICT PER-GAME: written ONLY to our own bh_vibration_prefs, keyed
+    // per-game (PER_GAME_KEY_* + "__" + gameId). Never global, never the
+    // host-owned pc_g_setting<id> (host rewrites that → reset bug). No game
+    // in scope ⇒ nothing persisted (stays that one game's setting only).
     public void setMode(int mode) {
         if (mode < 0 || mode > 3) return;
         this.cachedMode = mode;
-        writeIntGlobal(GLOBAL_KEY_MODE, mode);
         if (containerGameId != null) {
-            writeIntPerGame(containerGameId, PER_GAME_KEY_MODE, mode);
+            writeIntOwned(pgKey(PER_GAME_KEY_MODE, containerGameId), mode);
         }
     }
 
@@ -418,9 +481,8 @@ public final class BhVibrationController {
         if (pct < 0) pct = 0;
         if (pct > 100) pct = 100;
         this.cachedIntensity = pct;
-        writeIntGlobal(GLOBAL_KEY_INTENSITY, pct);
         if (containerGameId != null) {
-            writeIntPerGame(containerGameId, PER_GAME_KEY_INTENSITY, pct);
+            writeIntOwned(pgKey(PER_GAME_KEY_INTENSITY, containerGameId), pct);
         }
     }
 
@@ -523,7 +585,34 @@ public final class BhVibrationController {
         // state BEFORE the OFF early-return so the trace stays accurate across modes.
         logGuestTransition(slot, low & 0xFFFF, high & 0xFFFF);
 
+        // Durable guest-transition trace (independent of the DIAG-stripped
+        // logGuestTransition). slotLow/High/Stamp still hold the PREVIOUS
+        // frame here (overwritten further down). Log only real changes, with
+        // the gap; flag a non-zero -> (0,0) in the ~1 s window as suspected
+        // SDL auto-expiry. Capped so the file can't grow unbounded.
+        if (sBcGuest < BC_TRACE_CAP) {
+            int nl = low & 0xFFFF, nh = high & 0xFFFF;
+            int pl = slotLow.get(slot), ph = slotHigh.get(slot);
+            if (pl != nl || ph != nh) {
+                long pw = slotStamp.get(slot);
+                long gap = pw > 0 ? (SystemClock.uptimeMillis() - pw) : -1L;
+                boolean expiry = (pl | ph) != 0 && (nl | nh) == 0
+                        && gap >= 800L && gap <= 1300L;
+                sBcGuest++;
+                breadcrumb("GUEST slot=" + slot + " " + pl + "," + ph
+                        + " -> " + nl + "," + nh + " gap=" + gap + "ms"
+                        + (expiry ? " [SDL_AUTO_EXPIRY?]" : ""));
+            }
+        }
+
         int mode = cachedMode;
+        if (!sBcRumble) {
+            sBcRumble = true;
+            breadcrumb("RUMBLE#1 gid="
+                    + (containerGameId != null ? containerGameId : "(global)")
+                    + " mode=" + mode + " intensity=" + cachedIntensity
+                    + " low=" + (low & 0xFFFF) + " high=" + (high & 0xFFFF));
+        }
         if (mode == MODE_OFF) return true; // swallow everything
 
         // Store per-slot raw values for device aggregation.
@@ -1117,58 +1206,122 @@ public final class BhVibrationController {
     // Settings I/O
     // ─────────────────────────────────────────────────────────────────────────
 
+    /** Per-game key inside our OWN bh_vibration_prefs file. */
+    private static String pgKey(String base, String gameId) {
+        return base + "__" + gameId;
+    }
+
     private void reloadSettings() {
         ensureContext();
         Context ctx = appContext;
         if (ctx == null) return;
 
-        // Resolve global defaults first.
-        SharedPreferences gp = ctx.getSharedPreferences(GLOBAL_PREFS_FILE, Context.MODE_PRIVATE);
-        int globalMode = gp.getInt(GLOBAL_KEY_MODE, DEFAULT_MODE);
-        int globalIntensity = gp.getInt(GLOBAL_KEY_INTENSITY, DEFAULT_INTENSITY);
-
+        // STRICTLY per-game. No game ⇒ stock defaults; nothing global is
+        // consulted (a per-game vibration setting never leaks app-wide).
         if (containerGameId == null) {
-            cachedMode = globalMode;
-            cachedIntensity = globalIntensity;
+            cachedMode = DEFAULT_MODE;
+            cachedIntensity = DEFAULT_INTENSITY;
             return;
         }
 
-        // Per-game: prefer pc_g_setting<gameId> values. Fall back to legacy
-        // bh_vibration_prefs entries (older builds wrote there) so users
-        // upgrading don't lose their per-container preferences. Final
-        // fallback is the global default. Older imported pc_g_setting
-        // files lacking our keys naturally end up at the global default.
-        SharedPreferences pgp = ctx.getSharedPreferences(
-                String.format(PER_GAME_PREFS_FMT, containerGameId), Context.MODE_PRIVATE);
+        String gid = containerGameId;
+        SharedPreferences own =
+                ctx.getSharedPreferences(GLOBAL_PREFS_FILE, Context.MODE_PRIVATE);
 
-        int legacyMode = gp.getInt(LEGACY_MODE_PREFIX + containerGameId, globalMode);
-        int legacyIntensity = gp.getInt(LEGACY_INTENSITY_PREFIX + containerGameId, globalIntensity);
+        // One-time migration into our own per-game keys, from the two PER-GAME
+        // legacy locations only (never the abandoned unscoped global default):
+        //   1. host-owned pc_g_setting<id> PER_GAME_KEY_* (the buggy co-store)
+        //   2. older bh_vibration_prefs LEGACY_*_PREFIX+gid entries
+        if (!own.contains(pgKey(PER_GAME_KEY_MODE, gid))) {
+            try {
+                SharedPreferences legacyPg = ctx.getSharedPreferences(
+                        String.format(PER_GAME_PREFS_FMT, gid), Context.MODE_PRIVATE);
+                if (legacyPg.contains(PER_GAME_KEY_MODE)
+                        || legacyPg.contains(PER_GAME_KEY_INTENSITY)) {
+                    own.edit()
+                       .putInt(pgKey(PER_GAME_KEY_MODE, gid),
+                               legacyPg.getInt(PER_GAME_KEY_MODE, DEFAULT_MODE))
+                       .putInt(pgKey(PER_GAME_KEY_INTENSITY, gid),
+                               legacyPg.getInt(PER_GAME_KEY_INTENSITY, DEFAULT_INTENSITY))
+                       .apply();
+                } else if (own.contains(LEGACY_MODE_PREFIX + gid)
+                        || own.contains(LEGACY_INTENSITY_PREFIX + gid)) {
+                    own.edit()
+                       .putInt(pgKey(PER_GAME_KEY_MODE, gid),
+                               own.getInt(LEGACY_MODE_PREFIX + gid, DEFAULT_MODE))
+                       .putInt(pgKey(PER_GAME_KEY_INTENSITY, gid),
+                               own.getInt(LEGACY_INTENSITY_PREFIX + gid, DEFAULT_INTENSITY))
+                       .apply();
+                }
+            } catch (Throwable ignored) {
+            }
+        }
 
-        cachedMode = pgp.getInt(PER_GAME_KEY_MODE, legacyMode);
-        cachedIntensity = pgp.getInt(PER_GAME_KEY_INTENSITY, legacyIntensity);
+        cachedMode = own.getInt(pgKey(PER_GAME_KEY_MODE, gid), DEFAULT_MODE);
+        cachedIntensity = own.getInt(pgKey(PER_GAME_KEY_INTENSITY, gid), DEFAULT_INTENSITY);
     }
 
-    private void writeIntGlobal(String key, int val) {
+    private void writeIntOwned(String fullKey, int val) {
         ensureContext();
         Context ctx = appContext;
         if (ctx == null) return;
         ctx.getSharedPreferences(GLOBAL_PREFS_FILE, Context.MODE_PRIVATE)
-                .edit().putInt(key, val).apply();
-    }
-
-    private void writeIntPerGame(String gameId, String key, int val) {
-        ensureContext();
-        Context ctx = appContext;
-        if (ctx == null || gameId == null || gameId.isEmpty()) return;
-        ctx.getSharedPreferences(String.format(PER_GAME_PREFS_FMT, gameId),
-                                  Context.MODE_PRIVATE)
-                .edit().putInt(key, val).apply();
+                .edit().putInt(fullKey, val).apply();
     }
 
     /**
      * ActivityThread.currentApplication() gives us a Context without needing
      * any caller to pass one in. Works from any thread after app initialisation.
      */
+    /**
+     * Append one breadcrumb line to {@code <filesDir>/bh_vibration.log}.
+     * Survives the AnTuTu logcat flood so a session can prove the rumble
+     * path scoped to the right game from disk. Never throws.
+     */
+    private void breadcrumb(String line) {
+        try {
+            Context ctx = appContext;
+            if (ctx == null) return;
+            File f = new File(ctx.getFilesDir(), "bh_vibration.log");
+            java.io.FileWriter w = new java.io.FileWriter(f, true);
+            try {
+                w.write(new java.text.SimpleDateFormat(
+                            "yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+                        .format(new java.util.Date())
+                        + " " + line + "\n");
+            } finally {
+                w.close();
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /**
+     * Static breadcrumb writer for the winebus patcher (which runs in static
+     * context from Hook 4 at the {@code Lbg5;->a} env-builder site, possibly
+     * in the {@code :wine} process). Mirrors {@link #breadcrumb(String)} but
+     * takes an explicit Context and prefixes "WINEBUS " so the on-disk
+     * {@code bh_vibration.log} proves whether the disk-patcher actually fired
+     * and what it found — the Log.i lines roll out of the AnTuTu buffer.
+     * Never throws.
+     */
+    static void bcWinebus(Context ctx, String line) {
+        try {
+            if (ctx == null) return;
+            File f = new File(ctx.getFilesDir(), "bh_vibration.log");
+            java.io.FileWriter w = new java.io.FileWriter(f, true);
+            try {
+                w.write(new java.text.SimpleDateFormat(
+                            "yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+                        .format(new java.util.Date())
+                        + " WINEBUS " + line + "\n");
+            } finally {
+                w.close();
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
     private void ensureContext() {
         if (appContext != null) return;
         try {
@@ -1193,24 +1346,41 @@ public final class BhVibrationController {
     // subprocess address space / destabilising box64 under new-WoW64.
     // ─────────────────────────────────────────────────────────────────────
     public static void ensureWinebusDurationPatchOnce(Context ctx) {
+        // Breadcrumb #1: proves whether Hook 4's injected invoke-static at the
+        // Lbg5;->a env-builder anchor actually executes (and with a Context).
+        bcWinebus(ctx, "hook fired ctx=" + (ctx != null)
+                + " proc=" + android.os.Process.myPid());
         try {
             if (ctx != null) ensureWinebusDurationPatch(ctx);
         } catch (Throwable t) {
+            bcWinebus(ctx, "hook EXCEPTION " + t);
             Log.w(TAG, "ensureWinebusDurationPatchOnce failed", t);
         }
     }
 
     private static void ensureWinebusDurationPatch(Context ctx) {
-        if (!WINEBUS_DURATION_PATCH_ATTEMPTED.compareAndSet(false, true)) return;
+        if (!WINEBUS_DURATION_PATCH_ATTEMPTED.compareAndSet(false, true)) {
+            bcWinebus(ctx, "scan skipped: already attempted this process");
+            return;
+        }
         try {
             File root = ctx.getFilesDir();
             if (root == null || !root.isDirectory()) {
+                bcWinebus(ctx, "scan skipped: no files dir");
                 Log.i(TAG, "winebus duration patch skipped: no files dir");
                 return;
             }
 
             int[] stats = new int[4]; // files visited, winebus found, patched, already patched
+            long t0 = System.currentTimeMillis();
             scanWinebusFiles(ctx, root, 0, stats);
+            long dt = System.currentTimeMillis() - t0;
+            // Breadcrumb #2: scan summary — files visited (vs MAX_FILES 100000),
+            // winebus.so found, patched this run, already-patched.
+            bcWinebus(ctx, "scan root=" + root.getAbsolutePath()
+                    + " files=" + stats[0] + " winebus=" + stats[1]
+                    + " patched=" + stats[2] + " already=" + stats[3]
+                    + " ms=" + dt);
             Log.i(TAG, "winebus duration patch scan files=" + stats[0]
                     + " winebus=" + stats[1]
                     + " patched=" + stats[2]
@@ -1220,6 +1390,7 @@ public final class BhVibrationController {
             }
         } catch (Throwable t) {
             WINEBUS_DURATION_PATCH_ATTEMPTED.set(false);
+            bcWinebus(ctx, "scan EXCEPTION " + t);
             Log.w(TAG, "winebus duration patch scan failed", t);
         }
     }
@@ -1263,6 +1434,7 @@ public final class BhVibrationController {
     private static int patchWinebusDurationFile(Context ctx, File file) throws IOException {
         long len = file.length();
         if (len < WINEBUS_ORIGINAL_SITE.length || len > WINEBUS_PATCH_MAX_BYTES) {
+            bcWinebus(ctx, "file skip bad-size=" + len + " " + file.getAbsolutePath());
             Log.i(TAG, "winebus duration patch skipped unexpected size="
                     + len + " path=" + file.getAbsolutePath());
             return 0;
@@ -1271,17 +1443,24 @@ public final class BhVibrationController {
         byte[] blob = new byte[(int) len];
         try (RandomAccessFile raf = new RandomAccessFile(file, "rw")) {
             raf.readFully(blob);
-            if (!startsWith(blob, WINEBUS_ELF_MAGIC) || indexOf(blob, WINEBUS_RUMBLE_STRING, 0) < 0) {
+            boolean elf = startsWith(blob, WINEBUS_ELF_MAGIC);
+            boolean rumble = indexOf(blob, WINEBUS_RUMBLE_STRING, 0) >= 0;
+            if (!elf || !rumble) {
+                bcWinebus(ctx, "file skip non-target elf=" + elf
+                        + " rumble=" + rumble + " " + file.getAbsolutePath());
                 Log.i(TAG, "winebus duration patch skipped non-target path=" + file.getAbsolutePath());
                 return 0;
             }
 
             int machine = readElfMachine(blob);
+            // Breadcrumb #3: a real winebus.so reached the arch dispatch.
+            bcWinebus(ctx, "file target size=" + len + " mach=0x"
+                    + Integer.toHexString(machine) + " " + file.getAbsolutePath());
             if (machine == ELF_MACHINE_AARCH64) {
-                return patchAarch64Sites(file, blob, raf);
+                return patchAarch64Sites(ctx, file, blob, raf);
             }
             if (machine == ELF_MACHINE_X86_64) {
-                int result = patchX86_64Sites(file, blob, raf);
+                int result = patchX86_64Sites(ctx, file, blob, raf);
                 if (result == 0) {
                     // Pattern didn't match — dump for offline pattern refinement.
                     dumpForOfflineAnalysis(ctx, file, blob, "x86_64");
@@ -1289,6 +1468,8 @@ public final class BhVibrationController {
                 return result;
             }
 
+            bcWinebus(ctx, "file skip unknown e_machine=0x"
+                    + Integer.toHexString(machine) + " " + file.getAbsolutePath());
             Log.i(TAG, "winebus duration patch skipped unknown e_machine=0x"
                     + Integer.toHexString(machine) + " path=" + file.getAbsolutePath());
             return 0;
@@ -1300,16 +1481,19 @@ public final class BhVibrationController {
         return (blob[18] & 0xff) | ((blob[19] & 0xff) << 8);
     }
 
-    private static int patchAarch64Sites(File file, byte[] blob, RandomAccessFile raf) throws IOException {
+    private static int patchAarch64Sites(Context ctx, File file, byte[] blob, RandomAccessFile raf) throws IOException {
         int[] originalHits = new int[4];
         int originalCount = collectHits(blob, WINEBUS_ORIGINAL_SITE, originalHits);
         int patchedCount = collectHits(blob, WINEBUS_PATCHED_SITE, null);
 
         if (originalCount == 0 && patchedCount == 2) {
+            bcWinebus(ctx, "aarch64 ALREADY-PATCHED original=0 patched=2 " + file.getAbsolutePath());
             Log.i(TAG, "winebus duration patch already applied path=" + file.getAbsolutePath());
             return 2;
         }
         if (originalCount != 2) {
+            bcWinebus(ctx, "aarch64 MISMATCH original=" + originalCount
+                    + " patched=" + patchedCount + " " + file.getAbsolutePath());
             Log.i(TAG, "winebus duration patch skipped pattern mismatch original="
                     + originalCount + " patched=" + patchedCount
                     + " path=" + file.getAbsolutePath());
@@ -1320,22 +1504,28 @@ public final class BhVibrationController {
             raf.seek(originalHits[i]);
             raf.write(WINEBUS_PATCHED_LOAD);
         }
+        bcWinebus(ctx, "aarch64 APPLIED original=2 offsets=0x"
+                + Integer.toHexString(originalHits[0]) + ",0x"
+                + Integer.toHexString(originalHits[1]) + " " + file.getAbsolutePath());
         Log.i(TAG, "winebus duration patch applied path=" + file.getAbsolutePath()
                 + " offsets=0x" + Integer.toHexString(originalHits[0])
                 + ",0x" + Integer.toHexString(originalHits[1]));
         return 1;
     }
 
-    private static int patchX86_64Sites(File file, byte[] blob, RandomAccessFile raf) throws IOException {
+    private static int patchX86_64Sites(Context ctx, File file, byte[] blob, RandomAccessFile raf) throws IOException {
         int[] hits = new int[8];
         int originalCount = collectWildcardHits(blob, X86_64_PATTERN, X86_64_PATTERN_FIXED, hits);
         int patchedCount = collectHits(blob, X86_64_PATCHED_PATTERN, null);
 
         if (originalCount == 0 && patchedCount == 2) {
+            bcWinebus(ctx, "x86_64 ALREADY-PATCHED original=0 patched=2 " + file.getAbsolutePath());
             Log.i(TAG, "winebus duration patch already applied path=" + file.getAbsolutePath());
             return 2;
         }
         if (originalCount != 2) {
+            bcWinebus(ctx, "x86_64 MISMATCH original=" + originalCount
+                    + " patched=" + patchedCount + " " + file.getAbsolutePath());
             Log.i(TAG, "winebus duration patch skipped pattern mismatch (x86_64)"
                     + " original=" + originalCount + " patched=" + patchedCount
                     + " path=" + file.getAbsolutePath());
@@ -1346,6 +1536,9 @@ public final class BhVibrationController {
             raf.seek(hits[i]);
             raf.write(X86_64_PATCHED_LOAD);
         }
+        bcWinebus(ctx, "x86_64 APPLIED original=2 offsets=0x"
+                + Integer.toHexString(hits[0]) + ",0x"
+                + Integer.toHexString(hits[1]) + " " + file.getAbsolutePath());
         Log.i(TAG, "winebus duration patch applied (x86_64) path=" + file.getAbsolutePath()
                 + " offsets=0x" + Integer.toHexString(hits[0])
                 + ",0x" + Integer.toHexString(hits[1]));

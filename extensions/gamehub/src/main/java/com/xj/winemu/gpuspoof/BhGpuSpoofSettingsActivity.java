@@ -48,8 +48,17 @@ public class BhGpuSpoofSettingsActivity extends Activity {
 
     private float density = 1f;
 
-    /** Suppresses spinner callbacks while we programmatically restore state. */
-    private boolean ready = false;
+    /**
+     * Vendor index the Model spinner was last (re)built for. Spinner.setSelection()
+     * fires onItemSelected asynchronously on the next layout pass — AFTER we
+     * attach the listener — so the restore-time vendorSpinner.setSelection(vSel)
+     * still triggers a spurious callback that would rebuild the model list with
+     * sel=0 and lose the restored card. Guarding the listener on an actual
+     * vendor change makes that deferred callback a no-op (vIdx == lastVendorIdx),
+     * regardless of listener-attach timing.
+     */
+    private int lastVendorIdx = -1;
+
 
     public static void launch(Context ctx, String gameId, String gameName) {
         Intent it = new Intent(ctx, BhGpuSpoofSettingsActivity.class);
@@ -176,9 +185,17 @@ public class BhGpuSpoofSettingsActivity extends Activity {
         btnRow.setOrientation(LinearLayout.HORIZONTAL);
         btnRow.setGravity(Gravity.END);
         btnRow.setLayoutParams(topMargin(dp(6)));
-        Button close = new Button(this);
-        close.setText("Close");
-        close.setOnClickListener(new View.OnClickListener() {
+        // Cancel = discard (nothing persisted). Save = single atomic commit
+        // of the current UI selection into the per-game store. No live writes
+        // anymore, so the seed-time spinner callbacks can't persist a default.
+        Button cancel = new Button(this);
+        cancel.setText("Cancel");
+        cancel.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { finish(); }
+        });
+        Button save = new Button(this);
+        save.setText("Save");
+        save.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 persistForMode(ctl, modeSpinner.getSelectedItemPosition(),
                         vendorSpinner, modelSpinner, vendorIn, deviceIn, nameIn);
@@ -186,34 +203,48 @@ public class BhGpuSpoofSettingsActivity extends Activity {
                 finish();
             }
         });
-        btnRow.addView(close);
+        btnRow.addView(cancel);
+        btnRow.addView(save);
         root.addView(btnRow);
 
         // ── Wiring ───────────────────────────────────────────────────────
 
-        // Model spinner: on pick, persist the chosen card (Spoof mode only).
-        modelSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            @Override public void onItemSelected(AdapterView<?> p, View vw, int pos, long id) {
-                if (!ready || modeSpinner.getSelectedItemPosition()
-                        != BhGpuSpoofController.MODE_SPOOF) return;
-                writeCard(ctl, vendorSpinner.getSelectedItemPosition(), pos);
-            }
-            @Override public void onNothingSelected(AdapterView<?> p) { }
-        });
+        // ── Restore persisted state FIRST (no listeners attached yet, so the
+        // programmatic setSelection() calls below can't trigger a callback
+        // that resets the model spinner to 0 and loses the saved model). ──
+        int mode = clampMode(ctl.getMode());
+        int vSel = 0, mSel = 0;
+        int[] loc = BhGpuCards.locate(ctl.getVendor(), ctl.getDevice());
+        if (loc != null) {
+            vSel = loc[0];
+            mSel = loc[1] >= 0 ? loc[1] : 0;
+        }
+        vendorSpinner.setSelection(vSel);
+        rebuildModels(modelSpinner, vSel, mSel);
+        spoofBox.setVisibility(mode == BhGpuSpoofController.MODE_SPOOF
+                ? View.VISIBLE : View.GONE);
+        customBox.setVisibility(mode == BhGpuSpoofController.MODE_CUSTOM
+                ? View.VISIBLE : View.GONE);
+        deepCheck.setVisibility(mode == BhGpuSpoofController.MODE_OFF
+                ? View.GONE : View.VISIBLE);
+        modeSpinner.setSelection(mode);
 
-        // Vendor spinner: rebuild Model list for that vendor, keep position 0.
+        // ── THEN attach UI-only listeners (NO persistence — Save commits).
+        // Vendor change rebuilds the Model list; Mode change toggles which
+        // editor is visible. Model spinner / Deep checkbox have no UI
+        // side-effect so they carry no listener.
         vendorSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override public void onItemSelected(AdapterView<?> p, View vw, int vIdx, long id) {
+                // Ignore the deferred callback from the restore-time
+                // setSelection(vSel): the model list is already built for
+                // this vendor with the saved card selected. Only a real
+                // vendor change (different index) resets the model to 0.
+                if (vIdx == lastVendorIdx) return;
                 rebuildModels(modelSpinner, vIdx, 0);
-                if (ready && modeSpinner.getSelectedItemPosition()
-                        == BhGpuSpoofController.MODE_SPOOF) {
-                    writeCard(ctl, vIdx, modelSpinner.getSelectedItemPosition());
-                }
             }
             @Override public void onNothingSelected(AdapterView<?> p) { }
         });
 
-        // Mode spinner: toggle the right editor + persist that mode's value.
         modeSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override public void onItemSelected(AdapterView<?> p, View vw, int pos, long id) {
                 spoofBox.setVisibility(pos == BhGpuSpoofController.MODE_SPOOF
@@ -222,46 +253,8 @@ public class BhGpuSpoofSettingsActivity extends Activity {
                         ? View.VISIBLE : View.GONE);
                 deepCheck.setVisibility(pos == BhGpuSpoofController.MODE_OFF
                         ? View.GONE : View.VISIBLE);
-                if (!ready) return;
-                ctl.setMode(pos);
-                if (pos == BhGpuSpoofController.MODE_SPOOF) {
-                    writeCard(ctl, vendorSpinner.getSelectedItemPosition(),
-                            modelSpinner.getSelectedItemPosition());
-                } else if (pos == BhGpuSpoofController.MODE_CUSTOM) {
-                    persistCustom(ctl, vendorIn, deviceIn, nameIn);
-                }
             }
             @Override public void onNothingSelected(AdapterView<?> p) { }
-        });
-
-        // Deep checkbox: persist live (only once callbacks are armed).
-        deepCheck.setOnCheckedChangeListener(
-                new android.widget.CompoundButton.OnCheckedChangeListener() {
-            @Override public void onCheckedChanged(
-                    android.widget.CompoundButton b, boolean checked) {
-                if (ready) ctl.setDeep(checked);
-            }
-        });
-
-        // ── Restore persisted state, then arm callbacks ──────────────────
-        int mode = clampMode(ctl.getMode());
-        int vSel = 0, mSel = 0;
-        int[] loc = BhGpuCards.locate(ctl.getVendor(), ctl.getDevice());
-        if (loc != null) {
-            vSel = loc[0];
-            mSel = loc[1] >= 0 ? loc[1] : 0;
-        }
-        rebuildModels(modelSpinner, vSel, mSel);
-        vendorSpinner.setSelection(vSel);
-        spoofBox.setVisibility(mode == BhGpuSpoofController.MODE_SPOOF
-                ? View.VISIBLE : View.GONE);
-        customBox.setVisibility(mode == BhGpuSpoofController.MODE_CUSTOM
-                ? View.VISIBLE : View.GONE);
-        deepCheck.setVisibility(mode == BhGpuSpoofController.MODE_OFF
-                ? View.GONE : View.VISIBLE);
-        modeSpinner.setSelection(mode);
-        modelSpinner.post(new Runnable() {
-            @Override public void run() { ready = true; }
         });
 
         ScrollView scroller = new ScrollView(this);
@@ -294,6 +287,7 @@ public class BhGpuSpoofSettingsActivity extends Activity {
 
     /** Repopulates the Model spinner for a vendor and selects {@code sel}. */
     private void rebuildModels(Spinner modelSpinner, int vendorIdx, int sel) {
+        lastVendorIdx = vendorIdx;
         String[] models = BhGpuCards.modelNames(vendorIdx);
         modelSpinner.setAdapter(smallAdapter(models));
         if (sel < 0 || sel >= models.length) sel = 0;

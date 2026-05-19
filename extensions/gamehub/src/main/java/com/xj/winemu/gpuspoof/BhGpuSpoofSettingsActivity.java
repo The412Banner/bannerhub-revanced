@@ -198,10 +198,30 @@ public class BhGpuSpoofSettingsActivity extends Activity {
 
         // ── Wiring ───────────────────────────────────────────────────────
 
-        // UI-only wiring (NO persistence here — persistence is the Save
-        // button's single commit). Vendor spinner rebuilds the Model list;
-        // Mode spinner toggles which editor is visible. Model spinner and the
-        // Deep checkbox have no UI side-effect, so they carry no listener.
+        // ── Restore persisted state FIRST (no listeners attached yet, so the
+        // programmatic setSelection() calls below can't trigger a callback
+        // that resets the model spinner to 0 and loses the saved model). ──
+        int mode = clampMode(ctl.getMode());
+        int vSel = 0, mSel = 0;
+        int[] loc = BhGpuCards.locate(ctl.getVendor(), ctl.getDevice());
+        if (loc != null) {
+            vSel = loc[0];
+            mSel = loc[1] >= 0 ? loc[1] : 0;
+        }
+        vendorSpinner.setSelection(vSel);
+        rebuildModels(modelSpinner, vSel, mSel);
+        spoofBox.setVisibility(mode == BhGpuSpoofController.MODE_SPOOF
+                ? View.VISIBLE : View.GONE);
+        customBox.setVisibility(mode == BhGpuSpoofController.MODE_CUSTOM
+                ? View.VISIBLE : View.GONE);
+        deepCheck.setVisibility(mode == BhGpuSpoofController.MODE_OFF
+                ? View.GONE : View.VISIBLE);
+        modeSpinner.setSelection(mode);
+
+        // ── THEN attach UI-only listeners (NO persistence — Save commits).
+        // Vendor change rebuilds the Model list; Mode change toggles which
+        // editor is visible. Model spinner / Deep checkbox have no UI
+        // side-effect so they carry no listener.
         vendorSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             @Override public void onItemSelected(AdapterView<?> p, View vw, int vIdx, long id) {
                 rebuildModels(modelSpinner, vIdx, 0);
@@ -220,24 +240,6 @@ public class BhGpuSpoofSettingsActivity extends Activity {
             }
             @Override public void onNothingSelected(AdapterView<?> p) { }
         });
-
-        // ── Restore persisted state, then arm callbacks ──────────────────
-        int mode = clampMode(ctl.getMode());
-        int vSel = 0, mSel = 0;
-        int[] loc = BhGpuCards.locate(ctl.getVendor(), ctl.getDevice());
-        if (loc != null) {
-            vSel = loc[0];
-            mSel = loc[1] >= 0 ? loc[1] : 0;
-        }
-        rebuildModels(modelSpinner, vSel, mSel);
-        vendorSpinner.setSelection(vSel);
-        spoofBox.setVisibility(mode == BhGpuSpoofController.MODE_SPOOF
-                ? View.VISIBLE : View.GONE);
-        customBox.setVisibility(mode == BhGpuSpoofController.MODE_CUSTOM
-                ? View.VISIBLE : View.GONE);
-        deepCheck.setVisibility(mode == BhGpuSpoofController.MODE_OFF
-                ? View.GONE : View.VISIBLE);
-        modeSpinner.setSelection(mode);
 
         ScrollView scroller = new ScrollView(this);
         scroller.setVerticalScrollBarEnabled(true);

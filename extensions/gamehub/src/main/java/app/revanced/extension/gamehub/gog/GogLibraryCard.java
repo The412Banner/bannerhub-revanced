@@ -127,6 +127,40 @@ public final class GogLibraryCard {
         }
     }
 
+    /**
+     * §34: the seeded card was retired in favour of the per-game "GOG" menu
+     * row (mode-independent; the card only ever rendered in the handheld
+     * library surface). Called at MainActivity.onCreate INSTEAD of
+     * ensureSeeded — deletes the legacy sentinel rows so the card also
+     * disappears for users who ran a seeding build. Idempotent, fail-safe;
+     * never crashes GameHub over cleanup.
+     */
+    public static void ensureRemoved(Context ctx) {
+        if (ctx == null) return;
+        SQLiteDatabase db = null;
+        try {
+            File f = ctx.getDatabasePath(DB_NAME);
+            if (f == null || !f.exists()) return;
+            db = SQLiteDatabase.openDatabase(
+                    f.getAbsolutePath(), null, SQLiteDatabase.OPEN_READWRITE);
+            db.beginTransaction();
+            try {
+                db.execSQL("DELETE FROM t_game_launch_method WHERE linked_game_id=?",
+                        new Object[]{SENTINEL_ID});
+                db.execSQL("DELETE FROM t_game_library_base WHERE id=?",
+                        new Object[]{SENTINEL_ID});
+                db.setTransactionSuccessful();
+                Log.i(TAG, "GogLibraryCard: removed legacy sentinel card");
+            } finally {
+                db.endTransaction();
+            }
+        } catch (Throwable t) {
+            Log.e(TAG, "GogLibraryCard.ensureRemoved failed (non-fatal)", t);
+        } finally {
+            if (db != null) try { db.close(); } catch (Throwable ignored) {}
+        }
+    }
+
     // ── launch intercept ─────────────────────────────────────────────────────
 
     /**

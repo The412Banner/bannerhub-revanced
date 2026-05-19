@@ -64,15 +64,17 @@ val gogManifestPatch = resourcePatch(
                         "android:configChanges",
                         "orientation|screenSize|keyboardHidden",
                     )
-                    // §32c: pre9 forced `sensorLandscape` here to fix the
-                    // portrait-while-handheld complaint. REVERTED — the user
-                    // also uses GameHub's explore (portrait) mode, so a hard
-                    // landscape lock is wrong there. Leaving orientation
-                    // `unspecified` lets each GOG screen follow the device /
-                    // app orientation (landscape in handheld, portrait in
-                    // explore), which is the "match the mode I'm in" behaviour
-                    // actually wanted. `configChanges` above already keeps the
-                    // activity from recreating on rotation.
+                    // §34: orientation history — pre9 forced `sensorLandscape`
+                    // (broke explore/portrait), pre10 reverted to unspecified
+                    // (didn't actively follow the mode). The user wants the
+                    // GOG screens to AUTO-ROTATE to fit whichever mode they're
+                    // in (handheld=landscape, explore=portrait). `fullSensor`
+                    // = free sensor-driven rotation through all 4 orientations,
+                    // ignoring the OS auto-rotate lock so it reliably matches
+                    // however the device is physically held in each mode. The
+                    // `configChanges` above keeps the activity from recreating
+                    // on each rotation (smooth in-place re-layout).
+                    setAttribute("android:screenOrientation", "fullSensor")
                 }
                 app.appendChild(activity)
             }

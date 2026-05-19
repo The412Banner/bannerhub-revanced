@@ -46,21 +46,28 @@ private const val MAIN_ACTIVITY = "Lcom/xiaoji/egggame/MainActivity;"
 @Suppress("unused")
 val gogLibraryCardPatch = bytecodePatch(
     name = "GOG library card (permanent)",
-    description = "Seeds a permanent synthetic \"GOG\" card into GameHub's " +
-        "library DB (idempotent, self-healing, server-sync-invisible) and " +
-        "intercepts its launch to open the GOG hub (login / library) instead " +
-        "of a Wine launch. Phase-1 entry point; reusable toward the Phase-2 " +
-        "GameHub-library bridge.",
+    description = "RETIRED (§34): the seeded library card was a handheld-only " +
+        "entry — explore mode is a separate library surface that never " +
+        "renders it. The per-game \"GOG\" menu row (GogMenuRowPatch) is now " +
+        "the sole, mode-independent entry. This patch now only DELETES the " +
+        "legacy sentinel row at MainActivity.onCreate so the card disappears " +
+        "on existing installs too. (Name kept stable to preserve any " +
+        "letter-map / dependency wiring.)",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
     dependsOn(sharedGamehubExtensionPatch)
 
     apply {
-        // ── (1) seed hook ────────────────────────────────────────────────────
-        // MainActivity.onCreate(Bundle) — exact non-obfuscated anchor. p0 =
-        // the MainActivity instance (is-a Context). Index 0 is safe:
-        // ensureSeeded only touches Context.getDatabasePath and is fully
-        // guarded, so it is valid before super.onCreate().
+        // ── cleanup hook ─────────────────────────────────────────────────────
+        // MainActivity.onCreate(Bundle) — exact non-obfuscated anchor (the
+        // same proven anchor the seeder used). p0 = the MainActivity instance
+        // (is-a Context). Index 0 is safe: ensureRemoved only touches
+        // Context.getDatabasePath + a guarded DELETE, valid before
+        // super.onCreate(). Idempotent — removes the `bh_gog_launcher` rows
+        // from t_game_library_base / t_game_launch_method every start, so the
+        // card vanishes for users who installed a seeding build too.
+        // The yv3.invoke launch-intercept (old hook 2) is GONE — it only
+        // served the card; the menu row uses BhGogMenuRowClick directly.
         val onCreate = firstMethod {
             definingClass == MAIN_ACTIVITY &&
                 name == "onCreate" &&
@@ -69,51 +76,7 @@ val gogLibraryCardPatch = bytecodePatch(
         }
         onCreate.addInstructions(
             0,
-            "invoke-static {p0}, $EXT->ensureSeeded(Landroid/content/Context;)V",
+            "invoke-static {p0}, $EXT->ensureRemoved(Landroid/content/Context;)V",
         )
-
-        // ── (2) launch intercept — yv3.invoke (LaunchRouter lambda) ──────────
-        // §32, device 2026-05-19 (pre6): card + seeder CONFIRMED, no crash
-        // (pre6 applied cleanly), BUT the GOG-card tap → game-detail dialog →
-        // "Launch Game" routes through GameHub's LaunchRouter interceptor
-        // chain, NOT po7.F0/G0 — logcat showed `buildLibraryInfoWithContext
-        // GOG , startType = 0` then `No strategy found: type=Unknown`, and
-        // zero GogLibraryCard log lines (our intercept never ran; pre6's
-        // try/catch silently swallowed the wrong-path F0/G0 non-match).
-        //
-        // Re-anchor on the first NON-suspend point that holds the game: the
-        // multiplexed launch lambda `yv3.invoke()Ljava/lang/Object;` — a plain
-        // Function0 invoke, NOT a coroutine, so index-0 is verifier-safe
-        // (unlike the §31 suspend `wel.b`). Fingerprint = the proven
-        // pre4-style stable non-obf CONST_STRING "buildLibraryInfoWithContext "
-        // (uniquely that launch lambda) + the no-arg `invoke()Object` shape.
-        // p0 = the lambda instance; it transitively holds the launch context
-        // (t07 → GameInfo). Inject ONE side-effect-only call at index 0:
-        //   invoke-static {p0}, $EXT->openHubIfSentinel(Ljava/lang/Object;)V
-        // No move-result, no branch, no return change, zero register clobber —
-        // the minimal possible verifier-safe edit. The extension reflectively
-        // finds the sentinel GameInfo (bounded, fail-safe, de-duplicated) and
-        // on match opens GogMainActivity; the original launch then proceeds
-        // and harmlessly logs "No strategy found" behind the foregrounded hub.
-        // try/catch keeps the §22 graceful-degrade (miss → card still works).
-        try {
-            val m = firstMethod {
-                name == "invoke" &&
-                    parameterTypes.isEmpty() &&
-                    returnType == "Ljava/lang/Object;" &&
-                    implementation?.instructions?.any { ins ->
-                        ins.opcode == Opcode.CONST_STRING &&
-                            (ins as? ReferenceInstruction)?.reference?.toString()
-                                ?.contains("buildLibraryInfoWithContext ") == true
-                    } == true
-            }
-            m.addInstructions(
-                0,
-                "invoke-static {p0}, $EXT->openHubIfSentinel(Ljava/lang/Object;)V",
-            )
-        } catch (_: Exception) {
-            // Fingerprint miss: seed hook (1) already ran → card still
-            // appears; only tap-behaviour iterates (§22).
-        }
     }
 }

@@ -1,6 +1,6 @@
 # GOG Library Tab — Patch Design Doc
 
-**Status:** ⚑ **PHASE 1 COMPLETE; WS4 card = handheld-only (explore mode = separate surface, won't seed); PIVOTED to menu-row entry — CURRENT = §33.** GOG login + owned-library + download/install device-confirmed (pre2). WS4: permanent seeded GOG card → tap → "Launch Game" → GOG hub device-confirmed on Normal-GHL (`gamehub.lite`, pre8); pre9 = orientation polish only (landscape). Intercept = yv3.invoke side-effect + reflective sentinel walk + main-thread gate; real launches byte-for-byte unaffected. Iteration trail: pre3 wrong anchor → pre4 suspend VerifyError (§31) → pre5 silent no-apply → pre6 idiom fix → pre7 yv3 (§32) → pre8 thread-gate (§32a) → pre9 landscape (§32b). Phase 2 still deferred: WS5 launch bridge (§19) / production Profile-row entry (WS4-P-A) / P-C. Branch `feature/gog-explore-tab`.
+**Status:** ⚑ **PHASE 1 COMPLETE; WS4 = per-game "GOG" menu row in all 3 menus (mode-independent, opens GogMainActivity); seeded card RETIRED; GOG screens auto-rotate (fullSensor) — CURRENT = §34.** GOG login + owned-library + download/install device-confirmed (pre2). WS4: permanent seeded GOG card → tap → "Launch Game" → GOG hub device-confirmed on Normal-GHL (`gamehub.lite`, pre8); pre9 = orientation polish only (landscape). Intercept = yv3.invoke side-effect + reflective sentinel walk + main-thread gate; real launches byte-for-byte unaffected. Iteration trail: pre3 wrong anchor → pre4 suspend VerifyError (§31) → pre5 silent no-apply → pre6 idiom fix → pre7 yv3 (§32) → pre8 thread-gate (§32a) → pre9 landscape (§32b). Phase 2 still deferred: WS5 launch bridge (§19) / production Profile-row entry (WS4-P-A) / P-C. Branch `feature/gog-explore-tab`.
 **Base:** GameHub 6.0.4, R8 map id `6a5cde6143fc8cf76f6f3a447d0fececd4794d83066e6ead7a9537e6527b057b`.
 **Author:** The412Banner. **Date:** 2026-05-19.
 
@@ -925,3 +925,41 @@ despite menu-injection's historical iterate-prone reputation. Files:
 `BhMenuRowClick.java` (+GOG key). Next: compile gate → grep SEVERE for
 `GOG menu row` + `GOG library card` → pre11 → device (any game → BOTH
 popup menus + More Menu show "GOG" → GogMainActivity, both modes).
+
+---
+
+## 34. Card retired + GOG screens auto-rotate; pre12
+
+pre11 device-confirmed the "GOG" row in all 3 per-game menus. User: (a) drop
+the now-redundant seeded library card, (b) make the GOG screens auto-rotate
+to fit handheld (landscape) / explore (portrait).
+
+**(a) Card retired.** The card only ever rendered in the handheld library
+surface (§33 — explore is a different surface that never queries the local
+sentinel); the menu row is the mode-independent entry, so the card is dead
+weight. `gogLibraryCardPatch` repurposed: the proven `MainActivity.onCreate`
+anchor now calls **`ensureRemoved`** (not `ensureSeeded`) — a guarded,
+idempotent DELETE of the `bh_gog_launcher` rows from
+`t_game_library_base`/`t_game_launch_method`, so the card disappears on
+existing (seeding-build) installs too, not just fresh ones. The **yv3.invoke
+launch-intercept (old hook 2) is removed entirely** — it only served the
+card; its purpose is now covered by `BhGogMenuRowClick`. Patch name kept
+stable ("GOG library card (permanent)") to avoid disturbing any letter-map /
+dependency wiring; `ensureSeeded` left in the extension (dead, harmless).
+Net surface reduction: one fewer bytecode injection, no more reflective
+launch-router walk.
+
+**(b) Auto-rotate.** `GogManifestPatch` orientation history: pre9
+`sensorLandscape` (broke explore) → pre10 `unspecified` (didn't actively
+follow the mode) → **pre12 `fullSensor`** on all 6 GOG activities = free
+sensor-driven rotation through all 4 orientations, ignoring the OS
+auto-rotate lock so it reliably matches however the device is held in each
+mode. `configChanges=orientation|screenSize|keyboardHidden` (already set)
+keeps the activity from recreating on rotation → smooth in-place re-layout.
+
+Files: `GogLibraryCardPatch.kt` (hook→ensureRemoved, hook 2 deleted, name/
+desc), `GogLibraryCard.java` (+ensureRemoved), `GogManifestPatch.kt`
+(fullSensor). Menu-row patch + extension unchanged. Next: compile gate →
+grep SEVERE (`GOG menu row` + `GOG library card`) → pre12 → device (no card
+in library; GOG screens rotate to match handheld/explore; menu row still
+opens hub in all 3 menus / both modes).

@@ -64,17 +64,23 @@ val gogManifestPatch = resourcePatch(
                         "android:configChanges",
                         "orientation|screenSize|keyboardHidden",
                     )
-                    // §34: orientation history — pre9 forced `sensorLandscape`
-                    // (broke explore/portrait), pre10 reverted to unspecified
-                    // (didn't actively follow the mode). The user wants the
-                    // GOG screens to AUTO-ROTATE to fit whichever mode they're
-                    // in (handheld=landscape, explore=portrait). `fullSensor`
-                    // = free sensor-driven rotation through all 4 orientations,
-                    // ignoring the OS auto-rotate lock so it reliably matches
-                    // however the device is physically held in each mode. The
-                    // `configChanges` above keeps the activity from recreating
-                    // on each rotation (smooth in-place re-layout).
-                    setAttribute("android:screenOrientation", "fullSensor")
+                    // §34/§34a: orientation history — pre9 `sensorLandscape`
+                    // (broke explore), pre10 `unspecified` (didn't follow
+                    // mode), pre12 `fullSensor` (didn't rotate — wrong target,
+                    // we don't want sensor-driven, we want MODE-driven). The
+                    // §32b reasoning was wrong: GOG activities launch into
+                    // GameHub's SAME task (default taskAffinity = same
+                    // package; FLAG_ACTIVITY_NEW_TASK only switches tasks
+                    // across affinities), so MainActivity IS the activity
+                    // below ours. GameHub's mode toggle programmatically
+                    // setRequestedOrientation()s MainActivity to landscape in
+                    // handheld and portrait in explore. `behind` inherits
+                    // that RUNTIME orientation at launch — so opening the GOG
+                    // hub in handheld → landscape, in explore → portrait,
+                    // matching the mode the user picked in GameHub. The
+                    // `configChanges` above keeps the in-place re-layout
+                    // smooth if the mode changes while we're open.
+                    setAttribute("android:screenOrientation", "behind")
                 }
                 app.appendChild(activity)
             }

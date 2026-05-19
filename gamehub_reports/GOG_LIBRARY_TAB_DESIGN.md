@@ -963,3 +963,34 @@ desc), `GogLibraryCard.java` (+ensureRemoved), `GogManifestPatch.kt`
 grep SEVERE (`GOG menu row` + `GOG library card`) → pre12 → device (no card
 in library; GOG screens rotate to match handheld/explore; menu row still
 opens hub in all 3 menus / both modes).
+
+### 34a. pre12 device → `fullSensor` didn't rotate; pre13 → `behind` (inherit GameHub mode)
+
+pre12 device: APK manifest correct (verified via `aapt dump xmltree` — all
+6 GOG activities have `screenOrientation=0xa = fullSensor`), no
+programmatic orientation locks in the GOG Activity Java code, no theme
+lock. But the user reports the GOG hub does NOT auto-rotate when opened.
+
+**Root cause: I picked the wrong target value.** `fullSensor` = follow
+the physical device sensor, not the app's mode. The §32b reasoning was
+also wrong: I claimed `behind` would fall back to portrait because GOG
+launches in a NEW_TASK. But `FLAG_ACTIVITY_NEW_TASK` only spawns a new
+task when the target has a different `taskAffinity`. Our GOG activities
+have the default taskAffinity (= the app's package, same as GameHub's
+MainActivity), so `NEW_TASK` keeps them in **GameHub's same task** —
+MainActivity IS the activity below ours.
+
+GameHub's MainActivity has no manifest screenOrientation but the
+mode-toggle programmatically `setRequestedOrientation()`s it (landscape
+in handheld, portrait in explore). `behind` inherits that RUNTIME
+orientation at launch → opening the GOG hub in handheld → landscape, in
+explore → portrait. That literally is "fits whatever mode the user is
+using", and unlike `fullSensor` it's mode-driven (not sensor-driven), so
+it ignores OS rotate-lock interactions entirely.
+
+**pre13 (manifest-only, zero bytecode risk):** change all 6 GOG
+activities from `fullSensor` → `behind`. `configChanges` already set, so
+if the mode changes while the GOG hub is open the in-place re-layout
+still works smoothly. Files: `GogManifestPatch.kt`. Next: compile gate →
+grep SEVERE → pre13 → device (open GOG hub in handheld = landscape; open
+in explore = portrait; switching modes between opens just works).

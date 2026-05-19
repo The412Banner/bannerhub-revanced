@@ -443,3 +443,35 @@ This **collapses §17's workstreams**:
 ### 18.4 Net
 
 Project is **materially smaller and lower-risk than §17 stated.** Not "port GameNative + design a novel bridge" — it's **"lift the proven BannerHub-3.7.x GOG Java extension and re-anchor ~3 base-coupled hooks (Profile row, launcher onResume, g3 import-dialog) from 5.3.5 → 6.0.4."** Phase 0 unchanged in spirit; P-B reframed from "design" to "locate 6.0.4's import-dialog equivalent." §17 milestones M1–M3 shrink to porting+re-anchoring; M4 (launch) remains the highest-iteration item but now has a working 5.3.5 reference.
+
+---
+
+## 19. PHASE 0 — P-B RESULT (2026-05-19): bridge viable, but NOT a verbatim 3.7.x reflection port
+
+P-B = locate 6.0.4's equivalent of 5.3.5's `LandscapeLauncherMainActivity.B3(exePath)` (the launcher entry `GogLaunchHelper` piggybacks). The 5.3.5 contract (re-read from `bannerhub/extension/GogLaunchHelper.java`): stash `pending_gog_exe` → on launcher `onResume`, reflection-invoke `B3(String)` on the launcher activity → opens GameHub's own import-edit dialog pre-filled. (Javadoc says `g3`; code calls `B3` — stale comment.)
+
+### 19.1 Findings [CONFIRMED unless noted]
+
+| Half of the bridge | 5.3.5 | 6.0.4 equivalent | Port verdict |
+|---|---|---|---|
+| Launcher `onResume` hook | `com.xj.landscape.launcher.ui.main.LandscapeLauncherMainActivity` | **`com.xiaoji.egggame.MainActivity`** — non-obfuscated, the sole `android.intent.category.LAUNCHER` activity (manifest:85). | **Ports cleanly.** Inject `GogLaunchHelper.checkPendingLaunch(this)` into `MainActivity.onResume()`; stable non-obf anchor. LOW risk. |
+| "Open import pre-filled" entry | single Activity method `B3(exePath)` | **No equivalent.** 6.0.4 is the KMP/Compose rewrite: PC-exe import = `vcd` (import screen/factory) `new x3g(exePath)` → `x3g.m/n` suspend → `simulator/getLocalGameDetail` recognition → import-edit Compose screen → DB write via the `xm7.u(GameInfo,LaunchMethod,Cont)` chain (memory: writes `game_library_base`+`game_launch_method` in `GameLibraryDatabase`). There is **no callable launcher method** to reflect into. | **Does NOT port.** 5.3.5's reflection trick is dead on 6.0.4. |
+
+### 19.2 Consequence — WS5 reshaped
+
+The 3.7.x bridge is **half-portable**: the launcher-onResume hook ports verbatim (just retarget `MainActivity`); the import-trigger half must be **re-implemented** for 6.0.4's KMP architecture. Three candidate mechanisms:
+
+- **(c) Programmatic DB import via the `xm7.u` chain — RECOMMENDED primary.** Construct `GameInfo` + `LaunchMethod` with `LaunchType.GogGameByPcEmulator` and invoke the memory-documented `xm7.u` import (writes `game_library_base`/`game_launch_method`). Most decoupled, most R8-survivable, reuses an *already-understood* chain. Cost: it's a Kotlin **suspend** fn (needs a Continuation shim from the Java extension) and we hand-build the two entities (cover-art enrichment via `getLocalGameDetail` already solved server-side, so acceptable to skip).
+- (a) Intent/nav to the `vcd` import screen with the exe path pre-supplied — fallback; no path-carrying Intent extra found yet (normal entry is interactive file-pick). Needs a trace if (c) proves hard.
+- (b) Drive `x3g(exePath)` VM directly — rejected: obfuscated + coroutine + Compose-state plumbing, most fragile.
+
+### 19.3 P-B verdict
+
+**Bridge is VIABLE — WS5 stays MED, not HIGH** (a clean non-obf onResume hook + an already-mapped import chain). **But §18's "re-anchor 2 reflection targets" was optimistic for WS5:** reality = re-anchor the onResume hook (trivial) **+ re-implement the import-trigger as a programmatic `xm7.u` call** (moderate — suspend-fn Continuation shim + entity construction). Net project size between §17 (HIGH, novel) and §18 (LOW, verbatim): **MED, with a clear primary mechanism and an understood chain.** No fundamental blocker found — the feature remains tractable.
+
+### 19.4 Feeds the rest of Phase 0
+
+- **P-C** (container/Wine-prefix assignment) is now directly coupled: programmatic `xm7.u` import means we must also set the GOG game's Wine container the way the import-edit screen would — P-C must trace what `xm7.u`/the import path sets for container/prefix so the GOG entry launches correctly. **P-C priority raised.**
+- P-A (Profile-row anchor) and P-D (extension build) unaffected by P-B.
+
+**Next:** P-C (now critical — container assignment for a programmatic import), then P-A, then P-D.

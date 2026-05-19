@@ -303,6 +303,7 @@ jobs:
             - **🪪 GPU Spoof (per game).** A new **GPU Spoof** menu row + dialog reports a chosen GPU identity (preset NVIDIA/AMD/Intel list spanning legacy → modern, or a fully custom vendor/device/name) to DXVK via a per-game `dxvk.conf`. Fixes titles that refuse to start on an "unsupported" adapter (e.g. CryEngine — Crysis 2). Off by default; zero effect when Off.
             - **🖼️ Legacy renderer toggle (per game).** Per-game opt-in to the proven 6.0.2 GLES2-era `libxserver.so`/`libwinemu.so` pair for games that regressed under 6.0.4's Vulkan X-server rewrite. Default **New** = stock 6.0.4, zero patch effect.
             - **🎮 Rumble no longer cuts out after ~2 s.** The winebus duration patch is now actually applied at launch (the v1.3.0 hook landed as dead code on this base); sustained rumble holds indefinitely. Device-confirmed via GameConTest.exe.
+            - **📦 Offline component picker.** Every per-game component picker (GPU driver, DXVK, VKD3D, FEXCore/Box64, **and the Wine/Proton container**) now lists the components you've already downloaded when offline, in the same catalog order as online. Online behaviour is byte-identical and the patch is fully fail-safe (any error falls back to stock). Device-confirmed on 6.0.4.
 
             ### Variants
 

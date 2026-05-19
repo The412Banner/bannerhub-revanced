@@ -6,6 +6,8 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.util.Log;
 
+import com.xj.winemu.common.BhMenuGameId;
+
 import java.io.File;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -179,9 +181,17 @@ public final class BhGpuSpoofController {
         Context ctx = appContext;
         if (ctx == null || envVars == null) return;
 
-        // Scope to the game that is launching (its WineActivity is in the
-        // stack with a "gameId" Intent extra by the time the env is built).
-        String gid = sniffGameIdFromStack();
+        // Scope to the launching game. The env builder Lbg5;->a often runs
+        // BEFORE WineActivity is registered in ActivityThread.mActivities, so
+        // sniffGameIdFromStack() returns null at launch and the spoof would
+        // silently no-op as "global → off" (observed: store correct but
+        // bh_gpuspoof_dxvk.conf never rewritten, game keeps real adapter).
+        // MenuGameIdCapturePatch already stashed the id when the user opened
+        // the per-game menu to set the spoof, so prefer that — identical
+        // resolution order to BhGpuSpoofMenuRowClick — and only fall back to
+        // the stack sniff (covers the in-game sidebar path).
+        String gid = BhMenuGameId.getCaptured();
+        if (gid == null || gid.isEmpty()) gid = sniffGameIdFromStack();
         setContainerForSettings(gid);
 
         if (cachedMode == MODE_OFF) {
@@ -211,20 +221,32 @@ public final class BhGpuSpoofController {
         // DXGI (D3D10/11), D3D9 and generic dxvk.* keys are all set so the
         // adapter-identity surface CryEngine reads is covered regardless of
         // which DXVK frontend the title uses.
+        // DXVK's inline DXVK_CONFIG parser tokenises each value on whitespace,
+        // so a free-text string like "NVIDIA GeForce RTX 4080" is truncated at
+        // the first space (verified in GoW_dxgi.log: customDeviceDesc came
+        // through as just "NVIDIA"). The space-free numeric IDs survive. So
+        // the inline channel carries ONLY the IDs; the human-readable
+        // customDeviceDesc rides the CONFIG FILE below (the dxvk.conf file
+        // parser handles spaces), pointed at by DXVK_CONFIG_FILE.
         StringBuilder inline = new StringBuilder();
         appendKv(inline, "dxgi.customVendorId", vendor);
         appendKv(inline, "dxgi.customDeviceId", device);
-        if (!desc.isEmpty()) appendKv(inline, "dxgi.customDeviceDesc", desc);
         appendKv(inline, "d3d9.customVendorId", vendor);
         appendKv(inline, "d3d9.customDeviceId", device);
         appendKv(inline, "dxvk.customVendorId", vendor);
         appendKv(inline, "dxvk.customDeviceId", device);
         String dxvkConfig = inline.toString();
 
-        // Belt-and-braces: also write a file and point DXVK_CONFIG_FILE at it,
-        // in case a future container's DXVK predates DXVK_CONFIG or the path
-        // does happen to be guest-visible. Newline-separated for the file.
-        String fileBody = dxvkConfig.replace(';', '\n');
+        // Config FILE body: the same IDs (newline-separated) PLUS the
+        // space-containing customDeviceDesc, which only the file parser
+        // reads correctly. DXVK loads the file then lets DXVK_CONFIG env
+        // override per-key; customDeviceDesc isn't in the env so the file's
+        // full value stands. Point DXVK_CONFIG_FILE at it below.
+        StringBuilder fileSb = new StringBuilder(dxvkConfig.replace(';', '\n'));
+        if (!desc.isEmpty()) {
+            fileSb.append("dxgi.customDeviceDesc = ").append(desc).append('\n');
+        }
+        String fileBody = fileSb.toString();
         String confPath = null;
         try {
             File out = new File(ctx.getFilesDir(), "bh_gpuspoof_dxvk.conf");

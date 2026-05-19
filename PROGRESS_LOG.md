@@ -2625,3 +2625,22 @@ Same APK toggles both ways cleanly, no regression either direction. Cleanup (`44
 
 ### Artifact-only CI
 `gh workflow run release.yml --ref fix/per-game-settings-isolation -f version=1.3.0-604-pergame-pre3` (stable defaulted false = artifact-only prerelease). Expect green + 0 SEVERE; deliver alt-AnTuTu APK. Retest: GPU Spoof Spoof-mode → vendor+model → Save → reopen shows the exact card; per-game isolation + in-game apply intact.
+
+---
+
+## 2026-05-18 — GPU Spoof not applied at launch + customDeviceDesc truncation (pre4)
+
+**Branch:** `fix/per-game-settings-isolation`.
+
+**Symptom (device):** God of War (gameId 49908) set to NVIDIA RTX 4080 via per-game menu, but in-game still reports the real Adreno identity "GameFusion".
+
+**Diagnosis (root-bridge forensics):** per-game store is *correct* — `bh_gpuspoof_prefs.xml` (mtime 22:04 = launch) has `bh_gpuspoof_mode__49908=1`, `device__49908=2704`, `name__49908=NVIDIA GeForce RTX 4080`; the new system correctly does NOT write `pc_g_setting49908.xml` (its `bh_gpuspoof_*` keys are orphaned legacy, unsuffixed, mode=0, file mtime 09:24). But the launch-time apply did not fire: `bh_gpuspoof_dxvk.conf` + `GoW_*.log` stale from 05-17, zero `BhGpuSpoof` logcat. Cause: `applyGpuSpoofImpl()` resolved gameId via `sniffGameIdFromStack()` *only*; the `Lbg5;->a` env builder runs before `WineActivity` is in `ActivityThread.mActivities`, so sniff → null → `containerGameId=null` → mode OFF → silent no-op (no conf write). The menu-row click already resolves via `BhMenuGameId.getCaptured()` (→ correct store keying), but the controller's launch path never consulted it.
+
+Secondary bug (from the one prior successful 05-17 GoW_dxgi.log): DXVK's inline `DXVK_CONFIG` value parser splits on whitespace, so `dxgi.customDeviceDesc = NVIDIA GeForce RTX 4080` was truncated to `NVIDIA`. IDs (space-free) applied fine.
+
+**Fix (pre4):**
+1. **Launch gameId capture.** `applyGpuSpoofImpl()` now resolves `gid = BhMenuGameId.getCaptured()` first, falling back to `sniffGameIdFromStack()` — identical order to `BhGpuSpoofMenuRowClick`. The shared `MenuGameIdCapturePatch` (already a dependency of the GPU Spoof menu row) stashes the id when the user opens the per-game menu, so the launch path now scopes to the right game even though WineActivity isn't yet on the stack.
+2. **customDeviceDesc truncation.** Inline `DXVK_CONFIG` env now carries ONLY the space-free numeric IDs (dxgi/d3d9/dxvk customVendorId/customDeviceId). The space-containing `dxgi.customDeviceDesc` is written only into the dxvk.conf file body (file parser handles spaces); `DXVK_CONFIG_FILE` points at it and DXVK keeps the file value since the env no longer overrides that key.
+
+### Artifact-only CI
+`gh workflow run release.yml --ref fix/per-game-settings-isolation -f version=1.3.0-604-pergame-pre4` (stable false). Retest: GoW set NVIDIA → launch → in-game GPU reads NVIDIA (not GameFusion); `bh_gpuspoof_dxvk.conf` rewritten at launch with full `customDeviceDesc`; `BhGpuSpoof: GPU spoof active 10de:2704` in logcat; per-game isolation + model-persistence (pre3) intact.

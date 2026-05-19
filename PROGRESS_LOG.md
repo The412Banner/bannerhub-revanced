@@ -2644,3 +2644,24 @@ Secondary bug (from the one prior successful 05-17 GoW_dxgi.log): DXVK's inline 
 
 ### Artifact-only CI
 `gh workflow run release.yml --ref fix/per-game-settings-isolation -f version=1.3.0-604-pergame-pre4` (stable false). Retest: GoW set NVIDIA → launch → in-game GPU reads NVIDIA (not GameFusion); `bh_gpuspoof_dxvk.conf` rewritten at launch with full `customDeviceDesc`; `BhGpuSpoof: GPU spoof active 10de:2704` in logcat; per-game isolation + model-persistence (pre3) intact.
+
+---
+
+## 2026-05-18 — GPU Spoof: ROOT CAUSE = main↔`:wine` process boundary (pre5)
+
+**Branch:** `fix/per-game-settings-isolation`. Commit `292fba6`. CI run **26072733452** GREEN, 0 SEVERE.
+
+**pre4 device test FAILED — same symptom:** GoW (49908) set NVIDIA RTX 4080, launched 22:23. Forensics: `bh_gpuspoof_prefs.xml`@22:23 CORRECT (`mode__49908=1 device__49908=2704 name__49908=NVIDIA GeForce RTX 4080`); `bh_gpuspoof_dxvk.conf` STALE 05-17 18:00 (NOT rewritten at launch); `launchLog49908.txt`@22:23 has NO DXVK_CONFIG/VK_ICD/GAMESCOPE env.
+
+**ROOT CAUSE (decompiled AndroidManifest):** `com.xj.winemu.WineActivity` is declared `android:process=":wine"`. The pre4 fix (`BhMenuGameId.getCaptured()` at launch) **cannot work by construction**: `captureGameId()` fires on menu-open in the MAIN UI process and sets the `static volatile sCapturedGameId`; the env builder `Lbg5;->a` runs inside WineActivity in the **separate `:wine` process** where that static is unset. `getCaptured()`→null, `sniffGameIdFromStack()`→null (pre-registration) ⇒ `containerGameId=null` ⇒ strict-per-game store yields `MODE_OFF` ⇒ early-return BEFORE the unconditional conf write ⇒ stale conf, stock adapter. The disk-backed store crosses processes fine; only the gameId KEY was lost.
+
+**Confirmed against the user's "worked fine" build** (run 26064254882 = branch `test/offline-picker-merge-lite` @ `06fdd05`): that commit does NOT contain the strict-per-game rework; its `reloadSettings()` still reads the **GLOBAL** `bh_gpuspoof_prefs` fallback. So it "worked" by applying the spoof globally at launch — the `:wine` defect existed there too, just masked by the global fallback. Removing that fallback for true per-game isolation (kills app-wide leak + DiRT3 deep-blackscreen) UNMASKED the latent defect. Not a regression; the old design never truly scoped per-game at launch.
+
+**Fix (pre5, `292fba6`):** `BhMenuGameId` now mirrors the captured id to SharedPreferences (`bh_menu_gameid`/`id`, synchronous `.commit()`) on every `captureGameId`, and `getCaptured()` falls back to that disk value (caching into the static) when the in-process static is empty. SharedPreferences cross `:wine` exactly like the per-game store. Extension-only, no patch/anchor change; lint-compiles clean vs android-34. Fixes GPU Spoof + Renderer + Vibration in one shared place (all three share this capture).
+
+**Lesson:** `WineActivity` = `:wine` process. ANY Java static set in the UI/menu process is invisible to launch-time code (`Lbg5;->a` / `applyGpuSpoof`). Cross the process boundary via disk (SharedPreferences/file), never a static.
+
+### Delivered
+`/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-pergame-pre5-Patched-alt-AnTuTu.apk` (116,095,398 B, md5 `034051d627d0a58905d3e5223eaa1ee8`).
+
+**Retest (GoW 49908):** set NVIDIA → launch → in-game reads NVIDIA not GameFusion; `bh_gpuspoof_dxvk.conf` mtime updates at the launch; new `shared_prefs/bh_menu_gameid.xml` has `<string name="id">49908</string>` (proves gameId crossed into `:wine`); `BhGpuSpoof: GPU spoof active 10de:2704` logged. **NOT merged** — hold until device-confirmed.

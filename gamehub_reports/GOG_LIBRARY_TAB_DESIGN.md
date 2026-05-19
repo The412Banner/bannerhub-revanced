@@ -405,3 +405,41 @@ GameHub 6.0.4 APK (obfuscated; ReVanced-patched)
 ### 17.8 Next action
 
 Execute **Phase 0 (P-A..P-D)** — four traces, no code. P-B is the priority (it decides whether WS5 is tractable and therefore whether the whole feature is viable beyond browse/download). M0 review after.
+
+---
+
+## 18. SOURCING DECISION (2026-05-19) — reuse the BannerHub 3.7.x GOG extension, NOT a fresh GameNative port. CORRECTS §15/§17.
+
+User asked: GameNative directly, or the BannerHub 3.7.4 stuff? Audited `/data/data/com.termux/files/home/bannerhub/extension/Gog*.java` (shipped in BannerHub v3.7.3, `a477165a8`). **3.7.x already did every hard GameNative→ReVanced adaptation.** [CONFIRMED]
+
+### 18.1 What 3.7.x already has (Java extension, ReVanced-adapted vs raw GameNative Kotlin)
+
+| Class | Confirmed behaviour |
+|---|---|
+| `GogLoginActivity.java` | Real GOG OAuth2 — WebView `auth.gog.com/auth`, intercepts `embed.gog.com/on_login_success` redirect. Full login. |
+| `GogGamesActivity.java` | "Displays the signed-in user's GOG library" — `GET user/data/games` → owned IDs; `gog_library_cache` SharedPrefs cache. Plain `extends Activity` + native Views (no Compose). **Full owned-library, standalone.** |
+| `GogGameDetailActivity` / `GogMainActivity` | Detail + hub screens, same standalone-Activity style |
+| `GogDownloadManager` / `GogInstallPath` / `GogTokenRefresh` / `GogCloudSaveManager` | Multi-CDN download, install paths, token refresh, cloud saves |
+| `GogGame.java` | **Plain POJO — no Room** (`@Entity`/`@Dao` absent). §17.3-D "drop Room" is ALREADY DONE. |
+| `GogLaunchHelper.java` | **The bridge — and a low-coupling design that sidesteps the WS5 fear:** install → `triggerLaunch(activity,exePath)` stashes `pending_gog_exe` in SharedPrefs → `LandscapeLauncherMainActivity.onResume()` → `checkPendingLaunch()` reflection-invokes GameHub's `g3(exePath)` → opens GameHub's **own EditImportedGameInfoDialog pre-filled**. It piggybacks GameHub's existing PC-exe import dialog rather than deep-integrating an undocumented game/container model. |
+
+### 18.2 Answer & scope correction
+
+**Use the BannerHub-3.7.x Java GOG extension as the base, not GameNative source.** GameNative remains the *upstream credit/origin*; 3.7.x is the already-translated, already-de-Roomed, already-standalone-Activity, already-shipped form. Re-porting from GameNative Kotlin would redo solved work.
+
+This **collapses §17's workstreams**:
+- WS1/WS2/WS3 (port module / OAuth activity / library screen): → **lift the 3.7.x `Gog*.java` extension largely verbatim** (pure OkHttp/JSON/WebView/Android-Views logic — base-agnostic). MED→LOW.
+- WS5 (bridge): → **re-anchor `GogLaunchHelper`'s two 5.3.5-specific reflection targets to their 6.0.4 equivalents** — (a) the launcher's onResume pickup point, (b) the `g3(exePath)`→imported-game-dialog opener. Strategy is proven (reuse GameHub's own import dialog); only the anchors change. HIGH→**MED**, with a working reference implementation instead of a from-scratch design.
+- WS4 (Profile-row entry): unchanged — still the §16 menu-row-class injection, re-anchored 5.3.5→6.0.4.
+
+### 18.3 Residual base-specific risk (the honest crux — what Phase 0 must still confirm)
+
+6.0.4 is the XiaoJi **KMP rewrite** — very different from 5.3.5. The Java extension classes lift cleanly; the *base-coupled* parts do NOT and must be re-derived:
+- **P-B (reframed):** does 6.0.4 have an equivalent of GameHub-5.3.5's `g3(exePath)` / `EditImportedGameInfoDialog` (the launcher-side "import this PC .exe" entry the bridge piggybacks)? 6.0.4 has a PC-import flow + `getLocalGameDetail` (earlier traces) so likely yes — but its method/anchor is the make-or-break for the bridge. Now a *find-the-6.0.4-equivalent* task, not a *design-a-bridge* task.
+- **P-A:** Profile-screen renderer anchor (unchanged).
+- **P-C:** how 6.0.4's import dialog assigns the Wine container/prefix to the imported GOG exe (was implicit in 5.3.5's `g3`).
+- **P-D:** does v6's extension build accept the 3.7.x extension's deps (3.7.x already builds it for the 5.3.5 base — strong positive signal; verify v6 build harness parity).
+
+### 18.4 Net
+
+Project is **materially smaller and lower-risk than §17 stated.** Not "port GameNative + design a novel bridge" — it's **"lift the proven BannerHub-3.7.x GOG Java extension and re-anchor ~3 base-coupled hooks (Profile row, launcher onResume, g3 import-dialog) from 5.3.5 → 6.0.4."** Phase 0 unchanged in spirit; P-B reframed from "design" to "locate 6.0.4's import-dialog equivalent." §17 milestones M1–M3 shrink to porting+re-anchoring; M4 (launch) remains the highest-iteration item but now has a working 5.3.5 reference.

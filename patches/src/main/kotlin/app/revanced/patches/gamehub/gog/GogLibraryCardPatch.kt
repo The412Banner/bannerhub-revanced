@@ -40,8 +40,6 @@ import com.android.tools.smali.dexlib2.iface.reference.TypeReference
 
 private const val EXT = "Lapp/revanced/extension/gamehub/gog/GogLibraryCard;"
 private const val MAIN_ACTIVITY = "Lcom/xiaoji/egggame/MainActivity;"
-private const val LAUNCH_TYPE =
-    "Lcom/xiaoji/egggame/launcher/model/LaunchType;"
 
 @Suppress("unused")
 val gogLibraryCardPatch = bytecodePatch(
@@ -72,34 +70,39 @@ val gogLibraryCardPatch = bytecodePatch(
             "invoke-static {p0}, $EXT->ensureSeeded(Landroid/content/Context;)V",
         )
 
-        // ── (2) launch intercept ─────────────────────────────────────────────
-        // Structural fingerprint for po7.G: a static method
-        // (<self>, String, Lci3;) -> Object whose body references the
-        // kept-name LaunchType class. (Lci3; = the Kotlin Continuation type
-        // on this base; p1 = the launch id String.)
-        val launchById = firstMethod {
+        // ── (2) launch intercept — REAL card-tap resolver wel.b ──────────────
+        // pre3 device test (§30): tapping the card hit GameHub's launch-
+        // strategy resolver `wel.b(Lwel;Lw4c;Lci3;)Object` and failed with the
+        // logged string "No strategy found: type=Unknown" — i.e. po7.G was the
+        // WRONG anchor; the card tap dies in wel.b before any per-type
+        // dispatch. Re-anchor on that STABLE (non-obfuscated) string literal:
+        // the suspend method whose body emits "No strategy found: type=".
+        // p1 = the obfuscated launch-context (`w4c`, holds a kept-name
+        // GameInfo). Inject at head → maybeOpenHubFromLaunchCtx(p1)
+        // reflectively pulls the GameInfo/id (obfuscation-proof); sentinel →
+        // GogMainActivity already started, complete the suspend fn with
+        // kotlin.Unit.INSTANCE so the strategy lookup / error never runs.
+        val launchResolver = firstMethod {
             returnType == "Ljava/lang/Object;" &&
                 parameterTypes.size == 3 &&
-                parameterTypes[1] == "Ljava/lang/String;" &&
                 parameterTypes[2] == "Lci3;" &&
                 (implementation?.instructions?.any { ins ->
-                    (ins.opcode == Opcode.SGET_OBJECT ||
-                        ins.opcode == Opcode.INVOKE_VIRTUAL ||
-                        ins.opcode == Opcode.INVOKE_STATIC) &&
+                    ins.opcode == Opcode.CONST_STRING &&
                         (ins as? ReferenceInstruction)?.reference?.toString()
-                            ?.contains(LAUNCH_TYPE) == true
+                            ?.contains("No strategy found: type=") == true
                 } ?: false)
         }
 
-        val orig = launchById.getInstruction(0)
-        // p1 = id String. v0 used as a fresh scratch for the boolean result +
-        // the Unit return; the original body re-initialises its own registers,
-        // so a single index-0 clobber of v0 before falling through is safe
-        // dalvik (same technique as OfflineComponentListPatch's gof.c head).
-        launchById.addInstructionsWithLabels(
+        val orig = launchResolver.getInstruction(0)
+        // p1 = launch-context. v0 = fresh scratch for the boolean + Unit
+        // return; original body re-inits its own regs, so an index-0 v0
+        // clobber before fall-through is safe dalvik (OfflineComponentList
+        // gof.c technique). Suspend completes with Unit.INSTANCE (the correct
+        // "returned Unit" value — not null).
+        launchResolver.addInstructionsWithLabels(
             0,
             """
-                invoke-static {p1}, $EXT->maybeOpenHubById(Ljava/lang/String;)Z
+                invoke-static {p1}, $EXT->maybeOpenHubFromLaunchCtx(Ljava/lang/Object;)Z
                 move-result v0
                 if-eqz v0, :bhOrig
                 sget-object v0, Lkotlin/Unit;->INSTANCE:Lkotlin/Unit;

@@ -44,6 +44,10 @@ public final class GogLibraryCard {
     private static final String CARD_NAME  = "GOG";
     private static final String FALLBACK_USER_ID = "99999"; // FakeUserAccount bypass id
     private static final int    FALLBACK_EXT_TYPE = 2;
+    // Card art: stable public GOG.com logo (Coil loads cover_image/logo as a
+    // remote URL). Swappable to a self-hosted bannerhub-api asset later.
+    private static final String CARD_ART =
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/8/80/GOG.com_logo.svg/512px-GOG.com_logo.svg.png";
 
     private GogLibraryCard() {}
 
@@ -62,13 +66,6 @@ public final class GogLibraryCard {
             db = SQLiteDatabase.openDatabase(
                     f.getAbsolutePath(), null, SQLiteDatabase.OPEN_READWRITE);
 
-            // Already seeded? (idempotent)
-            try (Cursor c = db.rawQuery(
-                    "SELECT 1 FROM t_game_library_base WHERE id=? LIMIT 1",
-                    new String[]{SENTINEL_ID})) {
-                if (c.moveToFirst()) return; // present — nothing to do
-            }
-
             // Self-derive extension_type + user_id from a real row.
             String userId = FALLBACK_USER_ID;
             int extType = FALLBACK_EXT_TYPE;
@@ -84,6 +81,14 @@ public final class GogLibraryCard {
 
             db.beginTransaction();
             try {
+                // Self-healing: drop any prior sentinel (and its launch
+                // method) and reinsert fresh, so art / schema / fixes from
+                // newer builds always apply without the user clearing data.
+                db.execSQL("DELETE FROM t_game_launch_method WHERE linked_game_id=?",
+                        new Object[]{SENTINEL_ID});
+                db.execSQL("DELETE FROM t_game_library_base WHERE id=?",
+                        new Object[]{SENTINEL_ID});
+
                 // 1) launch-method row (linked by game id).
                 db.execSQL(
                     "INSERT INTO t_game_launch_method " +
@@ -101,10 +106,12 @@ public final class GogLibraryCard {
                 db.execSQL(
                     "INSERT INTO t_game_library_base " +
                     "(id,user_id,server_game_id,extension_type,launch_method_id," +
-                    "game_name,game_source,source_type,`from`) " +
-                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    "game_name,game_source,source_type,`from`," +
+                    "cover_image,cover_ver_image,logo,icon_url,square_image) " +
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     new Object[]{SENTINEL_ID, userId, 0, extType, lmId,
-                                 CARD_NAME, 0, 0, 0});
+                                 CARD_NAME, 0, 0, 0,
+                                 CARD_ART, CARD_ART, CARD_ART, CARD_ART, CARD_ART});
 
                 db.setTransactionSuccessful();
                 Log.i(TAG, "GogLibraryCard: seeded sentinel (user_id=" + userId
@@ -160,6 +167,47 @@ public final class GogLibraryCard {
             if (app instanceof Context) ctx = (Context) app;
         } catch (Throwable ignored) {}
         return maybeOpenHub(ctx, id);
+    }
+
+    /**
+     * Intercept for the REAL card-tap launch resolver `wel.b(wel, w4c, ci3)`
+     * (anchored by the stable string "No strategy found: type="). The arg is
+     * the obfuscated launch-context `w4c`, which holds a kept-name
+     * `…model.game.GameInfo` field. We resolve the game id obfuscation-proof:
+     * try the object's own getId(), else scan its fields for a GameInfo (or
+     * String id) and read getId() off that. Sentinel → open GogMainActivity
+     * and tell the caller to abort (it then completes with Unit, no launch,
+     * no "No strategy found").
+     */
+    public static boolean maybeOpenHubFromLaunchCtx(Object launchCtx) {
+        try {
+            String id = deepExtractId(launchCtx);
+            if (!SENTINEL_ID.equals(id)) return false;
+            return maybeOpenHubById(SENTINEL_ID); // resolves Context via ActivityThread
+        } catch (Throwable t) {
+            Log.e(TAG, "GogLibraryCard.maybeOpenHubFromLaunchCtx failed (non-fatal)", t);
+            return false; // fail open — never break launching real games
+        }
+    }
+
+    private static String deepExtractId(Object o) {
+        if (o == null) return null;
+        String direct = extractId(o);
+        if (direct != null) return direct;
+        try {
+            for (java.lang.reflect.Field f : o.getClass().getDeclaredFields()) {
+                Class<?> t = f.getType();
+                String tn = t.getName();
+                if (tn.endsWith(".GameInfo") || tn.equals("java.lang.String")) {
+                    try {
+                        f.setAccessible(true);
+                        String id = extractId(f.get(o));
+                        if (id != null && !id.isEmpty()) return id;
+                    } catch (Throwable ignored) {}
+                }
+            }
+        } catch (Throwable ignored) {}
+        return null;
     }
 
     private static String extractId(Object o) {

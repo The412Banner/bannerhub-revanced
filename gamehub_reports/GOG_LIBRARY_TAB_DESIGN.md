@@ -641,3 +641,13 @@ Adopted §28 permanent-card over deep P-A. Traces resolved: `user_id`="99999" (F
 - `patches/.../gog/GogLibraryCardPatch.kt` — (1) **seed hook** at `com.xiaoji.egggame.MainActivity.onCreate(Bundle)` (exact non-obf anchor, P-B) → `ensureSeeded(p0)`; (2) **intercept** at po7 by-id launch dispatch (structural fingerprint: static `(<self>,String,Lci3;)→Object` body refs kept-name `LaunchType`) → `maybeOpenHubById(p1)`; on hit completes the suspend fn with `kotlin.Unit;->INSTANCE` (correct "completed Unit", not null) so no Wine launch / no exe-validation.
 
 **Verification boundary (honest, per §22):** seed hook = high-confidence (exact anchor, pure-Context, idempotent). Intercept = **iterate-prone** — obfuscated suspend method-pick + Unit-return are inspection-unverifiable; structural anchor + Unit.INSTANCE is the best first-cut. If intercept misses, the card still appears (seeder proves the bulk of WS4) and only tap-behaviour iterates — same shape as WS1's one-bug loop. The seed+intercept work is reusable toward Phase-2 WS5. Next: CI compile gate → artifact pre3 → device (card appears? tap → GOG hub?).
+
+---
+
+## 30. WS4 pre3 DEVICE TEST → fixes (2026-05-19): card appears (seed ✓), tap missed; pre4
+
+pre3 (`1.4.0-604-gog-pre3`) on Normal-GHL: **card appears = seeder CONFIRMED working** (the high-confidence half). Two issues, both expected-class:
+- **Blank card art** — seeded no image. Fix: seed `cover_image/cover_ver_image/logo/icon_url/square_image` = stable GOG.com logo URL; seeder now **delete-then-reinsert every app start** (self-healing — newer-build art/schema/fixes auto-apply without clearing data).
+- **Tap → "No strategy found: type=Unknown, methodId=1"** (screenshot). Root cause: the `po7.G` intercept anchor was WRONG — the card tap dies in the launch-**strategy resolver** `wel.b(Lwel;Lw4c;Lci3;)Object` *before* any per-type dispatch (start_type=0 → Unknown). Re-anchored hook (2) on the **stable non-obf string `"No strategy found: type="`** (uniquely finds `wel.b`); inject at head → `maybeOpenHubFromLaunchCtx(p1)` where p1=`w4c` (holds kept-name `GameInfo` field `c`). New reflective helper `maybeOpenHubFromLaunchCtx` pulls the id obfuscation-proof (own getId() / scan fields for a `…GameInfo` or String id), sentinel → GogMainActivity + suspend-complete `Unit.INSTANCE` so the resolver/error never runs.
+
+Seeder remains high-confidence; the re-anchored intercept is now on a *stable string* (not an obfuscated method guess) so materially more robust than pre3's. Next: compile gate → pre4 artifact → device (art shows? tap → GOG hub?).

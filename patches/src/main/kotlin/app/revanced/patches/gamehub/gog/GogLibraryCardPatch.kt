@@ -93,48 +93,98 @@ val gogLibraryCardPatch = bytecodePatch(
         // classes only) → base-bump resilient. We guard BOTH because which
         // branch the synthetic sentinel routes through is not
         // inspection-determinable (§31).
+        // pre5 SEVERE (§31): the F0/G0 fingerprints were factored through a
+        // local `bodyRefs` helper called from inside `firstMethod {}` — the
+        // patcher matched zero methods (`PatchException: Collection is empty`)
+        // and, because a `firstMethod` miss throws, the WHOLE patch silently
+        // failed to apply (no card at all — strictly worse than pre4's crash;
+        // the CI silent-ship footgun). pre6: (a) inline the scans with the
+        // exact opcode-guarded `implementation?.instructions?.any { } == true`
+        // idiom proven by hook (1)/pre3 (no local helper in the predicate);
+        // (b) `parameterTypes == listOf(gameInfoT)` (the proven seed-hook
+        // form); (c) wrap each anchor in try/catch so a fingerprint miss
+        // degrades to "card still appears, tap-behaviour iterates" instead of
+        // nuking the entire patch — the design-doc §22 philosophy, now
+        // structurally enforced.
         val gameInfoT = "Lcom/xiaoji/egggame/game/di/model/game/GameInfo;"
         val launchTypeT = "Lcom/xiaoji/egggame/launcher/model/LaunchType;"
 
-        fun bodyRefs(insns: Iterable<*>?, needle: String): Boolean =
-            insns?.any { ins ->
-                (ins as? ReferenceInstruction)?.reference?.toString()
-                    ?.contains(needle) == true
-            } ?: false
+        // Verifier-safe head guard. Direct API use (firstMethod →
+        // getInstruction/addInstructionsWithLabels) is byte-for-byte the pre4
+        // sequence that provably resolved — no local helper, no reflection,
+        // type inferred. p1 = the GameInfo (p0 = this); v0 is freshly written
+        // then either returned-from or re-init by the original head on the
+        // non-sentinel fall-through (proven OfflineComponentList gof.c /
+        // seed-hook technique). Each anchor is self-contained in try/catch so
+        // a fingerprint miss degrades to "card still appears, tap iterates"
+        // (§22) instead of failing the whole patch (the pre5 footgun).
+        val guardSnippet =
+            """
+                invoke-static {p1}, $EXT->maybeOpenHubFromLaunchCtx(Ljava/lang/Object;)Z
+                move-result v0
+                if-eqz v0, :bhOrig
+                return-void
+            """.trimIndent()
 
         // po7.F0 — full launch path (unique: GameInfo.getHasAchievements).
-        val launchFull = firstMethod {
-            returnType == "V" &&
-                parameterTypes.size == 1 &&
-                parameterTypes[0] == gameInfoT &&
-                bodyRefs(implementation?.instructions, launchTypeT) &&
-                bodyRefs(implementation?.instructions, "$gameInfoT->getHasAchievements")
-        }
-        // po7.G0 — lean variant (refs getSteamAppId, NOT getHasAchievements).
-        val launchLean = firstMethod {
-            returnType == "V" &&
-                parameterTypes.size == 1 &&
-                parameterTypes[0] == gameInfoT &&
-                bodyRefs(implementation?.instructions, launchTypeT) &&
-                bodyRefs(implementation?.instructions, "$gameInfoT->getSteamAppId") &&
-                !bodyRefs(implementation?.instructions, "$gameInfoT->getHasAchievements")
-        }
-
-        // p1 = the GameInfo (only declared param; p0 = this). v0 is freshly
-        // written then either returned-from or re-init by the original head
-        // (move-object/from16 v0, p0) on the non-sentinel fall-through.
-        for (launchEntry in listOf(launchFull, launchLean)) {
-            val origHead = launchEntry.getInstruction(0)
-            launchEntry.addInstructionsWithLabels(
+        try {
+            val m = firstMethod {
+                returnType == "V" &&
+                    parameterTypes == listOf(gameInfoT) &&
+                    implementation?.instructions?.any { ins ->
+                        (ins.opcode == Opcode.SGET_OBJECT ||
+                            ins.opcode == Opcode.INVOKE_VIRTUAL) &&
+                            (ins as? ReferenceInstruction)?.reference?.toString()
+                                ?.contains(launchTypeT) == true
+                    } == true &&
+                    implementation?.instructions?.any { ins ->
+                        (ins.opcode == Opcode.INVOKE_VIRTUAL ||
+                            ins.opcode == Opcode.INVOKE_VIRTUAL_RANGE) &&
+                            (ins as? ReferenceInstruction)?.reference?.toString()
+                                ?.contains("$gameInfoT->getHasAchievements") == true
+                    } == true
+            }
+            val origHead = m.getInstruction(0)
+            m.addInstructionsWithLabels(
                 0,
-                """
-                    invoke-static {p1}, $EXT->maybeOpenHubFromLaunchCtx(Ljava/lang/Object;)Z
-                    move-result v0
-                    if-eqz v0, :bhOrig
-                    return-void
-                """.trimIndent(),
+                guardSnippet,
                 ExternalLabel("bhOrig", origHead),
             )
+        } catch (_: Exception) {
+            // Fingerprint miss: seed hook (1) already ran → card still
+            // appears; only tap-behaviour iterates (§22).
+        }
+
+        // po7.G0 — lean variant (refs getSteamAppId, NOT getHasAchievements).
+        try {
+            val m = firstMethod {
+                returnType == "V" &&
+                    parameterTypes == listOf(gameInfoT) &&
+                    implementation?.instructions?.any { ins ->
+                        (ins.opcode == Opcode.SGET_OBJECT ||
+                            ins.opcode == Opcode.INVOKE_VIRTUAL) &&
+                            (ins as? ReferenceInstruction)?.reference?.toString()
+                                ?.contains(launchTypeT) == true
+                    } == true &&
+                    implementation?.instructions?.any { ins ->
+                        (ins.opcode == Opcode.INVOKE_VIRTUAL ||
+                            ins.opcode == Opcode.INVOKE_VIRTUAL_RANGE) &&
+                            (ins as? ReferenceInstruction)?.reference?.toString()
+                                ?.contains("$gameInfoT->getSteamAppId") == true
+                    } == true &&
+                    implementation?.instructions?.none { ins ->
+                        (ins as? ReferenceInstruction)?.reference?.toString()
+                            ?.contains("$gameInfoT->getHasAchievements") == true
+                    } == true
+            }
+            val origHead = m.getInstruction(0)
+            m.addInstructionsWithLabels(
+                0,
+                guardSnippet,
+                ExternalLabel("bhOrig", origHead),
+            )
+        } catch (_: Exception) {
+            // Fingerprint miss: seed hook (1) already ran → card still appears.
         }
     }
 }

@@ -714,3 +714,28 @@ the **existing** `maybeOpenHubFromLaunchCtx` already extracts the id from a
 GameInfo via `deepExtractId`→`extractId`→`getId()`, so **no extension change**.
 Seeder unchanged (still CONFIRMED working). Next: compile gate → pre5 artifact
 → device (tap → GOG hub, no crash?).
+
+**pre5 CI outcome → pre6 (2026-05-19).** pre5 (run 26118758523) built green
+but `gh run --log` showed `SEVERE: "GOG library card (permanent)" failed:
+app.revanced.patcher.patch.PatchException: Collection is empty.` on **all 9
+variants** — the F0/G0 `firstMethod` matched zero methods, and because a
+`firstMethod` miss throws, the **entire patch silently failed to apply** (no
+card at all — strictly worse than pre4's crash; the playbook's documented
+CI-doesn't-fail-on-per-patch-SEVERE silent-ship footgun). Smali re-verified:
+F0 (po7:21832) and G0 (po7:23114) DO carry the exact refs (getSteamAppId /
+`launcher/model/LaunchType;` / F0-only getHasAchievements), and other shipped
+patches prove `parameterTypes` excludes the implicit `this` for instance
+methods — so the fingerprint *content* was right. Suspected cause: the pre5
+predicate routed its instruction scans through a **local `bodyRefs` helper
+called from inside the `firstMethod {}` lambda**, unlike every working anchor
+(hook 1 / pre3 / pre4) which inlines `implementation?.instructions?.any { } ==
+true` with explicit opcode guards. **pre6 fixes:** (a) inline the scans with
+the exact proven opcode-guarded idiom, no helper in the predicate; (b)
+`parameterTypes == listOf(gameInfoT)` (the proven seed-hook form, not
+`size==1 && [0]==`); (c) direct `firstMethod → getInstruction(0) →
+addInstructionsWithLabels` (byte-for-byte the pre4 sequence that resolved); (d)
+**each anchor wrapped in its own try/catch** so any future fingerprint miss
+degrades to "card still appears, tap-behaviour iterates" (§22) instead of
+nuking the whole patch — the silent-ship footgun is now structurally
+neutralised. Next: compile gate → pre6 artifact → device (card appears? tap →
+GOG hub, no crash?).

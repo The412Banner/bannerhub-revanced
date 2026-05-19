@@ -2689,3 +2689,8 @@ Verified chain: `shared_prefs/bh_menu_gameid.xml` = `<string name="id">49908</st
 `/storage/emulated/0/Download/BannerHub-V6-1.3.0-604-pergame-pre6-Patched-alt-AnTuTu.apk` (116,054,438 B, md5 `06e4ca64e657e0a30ae96e6cd78e2c11`).
 
 **Retest:** GoW set Legacy → launch → leave running → `/proc/<:wine pid>/maps` must show `libxserver_legacy.so`+`libwinemu_legacy.so` (NOT stock); a game NOT set Legacy stays stock (no leak). **Vibration still needs its own device check** (per-game rumble; sniff-at-rumble-time probably OK but verify, don't assume). GPU Spoof pre5 already device-confirmed. **NOT merged** — hold until renderer + vibration device-confirmed.
+
+### pre6 RENDERER ✅ DEVICE-CONFIRMED (2026-05-18 23:07, GoW 49908 Legacy, running)
+Live `:wine` process (pid 17125) `/proc/17125/maps`: `libxserver_legacy.so` + `libwinemu_legacy.so` loaded, **NO stock `libxserver.so`/`libwinemu.so` mapped** (pure 6.0.2 legacy pair); wineserver + full wine guest tree alive → sustained, not crashing. pre6 `launchGameId()` (getCaptured disk-bridge → sniff) correctly resolves gameId 49908 in `:wine` at `XServer.<clinit>`; `isLegacyForGame(49908)`→true. The `:wine` boundary defect is fixed for Renderer exactly as for GPU Spoof.
+
+**Confirmed status:** GPU Spoof (pre5) ✅ + Renderer (pre6) ✅ device-confirmed. **Vibration** still needs its own device check (per-game rumble) — sniff-at-rumble-time is expected OK but unverified; do not assume. **NOT merged** — hold until Vibration device-confirmed, then: `fix/per-game-settings-isolation` → `gamehub-604-build` `--no-ff` (The412Banner, no Claude trailer) → refresh `feature/lite-variant-tier1` → README/master-map.

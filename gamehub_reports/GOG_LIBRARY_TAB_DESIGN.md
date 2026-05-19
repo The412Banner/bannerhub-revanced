@@ -300,3 +300,33 @@ Not download-by-id — a complete account → owned-library → download → clo
 Bundle the GOG backend module + ship `GOGOAuthActivity` and a **standalone GOG library Activity** (reuse GameNative's own `GOGAppScreen` Compose *as a self-contained screen*, not injected into GameHub's UI), reached via a **menu-row injection** (BannerHub-proven: vibration/gpuspoof/renderer menu-row playbooks) instead of a tab. Then bridge installed GOG titles into GameHub's library so the existing `LaunchType.GogGameByPcEmulator` launches them — **the GameNative `GOGGame`/Room ↔ GameHub `GameInfo`/install-model bridge is the genuinely hard, novel piece** (no precedent; needs its own scoping).
 
 **Verdict:** login+library *exists and the backend ports cleanly*; the **literal in-strip GOG tab is the costly constraint** (dual-enum + UI rebuild). Standalone-screen-via-menu-row avoids both rejected/expensive blockers and is the realistic shape — scope ≈ a BannerHub-API/Epic-EOS-class multi-iteration project, dominated by the game-model bridge, not the GOG code. **No code; this is the decision point: hold the literal-tab requirement (expensive) vs accept a standalone GOG screen entry point (tractable).**
+
+---
+
+## 16. Placement (2026-05-19) — entry point ≠ library screen; the designed-for home exists
+
+User: the per-game menu (vibration/gpuspoof/renderer rows) is game-scoped and wrong for an account-level GOG login. Correct.
+
+### 16.1 Decisive finding [CONFIRMED]
+
+GameHub authored a **symmetric** set: `features_home_profile_{steam,epic,gog}_{bind,title,desc}` — Steam and Epic account-binding rows live on the **Profile (account) screen** (`HomeProfile`/`ProfileScreen` Compose route), and a **GOG row was scaffolded with the identical string pattern but never wired** (orphaned, same as `platform_tab_gog`: present only in the large generated resource-accessor classes `bkl/xjl/vjl/wjl`, no renderer consumes it). Secondary: GameHub also has a Library-screen account-bind button surface (`features_home_library_epic_bind_button`, rendered in `sgl.smali`).
+
+### 16.2 Recommended placement
+
+**Entry point = a "GOG" account row on the Profile screen, next to the existing Bind-Steam / Bind-Epic rows.** Why it's the right home:
+- Semantically correct: account-level/global (the opposite of the per-game menu).
+- *Designed-for*: GameHub's own devs put a GOG slot there (the `gog_{bind,title,desc}` strings already exist, ready to reference — no new resources).
+- **Risk class = menu-row injection** — the exact pattern BannerHub has shipped 3× (vibration/gpuspoof/renderer menu-row playbooks). It does **NOT** require the §12.9 dual-enum tab surgery. This is the key payoff of abandoning the literal tab.
+
+Secondary option: a "Bind GOG" button on the Library screen mirroring Epic's (`sgl`). More visible; same injection class. Either works; Profile is the cleaner primary.
+
+### 16.3 Architecture: separate the two concerns
+
+- **Entry point** → injected GOG row on the Profile screen (low-risk, proven pattern, mirrors the Steam/Epic rows as template).
+- Tap → **`GOGOAuthActivity`** (bundled from GameNative, added via manifest patch — BannerHub already manifest-patches).
+- Post-login → **standalone GOG library Activity** reusing GameNative's `GOGAppScreen` as a self-contained screen (no rebuild in GameHub's obfuscated Compose).
+- Installed GOG title → the GameNative↔GameHub `GOGGame`/`GameInfo` bridge → existing `LaunchType.GogGameByPcEmulator` launches it (still the hard novel piece, unchanged from §15.3).
+
+### 16.4 Honest caveat
+
+Like `platform_tab_gog`, the profile `gog_*` strings are orphaned in resource accessors only; the precise Profile-renderer injection anchor needs a Phase-0-class trace (find the composable that builds the Steam/Epic rows; mirror a GOG row) — same method as the §12 `y6d` trace, but the *class of work is the proven menu-row injection*, materially lower risk than the rejected tab. Net: placement question resolved — **Profile account screen, not a tab, not the per-game menu**. Scope unchanged from §15 (dominated by the game-model bridge); the entry-point risk drops from "dual-enum surgery" to "menu-row injection."

@@ -297,10 +297,12 @@ jobs:
 
             ### What's new in ${{ needs.build.outputs.version }}
 
-            On top of `v1.2.0-604` (same keystore — installs in place):
+            On top of `v1.3.0-604` (same keystore — installs in place):
 
-            - **🎮 Preload-free vibration — fixes the x86_64 / Box64 launch crash.** PC-accurate XInput rumble no longer ships `libevshim.so` or touches `LD_PRELOAD`; SDL2's ~1 s auto-stop is now defeated by an on-disk `winebus.so` patch instead. This resolves the `c000007b` crash that blocked x86_64 / Box64 game launches on older builds. Rumble behaviour is unchanged (per-game via **PC Vibration Settings**). Device-confirmed.
-            - **🪶 Lite builds for every variant.** Each Lite APK is ~34.5 MB smaller (≈114.5 → ≈78.3 MB) — it strips a dead duplicate font, the Aliyun carrier-login lib, the Haima cloud-gaming stack, and the bundled AVIF/HEIC codecs. Removed: cloud gaming (non-functional under the catalog redirect anyway) and the bundled AVIF/HEIC decoder (Android still renders these via the platform decoder; JPEG/PNG/WebP unaffected). Otherwise byte-identical to the full build. Strip-by-strip breakdown in [`bannerhub-v6-lite.md`](https://github.com/${{ github.repository }}/blob/gamehub-604-build/bannerhub-v6-lite.md).
+            - **🎛️ Per-game settings, properly isolated.** GPU Spoof / Legacy renderer / PC Vibration each save to BannerHub's own per-game store with explicit **Save / Cancel** buttons — no more silent reset when GameHub rewrites its own settings file, and a choice for one game never leaks into another or app-wide. Settings now correctly cross the `:wine` process boundary so launch-time scoping actually works.
+            - **🪪 GPU Spoof (per game).** A new **GPU Spoof** menu row + dialog reports a chosen GPU identity (preset NVIDIA/AMD/Intel list spanning legacy → modern, or a fully custom vendor/device/name) to DXVK via a per-game `dxvk.conf`. Fixes titles that refuse to start on an "unsupported" adapter (e.g. CryEngine — Crysis 2). Off by default; zero effect when Off.
+            - **🖼️ Legacy renderer toggle (per game).** Per-game opt-in to the proven 6.0.2 GLES2-era `libxserver.so`/`libwinemu.so` pair for games that regressed under 6.0.4's Vulkan X-server rewrite. Default **New** = stock 6.0.4, zero patch effect.
+            - **🎮 Rumble no longer cuts out after ~2 s.** The winebus duration patch is now actually applied at launch (the v1.3.0 hook landed as dead code on this base); sustained rumble holds indefinitely. Device-confirmed via GameConTest.exe.
 
             ### Variants
 
@@ -318,7 +320,7 @@ jobs:
             | Genshin-Lite | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Genshin-Lite.apk` | `com.miHoYo.GenshinImpact` | BannerHub v6 Genshin Lite |
             | Original-Lite | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Original-Lite.apk` | `com.xiaoji.egggame` | BannerHub v6 Lite |
 
-            Filenames follow `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-{variant}-Lite.apk`. The version string is `BannerHub v6` (product) + `1.3.0` (our semver) + `-604` (the GameHub base, `6.0.4`).
+            Filenames follow `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-{variant}-Lite.apk`. The version string is `BannerHub v6` (product) + our semver + `-604` (the GameHub base, `6.0.4`) — e.g. `${{ needs.build.outputs.version }}`.
 
             ### Install notes
 

@@ -1,6 +1,6 @@
 # GOG Library Tab — Patch Design Doc
 
-**Status:** SCOPING (no code). Branch `feature/gog-explore-tab` off `gamehub-604-build` @ `e39ce21`.
+**Status:** PHASE 0 COMPLETE (no code). Verdict: **Option A viable** (GOG data identity exists), refined scope. See §12 — it supersedes the speculative §4/§6. Branch `feature/gog-explore-tab` off `gamehub-604-build` @ `e39ce21`.
 **Base:** GameHub 6.0.4, R8 map id `6a5cde6143fc8cf76f6f3a447d0fececd4794d83066e6ead7a9537e6527b057b`.
 **Author:** The412Banner. **Date:** 2026-05-19.
 
@@ -103,4 +103,63 @@ Every anchor here is R8-mangled (`q21`, `m21`, `y22`, `he7`, `Lx22`/`Lz22`) and 
 
 ### Next action
 
-Phase 0 spike: trace P1 (`m21.d` materialiser) and P3 (GOG-capable game query). That single trace decides Option **A** vs **C** and unblocks everything else. No code until Phase 0 closes.
+~~Phase 0 spike~~ — **DONE 2026-05-19, see §12.**
+
+---
+
+## 12. Phase 0 spike results (2026-05-19) — SUPERSEDES §4 and §6
+
+**Verdict: Option A viable.** GOG data identity is first-class in the model; the only missing piece is a GOG **tab content screen**. Not Option C. All anchors below **[CONFIRMED]** by direct 6.0.4 smali read.
+
+### 12.1 Corrected pipeline (the speculative §4 "P1 = m21.d transform" was WRONG)
+
+`m21.d` is **not** the tab list — it is the `steam_url_replace` list. The real pipeline:
+
+1. **`/base/getBaseInfo` JSON** → deserialized to `BaseInfoDto` = **`o21`** (`smali_classes4/com/xiaoji/egggame/core/network/model/baseinfo/dto/BaseInfoDto$$serializer.smali`). JSON keys, in descriptor order: `GameHubRetroGamesHidden`(o21.a Bool), `GameHubSteamGamesHidden`(o21.b), `GameHubEpicGamesHidden`(o21.c), `steam_url_replace`(o21.d = `List<jal>`, `jal`=`SteamUrlReplaceItemDto`).
+2. **`u21:1508`** maps `o21` → **`m21`** = `(a=retroHidden, b=steamHidden, c=epicHidden, d=List<hal> steam-url-replace)`. `m21.d` is steam-url-replace, NOT tabs.
+3. **`r21.a(m21)`** (`smali_classes4/r21.smali`, full 102 lines read) = **persister**: writes `m21.a/b/c` to MMKV `base_info_{retro,steam,epic}_games_hidden` + sets `base_info_tab_hidden_cache_ready=1`. Write-only `Lp2k;->c(String,Z)V`.
+4. **`q21:201-225`** reads those MMKV booleans back → rebuilds `m21(0x8, retro, steam, epic)` for the UI layer (cache-ready gated).
+5. **`y6d`** (`smali_classes5/y6d.smali`) = **the tab-strip builder** (the real P1/P2).
+
+### 12.2 The tab-strip builder — exact injection point [CONFIRMED]
+
+`y6d` builds an `x9d` list-builder, conditionally adding one tab descriptor per family:
+
+```
+PC    : added (unconditional, before the gated block)
+if (!m21.b) x9d.add(new tuc("steam", (ell) pjl.L.getValue(), s6d.b /*STEAM_GAMES*/))
+if (!m21.c) x9d.add(new tuc("epic",  (ell) pjl.<slot>.getValue(), s6d.c /*EPIC_GAMES*/))
+if (!m21.a) x9d.add(new tuc(retro..., ..., s6d.d /*RETRO_GAMES*/))
+```
+
+- **Tab descriptor type:** `Ltuc;-><init>(Ljava/lang/String; key, Lell; title, Ls6d; screen)V`.
+- **Title source:** `ell` = resolved Compose string, pulled from a global state slot `Lpjl;->{L,…}:Lxrl;` via `.getValue()`.
+- **Screen selector:** `Ls6d;` = an **enum with exactly 4 constants** — `a=PC_GAMES`, `b=STEAM_GAMES`, `c=EPIC_GAMES`, `d=RETRO_GAMES` (`smali*/s6d.smali` `<clinit>`). **No `GOG_GAMES` constant.** ← *the gap.*
+
+### 12.3 GOG data identity — PRESENT [CONFIRMED]
+
+`GameInfo.smali`: `getGogAppId()` (`:9758`) sits right beside `getSteamAppId()` (`:10349`) / `getEpicAppId()` (`:9488`), plus `getSourceType()I` (`:10327`), `getSourceSlug()`, `getSourceId()`, `getPlatforms()`. The game model can distinguish GOG titles → a GOG grid is feedable. This is why the verdict is **A, not C**.
+
+### 12.4 Resolved open questions
+
+- **OQ#1 (P1 site):** RESOLVED → `y6d` `tuc`-add chain. Inject one more `x9d.add(new tuc("gog", <ell>, <screen>))`, ungated or gated on a new flag.
+- **OQ#2 (tab type):** RESOLVED → `tuc(String, ell, s6d)`.
+- **OQ#3 (data feed exists?):** RESOLVED → yes, `GameInfo.getGogAppId()`/`getSourceType()`.
+- **OQ#4 / Option B:** DEAD, re-confirmed — `r21`/`q21` only ever *hide* 3 fixed families via MMKV; the tab set + screens are the hardcoded `s6d` 4-enum. No API path adds a tab.
+
+### 12.5 The one remaining (bounded) question → Phase 1
+
+**Is the per-tab game grid query parameterized by `GameInfo` source, or hardwired per `s6d` value?**
+
+- If **parameterized**: GOG tab = inject `tuc("gog", <ell from `platform_tab_gog`>, s6d.a /*reuse PC_GAMES screen*/)` with a GOG source filter (`getGogAppId()!=null` / `getSourceType()==<gog>`). **Small, no enum surgery.** ← expected, given `getSourceType()` exists.
+- If **hardwired per `s6d`**: must add an `s6d` GOG constant (obfuscated Kotlin enum extension — new constant + `$VALUES` + ordinal/name; nasty) or synthesize a GOG grid screen. **Large.**
+
+Resolve by tracing the `getSourceType`/`getGogAppId` callers (`ajf, dp7, bm6, bh4, ckf, gl7, kxf, po7, wl7`) and how `s6d.{a,b,c,d}` selects its grid composable. **Do NOT extend the `s6d` enum** unless 12.5 proves the screen is unparameterizable — prefer screen-reuse + source filter.
+
+### 12.6 Refined scope
+
+- **`GogLibraryTabPatch`** (bytecode): inject one `tuc` into `y6d`, key `"gog"`, title `ell` built from the present `features_home_profile_platform_tab_gog` string, screen = `s6d.a` (PC_GAMES) **+** a source filter so the grid shows GOG titles. Gate on a new BannerHub `base/getBaseInfo` flag (default off) read alongside the 3 existing ones (extend `q21` read + `r21` persist; mirrors the proven pattern) — gives an API kill-switch without touching the hide-3 semantics.
+- Reuses: `GogGameByPcEmulator` launch (works), GOG icons, `platform_tab_gog` string, `getGogAppId` filter. **Zero new resources, zero enum surgery (pending 12.5 confirmation).**
+- Risk class: single-`tuc`-injection into one Compose builder + a list-filter predicate — **materially smaller than the menu-injection playbook** (no Unsafe, no Proxy, no resolver short-circuit). R8 anchors (`y6d`, `tuc`, `s6d`, `q21`, `r21`) need a letter-map entry + are fingerprint-migration candidates (structural roots: the `base_info_*_games_hidden` literal triple, the `s6d` 4-constant `PC/STEAM/EPIC/RETRO_GAMES` names, `GameInfo.getGogAppId`).
+
+**Phase 1 entry criterion:** answer 12.5 (one trace pass). Then build behind the default-off API flag.

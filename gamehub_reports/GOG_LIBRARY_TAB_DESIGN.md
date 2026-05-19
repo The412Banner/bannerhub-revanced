@@ -1,6 +1,6 @@
 # GOG Library Tab — Patch Design Doc
 
-**Status:** ⚑ **PHASE 1 COMPLETE; WS4 = per-game "GOG" menu row in all 3 menus (mode-independent, opens GogMainActivity); seeded card RETIRED; GOG screens auto-rotate (fullSensor) — CURRENT = §34.** GOG login + owned-library + download/install device-confirmed (pre2). WS4: permanent seeded GOG card → tap → "Launch Game" → GOG hub device-confirmed on Normal-GHL (`gamehub.lite`, pre8); pre9 = orientation polish only (landscape). Intercept = yv3.invoke side-effect + reflective sentinel walk + main-thread gate; real launches byte-for-byte unaffected. Iteration trail: pre3 wrong anchor → pre4 suspend VerifyError (§31) → pre5 silent no-apply → pre6 idiom fix → pre7 yv3 (§32) → pre8 thread-gate (§32a) → pre9 landscape (§32b). Phase 2 still deferred: WS5 launch bridge (§19) / production Profile-row entry (WS4-P-A) / P-C. Branch `feature/gog-explore-tab`.
+**Status:** ⚑ **PHASE 1 + WS4 COMPLETE; WS5 BUILT (pre14) awaiting device test — CURRENT = §36.** GOG login + owned-library + download/install device-confirmed (pre2). WS4 menu row + retired card + `behind` rotation device-confirmed (pre13). **WS5 (this session, §35–§36):** Approach A killed by 6.0.4 bytecode recon (no `B3` equivalent; import flow is pure Compose-internal — confirmed via live capture of the import button); Approach B (programmatic DB insert) built — `GogLaunchHelper.triggerLaunch` now opens `db_game_library.db` directly via `SQLiteDatabase.openDatabase`, self-derives `extension_type`/`user_id` from existing rows (proven retired-seeder pattern), inserts 2 rows (`t_game_launch_method` with `start_type=1409=LaunchType.GogGameByPcEmulator.id`, `t_game_library_base` with FK), then fires `app_nav_target=local_game_launch` intent to MainActivity which already handles the launch via the existing Wine pipeline. Zero third-party deps; pure `android.database.sqlite` + `org.json`. JSON shape byte-verified against your live God of War row. Branch `feature/gog-explore-tab`.
 **Base:** GameHub 6.0.4, R8 map id `6a5cde6143fc8cf76f6f3a447d0fececd4794d83066e6ead7a9537e6527b057b`.
 **Author:** The412Banner. **Date:** 2026-05-19.
 
@@ -994,3 +994,190 @@ if the mode changes while the GOG hub is open the in-place re-layout
 still works smoothly. Files: `GogManifestPatch.kt`. Next: compile gate →
 grep SEVERE → pre13 → device (open GOG hub in handheld = landscape; open
 in explore = portrait; switching modes between opens just works).
+
+---
+
+## 35. WS5 A-vs-B recon — Approach A killed, Approach B greenlit (2026-05-19, post-pre13 device-pass)
+
+Per user direction after pre13 confirmed working: investigate both candidate WS5 bridge mechanisms against 6.0.4 bytecode before committing. Results below; all decompile reads under `/data/data/com.termux/files/home/gamehub_604_decompile/smali*` against R8 map id `6a5cde6143fc8cf76f6f3a447d0fececd4794d83066e6ead7a9537e6527b057b`.
+
+### 35.1 Approach A — mirror 5.3.5 (launcher onResume + reflection into import-dialog opener)
+
+| Half | 6.0.4 finding | Viable? |
+|---|---|---|
+| Launcher onResume hook | `com.xiaoji.egggame.MainActivity.onResume()` is non-obf, 8-instruction body (`MainActivity.smali:1376–1415`), sole LAUNCHER activity (manifest). Trivial smali inject of `GogLaunchHelper.checkPendingLaunch(this)` after the `invoke-super`. | **YES — LOW risk** |
+| `B3(exePath)` equivalent | **None exists.** PC-exe import is a Kotlin ViewModel `Lx3g;` whose constructor `<init>(Ljava/lang/String;)V` takes the exe path. **Only caller of that constructor is `Lvcd;` (Compose VM factory)** at `vcd.smali:826–830`, inside a `pswitch` dispatch driven by a Compose nav-graph state. There is no Activity method, no public entry, **and no Intent extra** carrying an exe path (codebase-wide grep for `putExtra("exePath"` / `"local_game_path"` / `"game_exe"` returns zero matches — only string-literal hits in `Config`/`kv0`/`mu7`/etc. which are *log/debug strings*, not Intent keys). | **NO — reachable only by faking Compose nav state** |
+
+The 5.3.5 trick worked because `LandscapeLauncherMainActivity` *itself* exposed `B3(String)` and the launcher hook could just `getMethod("B3", String.class).invoke(activity, exe)`. The KMP rewrite moved that surface inside a Compose VM behind a factory pswitch — there is no longer an Activity-callable, exe-path-accepting entry to reflect into. Adapting Approach A to 6.0.4 is **not "find the renamed B3"** — it is **"synthesise a Compose nav-graph navigation event with a route arg from a plain Activity onResume hook"**, which is a substantial subproject of unknown scope and high R8 fragility (vcd's pswitch ordinals + the surrounding factory + Compose nav controller acquisition).
+
+**Verdict: A is dead on 6.0.4.** What the §19 trace called "the import-trigger half" turns out to be architecturally unbridgeable from the launcher hook side. Confirmed by direct bytecode read this session; not just inferred from §19.
+
+### 35.2 Approach B — programmatic DB insert into the Room library
+
+Schema and accessors confirmed end-to-end byte-level. **Everything in the data path is non-obfuscated.**
+
+**Database** (`x70.smali:5438–5532` Room DDL):
+
+```
+t_game_library_base (game row):
+  _id INTEGER PK AUTOINCREMENT,
+  id TEXT NOT NULL,                 -- our game ID (we generate, e.g. "gog_<gogId>")
+  user_id TEXT NOT NULL,            -- current user
+  server_game_id INTEGER NOT NULL,  -- 0 for non-server
+  steam_app_id TEXT DEFAULT '',
+  extension_type INTEGER NOT NULL,  -- (open Q: which int means GOG / PcEmulator-Gog — see 35.4)
+  extension_data TEXT DEFAULT '',
+  launch_method_id INTEGER NOT NULL,-- FK → t_game_launch_method.id
+  game_name TEXT, cover_image TEXT, cover_ver_image TEXT,
+  logo TEXT, icon_url TEXT, description TEXT,
+  game_source INTEGER DEFAULT 0,
+  create_time INTEGER, modify_time INTEGER, last_launch_time INTEGER,
+  back_image, age_rating, ai_desc, company, developer, publisher, release_date,
+  release_date_timestamp INTEGER DEFAULT -1,
+  game_category, game_tag, game_lang, screenshot, video_url, game_video_list,
+  square_image,
+  size INTEGER DEFAULT -2,
+  remark, other_desc,
+  from INTEGER DEFAULT 0, source_type INTEGER DEFAULT 0, source_id TEXT DEFAULT '',
+  epic_app_name TEXT, platforms TEXT, game_startup_params TEXT
+  (UNIQUE index on (id, user_id))
+
+t_game_launch_method (how-to-launch row):
+  id INTEGER PK AUTOINCREMENT,
+  linked_game_id TEXT NOT NULL,     -- = t_game_library_base.id
+  start_type INTEGER NOT NULL,      -- LaunchType ordinal: GogGameByPcEmulator = 0xb (11)
+  start_name, start_icon, start_e_icon, start_s_icon, new_icon, new_c_icon,
+  is_auto_game INTEGER DEFAULT 0,
+  last_use_time INTEGER,
+  extension_data TEXT DEFAULT ''    -- (open Q: JSON shape for exe-path + container — see 35.4)
+```
+
+**Non-obfuscated access stack** (all classes/methods stable across base bumps):
+
+| Layer | Symbol | Notes |
+|---|---|---|
+| LaunchType enum | `Lcom/xiaoji/egggame/launcher/model/LaunchType;->GogGameByPcEmulator:Lcom/xiaoji/egggame/launcher/model/LaunchType;` | `LaunchType.smali:455–472`. Ordinal = `0xb` (11), id `0x581`. Stable. |
+| DB class | `Lcom/xiaoji/egggame/game/database/GameLibraryDatabase;` | abstract Room class |
+| DB impl | `Lcom/xiaoji/egggame/game/database/GameLibraryDatabase_Impl;` | Room codegen; lazy DAO getters |
+| DAO 1 (interface) | `Lcom/xiaoji/egggame/game/database/dao/GameLibraryBaseDao;->insert(Lcom/xiaoji/egggame/game/database/entity/GameLibraryBaseTable;Lbi3;)Ljava/lang/Object;` | **suspend** (`Lbi3;` = `kotlin.coroutines.Continuation`) |
+| DAO 2 (interface) | `Lcom/xiaoji/egggame/game/database/dao/GameLaunchMethodDao;->insert(Lcom/xiaoji/egggame/game/database/entity/GameLaunchMethodTable;Lbi3;)Ljava/lang/Object;` | **suspend** |
+| DAO accessors | `Lcom/xiaoji/egggame/game/database/GameLibraryDatabase;->gameLibraryBase()...;->gameLaunchMethod()...;` | virtual getters, non-obf |
+| Entity 1 | `Lcom/xiaoji/egggame/game/database/entity/GameLibraryBaseTable;` | ~38-arg Kotlin data class |
+| Entity 2 | `Lcom/xiaoji/egggame/game/database/entity/GameLaunchMethodTable;-><init>(JLjava/lang/String;ILjava/lang/String;…)V` | 12-arg ctor: `(long id, String linkedGameId, int startType, String startName, …, int isAutoGame, Long lastUseTime, String extensionData)` |
+
+Multiple callers in `aw3.smali`, `dt7.smali`, `pu7.smali`, `zs7.smali`, `au7.smali`, `ot7.smali`, `ju7.smali` use the exact `GameLibraryDatabase->gameLibraryBase()/gameLaunchMethod()` accessors — pattern is well-trodden.
+
+### 35.3 Approach B — engineering shape
+
+```
+GogLaunchHelper.triggerLaunch(activity, exePath):
+  1. Compute gogId = bh_gog_prefs current selection or manifest primary task
+  2. Build GameLaunchMethodTable:
+       (id=0,                                              ← AUTOINCREMENT
+        linkedGameId="gog_" + gogId,
+        startType=11,                                      ← GogGameByPcEmulator
+        startName=<basename(exePath)>,
+        startIcon="" startEIcon="" startSIcon="" newIcon="" newCIcon="",
+        isAutoGame=0,
+        lastUseTime=null,
+        extensionData=<JSON: exe path + container ref>)    ← see 35.4 open Q
+  3. DAO.insert(launchMethod, Continuation) → returns inserted row id (Long)
+  4. Build GameLibraryBaseTable:
+       id="gog_" + gogId, user_id=<current>, server_game_id=0,
+       steam_app_id="", extension_type=<GOG enum>,         ← see 35.4 open Q
+       launch_method_id=<from step 3>,
+       game_name=<title from GOG manifest>,
+       cover_image=<cover_url from GOG manifest>,
+       source_type=<GOG enum>, source_id=<gogId>,
+       most other fields = "" or default
+  5. DAO.insert(libBase, Continuation)
+  6. activity.finish() → user returns to GameHub library, GOG title now visible
+  7. (Optional) onResume hook still kept: SharedPrefs handoff lets the insert run
+      on a coroutine off the GogGamesActivity main thread, with onResume just
+      polling for completion. Belt-and-suspenders, not required.
+```
+
+**Java→suspend bridge**: write a small `BridgeContinuation implements kotlin.coroutines.Continuation<Object>` with `getContext() = EmptyCoroutineContext.INSTANCE` and `resumeWith(Object) = signal a latch`. Call `dao.insert(entity, bridgeContinuation)`; if return value is `Lz9c;` (COROUTINE_SUSPENDED sentinel), await the latch; otherwise the result is in-hand. Standard, ~30 LOC.
+
+### 35.4 Three open questions before WS5 coding (NOT blockers — each is a 1-grep-sized trace)
+
+1. **`extension_type` value for GOG.** This is an `int` column distinguishing source families. Find by reading a live row from a Steam/Epic imported game, or by grepping `extension_type` writes against `extension_type` setter calls in the import path — the constant should be a small int (0/1/2/…). The retired GogLibraryCardPatch seeder used a specific value; that value's history is in git, recover from the deleted code or DB dump.
+2. **`source_type` value for GOG.** Same shape as above, parallel column.
+3. **`extension_data` JSON shape.** This is where the exe path + Wine-container/prefix assignment likely lives for PC-emulator launches. Grep `extension_data` putter sites in `dt7`/`pu7`/`au7` for the JSON keys; alternatively read a live Steam/Epic row and reverse-engineer keys (same column, same launch family).
+
+(Also: confirm DB-singleton acquisition path — `aw3`/`dt7`/`pu7` all dereference a parent object's field for the DB. The cleanest Java-side accessor is likely via Hilt's generated component — quick grep against `Hilt_App` / `*_HiltComponents` will surface a static getter. Mechanical follow-up.)
+
+### 35.5 Verdict + recommendation
+
+**Pick B. A is architecturally dead on 6.0.4** — the 5.3.5 `B3(exePath)` reflection target has no equivalent method to reach; the entry to the import flow is a Compose ViewModel factory dispatch (`vcd` → `new x3g(exePath)`) with no Activity-callable shortcut and no Intent path. Approach A would require synthesising a Compose nav event from outside the nav graph, which is a substantial subproject of unknown scope and high R8 fragility.
+
+**B is in much better shape than §19 anticipated.** The §19 trace said "programmatic `xm7.u` import chain" — that was approximate; `xm7` is actually a coroutine SuspendLambda owned by `Lpo7;`, not a callable import method. But that didn't matter, because the *real* data-write surface is two non-obfuscated Room DAOs (`GameLibraryBaseDao.insert`, `GameLaunchMethodDao.insert`) with non-obfuscated entity constructors and a non-obfuscated DB class — i.e. **the most R8-stable layer in the whole APK**. Net WS5 risk **MED→LOW-MED** (down from §19 MED).
+
+Plan:
+- **WS5.0** (single session): resolve the three §35.4 open questions (likely 30–90 min decompile work; each is grep-sized).
+- **WS5.1**: add `BridgeContinuation` Java helper to the extension (~30 LOC, reusable).
+- **WS5.2**: body `GogLaunchHelper.triggerLaunch()` with the two-insert flow above; remove the Phase-1 toast.
+- **WS5.3** (defensive): keep the `MainActivity.onResume` SharedPrefs-handoff pattern from §19 as a thread-safety belt — perform the DAO inserts from the launcher's coroutine scope (via `Lhik;`/`Lhsj;` GlobalScope-equivalent), with onResume just being a wake-up point for any deferred error toast. Optional; depends on whether `GogGamesActivity` finishing while a coroutine is mid-insert is safe.
+- **WS5.4**: device test M4 — download a GOG title; on completion verify (a) row visible in GameHub library, (b) tap → Wine launches the GOG exe, (c) icon/cover render correctly.
+
+No code yet — these are scoping notes for the next session's WS5 start.
+
+Related memory: [[project-bannerhub-revanced-gog-ws4]], [[project-bannerhub-revanced-gog-backend-audit]], [[reference-gamehub-602-vs-604]].
+
+---
+
+## 36. WS5 BUILT (pre14) — programmatic DB insert + deep-link auto-launch
+
+User-driven recon collapsed §35.4 open questions in one session:
+
+### 36.1 Open questions resolved
+
+1. **DB-singleton access — not needed.** Recovered the retired GogLibraryCard seeder code from git (`16734a5`); it used raw `SQLiteDatabase.openDatabase(ctx.getDatabasePath("db_game_library.db"))` with READ_WRITE flag. No Room/Hilt/Continuation/DAO indirection. Same proven pattern, ships zero new deps.
+2. **`extension_type` / `user_id` — self-derive from any existing row** (`SELECT extension_type,user_id FROM t_game_library_base WHERE id<>? LIMIT 1`). Fallbacks `1` / `"99999"` (FakeUserAccount bypass id) when the library is empty. Mirrors the proven retired-seeder fallback that worked in pre4–pre11.
+3. **`start_type` int for GOG — `1409` (0x581).** Verified via LaunchType.smali:455–472 (`GogGameByPcEmulator` 2nd ctor arg). NOT the ordinal `0xb` I'd originally assumed — the DB stores the `id` field (2nd ctor arg), not the ordinal. Cross-check via user's live DB row: God of War uses `start_type=1403` which is `PcEmulator.id` (0x57b). Steam/Epic/Gog form a contiguous block 1407/1408/1409 (0x57f/0x580/0x581).
+4. **`extension_data` JSON shape — modeled byte-for-byte on God of War row.** User's live DB dumped (via `getlog --cat` → Python sqlite3 — `getlog --sql` unavailable on this device, no `/system/bin/sqlite3`). Shape: `{gameId, isLocalGame:true, coverImage, name, startType, gogId, exePath}`. The `exePath` field is load-bearing; the rest is cosmetic. The PcEmulatorLaunchStrategy reads this via `extension_data` JSON parse — verified by stack trace from the live capture (`x3g.m:438` → `cpb.e:88` chain calls `simulator/getLocalGameDetail` with the exePath, which is the same recognition step our GOG row sets up for).
+5. **Auto-launch path — existing infrastructure.** `MainActivity.smali:134-200` already handles `app_nav_target=local_game_launch` + `app_nav_game_id=<id>` extras (line 173 `const-string "local_game_launch"`). No new patch needed — we just fire the Intent from our extension. Same internal-deep-link convention `DeepLinkActivity` uses for push notifications, so we ride a stable, proven channel.
+
+### 36.2 Implementation (this session)
+
+**`GogLaunchHelper.java`** rewritten from 56-line Phase-1 stub → ~200-line WS5 bridge:
+
+| Public API | Used by |
+|---|---|
+| `triggerLaunch(Activity, GogGame, String exePath)` | `GogGamesActivity` (4 call sites — Add Game / Add to Launcher / install-complete dialog) |
+| `triggerLaunch(Activity, String exePath, String gogId, String title, String coverUrl)` | `GogGameDetailActivity` (1 call site; detail activity stores metadata as fields, not as `GogGame`) |
+| `triggerLaunch(Activity, String exePath)` | legacy ABI shim — logs+toasts; no row written (kept so a stale call can't break the build) |
+| `checkPendingLaunch(Activity)` | retained no-op — the deep-link path is synchronous, no SharedPrefs handoff required |
+
+Flow inside `triggerLaunch(activity, exePath, gogId, title, coverUrl)`:
+1. Open `ctx.getDatabasePath("db_game_library.db")` RW (skip + toast if absent — "open GameHub once first").
+2. Self-derive `extension_type` and `user_id` from any existing row (excluding our own gameRowId — supports re-install).
+3. Build `extension_data` JSON via `JSONObject.put(...)` with manual-escape fallback for any freak failure.
+4. Transactional 2-row insert (delete-first for re-install idempotency):
+   - `t_game_launch_method` (linked_game_id, start_type=1409, start_name, extension_data) → grab `last_insert_rowid()` as FK.
+   - `t_game_library_base` (id="gog_"+gogId, user_id, server_game_id=0 [permanent / invisible to server sync], extension_type, launch_method_id, game_name, game_source=3 [PC imported, matches user's row], source_type=0, from=0, source_id=gogId, cover/logo/icon/square URLs all = the GOG cover).
+5. `Intent` to `com.xiaoji.egggame.MainActivity` with `NEW_TASK | CLEAR_TOP | SINGLE_TOP` flags and the `app_nav_target` + `app_nav_game_id` extras → `activity.finish()` to return the user to GameHub for the launch.
+
+Fail-safe: every public-method body is wrapped in `try/catch Throwable` that toasts a short hint and logs the trace; never crashes the GOG flow. The deprecated single-arg overload is harmless (no DB write, just a warning toast).
+
+### 36.3 What pre14 does NOT yet do (deferred)
+
+- **Cover-art enrichment**: we set `cover_image`/`logo`/`icon_url`/`square_image` all to the same GOG cover URL. GameHub may render some cells differently when given separate cover/square art. If the library tile looks off in pre14 device test, we'll split (`cover_image` = wide banner, `square_image` = tile icon) using GOG's own per-asset URLs.
+- **`game_startup_params`**: left empty. If a GOG game needs CLI args (e.g. `--no-launcher`), the user can add them in GameHub's per-game settings later, or we add a second extension_data field in pre15.
+- **Wine container assignment**: the new row inherits whatever container GameHub picks for `start_type=1409` PC-emulator launches (likely the default Wine prefix). If a GOG game needs a specific container (e.g. one with `dotnet48` installed), we'll add it through GameHub's container picker — not part of WS5.
+- **`onResume` polling fallback**: §35 mentioned this as a belt-and-suspenders. Not implemented in pre14 — the synchronous Intent dispatch makes it unnecessary.
+
+### 36.4 Pre14 test plan
+
+1. Download a GOG game in the GOG hub (or open one with a prior install — the "Add to Launcher" button is wired to `triggerLaunch` for the install-complete state too).
+2. Tap "Add to Launcher" / "Add Game".
+3. **Expected**: brief flash → GameHub's MainActivity comes to front → the GOG title appears in the library AND a Wine launch fires for it. If MainActivity rejects the `local_game_launch` extras for any reason (e.g. needs additional fields), the row should still be in the library and the user can tap it normally.
+4. **Fallback observable**: if the deep-link fails silently, the row still exists in `t_game_library_base`/`t_game_launch_method` — verify via `getlog --cat /data/data/<pkg>/databases/db_game_library.db` then Python sqlite3.
+
+### 36.5 Files
+
+- `extensions/gamehub/src/main/java/app/revanced/extension/gamehub/gog/GogLaunchHelper.java` — full rewrite
+- `extensions/gamehub/src/main/java/app/revanced/extension/gamehub/gog/GogGamesActivity.java` — 4 call sites pass `game`
+- `extensions/gamehub/src/main/java/app/revanced/extension/gamehub/gog/GogGameDetailActivity.java` — 1 call site passes `(exe, gameId, title, imageUrl)`
+- `PROGRESS_LOG.md` — pre14 entry
+- This doc — §35 (recon) + §36 (build) + status header update

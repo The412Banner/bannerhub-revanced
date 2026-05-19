@@ -342,9 +342,14 @@ jobs:
             | **Mute UI sounds** | Silences menu/button clicks; game audio untouched. |
             | **Redirect catalog API** | Points the catalog at the BannerHub Worker; also fixes PC-settings rendering in portrait. |
             | **Prefix API path with /v6** | Lets the Worker serve 6.0-only responses without affecting 5.x clients. |
-            | **Offline component cache fallback** ⚠ *broken on 6.0.4* | Online behaviour unaffected; offline pickers just fall back to built-in versions. Safe to ignore unless you rely on offline picker contents. |
+            | **Offline component picker — local list** | Offline, every per-game picker (GPU driver, DXVK, VKD3D, FEXCore/Box64, **and the Wine/Proton container**) lists the components you've already downloaded, catalog-ordered. Online behaviour byte-identical; fully fail-safe (any error falls back to stock). |
             | **PC-accurate vibration** | Routes XInput rumble into Android's VibratorManager (independent dual-motor). Preload-free: an on-disk `winebus.so` patch defeats SDL2's ~1 s auto-stop with no `libevshim.so` / `LD_PRELOAD` (fixes the x86_64/box64 launch-death). Default on at 100%. |
             | **PC Vibration Settings (activity + menu row)** | Per-game mode (off / device / controller / both) and intensity (0–100%), plus a **PC Vibration Settings** row in both per-game popups. |
+            | **GPU Spoof** | Per-game GPU identity reported to DXVK via a per-game `dxvk.conf` — Off (default), a preset NVIDIA/AMD/Intel picker, or fully custom vendor/device/name. Fixes "unsupported video card" refusals (e.g. CryEngine — Crysis 2). |
+            | **Legacy renderer (GLES2) toggle** | Per-game opt-in to the proven 6.0.2 GLES2-era `libxserver.so`/`libwinemu.so` pair for games that regressed under 6.0.4's Vulkan X-server rewrite. Default New = stock, zero patch effect. |
+            | **Strict per-game settings store** | GPU Spoof / Legacy renderer / PC Vibration each save strictly per-game in BannerHub's own store with explicit Save/Cancel — no host clobber, no app-wide leak; resolved across the `:wine` process boundary. |
+            | **Show PC Game Settings row** | Keeps the per-game **PC game settings** row visible in Explorer view (XiaoJi's UX hid it for Steam-linked games). |
+            | **Privacy hardening** | Upstream telemetry/analytics channels stripped at the bytecode level (Firebase Analytics/Crashlytics, GMS Measurement, Mob Push, heartbeat, OTA, Ad-ID, cert-pinning override, etc.). Full list + honest leftovers in `PRIVACY.md`. |
             | **Change app icon** | BannerHub v6 branding — adaptive icon, Wine container header, auth/splash assets. |
             | **Change package & app name** *(per variant)* | Per-variant package + launcher label so all 9 variants install side-by-side (`Original` keeps `com.xiaoji.egggame`). |
             | **Lite size-reduction strips** *(Lite only)* | Strips the dead 20 MB font, Aliyun carrier-login lib, Haima cloud-gaming stack, and AVIF/HEIC codecs. ~34.5 MB smaller; no effect on full variants. |

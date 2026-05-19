@@ -231,6 +231,10 @@ GPU Spoof, the Legacy renderer toggle, and PC Vibration all share one per-game p
 
 `WineActivity` runs in `android:process=":wine"`, so a Java static set in the UI process is invisible to launch-time code. The shared `BhMenuGameId` helper mirrors the captured game id to SharedPreferences with a synchronous commit and reads it back launch-side, so every per-game feature resolves the right game across the process boundary.
 
+### `Show PC Game Settings row` ⭐ *new in v1.2.0-604*
+
+Forces the **PC Game Settings** row to appear in the Explorer game-detail More Menu for *every* game type, including Steam-linked games where XiaoJi-native logic would normally hide it. The patch removes the single `if-eqz` gate immediately preceding the row's construction in `Lx57;->a`; every other row keeps its native gating untouched.
+
 ### `Change app icon` ⭐ *new in v1.1.0-604*
 
 Replaces five in-APK drawables with BannerHub v6 branding:

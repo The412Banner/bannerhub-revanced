@@ -583,3 +583,17 @@ User reported "download is not starting." Root cause (caught by M3 testing, exac
 **Fix:** `GogManifestPatch.kt` now also appends `<service android:name="app.revanced.extension.gamehub.gog.BhDownloadService" android:exported="false" android:foregroundServiceType="dataSync"/>` (idempotent), mirroring the proven BannerHub-3.7.x decl (`bannerhub/patches/AndroidManifest.xml:166`). No permission patch needed — base GameHub 6.0.4 manifest already declares INTERNET / FOREGROUND_SERVICE / POST_NOTIFICATIONS / FOREGROUND_SERVICE_DATA_SYNC. Verified only `BhDownloadService` needs registration (no other Service/Receiver/Provider in the ported set).
 
 **Note:** M1/M2 still valid (login/library don't touch the service). Rebuild `1.4.0-604-gog-pre2` for M3 retest.
+
+---
+
+## 26. M3 PASS — PHASE 1 COMPLETE (2026-05-19)
+
+pre2 (`1.4.0-604-gog-pre2`, run 26112532244) installed over pre1 in place (login/library persisted — still `The412Banner`, 19 cached). User downloaded **GunSlugs** (GOG id `1709371377`) via the in-app library UI (the only step needing a human tap — service is correctly `exported=false`).
+
+**M3 verified on disk** (`getlog --ls`, durable evidence; logcat buffer had rolled past the download):
+- `bh_gog_prefs`: `gog_dir_1709371377` + `gog_exe_1709371377` both set ⇒ **INSTALLED** per `GogInstallPath.java`'s own state contract.
+- `/data/user/0/gamehub.lite/files/gog_games/Gunslugs/` = **86 MB, 580 files**: `gunslugs.exe` (349 696 B), `gunslugs.dat` (22.6 MB), `goggame-1709371377.hashdb`/`.info`, `_gog_manifest.json`, `config.json`, `jre/`. The GOG manifest+hashdb+bundled JRE prove the real GOG installer pipeline ran (CDN fetch → manifest → extract → install), not a stub. 0 crashes.
+
+**Phase 1 COMPLETE — M1 (login) + M2 (owned library) + M3 (download+install) all device-confirmed.** Total Phase-1 cost: a ~7.5k-LOC faithful lift of the BannerHub-3.7.x GOG extension + GOG-only decoupling, with exactly **one** bug (missing `<service>` registration, §25) across compile→build→M1→M2→M3. The "lift the proven 3.7.x extension, don't re-port GameNative" decision (§18) is vindicated.
+
+**Deferred Phase 2 (unchanged):** WS5 GameHub-library/launch bridge (§19, programmatic `xm7.u`), production Profile-row entry (WS4/P-A), P-C container assignment. Until then, an installed GOG game shows the Phase-1 `GogLaunchHelper` "installed — in-app launch in a later update" toast (by design). Pre-release: artifact-only.

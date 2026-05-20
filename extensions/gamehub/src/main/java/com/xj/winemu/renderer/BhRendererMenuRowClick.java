@@ -107,16 +107,16 @@ public final class BhRendererMenuRowClick implements Function1<Object, Object> {
             Class<?> pw6Cls = Class.forName("pw6");
 
             Class<?> zz4Cls = Class.forName("zz4");
-            Field iconHolderField = zz4Cls.getDeclaredField("m");
+            Field iconHolderField = zz4Cls.getDeclaredField("O");
             iconHolderField.setAccessible(true);
             Object xrlWrapper = iconHolderField.get(null);
             if (xrlWrapper == null) {
-                Log.w(TAG, "zz4.m is null; cannot resolve icon");
+                Log.w(TAG, "zz4.O is null; cannot resolve icon");
                 return;
             }
             Object iconValue = xrlWrapper.getClass().getMethod("getValue").invoke(xrlWrapper);
             if (!o05Cls.isInstance(iconValue)) {
-                Log.w(TAG, "zz4.m.getValue() did not return Lo05");
+                Log.w(TAG, "zz4.O.getValue() did not return Lo05");
                 return;
             }
 
@@ -142,7 +142,7 @@ public final class BhRendererMenuRowClick implements Function1<Object, Object> {
             Class<?> nw6Cls = Class.forName("nw6");
             Class<?> zz4Cls = Class.forName("zz4");
 
-            Field iconField = zz4Cls.getDeclaredField("k");
+            Field iconField = zz4Cls.getDeclaredField("O");
             iconField.setAccessible(true);
             Object xrlWrapper = iconField.get(null);
             if (xrlWrapper == null) return safeReturn(original);

@@ -3,6 +3,7 @@ package com.xj.winemu.vibration;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
@@ -67,6 +68,9 @@ public class BhVibrationSettingsActivity extends Activity {
         ctl.init(this);
         ctl.setContainerForSettings(gameId);
 
+        final boolean isLandscape = getResources().getConfiguration().orientation
+                == Configuration.ORIENTATION_LANDSCAPE;
+
         // Compact landscape layout: tighter paddings, smaller fonts, no
         // long description block. Wraps in a ScrollView so any future
         // additions or larger system font sizes can scroll instead of
@@ -113,10 +117,11 @@ public class BhVibrationSettingsActivity extends Activity {
         titleRow.setLayoutParams(titleLp);
         root.addView(titleRow);
 
-        // ── Mode + Intensity in a single row (left = mode, right = intensity)
-        // to keep the dialog short enough for landscape phone screens.
+        // Landscape: Mode + Intensity side-by-side (keeps the dialog short).
+        // Portrait: stack Intensity below Mode so we can shrink the dialog
+        // width and avoid clipping on phone screens.
         LinearLayout controlsRow = new LinearLayout(this);
-        controlsRow.setOrientation(LinearLayout.HORIZONTAL);
+        controlsRow.setOrientation(isLandscape ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
 
         LinearLayout modeCol = new LinearLayout(this);
         modeCol.setOrientation(LinearLayout.VERTICAL);
@@ -138,10 +143,12 @@ public class BhVibrationSettingsActivity extends Activity {
 
         // Mode column: wrap_content so the spinner is wide enough to render
         // "Controller" (the longest option label) without truncating to
-        // "Control.." Intensity below takes the remaining space.
+        // "Control.." In landscape, intensity sits to the right; in portrait,
+        // it stacks below so we swap right→bottom margin.
         LinearLayout.LayoutParams modeColLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        modeColLp.rightMargin = dp(16);
+        if (isLandscape) modeColLp.rightMargin = dp(16);
+        else modeColLp.bottomMargin = dp(12);
         controlsRow.addView(modeCol, modeColLp);
 
         LinearLayout intCol = new LinearLayout(this);
@@ -168,8 +175,13 @@ public class BhVibrationSettingsActivity extends Activity {
         bar.setProgress(ctl.getIntensity());
         intCol.addView(bar);
 
-        controlsRow.addView(intCol, new LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        // Landscape: stretch intensity column to fill the row (weight=1).
+        // Portrait: cap the slider at a sensible width (~220dp) so it doesn't
+        // run the full dialog width.
+        LinearLayout.LayoutParams intColLp = isLandscape
+                ? new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                : new LinearLayout.LayoutParams(dp(220), ViewGroup.LayoutParams.WRAP_CONTENT);
+        controlsRow.addView(intCol, intColLp);
 
         root.addView(controlsRow);
 
@@ -235,12 +247,16 @@ public class BhVibrationSettingsActivity extends Activity {
 
         FrameLayout wrapper = new FrameLayout(this);
         wrapper.setBackgroundColor(0x00000000);
-        // ~480 dp wide so the side-by-side Mode/Intensity row doesn't squeeze
-        // the Spinner. Height capped at 85 % of the screen — anything taller
-        // becomes scrollable rather than clipped.
+        // Landscape: ~480 dp keeps the side-by-side row uncramped.
+        // Portrait: shrink to fit the screen (cap at screen width minus a
+        // small margin, max 360 dp) since controls stack vertically anyway.
+        int screenW = getResources().getDisplayMetrics().widthPixels;
+        int dialogW = isLandscape
+                ? dp(480)
+                : Math.min(dp(360), screenW - dp(24));
         int maxH = (int) (getResources().getDisplayMetrics().heightPixels * 0.85f);
         FrameLayout.LayoutParams scLp = new FrameLayout.LayoutParams(
-                dp(480), ViewGroup.LayoutParams.WRAP_CONTENT);
+                dialogW, ViewGroup.LayoutParams.WRAP_CONTENT);
         scLp.gravity = Gravity.CENTER;
         wrapper.addView(scroller, scLp);
         scroller.getLayoutParams().height = ViewGroup.LayoutParams.WRAP_CONTENT;

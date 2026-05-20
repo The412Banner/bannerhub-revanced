@@ -741,7 +741,7 @@ public class GogGamesActivity extends Activity {
             }
             if ("Add Game".equals(btnLabel) || "Add to Launcher".equals(btnLabel)) {
                 String exePath = prefs.getString("gog_exe_" + game.gameId, null);
-                if (exePath != null) GogLaunchHelper.triggerLaunch(this, game, exePath);
+                if (exePath != null) GogLaunchHelper.addToLibrary(this, game, exePath);
                 return;
             }
             showInstallConfirm(game, (threadCount, cdnPref) -> {
@@ -1005,7 +1005,7 @@ public class GogGamesActivity extends Activity {
             }
             if ("Add Game".equals(lbl) || "Add to Launcher".equals(lbl)) {
                 String exe = prefs.getString("gog_exe_" + game.gameId, null);
-                if (exe != null) GogLaunchHelper.triggerLaunch(this, game, exe);
+                if (exe != null) GogLaunchHelper.addToLibrary(this, game, exe);
                 return;
             }
             showInstallConfirm(game, (threadCount, cdnPref) -> {
@@ -1163,7 +1163,7 @@ public class GogGamesActivity extends Activity {
         if (isInstalled) {
             b.setPositiveButton("Add to Launcher", (d, w) -> {
                 String exe = prefs.getString("gog_exe_" + game.gameId, null);
-                if (exe != null) GogLaunchHelper.triggerLaunch(this, game, exe);
+                if (exe != null) GogLaunchHelper.addToLibrary(this, game, exe);
             });
             b.setNeutralButton("Uninstall", uninstallListener);
             b.setNegativeButton("Close", null);
@@ -1225,7 +1225,7 @@ public class GogGamesActivity extends Activity {
                             dialog.setCancelable(true);
                             customInstall.setOnClickListener(vv -> {
                                 String exe = prefs.getString("gog_exe_" + game.gameId, null);
-                                if (exe != null) GogLaunchHelper.triggerLaunch(GogGamesActivity.this, game, exe);
+                                if (exe != null) GogLaunchHelper.addToLibrary(GogGamesActivity.this, game, exe);
                                 dialog.dismiss();
                             });
                             // Rebuild grid to show ✓ on tile

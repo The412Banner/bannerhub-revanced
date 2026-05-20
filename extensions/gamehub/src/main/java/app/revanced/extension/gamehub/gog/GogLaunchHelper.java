@@ -61,6 +61,47 @@ public final class GogLaunchHelper {
         triggerLaunch(activity, exePath, game.gameId, game.title, game.imageUrl);
     }
 
+    /** Add the GOG game to GameHub's library WITHOUT launching it.
+     *  Used by the "Add Game" / "Add to Launcher" buttons — user stays on the
+     *  GOG screen and can keep adding more games. The library refresh (§37)
+     *  fires so the new row appears in-session. */
+    public static void addToLibrary(Activity activity, GogGame game, String exePath) {
+        if (game == null) {
+            Log.w(TAG, "GogLaunchHelper: null GogGame — abort");
+            return;
+        }
+        addToLibrary(activity, exePath, game.gameId, game.title, game.imageUrl);
+    }
+
+    /** See {@link #addToLibrary(Activity, GogGame, String)}. */
+    public static void addToLibrary(Activity activity, String exePath,
+                                    String gogId, String title, String coverUrl) {
+        if (activity == null || exePath == null || gogId == null) {
+            Log.w(TAG, "GogLaunchHelper.addToLibrary: required args null — abort"
+                    + " (activity=" + activity + " exe=" + exePath + " gogId=" + gogId + ")");
+            return;
+        }
+        final String safeName  = (title    != null && !title.isEmpty())    ? title    : "GOG Game";
+        final String safeCover = (coverUrl != null)                        ? coverUrl : "";
+        final String gameRowId = "gog_" + gogId;
+
+        try {
+            File dbFile = activity.getDatabasePath(DB_NAME);
+            if (dbFile == null || !dbFile.exists()) {
+                Log.e(TAG, "GogLaunchHelper.addToLibrary: " + DB_NAME + " not present");
+                toast(activity, "Library DB not initialised — open GameHub once, then retry");
+                return;
+            }
+            registerInLibrary(activity, dbFile, gameRowId, gogId, safeName, safeCover, exePath);
+            // §37: kick Room InvalidationTracker so the library Flow re-emits.
+            RoomRefreshHelper.refreshLibrary(activity);
+            toast(activity, "Added “" + safeName + "” to library");
+        } catch (Throwable t) {
+            Log.e(TAG, "GogLaunchHelper.addToLibrary failed (non-fatal)", t);
+            toast(activity, "Add to library failed — " + t.getClass().getSimpleName());
+        }
+    }
+
     /**
      * Register the GOG game in GameHub's library and immediately launch it.
      *

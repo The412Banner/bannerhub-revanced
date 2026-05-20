@@ -2926,3 +2926,20 @@ User device-tested pre14: the programmatic DB-insert bridge works end-to-end (ga
 Why reflection (not Hilt EntryPoints or direct DAO calls): (a) Room and its DAOs are R8-shrunk + name-obfuscated, so `androidx.room.*` doesn't exist at compile-time-against-runtime — only `Llyi;`/`Lhsa;`/anonymous classes do; (b) Hilt EntryPoints require a compile-time interface the Hilt processor generated bindings for — we have none; (c) the field-walk is one-shot then cached. Walks budget capped at 4000 visited refs.
 
 Files: `RoomRefreshHelper.java` (NEW — ~180 LOC, pure JDK reflection + `android.util.Log`, zero new deps), `GogLaunchHelper.java` (+1 call site, +4 lines comment). Next: compile gate → grep SEVERE → pre15 → device test (download a GOG game → tap "Add to library" → game should appear in GameHub library WITHOUT closing the app).
+
+## 2026-05-20 — GOG pre16: separate Add-to-library from Launch (no auto-launch on "Add Game")
+
+User device-confirmed pre15: §37 InvalidationTracker kick works — the GOG game appears in GameHub's library WITHOUT closing the app. ✅ Bug closed. New request: **don't launch the game from "Add to library" / "Add Game" / "Add to Launcher" buttons** — those should be add-only. The explicit "Launch" button in `GogGameDetailActivity` should keep its launch behavior.
+
+Pre14/15 wired all 5 call sites through one `triggerLaunch` (add + Wine launch + finish). Splitting:
+
+- **New `GogLaunchHelper.addToLibrary(activity, game, exePath)`** + 5-arg overload: `registerInLibrary` → `RoomRefreshHelper.refreshLibrary` → toast `Added "<name>" to library`. NO `dispatchLaunch`, NO `activity.finish()` — user stays on the GogGamesActivity and can keep adding more games (e.g. from an Add Game dialog they popped).
+- **`triggerLaunch` unchanged** — still does register + refresh + Wine launch + finish, for the Launch button.
+
+Call site reassignment (sed-driven, surgical):
+- `GogGamesActivity.java` × 4 (lines 744, 1008, 1166, 1228 — all labelled "Add Game" / "Add to Launcher" buttons): `triggerLaunch` → `addToLibrary`.
+- `GogGameDetailActivity.java` × 1 (line 325 — the green "Launch" button): kept on `triggerLaunch`.
+
+Idempotency preserved: `registerInLibrary` already does DELETE-first INSERT keyed on `gog_<gogId>`, so re-tapping "Add to library" is safe — overwrites the row with current title/cover/exe and re-fires the refresh kick.
+
+Files: `GogLaunchHelper.java` (+~30 LOC `addToLibrary` methods), `GogGamesActivity.java` (4 call sites). Next: compile gate → grep SEVERE → pre16 → device test.

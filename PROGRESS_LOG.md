@@ -2915,3 +2915,27 @@ invoke-static {v0}, Lapp/revanced/extension/gamehub/launcher/ExternalLauncher;->
 Behavioral equivalence preserved — `endsWith(".LAUNCH_GAME")` matches every per-variant action AND the literal `gamehub.lite.LAUNCH_GAME` PlayDay-compatibility fallback in one expression.
 
 **Lesson captured for memory:** when injecting into a method with `.locals >= 16`, every `invoke-…` that uses the non-range form must be checked — any `p0` reference becomes `v(locals)` and silently exceeds the 4-bit register cap. Solutions: (a) drop the receiver/Activity parameter and pull state from the Intent or other low-register sources; (b) `move-object/from16 vLow, p0` first; (c) use `/range` form with a contiguous register window. Option (a) is cleanest when feasible.
+
+## 2026-05-20 (cont.) — `extlaunch-pre2` SEVERE'd again; `{p0}` ALSO violates 4-bit limit
+
+pre2 ([run 26161013383](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26161013383)) still SEVERE'd on all 9 variants. The `[5,16] maximum register v15` line was gone (so the `{p0, v0}` → `{v0}` simplification worked), but a more subtle cascade remained:
+
+```
+[5,0] Cannot invoke "Object.hashCode()" because "key" is null
+[5,56] mismatched tree node: UP expecting I_CATCHES
+[3,0] A non-abstract/non-native method must have at least 1 instruction
+[7,20] mismatched tree node: Lapp/revanced/extension/gamehub/launcher/ExternalLauncher; expecting I_FIELDS
+```
+
+The smali assembler NPE'd on `invoke-virtual {p0}` because `{p0}` is ALSO the non-range form (format 35c), and `p0 = v34` blows the 4-bit register field. Unlike the `{p0, v0}` case, this didn't get a clean "register out of range" error — the assembler crashed internally on a null `key.hashCode()` lookup mid-emit, then the parser tried to recover and emitted nonsense follow-ups. The fix is the canonical move-down dance — same recipe as `VibrationPatch`'s `ENV_BUILDER->a` hook:
+
+```smali
+move-object/from16 v0, p0
+invoke-virtual {v0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+move-result-object v0
+invoke-static {v0}, Lapp/revanced/extension/gamehub/launcher/ExternalLauncher;->rewriteIntent(Landroid/content/Intent;)V
+```
+
+`move-object/from16 vA, vBBBB` accepts any 16-bit source register, so it can read `p0=v34` into `v0`. Then every subsequent invoke operates on `v0` (low register) and the 4-bit limit never bites. v0 reuse remains safe because the original `onCreate`'s first instruction (`sget-object v0, Lejm;->a:Lghd;`) overwrites it on the very next instruction without ever reading the prior value.
+
+**Lesson reinforced:** when `.locals >= 16`, every reference to `p0` in a non-range smali instruction is suspect — not just multi-register invokes. The minimal-cost cure is one `move-object/from16 vLow, p0` at the head of the injected block, then operate exclusively on `vLow`. Doc'd as a follow-up pattern next to `VibrationPatch`'s precedent.

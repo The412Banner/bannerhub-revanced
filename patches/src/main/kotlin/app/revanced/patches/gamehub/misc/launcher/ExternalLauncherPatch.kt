@@ -73,12 +73,13 @@ import org.w3c.dom.Element
 // Anchor strategy (no hardcoded smali line):
 //   - definingClass + method name. DeepLinkActivity has exactly one onCreate
 //     in 6.0.4 (verified). The method declares .locals 34, which aliases
-//     p0 to v34 — too high for non-range invoke's 4-bit register form.
-//     The injection uses single-register invoke forms only ({p0} alone,
-//     then {v0} alone) so the 16+-register limit never bites. v0 reuse is
-//     safe — the original onCreate's next instruction
-//     (sget-object v0, Lejm;->a:Lghd;) writes v0 but its result is never
-//     read.
+//     p0 to v34 — too high for ANY non-range invoke's 4-bit register form
+//     (both {p0} alone and {p0, v0} fail). The injection first uses
+//     `move-object/from16 v0, p0` to bring p0 down into v0, then operates
+//     entirely on low registers — pattern borrowed from VibrationPatch's
+//     ENV_BUILDER hook. v0 reuse is safe — the original onCreate's next
+//     instruction (sget-object v0, Lejm;->a:Lghd;) writes v0 but its result
+//     is never read.
 //
 // Re-derivation on future base bumps:
 //   - DeepLinkActivity is at the package root, not behind R8 letter renames
@@ -159,7 +160,8 @@ val externalLauncherPatch = bytecodePatch(
         }.addInstructions(
             0,
             """
-                invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+                move-object/from16 v0, p0
+                invoke-virtual {v0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
                 move-result-object v0
                 invoke-static {v0}, Lapp/revanced/extension/gamehub/launcher/ExternalLauncher;->rewriteIntent(Landroid/content/Intent;)V
             """.trimIndent(),

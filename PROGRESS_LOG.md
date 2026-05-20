@@ -2843,3 +2843,180 @@ Fix on both surfaces:
 - **Going-forward template** — same blockquote inserted into `release.yml`'s slim `body: |` block right after the version header, so every future v6 stable emits it automatically. Commit `27d98d4` on `gamehub-604-build` (`4c5ad1a..27d98d4`, 1 file +14), authored The412Banner / the412banner@users.noreply.github.com, no Claude trailer, pushed. No CI trigger (notes-template-only edit).
 
 Branch head: `gamehub-604-build` @ `27d98d4`. (Not added to `gamehub_reports/GAMEHUB_600_MASTER_MAP.md` — that map documents upstream GameHub 6.0 internals, not BannerHub release/doc changes.)
+
+## 2026-05-20 — External launcher (Beacon / ES-DE / Daijishou) port to 6.0.4 (branch `feature/external-launcher`)
+
+Ports PlayDay's 5.3.5 `ExternalLauncherPatch` ("External launcher support") to GameHub 6.0.4. The 5.3.5 hook (`Lcom/xj/landscape/launcher/ui/gamedetail/GameDetailActivity;->initView` + `<intent-filter>` on `GameDetailActivity`) is dead — 6.0.4 has no `GameDetailActivity` (game detail is a Compose screen reached via Compose navigation).
+
+**Discovery — 6.0.4 already has the dispatch natively.** `com.xiaoji.egggame.DeepLinkActivity.onCreate` consumes:
+- `app_nav_target` = `"game_detail"` (sswitch_8 hash `-0x19542ac2`, at ~line 3507 of the 6.0.4 smali)
+- `app_nav_game_id` (String → int via `Liml;->t0`)
+- `app_nav_steam_app_id` (int)
+- `app_nav_auto_start_game` (boolean — already powers auto-launch!)
+- plus `app_nav_source_id` / `_type` / `_slug` / `app_nav_epic_app_name` as optional metadata
+
+So the port is purely extras-translation glue — no need to rewrite the dispatch.
+
+**New files (branch `feature/external-launcher` off `gamehub-604-build@27d98d4`):**
+
+- `extensions/gamehub/src/main/java/app/revanced/extension/gamehub/launcher/ExternalLauncher.java`
+  - `static void rewriteIntent(Activity activity, Intent intent)`
+  - Matches action via `activity.getPackageName() + ".LAUNCH_GAME"` (per-variant) PLUS the literal `gamehub.lite.LAUNCH_GAME` as a forgiveness fallback for users who copy/paste old 5.3.5-Lite-style Beacon configs against a renamed BannerHub variant.
+  - Translates `localGameId` / `steamAppId` / `autoStartGame` → `app_nav_game_id` / `app_nav_steam_app_id` / `app_nav_auto_start_game` + sets `app_nav_target=game_detail` + `target_type=game_detail`.
+  - localGameId wins over steamAppId; fall back to steamAppId if localGameId is missing.
+  - `type` extra (5.3.5-only) ignored — 6.0.4 dispatcher doesn't need it.
+  - Logs to tag `BhExternalLauncher` for getlog verification.
+
+- `patches/src/main/kotlin/app/revanced/patches/gamehub/misc/launcher/ExternalLauncherPatch.kt`
+  - Private `externalLauncherManifestPatch` (resourcePatch, `afterDependents`, depends on `changePackageNamePatch`): finds `com.xiaoji.egggame.DeepLinkActivity` in `AndroidManifest.xml`, sets `android:exported="true"` defensively (already true in 6.0.4), and appends an `<intent-filter>` with `<action android:name="$variantPackage.LAUNCH_GAME"/>` + `DEFAULT` category. Variant package read via `packageNameOption.value?.takeIf { it != packageNameOption.default } ?: manifestPackage` (same idiom as `FileManagerAccessPatch`). Idempotency-checked by suffix `.LAUNCH_GAME`.
+  - Public `externalLauncherPatch` (bytecodePatch): depends on `sharedGamehubExtensionPatch` + `externalLauncherManifestPatch`. Injects 3 instructions at index 0 of `Lcom/xiaoji/egggame/DeepLinkActivity;->onCreate(Landroid/os/Bundle;)V`:
+    ```smali
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    invoke-static {p0, v0}, Lapp/revanced/extension/gamehub/launcher/ExternalLauncher;->rewriteIntent(Landroid/app/Activity;Landroid/content/Intent;)V
+    ```
+    v0 reuse is safe — the original method's next instruction (`sget-object v0, Lejm;->a:Lghd;`) writes v0 but its result is never read.
+
+**Beacon instructions delta for 6.0.4.** The per-variant `<package>.LAUNCH_GAME` action names in `/storage/emulated/0/Download/beacon instructions.txt` stay correct. The only change is the activity component — `com.xj.landscape.launcher.ui.gamedetail.GameDetailActivity` → `com.xiaoji.egggame.DeepLinkActivity` for ALL variants (the activity FQN sits in the `com.xiaoji.egggame.*` namespace and is unaffected by `ChangePackageNamePatch`, which only rewrites `manifest@package`). Example for the default Lite variant:
+
+```
+am launch -n gamehub.lite/com.xiaoji.egggame.DeepLinkActivity \
+  -a gamehub.lite.LAUNCH_GAME \
+  --es localGameId {file_content} --es steamAppId {file_content} \
+  --ez autoStartGame true
+```
+
+**Re-derivation on future base bumps.** `DeepLinkActivity` is at the package root (not behind R8 letter renames) — stable. Native `app_nav_*` extra names appear as const-string literals in `onCreate`'s smali — grep to verify they still feed the same dispatch on a future base.
+
+Pending: CI dispatch on `feature/external-launcher`, per-patch SEVERE check on the run log per `[[feedback_revanced_verify_patch_applied]]`, device test (Lite variant first via Beacon).
+
+## 2026-05-20 (cont.) — `extlaunch-pre1` Release SEVERE'd → smali register-limit fix
+
+`Build pull request` compiled green ([run 26159954724](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26159954724)) but that workflow does NOT invoke revanced-cli, so it only validates Kotlin compilation. Dispatched artifact-only Release ([run 26160401818](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26160401818), version `1.4.0-604-extlaunch-pre1`, `stable=false`) to get the actual patch-apply check. All 4 patch jobs reported `SEVERE: "External launcher support" failed` with `app.revanced.patcher.patch.PatchException: Collection is empty` — classic silent-no-apply per `[[feedback_revanced_verify_patch_applied]]`. Underlying smali error (printed above the SEVERE line in the log):
+
+```
+[5,16] The maximum allowed register in this context is list of registers is v15
+[5,0] Cannot invoke "Object.hashCode()" because "key" is null
+[5,56] mismatched tree node: UP expecting I_CATCHES
+[3,0] A non-abstract/non-native method must have at least 1 instruction
+[7,24] mismatched tree node: Lapp/revanced/extension/gamehub/launcher/ExternalLauncher; expecting I_FIELDS
+```
+
+Root cause: `DeepLinkActivity.onCreate` declares `.locals 34`, which aliases `p0` to `v34`. The injected `invoke-static {p0, v0}, ...` uses the non-range invoke form, which only accepts 4-bit register references (`v0`–`v15`). `v34` blew that limit on the FIRST register slot, the assembler bailed, the rest of the cascade followed.
+
+**Fix:** drop the `Activity` parameter entirely from the extension. The Intent's action string already contains the variant package (`<pkg>.LAUNCH_GAME`), so we can check `action.endsWith(".LAUNCH_GAME")` without ever calling `getPackageName()`. That collapses the smali to two single-register invokes (`{p0}` alone, then `{v0}` alone), both of which are valid even with `.locals 34`:
+
+```smali
+invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+move-result-object v0
+invoke-static {v0}, Lapp/revanced/extension/gamehub/launcher/ExternalLauncher;->rewriteIntent(Landroid/content/Intent;)V
+```
+
+Behavioral equivalence preserved — `endsWith(".LAUNCH_GAME")` matches every per-variant action AND the literal `gamehub.lite.LAUNCH_GAME` PlayDay-compatibility fallback in one expression.
+
+**Lesson captured for memory:** when injecting into a method with `.locals >= 16`, every `invoke-…` that uses the non-range form must be checked — any `p0` reference becomes `v(locals)` and silently exceeds the 4-bit register cap. Solutions: (a) drop the receiver/Activity parameter and pull state from the Intent or other low-register sources; (b) `move-object/from16 vLow, p0` first; (c) use `/range` form with a contiguous register window. Option (a) is cleanest when feasible.
+
+## 2026-05-20 (cont.) — `extlaunch-pre2` SEVERE'd again; `{p0}` ALSO violates 4-bit limit
+
+pre2 ([run 26161013383](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26161013383)) still SEVERE'd on all 9 variants. The `[5,16] maximum register v15` line was gone (so the `{p0, v0}` → `{v0}` simplification worked), but a more subtle cascade remained:
+
+```
+[5,0] Cannot invoke "Object.hashCode()" because "key" is null
+[5,56] mismatched tree node: UP expecting I_CATCHES
+[3,0] A non-abstract/non-native method must have at least 1 instruction
+[7,20] mismatched tree node: Lapp/revanced/extension/gamehub/launcher/ExternalLauncher; expecting I_FIELDS
+```
+
+The smali assembler NPE'd on `invoke-virtual {p0}` because `{p0}` is ALSO the non-range form (format 35c), and `p0 = v34` blows the 4-bit register field. Unlike the `{p0, v0}` case, this didn't get a clean "register out of range" error — the assembler crashed internally on a null `key.hashCode()` lookup mid-emit, then the parser tried to recover and emitted nonsense follow-ups. The fix is the canonical move-down dance — same recipe as `VibrationPatch`'s `ENV_BUILDER->a` hook:
+
+```smali
+move-object/from16 v0, p0
+invoke-virtual {v0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+move-result-object v0
+invoke-static {v0}, Lapp/revanced/extension/gamehub/launcher/ExternalLauncher;->rewriteIntent(Landroid/content/Intent;)V
+```
+
+`move-object/from16 vA, vBBBB` accepts any 16-bit source register, so it can read `p0=v34` into `v0`. Then every subsequent invoke operates on `v0` (low register) and the 4-bit limit never bites. v0 reuse remains safe because the original `onCreate`'s first instruction (`sget-object v0, Lejm;->a:Lghd;`) overwrites it on the very next instruction without ever reading the prior value.
+
+**Lesson reinforced:** when `.locals >= 16`, every reference to `p0` in a non-range smali instruction is suspect — not just multi-register invokes. The minimal-cost cure is one `move-object/from16 vLow, p0` at the head of the injected block, then operate exclusively on `vLow`. Doc'd as a follow-up pattern next to `VibrationPatch`'s precedent.
+
+## 2026-05-20 (cont.) — `extlaunch-pre3` applied cleanly + user-driven discovery of extra-type bug (pre4)
+
+`extlaunch-pre3` ([run 26161429594](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26161429594)) green across all 9 variants: `"External launcher support" succeeded`, 0 SEVERE. Lite (Normal-GHL) APK at `/storage/emulated/0/Download/extlaunch-pre3/BannerHub-V6-1.4.0-604-extlaunch-pre3-Patched-Normal-GHL.apk` md5 not captured.
+
+**User-driven device-side bug surfaced while building the test command.** User wired a Beacon entry with `--es localGameId {file_content} --es steamAppId {file_content} --ez autoStartGame true`. The `--es` form puts STRING extras, but `ExternalLauncher.rewriteIntent` was reading via `intent.getIntExtra("localGameId", -1)`. `getIntExtra` returns the default when the actual extra type is String → both ids resolved to `-1` → patch bailed with the "no usable id" log → no rewrite → DeepLinkActivity finished without navigating.
+
+This explains why a correct numeric `server_game_id` would also have failed against pre3 — the extra-type mismatch is on the read side, independent of what the user puts in the file.
+
+**Schema-driven discovery alongside.** The user's library DBs were dumped via the root bridge (`getlog --cat` for `.db` + `.db-wal` + `.db-shm`, then `python3 -m sqlite3`-style query because `/system/bin/sqlite3` isn't present on the device):
+
+- `gamehub.lite/databases/db_game_library.db` → Dead Cells (server_game_id `10417`), God of War (`49908`), Gunslugs (`0` — GOG, not deep-link-addressable)
+- `banner.hub/databases/db_game_library.db` → Blur (`-1` — not addressable), Dirt 3 (`131962`), God of War (`49908`), PRAGMATA (`135805`)
+
+Important consequence: 6.0.4's `t_game_library_base.id` is TEXT with prefixes like `local_*` / `gog_*` — those cannot be parsed by the dispatch's `Liml;->t0(radix 10, String)` Integer-parse step. The 5.3.5-style numeric `localGameId` arg only maps onto 6.0.4's INTEGER `server_game_id` column. The "Show game IDs" menu-row patch (queued) must surface `server_game_id` as the user-facing "Local Game ID", not the raw `id` TEXT.
+
+**Fix in pre4 (commit pending).** `ExternalLauncher.readIdExtra(intent, key)` now reads `getStringExtra` first and `Integer.parseInt(trim())` it; falls back to `getIntExtra` for any future caller using `--ei`. Bad String values are logged but treated as missing (no crash). Same idea for `autoStartGame` via `readBoolExtra`, since `--ez` and `--es "true"` are both plausible — `--ez` is preferred but the String form is tolerated.
+
+## 2026-05-20 (cont.) — `extlaunch-pre4` device-confirmed end-to-end + Epic gap → pre5
+
+`extlaunch-pre4` ([run 26162931869](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26162931869)) green across all 9 variants. md5 of Normal-GHL APK = `a78178e0d42a8b3b3b554ab48b40e32b`.
+
+**Device-confirmed paths (1.4.0-604-extlaunch-pre4 on `gamehub.lite`):**
+1. **PC-imported (`source_type=0`)** — God of War (`server_game_id=49908`, `id="local_YigsP7W-…"`). Beacon `--es localGameId 49908 --ez autoStartGame true` → `ActivityTaskManager: START act=gamehub.lite.LAUNCH_GAME cmp=…/com.xiaoji.egggame.DeepLinkActivity` → `GameDetailViewModel: loadGameDetail rendered from local library after server/steam/epic failed. id=, sourceId=49908, sourceType=1` → `WinEmuModule: startGame(null-49908-1593500)` → Wine pipeline launched `GoW.exe`. End-to-end works.
+2. **Steam-library (`source_type=1`)** — Brawlhalla (`id == server_game_id == steam_app_id == 291550`). Beacon `--es localGameId 291550` resolved via server-lookup branch (not fallback). User-confirmed working.
+3. **Epic-library (`source_type=2`)** — DOOMBLADE (`id == epic_app_name == "818572d480784b9a904e54aab004d1c4"`, `server_game_id=0`). **Pre4 cannot launch this** — the 32-char hex UUID fails `Liml;->t0` Integer parse on `app_nav_game_id`, and `server_game_id=0` is the only numeric handle (a "no catalog id" sentinel, not addressable).
+
+**Cosmetic note:** the `Log.i(TAG="BhExternalLauncher")` line didn't surface in the captured logcat for the pre4 test even with `-n 20000` unfiltered. System-side `ActivityTaskManager` log + GameHub's own `GameDetailViewModel` log together prove the rewrite happened (without our extension, `app_nav_game_id` wouldn't be populated from the Beacon `--es localGameId` extra). Possibly device-level Log.i filter; not gating anything.
+
+**Pre5 extension change for Epic support.** Same Beacon command template; the user just puts the right handle in the per-game `.iso/.txt` file:
+- PC-import / Steam-library → numeric `server_game_id`
+- Epic-library → 32-char hex `epic_app_name` UUID
+
+`ExternalLauncher.rewriteIntent` now:
+1. Reads `localGameId` as String, tries `Integer.parseInt`.
+2. If parse fails AND the string matches the Epic UUID shape (hex, ≥8 chars), treats it as `epicAppName`.
+3. Explicit `--es epicAppName <uuid>` extra is also accepted (preferred for callers that want to be explicit).
+4. Epic branch sets:
+   - `target_type = app_nav_target = "game_detail"`
+   - `app_nav_game_id = "0"` (the dispatch's "no catalog id" sentinel — required because the Integer parse must succeed; without it the dispatch bails)
+   - `app_nav_epic_app_name = <uuid>`
+   - `app_nav_source_type = 2`
+   - `app_nav_auto_start_game = <bool>`
+5. PC / Steam branch unchanged.
+
+This is still partly speculative — the `game_id=0` + `epic_app_name=<uuid>` combination needs device verification against DOOMBLADE. If the dispatch ignores `epic_app_name` when `game_id` is 0, the fix is more invasive (e.g. construct the navigation route manually rather than going through the int-game-id dispatch).
+
+## 2026-05-20 (cont.) — `extlaunch-pre5` Epic device test FAILED → ship as PC+Steam only
+
+`extlaunch-pre5` ([run 26165219171](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26165219171)) applied cleanly across all 9 variants (0 SEVERE). Normal-GHL APK md5 `a3b329f6b32e777a66b48693c2327d3e`.
+
+**Device test result for DOOMBLADE (Epic-library):** `BhExternalLauncher: rewrote gamehub.lite.LAUNCH_GAME → epic game_detail epicAppName=818572d480784b9a904e54aab004d1c4 autoStart=true` — extension fired correctly and set the Epic extras. But `GameDetailViewModel` logged: `[Issue#1753] loadGameDetail fallback exhausted → show empty. id=0, sourceId=, sourceType=-1, apiError=Business error: code=401, message=Please login first`. The dispatch's `app_nav_source_type` and `app_nav_epic_app_name` extras were ignored by the ViewModel — only `app_nav_game_id` (which we set to `"0"` as the Epic sentinel) propagated, and the resulting `loadGameDetail(0)` failed all branches (server lookup 401'd against the fake-login; steam/epic/local-fallback all failed because no row matched `_id`/`server_game_id`/`id` against `0`).
+
+**Architectural conclusion.** The 6.0.4 `DeepLinkActivity` dispatch is fundamentally Integer-game-id-based, and the server-resolution branch hits Steam's catalog via `server_game_id` / Steam appid. Epic-library entries have no usable numeric handle (their unique identifier is the 32-char hex `epic_app_name` UUID, stored in `t_game_library_base.id` AND `epic_app_name` columns; `server_game_id=0`). For PC and Steam games the catalog API bridges `server_game_id` → the right local row, so Beacon works. For Epic that bridge doesn't exist in the deep-link surface at all.
+
+**Evidence the in-app library-tile path goes elsewhere.** When the user tapped DOOMBLADE in GameHub Lite's library, the launch chain was `MainActivity → (Compose nav, NO DeepLinkActivity) → WineActivity` — taskId 10286, no DeepLinkActivity in the trace. The launch method's `extension_data` JSON drives the launch:
+```json
+{
+  "gameId": "818572d480784b9a904e54aab004d1c4",
+  "name": "DOOMBLADE",
+  "startType": 1408,
+  "exePath": "/data/user/0/gamehub.lite/files/xj_winemu/xj_install/game/<uuid>",
+  "gameDir": "/data/user/0/gamehub.lite/files/xj_winemu/xj_install/game/<uuid>"
+}
+```
+`start_type=1408` is the Epic launch flow; `start_type=1407` is Steam; `start_type=1403` is PC-import. The library-tile code path reads `t_game_launch_method.extension_data` (NOT the deep-link extras) and invokes `WineActivity` with the right args.
+
+**Side-discovery: `_id=10` resolves to Counter-Strike on Steam.** When testing with DOOMBLADE's `_id` (`10`), Beacon dispatched to CS:GO's storefront. Steam appid `10` IS Counter-Strike, so the server-lookup branch hit Steam's catalog directly. Confirms the dispatch is Steam-appid-centric for its primary lookup, with local-fallback only used when server lookup fails AND the row has a matching `server_game_id`.
+
+**Ship decision.** Pre5 is final for the External-launcher feature. Three Epic-support paths exist (hook MainActivity / direct-to-WineActivity / patch GameDetailViewModel) but each is a multi-iteration patch project on the scale of `VibrationMenuRowPatch` — not worth blocking the PC+Steam-supported feature. Ship pre5 as the External-launcher feature; document Epic + GOG as library-tile-only in release notes and the beacon instructions txt.
+
+**Beacon contract (final for this branch):**
+
+| Game type | What goes in the per-game `.iso/.txt` file |
+|---|---|
+| PC-imported (`source_type=0`) | numeric `server_game_id` from `t_game_library_base` (e.g. `49908` for God of War) |
+| Steam-library (`source_type=1`) | numeric `server_game_id`, which equals the Steam appid for these rows (e.g. `291550` for Brawlhalla) |
+| Epic-library (`source_type=2`) | **Not supported via Beacon** — launch from GameHub's library tile directly |
+| GOG-imported (`server_game_id=0`) | **Not supported via Beacon** — same reason as Epic |
+
+`beacon instructions.txt` updated in lockstep at `/storage/emulated/0/Download/beacon instructions.txt`.

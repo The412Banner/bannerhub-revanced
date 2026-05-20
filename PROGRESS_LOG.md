@@ -2956,3 +2956,32 @@ This explains why a correct numeric `server_game_id` would also have failed agai
 Important consequence: 6.0.4's `t_game_library_base.id` is TEXT with prefixes like `local_*` / `gog_*` — those cannot be parsed by the dispatch's `Liml;->t0(radix 10, String)` Integer-parse step. The 5.3.5-style numeric `localGameId` arg only maps onto 6.0.4's INTEGER `server_game_id` column. The "Show game IDs" menu-row patch (queued) must surface `server_game_id` as the user-facing "Local Game ID", not the raw `id` TEXT.
 
 **Fix in pre4 (commit pending).** `ExternalLauncher.readIdExtra(intent, key)` now reads `getStringExtra` first and `Integer.parseInt(trim())` it; falls back to `getIntExtra` for any future caller using `--ei`. Bad String values are logged but treated as missing (no crash). Same idea for `autoStartGame` via `readBoolExtra`, since `--ez` and `--es "true"` are both plausible — `--ez` is preferred but the String form is tolerated.
+
+## 2026-05-20 (cont.) — `extlaunch-pre4` device-confirmed end-to-end + Epic gap → pre5
+
+`extlaunch-pre4` ([run 26162931869](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26162931869)) green across all 9 variants. md5 of Normal-GHL APK = `a78178e0d42a8b3b3b554ab48b40e32b`.
+
+**Device-confirmed paths (1.4.0-604-extlaunch-pre4 on `gamehub.lite`):**
+1. **PC-imported (`source_type=0`)** — God of War (`server_game_id=49908`, `id="local_YigsP7W-…"`). Beacon `--es localGameId 49908 --ez autoStartGame true` → `ActivityTaskManager: START act=gamehub.lite.LAUNCH_GAME cmp=…/com.xiaoji.egggame.DeepLinkActivity` → `GameDetailViewModel: loadGameDetail rendered from local library after server/steam/epic failed. id=, sourceId=49908, sourceType=1` → `WinEmuModule: startGame(null-49908-1593500)` → Wine pipeline launched `GoW.exe`. End-to-end works.
+2. **Steam-library (`source_type=1`)** — Brawlhalla (`id == server_game_id == steam_app_id == 291550`). Beacon `--es localGameId 291550` resolved via server-lookup branch (not fallback). User-confirmed working.
+3. **Epic-library (`source_type=2`)** — DOOMBLADE (`id == epic_app_name == "818572d480784b9a904e54aab004d1c4"`, `server_game_id=0`). **Pre4 cannot launch this** — the 32-char hex UUID fails `Liml;->t0` Integer parse on `app_nav_game_id`, and `server_game_id=0` is the only numeric handle (a "no catalog id" sentinel, not addressable).
+
+**Cosmetic note:** the `Log.i(TAG="BhExternalLauncher")` line didn't surface in the captured logcat for the pre4 test even with `-n 20000` unfiltered. System-side `ActivityTaskManager` log + GameHub's own `GameDetailViewModel` log together prove the rewrite happened (without our extension, `app_nav_game_id` wouldn't be populated from the Beacon `--es localGameId` extra). Possibly device-level Log.i filter; not gating anything.
+
+**Pre5 extension change for Epic support.** Same Beacon command template; the user just puts the right handle in the per-game `.iso/.txt` file:
+- PC-import / Steam-library → numeric `server_game_id`
+- Epic-library → 32-char hex `epic_app_name` UUID
+
+`ExternalLauncher.rewriteIntent` now:
+1. Reads `localGameId` as String, tries `Integer.parseInt`.
+2. If parse fails AND the string matches the Epic UUID shape (hex, ≥8 chars), treats it as `epicAppName`.
+3. Explicit `--es epicAppName <uuid>` extra is also accepted (preferred for callers that want to be explicit).
+4. Epic branch sets:
+   - `target_type = app_nav_target = "game_detail"`
+   - `app_nav_game_id = "0"` (the dispatch's "no catalog id" sentinel — required because the Integer parse must succeed; without it the dispatch bails)
+   - `app_nav_epic_app_name = <uuid>`
+   - `app_nav_source_type = 2`
+   - `app_nav_auto_start_game = <bool>`
+5. PC / Steam branch unchanged.
+
+This is still partly speculative — the `game_id=0` + `epic_app_name=<uuid>` combination needs device verification against DOOMBLADE. If the dispatch ignores `epic_app_name` when `game_id` is 0, the fix is more invasive (e.g. construct the navigation route manually rather than going through the int-game-id dispatch).

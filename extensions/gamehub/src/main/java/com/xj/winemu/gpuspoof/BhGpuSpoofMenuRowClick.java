@@ -97,16 +97,16 @@ public final class BhGpuSpoofMenuRowClick implements Function1<Object, Object> {
             Class<?> pw6Cls = Class.forName("pw6");
 
             Class<?> zz4Cls = Class.forName("zz4");
-            Field iconHolderField = zz4Cls.getDeclaredField("V");
+            Field iconHolderField = zz4Cls.getDeclaredField("v");
             iconHolderField.setAccessible(true);
             Object xrlWrapper = iconHolderField.get(null);
             if (xrlWrapper == null) {
-                Log.w(TAG, "zz4.V is null; cannot resolve icon");
+                Log.w(TAG, "zz4.v is null; cannot resolve icon");
                 return;
             }
             Object iconValue = xrlWrapper.getClass().getMethod("getValue").invoke(xrlWrapper);
             if (!o05Cls.isInstance(iconValue)) {
-                Log.w(TAG, "zz4.V.getValue() did not return Lo05");
+                Log.w(TAG, "zz4.v.getValue() did not return Lo05");
                 return;
             }
 
@@ -132,7 +132,7 @@ public final class BhGpuSpoofMenuRowClick implements Function1<Object, Object> {
             Class<?> nw6Cls = Class.forName("nw6");
             Class<?> zz4Cls = Class.forName("zz4");
 
-            Field iconField = zz4Cls.getDeclaredField("V");
+            Field iconField = zz4Cls.getDeclaredField("v");
             iconField.setAccessible(true);
             Object xrlWrapper = iconField.get(null);
             if (xrlWrapper == null) return safeReturn(original);

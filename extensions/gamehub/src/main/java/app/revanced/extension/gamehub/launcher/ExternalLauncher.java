@@ -1,6 +1,5 @@
 package app.revanced.extension.gamehub.launcher;
 
-import android.app.Activity;
 import android.content.Intent;
 import android.util.Log;
 
@@ -29,20 +28,16 @@ public final class ExternalLauncher {
 
     private ExternalLauncher() {}
 
-    public static void rewriteIntent(Activity activity, Intent intent) {
-        if (activity == null || intent == null) return;
+    public static void rewriteIntent(Intent intent) {
+        if (intent == null) return;
         String action = intent.getAction();
-        if (action == null) return;
+        if (action == null || !action.endsWith(ACTION_SUFFIX)) return;
 
-        // Match either "<our_package>.LAUNCH_GAME" (per-variant native) or
-        // playday's literal "gamehub.lite.LAUNCH_GAME" — so users running old
-        // 5.3.5-style Beacon configs against a renamed BannerHub variant still
-        // dispatch correctly. The native filter still publishes only the
-        // per-variant action; the literal is purely a runtime fallback.
-        String expected = activity.getPackageName() + ACTION_SUFFIX;
-        if (!action.equals(expected) && !action.equals("gamehub.lite" + ACTION_SUFFIX)) {
-            return;
-        }
+        // The action prefix is the variant package
+        // ("gamehub.lite", "com.tencent.ig", …). We don't need the Activity
+        // to derive that — endsWith matches every per-variant action AND
+        // the literal "gamehub.lite.LAUNCH_GAME" forgiveness fallback for
+        // stale 5.3.5-Lite-style Beacon configs against a renamed variant.
 
         int localGameId = intent.getIntExtra("localGameId", -1);
         int steamAppId  = intent.getIntExtra("steamAppId", -1);

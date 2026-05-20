@@ -2889,3 +2889,29 @@ am launch -n gamehub.lite/com.xiaoji.egggame.DeepLinkActivity \
 **Re-derivation on future base bumps.** `DeepLinkActivity` is at the package root (not behind R8 letter renames) — stable. Native `app_nav_*` extra names appear as const-string literals in `onCreate`'s smali — grep to verify they still feed the same dispatch on a future base.
 
 Pending: CI dispatch on `feature/external-launcher`, per-patch SEVERE check on the run log per `[[feedback_revanced_verify_patch_applied]]`, device test (Lite variant first via Beacon).
+
+## 2026-05-20 (cont.) — `extlaunch-pre1` Release SEVERE'd → smali register-limit fix
+
+`Build pull request` compiled green ([run 26159954724](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26159954724)) but that workflow does NOT invoke revanced-cli, so it only validates Kotlin compilation. Dispatched artifact-only Release ([run 26160401818](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26160401818), version `1.4.0-604-extlaunch-pre1`, `stable=false`) to get the actual patch-apply check. All 4 patch jobs reported `SEVERE: "External launcher support" failed` with `app.revanced.patcher.patch.PatchException: Collection is empty` — classic silent-no-apply per `[[feedback_revanced_verify_patch_applied]]`. Underlying smali error (printed above the SEVERE line in the log):
+
+```
+[5,16] The maximum allowed register in this context is list of registers is v15
+[5,0] Cannot invoke "Object.hashCode()" because "key" is null
+[5,56] mismatched tree node: UP expecting I_CATCHES
+[3,0] A non-abstract/non-native method must have at least 1 instruction
+[7,24] mismatched tree node: Lapp/revanced/extension/gamehub/launcher/ExternalLauncher; expecting I_FIELDS
+```
+
+Root cause: `DeepLinkActivity.onCreate` declares `.locals 34`, which aliases `p0` to `v34`. The injected `invoke-static {p0, v0}, ...` uses the non-range invoke form, which only accepts 4-bit register references (`v0`–`v15`). `v34` blew that limit on the FIRST register slot, the assembler bailed, the rest of the cascade followed.
+
+**Fix:** drop the `Activity` parameter entirely from the extension. The Intent's action string already contains the variant package (`<pkg>.LAUNCH_GAME`), so we can check `action.endsWith(".LAUNCH_GAME")` without ever calling `getPackageName()`. That collapses the smali to two single-register invokes (`{p0}` alone, then `{v0}` alone), both of which are valid even with `.locals 34`:
+
+```smali
+invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+move-result-object v0
+invoke-static {v0}, Lapp/revanced/extension/gamehub/launcher/ExternalLauncher;->rewriteIntent(Landroid/content/Intent;)V
+```
+
+Behavioral equivalence preserved — `endsWith(".LAUNCH_GAME")` matches every per-variant action AND the literal `gamehub.lite.LAUNCH_GAME` PlayDay-compatibility fallback in one expression.
+
+**Lesson captured for memory:** when injecting into a method with `.locals >= 16`, every `invoke-…` that uses the non-range form must be checked — any `p0` reference becomes `v(locals)` and silently exceeds the 4-bit register cap. Solutions: (a) drop the receiver/Activity parameter and pull state from the Intent or other low-register sources; (b) `move-object/from16 vLow, p0` first; (c) use `/range` form with a contiguous register window. Option (a) is cleanest when feasible.

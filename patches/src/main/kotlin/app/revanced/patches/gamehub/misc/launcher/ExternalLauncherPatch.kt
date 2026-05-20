@@ -51,15 +51,13 @@ import org.w3c.dom.Element
 //      DeepLinkActivity is already exported in 6.0.4; we set it again
 //      defensively.
 //   2. Bytecode: at the top of DeepLinkActivity.onCreate, call
-//      ExternalLauncher.rewriteIntent(this, intent), which translates the
-//      5.3.5 extras into the native app_nav_* form. The existing dispatch
-//      then routes us to game detail (and auto-launches if requested) with
-//      no further patching. The Java extension matches the action
-//      dynamically via getPackageName() so per-variant builds work without
-//      a per-variant codegen step. As a fallback the extension also accepts
-//      the literal "gamehub.lite.LAUNCH_GAME" so users running stale
-//      5.3.5-Lite-style Beacon configs against a renamed variant still
-//      dispatch correctly.
+//      ExternalLauncher.rewriteIntent(intent), which translates the 5.3.5
+//      extras into the native app_nav_* form. The existing dispatch then
+//      routes us to game detail (and auto-launches if requested) with no
+//      further patching. The Java extension matches any action ending in
+//      ".LAUNCH_GAME" — that covers every per-variant action AND PlayDay's
+//      literal "gamehub.lite.LAUNCH_GAME" as a forgiveness fallback for
+//      stale 5.3.5-Lite-style Beacon configs against a renamed variant.
 //
 // Beacon instructions for 6.0.4 (per variant):
 //   am launch -n <variant_pkg>/com.xiaoji.egggame.DeepLinkActivity \
@@ -74,10 +72,13 @@ import org.w3c.dom.Element
 //
 // Anchor strategy (no hardcoded smali line):
 //   - definingClass + method name. DeepLinkActivity has exactly one onCreate
-//     in 6.0.4 (verified). The instruction-insertion uses .locals 34 — our
-//     three injected instructions reuse v0 (which the original onCreate
-//     overwrites with a sget-object on the very next instruction, so there
-//     is nothing to preserve).
+//     in 6.0.4 (verified). The method declares .locals 34, which aliases
+//     p0 to v34 — too high for non-range invoke's 4-bit register form.
+//     The injection uses single-register invoke forms only ({p0} alone,
+//     then {v0} alone) so the 16+-register limit never bites. v0 reuse is
+//     safe — the original onCreate's next instruction
+//     (sget-object v0, Lejm;->a:Lghd;) writes v0 but its result is never
+//     read.
 //
 // Re-derivation on future base bumps:
 //   - DeepLinkActivity is at the package root, not behind R8 letter renames
@@ -160,7 +161,7 @@ val externalLauncherPatch = bytecodePatch(
             """
                 invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
                 move-result-object v0
-                invoke-static {p0, v0}, Lapp/revanced/extension/gamehub/launcher/ExternalLauncher;->rewriteIntent(Landroid/app/Activity;Landroid/content/Intent;)V
+                invoke-static {v0}, Lapp/revanced/extension/gamehub/launcher/ExternalLauncher;->rewriteIntent(Landroid/content/Intent;)V
             """.trimIndent(),
         )
     }

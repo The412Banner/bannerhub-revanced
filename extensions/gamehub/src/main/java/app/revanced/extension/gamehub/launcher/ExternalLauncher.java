@@ -9,23 +9,28 @@ import android.util.Log;
  * {@code localGameId} / {@code autoStartGame} / {@code type} extras) onto
  * GameHub 6.0.4's native {@code DeepLinkActivity} deep-link dispatcher,
  * which already understands {@code app_nav_target=game_detail} +
- * {@code app_nav_game_id} + {@code app_nav_auto_start_game} (and more).
+ * {@code app_nav_game_id} + {@code app_nav_auto_start_game}.
  *
- * <p>Three game-source paths covered by the same Beacon command shape:
+ * <p><b>Supported game sources</b> (device-verified on 1.4.0-604-extlaunch-pre5):
  * <ul>
- *   <li><b>PC-imported games</b> ({@code source_type=0}, {@code id="local_…"}):
- *       Beacon passes {@code --es localGameId <numeric server_game_id>}.</li>
- *   <li><b>Steam-library games</b> ({@code source_type=1}, {@code id == steam_app_id}):
- *       Beacon passes {@code --es localGameId <numeric server_game_id>} OR
- *       {@code --es steamAppId <appid>} (server_game_id equals the Steam appid
- *       for these rows).</li>
- *   <li><b>Epic-library games</b> ({@code source_type=2}, {@code id} is a 32-char
- *       hex UUID matching {@code epic_app_name}, {@code server_game_id=0}):
- *       Beacon passes {@code --es localGameId <uuid>} — we auto-detect the
- *       non-numeric value and route to the Epic dispatch branch. The explicit
- *       {@code --es epicAppName <uuid>} form is also accepted for callers that
- *       prefer separating concerns.</li>
+ *   <li><b>PC-imported games</b> ({@code source_type=0}): Beacon passes
+ *       {@code --es localGameId <numeric server_game_id>}.</li>
+ *   <li><b>Steam-library games</b> ({@code source_type=1}): Beacon passes
+ *       {@code --es localGameId <numeric server_game_id>}; the value happens to
+ *       equal the Steam appid for these rows.</li>
  * </ul>
+ *
+ * <p><b>Not supported</b>: Epic-library ({@code source_type=2}) and GOG-imported
+ * games. Their unique handle is the TEXT {@code id} column (32-char hex UUID or
+ * {@code gog_*} prefix) and {@code server_game_id=0}. The 6.0.4 dispatch parses
+ * {@code app_nav_game_id} as Integer, so a UUID can't ride this surface, and
+ * {@code server_game_id=0} matches no catalog entry. Tested with DOOMBLADE
+ * (Epic): the {@code app_nav_epic_app_name} / {@code app_nav_source_type} extras
+ * we set were silently ignored by {@code GameDetailViewModel}, whose lookup
+ * chain is keyed by {@code app_nav_game_id} alone. The in-app library-tile path
+ * uses a completely separate Compose route through {@code MainActivity}, not
+ * {@code DeepLinkActivity} — supporting Epic via Beacon would require hooking
+ * that separate surface (queued as a future patch).
  *
  * <p>Action name is variant-aware: any action ending in {@code .LAUNCH_GAME}
  * matches, so per-variant builds ({@code gamehub.lite.LAUNCH_GAME},
@@ -36,9 +41,6 @@ public final class ExternalLauncher {
     private static final String TAG = "BhExternalLauncher";
     private static final String ACTION_SUFFIX = ".LAUNCH_GAME";
 
-    /** GameHub's source_type enum value for Epic-library entries. */
-    private static final int SOURCE_TYPE_EPIC = 2;
-
     private ExternalLauncher() {}
 
     public static void rewriteIntent(Intent intent) {
@@ -46,58 +48,22 @@ public final class ExternalLauncher {
         String action = intent.getAction();
         if (action == null || !action.endsWith(ACTION_SUFFIX)) return;
 
-        // Read the raw String forms first — Beacon / ES-DE / Daijishou all use
-        // --es. Only fall back to --ei via the getIntExtra default for any
-        // future caller using the typed form.
-        String localRaw = intent.getStringExtra("localGameId");
-        String epicAppName = intent.getStringExtra("epicAppName");
+        // External frontends typically launch via `am launch --es <key> <value>`
+        // (Beacon, ES-DE, Daijishou), which puts STRING extras. Read both kinds
+        // and parse — String args win when present (documented contract); fall
+        // back to Int extras for any future caller using --ei.
+        int localGameId = readIdExtra(intent, "localGameId");
+        int steamAppId  = readIdExtra(intent, "steamAppId");
         boolean autoStart = readBoolExtra(intent, "autoStartGame", false);
-
-        // Try to parse localGameId as Int (PC-import / Steam-library path).
-        // If it fails AND the String looks like an Epic UUID, fall through to
-        // the Epic path. Numeric values can't be Epic ids and vice versa, so
-        // there's no ambiguity.
-        int localGameId = -1;
-        if (localRaw != null) {
-            try {
-                localGameId = Integer.parseInt(localRaw.trim());
-            } catch (NumberFormatException ignored) {
-                if (epicAppName == null && looksLikeEpicUuid(localRaw.trim())) {
-                    epicAppName = localRaw.trim();
-                }
-            }
-        } else {
-            localGameId = intent.getIntExtra("localGameId", -1);
-        }
-
-        // ---- Epic branch ------------------------------------------------
-        if (epicAppName != null && !epicAppName.isEmpty()) {
-            // Native 6.0.4 dispatch consumes these extras together when
-            // navigating to game_detail for an Epic-library entry. game_id
-            // must be a parseable Int — 0 is the documented "no catalog id"
-            // sentinel that hands lookup off to the epic_app_name resolver.
-            intent.putExtra("target_type", "game_detail");
-            intent.putExtra("app_nav_target", "game_detail");
-            intent.putExtra("app_nav_game_id", "0");
-            intent.putExtra("app_nav_epic_app_name", epicAppName);
-            intent.putExtra("app_nav_source_type", SOURCE_TYPE_EPIC);
-            intent.putExtra("app_nav_auto_start_game", autoStart);
-
-            Log.i(TAG, "rewrote " + action + " → epic game_detail epicAppName="
-                + epicAppName + " autoStart=" + autoStart);
-            return;
-        }
-
-        // ---- PC-import / Steam-library branch --------------------------
-        int steamAppId = readIdExtra(intent, "steamAppId");
 
         // localGameId wins; fall back to steamAppId. Frontends typically send
         // one or the other.
         int gameId = localGameId > 0 ? localGameId : steamAppId;
         if (gameId <= 0) {
             Log.w(TAG, "LAUNCH_GAME intent with no usable id "
-                + "(localGameId=" + localGameId + ", steamAppId=" + steamAppId
-                + ", epicAppName=" + epicAppName + ")");
+                + "(localGameId=" + localGameId + ", steamAppId=" + steamAppId + "). "
+                + "Epic and GOG games are not supported via this surface — launch from "
+                + "GameHub's library tile directly.");
             return;
         }
 
@@ -127,28 +93,10 @@ public final class ExternalLauncher {
 
     private static boolean readBoolExtra(Intent intent, String key, boolean def) {
         // --ez gives a real boolean; --es gives a String like "true"/"false".
-        // getBooleanExtra(key, def) returns def if the extra is missing OR
-        // the wrong type, so try the String form first.
+        // getBooleanExtra(key, def) returns def if the extra is missing OR the
+        // wrong type, so try the String form first.
         String s = intent.getStringExtra(key);
         if (s != null) return Boolean.parseBoolean(s.trim());
         return intent.getBooleanExtra(key, def);
-    }
-
-    /**
-     * Heuristic: Epic app names observed in 6.0.4's
-     * {@code t_game_library_base.epic_app_name} column are 32-character
-     * lowercase hex strings (UUIDs without dashes). Numeric ids and Steam
-     * appids would already have parsed as Int upstream, so any non-numeric
-     * String that fits the hex shape is treated as an Epic candidate.
-     */
-    private static boolean looksLikeEpicUuid(String s) {
-        if (s.length() < 8) return false;
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {
-                return false;
-            }
-        }
-        return true;
     }
 }

@@ -2985,3 +2985,38 @@ Important consequence: 6.0.4's `t_game_library_base.id` is TEXT with prefixes li
 5. PC / Steam branch unchanged.
 
 This is still partly speculative — the `game_id=0` + `epic_app_name=<uuid>` combination needs device verification against DOOMBLADE. If the dispatch ignores `epic_app_name` when `game_id` is 0, the fix is more invasive (e.g. construct the navigation route manually rather than going through the int-game-id dispatch).
+
+## 2026-05-20 (cont.) — `extlaunch-pre5` Epic device test FAILED → ship as PC+Steam only
+
+`extlaunch-pre5` ([run 26165219171](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26165219171)) applied cleanly across all 9 variants (0 SEVERE). Normal-GHL APK md5 `a3b329f6b32e777a66b48693c2327d3e`.
+
+**Device test result for DOOMBLADE (Epic-library):** `BhExternalLauncher: rewrote gamehub.lite.LAUNCH_GAME → epic game_detail epicAppName=818572d480784b9a904e54aab004d1c4 autoStart=true` — extension fired correctly and set the Epic extras. But `GameDetailViewModel` logged: `[Issue#1753] loadGameDetail fallback exhausted → show empty. id=0, sourceId=, sourceType=-1, apiError=Business error: code=401, message=Please login first`. The dispatch's `app_nav_source_type` and `app_nav_epic_app_name` extras were ignored by the ViewModel — only `app_nav_game_id` (which we set to `"0"` as the Epic sentinel) propagated, and the resulting `loadGameDetail(0)` failed all branches (server lookup 401'd against the fake-login; steam/epic/local-fallback all failed because no row matched `_id`/`server_game_id`/`id` against `0`).
+
+**Architectural conclusion.** The 6.0.4 `DeepLinkActivity` dispatch is fundamentally Integer-game-id-based, and the server-resolution branch hits Steam's catalog via `server_game_id` / Steam appid. Epic-library entries have no usable numeric handle (their unique identifier is the 32-char hex `epic_app_name` UUID, stored in `t_game_library_base.id` AND `epic_app_name` columns; `server_game_id=0`). For PC and Steam games the catalog API bridges `server_game_id` → the right local row, so Beacon works. For Epic that bridge doesn't exist in the deep-link surface at all.
+
+**Evidence the in-app library-tile path goes elsewhere.** When the user tapped DOOMBLADE in GameHub Lite's library, the launch chain was `MainActivity → (Compose nav, NO DeepLinkActivity) → WineActivity` — taskId 10286, no DeepLinkActivity in the trace. The launch method's `extension_data` JSON drives the launch:
+```json
+{
+  "gameId": "818572d480784b9a904e54aab004d1c4",
+  "name": "DOOMBLADE",
+  "startType": 1408,
+  "exePath": "/data/user/0/gamehub.lite/files/xj_winemu/xj_install/game/<uuid>",
+  "gameDir": "/data/user/0/gamehub.lite/files/xj_winemu/xj_install/game/<uuid>"
+}
+```
+`start_type=1408` is the Epic launch flow; `start_type=1407` is Steam; `start_type=1403` is PC-import. The library-tile code path reads `t_game_launch_method.extension_data` (NOT the deep-link extras) and invokes `WineActivity` with the right args.
+
+**Side-discovery: `_id=10` resolves to Counter-Strike on Steam.** When testing with DOOMBLADE's `_id` (`10`), Beacon dispatched to CS:GO's storefront. Steam appid `10` IS Counter-Strike, so the server-lookup branch hit Steam's catalog directly. Confirms the dispatch is Steam-appid-centric for its primary lookup, with local-fallback only used when server lookup fails AND the row has a matching `server_game_id`.
+
+**Ship decision.** Pre5 is final for the External-launcher feature. Three Epic-support paths exist (hook MainActivity / direct-to-WineActivity / patch GameDetailViewModel) but each is a multi-iteration patch project on the scale of `VibrationMenuRowPatch` — not worth blocking the PC+Steam-supported feature. Ship pre5 as the External-launcher feature; document Epic + GOG as library-tile-only in release notes and the beacon instructions txt.
+
+**Beacon contract (final for this branch):**
+
+| Game type | What goes in the per-game `.iso/.txt` file |
+|---|---|
+| PC-imported (`source_type=0`) | numeric `server_game_id` from `t_game_library_base` (e.g. `49908` for God of War) |
+| Steam-library (`source_type=1`) | numeric `server_game_id`, which equals the Steam appid for these rows (e.g. `291550` for Brawlhalla) |
+| Epic-library (`source_type=2`) | **Not supported via Beacon** — launch from GameHub's library tile directly |
+| GOG-imported (`server_game_id=0`) | **Not supported via Beacon** — same reason as Epic |
+
+`beacon instructions.txt` updated in lockstep at `/storage/emulated/0/Download/beacon instructions.txt`.

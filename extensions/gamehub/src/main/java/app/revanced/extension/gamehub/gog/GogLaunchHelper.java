@@ -50,15 +50,6 @@ public final class GogLaunchHelper {
 
     // ── Public API ───────────────────────────────────────────────────────────
 
-    /** Convenience overload taking a GogGame from the library list. */
-    public static void triggerLaunch(Activity activity, GogGame game, String exePath) {
-        if (game == null) {
-            Log.w(TAG, "GogLaunchHelper: null GogGame — abort");
-            return;
-        }
-        triggerLaunch(activity, exePath, game.gameId, game.title, game.imageUrl);
-    }
-
     /** Add the GOG game to GameHub's library.
      *  No auto-launch — launching is the user's job, done manually from the
      *  GameHub library tile like any other PC import. The library refresh

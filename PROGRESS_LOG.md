@@ -3318,3 +3318,53 @@ This is still partly speculative — the `game_id=0` + `epic_app_name=<uuid>` co
 | GOG-imported (`server_game_id=0`) | **Not supported via Beacon** — same reason as Epic |
 
 `beacon instructions.txt` updated in lockstep at `/storage/emulated/0/Download/beacon instructions.txt`.
+
+## 2026-05-20 (cont.) — Show Game ID menu row + View All Games dialog (`gameid-pre1`, MERGED to 604 + Lite)
+
+Companion to External Launcher (above): users wiring Beacon / ES-DE / Daijishou had no in-app way to read the `server_game_id` GameHub uses — they had to grep logcat. New menu row surfaces it directly in all three per-game popup menus, and a "View All Games" button on the dialog walks the entire library DB so any game's id can be copied without browsing per-tile.
+
+### Patch layout — clone of the vibration / gpuspoof menu-row family
+
+- `patches/.../gameid/GameIdDisplayMenuRowPatch.kt` — three injection sites (`Lx57;->a` More Menu / `Lted;->f` library-tile popup / `Lpzc;->j0` library-list popup), each a single `invoke-static {vN}, BhGameIdDisplayMenuRowClick;->append…(Object)…` that hands row construction to a Java helper (no register clobbering, no verifier risk). `dependsOn(menuGameIdCapturePatch, vibrationMenuRowPatch, gameIdDisplayMenuLabelPatch)` — explicitly reuses the shared `Lxd3;->l1` resolver hook owned by `vibrationMenuRowPatch`. **No second `Lxd3;->l1` head-block** (the 2026-05-17 GpuSpoof saga proved stacking a 2nd one ANRs MainActivity cold-start); the resolver entry is added as one `else if` line in `BhMenuRowClick.maybeResolveCustomLabel` mapping `"string:bh_gameid_label" → "Show Game ID"`.
+- `patches/.../gameid/GameIdDisplayMenuLabelPatch.kt` — appends `bh_gameid_label = "Show Game ID"` to `features.home`'s Compose Multiplatform `.cvr` resource bundle across the 6 locale variants (`values`, `values-en`, `values-zh-rCN`, `values-ja-rJP`, `values-pt-rBR`, `values-ru-rRU`). Resource is reachable through any future manifest-aware resolver; runtime lookup currently goes through the shared `l1` short-circuit.
+- `extensions/.../gameid/BhGameIdDisplayMenuRowClick.java` — Function1 click handler + three `append*` helpers + an `AlertDialog` with `Close / Copy / View All Games` buttons. Reuses the existing `BhMenuGameId.getCaptured()` channel and the same `ActivityThread.mActivities` walk pattern every other menu-row click handler uses, so no new Context resolution surface. View All flow opens the GameHub library DB read-only and renders an `ArrayAdapter` list; tap row → copy that game's `server_game_id`.
+
+### View All Games — DB-backed library browser
+
+Sources data from GameHub's own Room database. Schema confirmed live via `getlog --ls /data/data/banner.hub/databases/` + a python `sqlite3` read of the copied `.db` (no on-device `sqlite3` binary; PRoot can't `apt install` without root):
+
+```
+db_game_library.db → t_game_library_base
+  server_game_id INTEGER  (the integer gameId external launchers expect; matches MMKV pc_g_setting<id>)
+  game_name      TEXT
+  steam_app_id   TEXT     (when source_type = 1)
+  epic_app_name  TEXT     (when source_type = 2, the 32-char UUID — see External Launcher pre5 note)
+  source_type/source_id/last_launch_time + several catalog fields
+```
+
+Read-only open with `SQLiteDatabase.OPEN_READONLY | NO_LOCALIZED_COLLATORS` works alongside the host Room writer's WAL connection — no lock contention. `getApplicationContext().getDatabasePath("db_game_library.db")` resolves relative to the variant's data dir (`banner.hub` / `com.antutu.benchmark.full` / `gamehub.lite` / etc.) so the same code reads the right DB across every variant. Absent file (Room creates it lazily on first write — fresh install with no library yet) toasts "open a game once to initialise it"; missing table / any SQLite error toasts "Couldn't open library DB". Empty library renders its own "No games yet" sub-dialog. No crash path.
+
+### Reusable findings captured
+
+1. **`BhMenuGameId.GAMEINFO_CLS = "com.xiaoji.egggame.game.di.model.game.GameInfo"` is dead code on 6.0.4.** `find smali* -path "*xiaoji*game*"` returns nothing under that prefix; the class doesn't exist in the base APK at all. The toString-regex path (`ServerGameId(value=<int>)` / `gameId=<int>`) is the only one that ever fires. Don't rely on the GameInfo fallback for new features — the comment in `BhMenuGameId.java` referencing kept-name `GameInfo.getServerGameId()` is from a different GameHub generation.
+2. **GameHub's library catalog lives in `db_game_library.db`** — not in any of the three `*_Impl` Room classes visible in smali (`psplay/AppDatabase`, `movingrtc/SpeedTurnDatabase`, `movingrtc/RtcStateDatabase`); the GameLibrary Room class is generated under an R8-renamed `_Impl` that doesn't ship its raw name. Search by file rather than by class.
+3. **Rows can have `server_game_id = -1`** (locally added non-server games — e.g. `Blur` on the device dump). The patch surfaces them anyway since that's what GameHub stores; users who pass `-1` to an external launcher get the same "no usable id" behavior they would have got otherwise.
+
+### CI proof
+
+| Stage | Run ID | Result | Notes |
+|---|---|---|---|
+| Feature branch (`feature/menu-gameid-display`) | [26183057664](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26183057664) | FAILED (validation) | Forgot `-f version=…` on `workflow_dispatch` — the Release workflow's `Derive version` step requires it. |
+| Feature branch — corrected | [26183100272](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26183100272) | ✅ all 9 patch jobs green, 0 SEVERE | version `1.5.0-604-gameid-pre1` (Normal + alt-AnTuTu device-tested by user; "works great") |
+| `gamehub-604-build` back-merge (no-artifact) | [26184783602](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26184783602) | ✅ `./gradlew build --no-daemon`, 0 errors | Build pull request workflow — patch DSL compiles cleanly on the integration branch with no Release sign-off. |
+| `feature/lite-variant-tier1` back-merge (Lite refresh) | [26184541960](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26184541960) | ✅ all 9 Lite jobs green, 0 SEVERE | version `1.5.0-604-Lite-gameid-pre1` — Lite absorbed cleanly, no Tier-1–4 strip regression. |
+
+### Merge ledger
+
+- Feature branch `feature/menu-gameid-display`: HEAD `e928da5` (4 files, +741 LOC).
+- Merged into `gamehub-604-build` at merge commit **`090706e`** (`--no-ff`).
+- Back-merged into `feature/lite-variant-tier1` at merge commit **`09fa1d8`** (one-way pattern, mirrors `2d04579` for External Launcher).
+- GOG branch (`feature/gog-explore-tab` HEAD `0114f75`) verified isolated — `git branch --contains 0114f75` returns nothing under 604 / Lite / main per user directive ("leave it separate until we figure out the add-game-to-GameHub-library issues").
+
+Ships in v1.5.0-604 alongside External Launcher when the next stable is cut. Pre-release policy resumes per the BannerHub pre-release rule.
+

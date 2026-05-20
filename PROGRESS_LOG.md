@@ -2843,3 +2843,49 @@ Fix on both surfaces:
 - **Going-forward template** — same blockquote inserted into `release.yml`'s slim `body: |` block right after the version header, so every future v6 stable emits it automatically. Commit `27d98d4` on `gamehub-604-build` (`4c5ad1a..27d98d4`, 1 file +14), authored The412Banner / the412banner@users.noreply.github.com, no Claude trailer, pushed. No CI trigger (notes-template-only edit).
 
 Branch head: `gamehub-604-build` @ `27d98d4`. (Not added to `gamehub_reports/GAMEHUB_600_MASTER_MAP.md` — that map documents upstream GameHub 6.0 internals, not BannerHub release/doc changes.)
+
+## 2026-05-20 — External launcher (Beacon / ES-DE / Daijishou) port to 6.0.4 (branch `feature/external-launcher`)
+
+Ports PlayDay's 5.3.5 `ExternalLauncherPatch` ("External launcher support") to GameHub 6.0.4. The 5.3.5 hook (`Lcom/xj/landscape/launcher/ui/gamedetail/GameDetailActivity;->initView` + `<intent-filter>` on `GameDetailActivity`) is dead — 6.0.4 has no `GameDetailActivity` (game detail is a Compose screen reached via Compose navigation).
+
+**Discovery — 6.0.4 already has the dispatch natively.** `com.xiaoji.egggame.DeepLinkActivity.onCreate` consumes:
+- `app_nav_target` = `"game_detail"` (sswitch_8 hash `-0x19542ac2`, at ~line 3507 of the 6.0.4 smali)
+- `app_nav_game_id` (String → int via `Liml;->t0`)
+- `app_nav_steam_app_id` (int)
+- `app_nav_auto_start_game` (boolean — already powers auto-launch!)
+- plus `app_nav_source_id` / `_type` / `_slug` / `app_nav_epic_app_name` as optional metadata
+
+So the port is purely extras-translation glue — no need to rewrite the dispatch.
+
+**New files (branch `feature/external-launcher` off `gamehub-604-build@27d98d4`):**
+
+- `extensions/gamehub/src/main/java/app/revanced/extension/gamehub/launcher/ExternalLauncher.java`
+  - `static void rewriteIntent(Activity activity, Intent intent)`
+  - Matches action via `activity.getPackageName() + ".LAUNCH_GAME"` (per-variant) PLUS the literal `gamehub.lite.LAUNCH_GAME` as a forgiveness fallback for users who copy/paste old 5.3.5-Lite-style Beacon configs against a renamed BannerHub variant.
+  - Translates `localGameId` / `steamAppId` / `autoStartGame` → `app_nav_game_id` / `app_nav_steam_app_id` / `app_nav_auto_start_game` + sets `app_nav_target=game_detail` + `target_type=game_detail`.
+  - localGameId wins over steamAppId; fall back to steamAppId if localGameId is missing.
+  - `type` extra (5.3.5-only) ignored — 6.0.4 dispatcher doesn't need it.
+  - Logs to tag `BhExternalLauncher` for getlog verification.
+
+- `patches/src/main/kotlin/app/revanced/patches/gamehub/misc/launcher/ExternalLauncherPatch.kt`
+  - Private `externalLauncherManifestPatch` (resourcePatch, `afterDependents`, depends on `changePackageNamePatch`): finds `com.xiaoji.egggame.DeepLinkActivity` in `AndroidManifest.xml`, sets `android:exported="true"` defensively (already true in 6.0.4), and appends an `<intent-filter>` with `<action android:name="$variantPackage.LAUNCH_GAME"/>` + `DEFAULT` category. Variant package read via `packageNameOption.value?.takeIf { it != packageNameOption.default } ?: manifestPackage` (same idiom as `FileManagerAccessPatch`). Idempotency-checked by suffix `.LAUNCH_GAME`.
+  - Public `externalLauncherPatch` (bytecodePatch): depends on `sharedGamehubExtensionPatch` + `externalLauncherManifestPatch`. Injects 3 instructions at index 0 of `Lcom/xiaoji/egggame/DeepLinkActivity;->onCreate(Landroid/os/Bundle;)V`:
+    ```smali
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    invoke-static {p0, v0}, Lapp/revanced/extension/gamehub/launcher/ExternalLauncher;->rewriteIntent(Landroid/app/Activity;Landroid/content/Intent;)V
+    ```
+    v0 reuse is safe — the original method's next instruction (`sget-object v0, Lejm;->a:Lghd;`) writes v0 but its result is never read.
+
+**Beacon instructions delta for 6.0.4.** The per-variant `<package>.LAUNCH_GAME` action names in `/storage/emulated/0/Download/beacon instructions.txt` stay correct. The only change is the activity component — `com.xj.landscape.launcher.ui.gamedetail.GameDetailActivity` → `com.xiaoji.egggame.DeepLinkActivity` for ALL variants (the activity FQN sits in the `com.xiaoji.egggame.*` namespace and is unaffected by `ChangePackageNamePatch`, which only rewrites `manifest@package`). Example for the default Lite variant:
+
+```
+am launch -n gamehub.lite/com.xiaoji.egggame.DeepLinkActivity \
+  -a gamehub.lite.LAUNCH_GAME \
+  --es localGameId {file_content} --es steamAppId {file_content} \
+  --ez autoStartGame true
+```
+
+**Re-derivation on future base bumps.** `DeepLinkActivity` is at the package root (not behind R8 letter renames) — stable. Native `app_nav_*` extra names appear as const-string literals in `onCreate`'s smali — grep to verify they still feed the same dispatch on a future base.
+
+Pending: CI dispatch on `feature/external-launcher`, per-patch SEVERE check on the run log per `[[feedback_revanced_verify_patch_applied]]`, device test (Lite variant first via Beacon).

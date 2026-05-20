@@ -39,9 +39,13 @@ public final class ExternalLauncher {
         // the literal "gamehub.lite.LAUNCH_GAME" forgiveness fallback for
         // stale 5.3.5-Lite-style Beacon configs against a renamed variant.
 
-        int localGameId = intent.getIntExtra("localGameId", -1);
-        int steamAppId  = intent.getIntExtra("steamAppId", -1);
-        boolean autoStart = intent.getBooleanExtra("autoStartGame", false);
+        // External frontends typically launch via `am launch --es <key> <value>`
+        // (Beacon, ES-DE), which puts STRING extras. Read both kinds and parse —
+        // String args win when present because they're the documented Beacon
+        // contract; fall through to Int extras for any future caller using --ei.
+        int localGameId = readIdExtra(intent, "localGameId");
+        int steamAppId  = readIdExtra(intent, "steamAppId");
+        boolean autoStart = readBoolExtra(intent, "autoStartGame", false);
 
         // localGameId wins; fall back to steamAppId. Frontends typically send
         // one or the other.
@@ -60,5 +64,29 @@ public final class ExternalLauncher {
 
         Log.i(TAG, "rewrote " + action + " → game_detail id=" + gameId
             + " autoStart=" + autoStart);
+    }
+
+    private static int readIdExtra(Intent intent, String key) {
+        // Prefer the String form — Beacon / ES-DE / Daijishou all use --es.
+        String s = intent.getStringExtra(key);
+        if (s != null) {
+            try {
+                return Integer.parseInt(s.trim());
+            } catch (NumberFormatException ignored) {
+                Log.w(TAG, "ignoring non-numeric " + key + "=" + s);
+                return -1;
+            }
+        }
+        // Fall back to Int extras for callers using --ei.
+        return intent.getIntExtra(key, -1);
+    }
+
+    private static boolean readBoolExtra(Intent intent, String key, boolean def) {
+        // --ez gives a real boolean; --es gives a String like "true"/"false".
+        // The default-value form of getBooleanExtra returns def if the extra is
+        // missing OR the wrong type, so check the String form first.
+        String s = intent.getStringExtra(key);
+        if (s != null) return Boolean.parseBoolean(s.trim());
+        return intent.getBooleanExtra(key, def);
     }
 }

@@ -2939,3 +2939,20 @@ invoke-static {v0}, Lapp/revanced/extension/gamehub/launcher/ExternalLauncher;->
 `move-object/from16 vA, vBBBB` accepts any 16-bit source register, so it can read `p0=v34` into `v0`. Then every subsequent invoke operates on `v0` (low register) and the 4-bit limit never bites. v0 reuse remains safe because the original `onCreate`'s first instruction (`sget-object v0, Lejm;->a:Lghd;`) overwrites it on the very next instruction without ever reading the prior value.
 
 **Lesson reinforced:** when `.locals >= 16`, every reference to `p0` in a non-range smali instruction is suspect — not just multi-register invokes. The minimal-cost cure is one `move-object/from16 vLow, p0` at the head of the injected block, then operate exclusively on `vLow`. Doc'd as a follow-up pattern next to `VibrationPatch`'s precedent.
+
+## 2026-05-20 (cont.) — `extlaunch-pre3` applied cleanly + user-driven discovery of extra-type bug (pre4)
+
+`extlaunch-pre3` ([run 26161429594](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26161429594)) green across all 9 variants: `"External launcher support" succeeded`, 0 SEVERE. Lite (Normal-GHL) APK at `/storage/emulated/0/Download/extlaunch-pre3/BannerHub-V6-1.4.0-604-extlaunch-pre3-Patched-Normal-GHL.apk` md5 not captured.
+
+**User-driven device-side bug surfaced while building the test command.** User wired a Beacon entry with `--es localGameId {file_content} --es steamAppId {file_content} --ez autoStartGame true`. The `--es` form puts STRING extras, but `ExternalLauncher.rewriteIntent` was reading via `intent.getIntExtra("localGameId", -1)`. `getIntExtra` returns the default when the actual extra type is String → both ids resolved to `-1` → patch bailed with the "no usable id" log → no rewrite → DeepLinkActivity finished without navigating.
+
+This explains why a correct numeric `server_game_id` would also have failed against pre3 — the extra-type mismatch is on the read side, independent of what the user puts in the file.
+
+**Schema-driven discovery alongside.** The user's library DBs were dumped via the root bridge (`getlog --cat` for `.db` + `.db-wal` + `.db-shm`, then `python3 -m sqlite3`-style query because `/system/bin/sqlite3` isn't present on the device):
+
+- `gamehub.lite/databases/db_game_library.db` → Dead Cells (server_game_id `10417`), God of War (`49908`), Gunslugs (`0` — GOG, not deep-link-addressable)
+- `banner.hub/databases/db_game_library.db` → Blur (`-1` — not addressable), Dirt 3 (`131962`), God of War (`49908`), PRAGMATA (`135805`)
+
+Important consequence: 6.0.4's `t_game_library_base.id` is TEXT with prefixes like `local_*` / `gog_*` — those cannot be parsed by the dispatch's `Liml;->t0(radix 10, String)` Integer-parse step. The 5.3.5-style numeric `localGameId` arg only maps onto 6.0.4's INTEGER `server_game_id` column. The "Show game IDs" menu-row patch (queued) must surface `server_game_id` as the user-facing "Local Game ID", not the raw `id` TEXT.
+
+**Fix in pre4 (commit pending).** `ExternalLauncher.readIdExtra(intent, key)` now reads `getStringExtra` first and `Integer.parseInt(trim())` it; falls back to `getIntExtra` for any future caller using `--ei`. Bad String values are logged but treated as missing (no crash). Same idea for `autoStartGame` via `readBoolExtra`, since `--ez` and `--es "true"` are both plausible — `--ez` is preferred but the String form is tolerated.

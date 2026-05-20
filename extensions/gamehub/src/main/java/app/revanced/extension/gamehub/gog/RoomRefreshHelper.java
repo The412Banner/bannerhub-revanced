@@ -1,10 +1,7 @@
 package app.revanced.extension.gamehub.gog;
 
 import android.content.Context;
-import android.os.Handler;
-import android.os.Looper;
 import android.util.Log;
-import android.widget.Toast;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -63,11 +60,8 @@ public final class RoomRefreshHelper {
             }
             refresh.invoke(tracker);
             Log.i(TAG, "RoomRefresh: notified Room InvalidationTracker");
-            diagToast(ctx, "RR: invoke OK on " + refresh.getName());
         } catch (Throwable t) {
             Log.w(TAG, "RoomRefresh: notify failed (non-fatal)", t);
-            diagToast(ctx, "RR: invoke FAILED " + t.getClass().getSimpleName()
-                    + ": " + String.valueOf(t.getMessage()));
             // Drop the cache in case the tracker was GC'd / process recycled.
             cachedTracker = null;
             cachedRefresh = null;
@@ -75,14 +69,11 @@ public final class RoomRefreshHelper {
     }
 
     private static boolean resolve(Context ctx) {
-        diagToast(ctx, "RR: walk start");
         Object db = findRoomDatabase(ctx);
         if (db == null) {
             Log.w(TAG, "RoomRefresh: GameLibraryDatabase not reachable from Application graph");
-            diagToast(ctx, "RR: DB NOT REACHABLE in Application graph");
             return false;
         }
-        diagToast(ctx, "RR: DB found = " + db.getClass().getSimpleName());
         Method getTracker = null;
         for (Class<?> c = db.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
             try {
@@ -92,7 +83,6 @@ public final class RoomRefreshHelper {
         }
         if (getTracker == null) {
             Log.w(TAG, "RoomRefresh: getInvalidationTracker() not found on " + db.getClass());
-            diagToast(ctx, "RR: getInvalidationTracker NOT FOUND on " + db.getClass().getSimpleName());
             return false;
         }
         getTracker.setAccessible(true);
@@ -101,19 +91,13 @@ public final class RoomRefreshHelper {
             tracker = getTracker.invoke(db);
         } catch (Throwable t) {
             Log.w(TAG, "RoomRefresh: getInvalidationTracker call failed", t);
-            diagToast(ctx, "RR: getTracker invoke FAILED " + t.getClass().getSimpleName());
             return false;
         }
-        if (tracker == null) {
-            diagToast(ctx, "RR: getTracker returned null");
-            return false;
-        }
-        diagToast(ctx, "RR: tracker = " + tracker.getClass().getName());
+        if (tracker == null) return false;
 
         Method refresh = pickNoArgVoid(tracker.getClass());
         if (refresh == null) {
             Log.w(TAG, "RoomRefresh: no no-arg void method on " + tracker.getClass());
-            diagToast(ctx, "RR: no no-arg void method on tracker");
             return false;
         }
         refresh.setAccessible(true);
@@ -122,21 +106,7 @@ public final class RoomRefreshHelper {
         cachedRefresh = refresh;
         Log.i(TAG, "RoomRefresh: resolved tracker=" + tracker.getClass().getName()
                 + " refresh=" + refresh.getName());
-        diagToast(ctx, "RR: picked method " + refresh.getName() + "() on " + tracker.getClass().getName());
         return true;
-    }
-
-    private static void diagToast(Context ctx, String msg) {
-        if (ctx == null) return;
-        try {
-            Log.i(TAG, "RR-TOAST: " + msg);
-            Handler h = new Handler(Looper.getMainLooper());
-            h.post(() -> {
-                try {
-                    Toast.makeText(ctx.getApplicationContext(), msg, Toast.LENGTH_LONG).show();
-                } catch (Throwable ignored) {}
-            });
-        } catch (Throwable ignored) {}
     }
 
     /** Pick the single declared no-arg, non-static, void-returning method on

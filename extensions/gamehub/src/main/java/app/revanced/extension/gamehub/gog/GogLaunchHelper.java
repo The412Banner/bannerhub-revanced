@@ -2,6 +2,7 @@ package app.revanced.extension.gamehub.gog;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.util.Log;
@@ -28,6 +29,18 @@ import java.io.File;
  * the only post-download action on any GOG screen is "Add to Library";
  * launching is done manually by the user from the GameHub library tile,
  * exactly like any other PC import. See §38.
+ *
+ * §39 (pre20): after the raw insert + RoomRefreshHelper, dispatch a no-payload
+ * Intent to MainActivity with FLAG_ACTIVITY_REORDER_TO_FRONT. pre19 toast diag
+ * confirmed RoomRefreshHelper resolves the tracker and invokes its refresh
+ * method cleanly, but the library Flow still doesn't re-emit until the host
+ * recomposes — Room's tracker scan finds no version delta for an
+ * externally-written row. Bringing MainActivity to the front (without
+ * clearing the GOG back stack) forces a recomposition, and the library Flow
+ * re-collects from Room with the new row visible. No
+ * app_nav_target=local_game_launch extra means MainActivity will NOT
+ * auto-launch the game (§38 preserved); the bh_refresh_only=true marker is a
+ * debug breadcrumb only.
  *
  * Fail-safe: any error logs + toasts a hint and leaves the user on the GOG
  * activity. Never crashes; never throws past this class.
@@ -84,6 +97,9 @@ public final class GogLaunchHelper {
             registerInLibrary(activity, dbFile, gameRowId, gogId, safeName, safeCover, exePath);
             // §37: kick Room InvalidationTracker so the library Flow re-emits.
             RoomRefreshHelper.refreshLibrary(activity);
+            // §39: REORDER_TO_FRONT MainActivity to force Compose recomposition
+            // — the tracker call alone is necessary but not sufficient.
+            dispatchLibraryRefreshNudge(activity);
             toast(activity, "Added “" + safeName + "” to library");
         } catch (Throwable t) {
             Log.e(TAG, "GogLaunchHelper.addToLibrary failed (non-fatal)", t);
@@ -182,6 +198,27 @@ public final class GogLaunchHelper {
     private static String esc(String s) {
         if (s == null) return "";
         return s.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    private static void dispatchLibraryRefreshNudge(Activity activity) {
+        try {
+            Intent intent = new Intent();
+            intent.setClassName(activity.getPackageName(), "com.xiaoji.egggame.MainActivity");
+            // REORDER_TO_FRONT: bring MainActivity to the top of the existing
+            // task without clearing intermediate GOG activities. onResume +
+            // Compose recomposition fires → library Flow re-collects from
+            // Room and picks up our newly-inserted row.
+            //
+            // No app_nav_target=local_game_launch extra — that's the pre15
+            // auto-launch path we explicitly killed in §38. bh_refresh_only is
+            // a marker for any future receiver / debugging only.
+            intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+            intent.putExtra("bh_refresh_only", true);
+            activity.startActivity(intent);
+            Log.i(TAG, "GogLaunchHelper: dispatched library-refresh nudge to MainActivity");
+        } catch (Throwable t) {
+            Log.w(TAG, "GogLaunchHelper: refresh-nudge dispatch failed (non-fatal)", t);
+        }
     }
 
     private static void toast(Activity activity, String msg) {

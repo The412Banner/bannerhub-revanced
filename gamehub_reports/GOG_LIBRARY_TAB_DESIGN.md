@@ -1,6 +1,6 @@
 # GOG Library Tab — Patch Design Doc
 
-**Status:** ⚑ **PHASE 1 + WS4 + WS5 (DB-insert bridge + §37 in-session refresh) DEVICE-CONFIRMED through pre15; pre17 finalises UX — no in-GOG launch, single library-tile launch surface — CURRENT = §38.** GOG login + owned-library + download/install device-confirmed (pre2). WS4 menu row + retired card + `behind` rotation device-confirmed (pre13). **WS5 (this session, §35–§36):** Approach A killed by 6.0.4 bytecode recon (no `B3` equivalent; import flow is pure Compose-internal — confirmed via live capture of the import button); Approach B (programmatic DB insert) built — `GogLaunchHelper.triggerLaunch` now opens `db_game_library.db` directly via `SQLiteDatabase.openDatabase`, self-derives `extension_type`/`user_id` from existing rows (proven retired-seeder pattern), inserts 2 rows (`t_game_launch_method` with `start_type=1409=LaunchType.GogGameByPcEmulator.id`, `t_game_library_base` with FK), then fires `app_nav_target=local_game_launch` intent to MainActivity which already handles the launch via the existing Wine pipeline. Zero third-party deps; pure `android.database.sqlite` + `org.json`. JSON shape byte-verified against your live God of War row. Branch `feature/gog-explore-tab`.
+**Status:** ⚑ **PHASE 1 + WS4 + WS5 (DB-insert bridge) DEVICE-CONFIRMED through pre15; §38 (pre17/18) locks the no-in-GOG-launch UX; §39 (pre20) restores in-session library refresh via REORDER_TO_FRONT MainActivity nudge after pre19 diagnostic proved RoomRefreshHelper reflection is healthy but `tracker.refresh()` alone is insufficient. CURRENT = §39 (pre20, awaiting device test).** GOG login + owned-library + download/install device-confirmed (pre2). WS4 menu row + retired card + `behind` rotation device-confirmed (pre13). **WS5 (this session, §35–§36):** Approach A killed by 6.0.4 bytecode recon (no `B3` equivalent; import flow is pure Compose-internal — confirmed via live capture of the import button); Approach B (programmatic DB insert) built — `GogLaunchHelper.triggerLaunch` now opens `db_game_library.db` directly via `SQLiteDatabase.openDatabase`, self-derives `extension_type`/`user_id` from existing rows (proven retired-seeder pattern), inserts 2 rows (`t_game_launch_method` with `start_type=1409=LaunchType.GogGameByPcEmulator.id`, `t_game_library_base` with FK), then fires `app_nav_target=local_game_launch` intent to MainActivity which already handles the launch via the existing Wine pipeline. Zero third-party deps; pure `android.database.sqlite` + `org.json`. JSON shape byte-verified against your live God of War row. Branch `feature/gog-explore-tab`.
 **Base:** GameHub 6.0.4, R8 map id `6a5cde6143fc8cf76f6f3a447d0fececd4794d83066e6ead7a9537e6527b057b`.
 **Author:** The412Banner. **Date:** 2026-05-19.
 
@@ -1303,3 +1303,98 @@ Two-pass implementation:
 - `extensions/.../gog/GogGameDetailActivity.java` — 1-line button relabel + 1-line call switch
 - `PROGRESS_LOG.md` — pre17 entry
 - This doc — §38
+
+---
+
+## 39. pre20 — REORDER_TO_FRONT MainActivity nudge for in-session library refresh
+
+### 39.1 Symptom (post-pre18 device report)
+
+User installs pre18, opens GOG, picks a downloaded game, taps **Add to Library** → toast `Added "<name>" to library` fires, DB row IS written (`getlog gamehub.lite` shows `GogLaunchHelper: registered gog_<id>`), but the **GameHub library still does NOT show the game until the app is closed and reopened**. pre15 §37 looked like it had fixed this. pre18 it's back.
+
+### 39.2 pre19 diagnostic build
+
+Hypothesis at the time: either (a) the `RoomRefreshHelper` reflection has been silently failing all along and pre15 only "worked" because it ALSO dispatched a deep-link `Intent` (auto-launch path, killed in §38), OR (b) `tracker.refresh()` plus the recomposition kick work together, but neither works alone.
+
+To find out: pre19 (`bca1cac`, run 26137182820 ✅) added a `diagToast` helper in `RoomRefreshHelper` mirroring every decision branch to both `Log.i("BannerHub", "RR-TOAST: ...")` and a main-thread `Toast.LENGTH_LONG`. Branches: walk start, DB not reachable, DB found = <classname>, getInvalidationTracker not found, get-call failed, tracker = <class>, no no-arg void method, picked method <name>(), invoke OK / invoke FAILED.
+
+### 39.3 Device test results — hypothesis (a) ruled out
+
+`getlog gamehub.lite | grep -E 'BannerHub|RoomRefresh|RR-TOAST'`:
+
+```
+22:39:58.096  GogLaunchHelper: registered gog_1679659438 (lm=3 user=99999 ext=1)
+22:39:58.098  RR-TOAST: RR: walk start
+22:39:58.217  RR-TOAST: RR: DB found = GameLibraryDatabase_Impl
+22:39:58.217  RR-TOAST: RR: tracker = hsa
+22:39:58.217  RoomRefresh: resolved tracker=hsa refresh=a
+22:39:58.217  RR-TOAST: RR: picked method a() on hsa
+22:39:58.217  RoomRefresh: notified Room InvalidationTracker
+22:39:58.217  RR-TOAST: RR: invoke OK on a
+```
+
+Every branch succeeded in ~120 ms. The Room codegen class (`GameLibraryDatabase_Impl`) was reached via BFS field walk from the Application graph, `getInvalidationTracker()` resolved on its supertype, the returned tracker (`Lhsa;`) had its no-arg void method picked (`a()` = R8-renamed `refresh()`), and `a.invoke(tracker)` did not throw. The reflection chain is 100% healthy. Hypothesis (a) ruled out.
+
+### 39.4 Why `a()` alone is insufficient
+
+Hypothesis (b) confirmed: invoking `Hsa.a()` (`InvalidationTracker.refresh()` / `refreshVersionsAsync()`) is necessary but not sufficient to fire observer notifications for an externally-written row.
+
+Mechanism (from Room internals + behavior observed):
+
+1. `a()` enqueues a scan of `room_table_modification_log` via Room's `mQueryExecutor`. The async runnable opens (or reuses) a Room-side connection and reads `room_table_modification_log` to learn which tables changed since the last scan.
+2. Our raw `SQLiteDatabase.openDatabase` write committed two row inserts (`t_game_library_base` + `t_game_launch_method`); Room's installed triggers fired at the SQL level (triggers run for any writer on the file) → log rows for both tables ARE present.
+3. **But:** the tracker's `notifyObserversByTableNames` step only emits if a per-table **version counter** (`mTableVersions[]`, internal to the tracker, in-process) has actually been incremented vs. the cached snapshot. That counter is bumped only by Room's own write paths (`RoomDatabase.runInTransaction`, generated DAO write methods).
+4. Our trigger fires write the log row, but nothing in our path bumps `mTableVersions[]`. The async scan sees log activity, finds no version delta vs. its own state, exits without calling observers. Library `Flow`/`LiveData` stays silent.
+
+This explains why pre15 *looked* like it worked: pre15 ALSO dispatched `Intent app_nav_target=local_game_launch` to MainActivity. That deep-link path made MainActivity recompose, which re-collected the library `Flow` from Room with a fresh query that bypassed the version-counter shortcut and saw the new row. The tracker call was decorative.
+
+### 39.5 Fix — recomposition kick, no auto-launch
+
+Restore the recomposition mechanism, sans the auto-launch payload that §38 explicitly killed. New helper in `GogLaunchHelper`:
+
+```java
+private static void dispatchLibraryRefreshNudge(Activity activity) {
+    try {
+        Intent intent = new Intent();
+        intent.setClassName(activity.getPackageName(), "com.xiaoji.egggame.MainActivity");
+        intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+        intent.putExtra("bh_refresh_only", true);
+        activity.startActivity(intent);
+        Log.i(TAG, "GogLaunchHelper: dispatched library-refresh nudge to MainActivity");
+    } catch (Throwable t) {
+        Log.w(TAG, "GogLaunchHelper: refresh-nudge dispatch failed (non-fatal)", t);
+    }
+}
+```
+
+Key design choices:
+
+- **`FLAG_ACTIVITY_REORDER_TO_FRONT`** (not `CLEAR_TOP|NEW_TASK`): brings MainActivity to the top of the existing task **without popping intermediate activities**. The GOG screens stay on the back stack — the user backs out through them and lands on a fresh library.
+- **No `app_nav_target=local_game_launch` extra**: this was pre15's auto-launch path that §38 retired. Without that key, MainActivity resumes normally — no Wine container starts, no game window appears.
+- **`bh_refresh_only=true` marker extra**: nothing reads this in the bytecode. It's a breadcrumb for future logcat/debugger sessions to confirm that an Intent originated from this helper vs. user navigation.
+- **No `activity.finish()`**: the GOG activity that initiated the Add stays alive on the back stack. User can keep adding more games from the same screen if they want; the back navigation is intuitive.
+- Wired in `addToLibrary` after `RoomRefreshHelper.refreshLibrary(activity)`. The tracker call stays in — it's harmless, and may help cases where the host's `Flow` is wired to invalidations rather than full recomposition.
+
+### 39.6 Behavior the user will see
+
+1. Tap **Add to Library** in GOG.
+2. Brief flicker: MainActivity surfaces on top (library tab is whichever was last viewed; if it's the library tab, the new tile is visible immediately).
+3. Toast `Added "<name>" to library` fires.
+4. Back-press → returns to the previous GOG activity (`GogGameDetailActivity` / `GogGamesActivity`), where the user can continue browsing.
+5. When the user backs out all the way to MainActivity, the library is already fresh. No close + reopen.
+
+### 39.7 pre19 cleanup
+
+The `diagToast` machinery in `RoomRefreshHelper` is stripped in the same commit:
+
+- Removed: `diagToast(Context, String)` method, all 9 call sites, `android.os.Handler` / `android.os.Looper` / `android.widget.Toast` imports.
+- Kept: every `Log.i(TAG, ...)` / `Log.w(TAG, ...)` line — future debugging via `getlog gamehub.lite | grep RoomRefresh` still gets the same info, minus the toast spam.
+
+If the recomposition kick stops working on a future GameHub base (e.g. MainActivity adopts `singleInstance` or a different default launch mode that ignores `REORDER_TO_FRONT`), reintroduce a temporary diag along the same lines — or check the logcat for `dispatched library-refresh nudge to MainActivity` to confirm the Intent was sent.
+
+### 39.8 Files (pre20)
+
+- `extensions/.../gog/GogLaunchHelper.java` — +`android.content.Intent` import, +`dispatchLibraryRefreshNudge` helper (~16 LOC), +1 call site in `addToLibrary` between `RoomRefreshHelper.refreshLibrary` and the success toast, file-level Javadoc gains a §39 paragraph
+- `extensions/.../gog/RoomRefreshHelper.java` — −`diagToast` method, −9 diag call sites, −3 imports (Handler / Looper / Toast), Log.i/Log.w in each branch retained
+- `PROGRESS_LOG.md` — pre20 entry
+- This doc — §39

@@ -2,7 +2,6 @@ package app.revanced.extension.gamehub.gog;
 
 import android.app.Activity;
 import android.content.Context;
-import android.content.Intent;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.util.Log;
@@ -14,24 +13,23 @@ import java.io.File;
 
 /**
  * WS5 bridge — registers an installed GOG game into GameHub's own
- * GameLibraryDatabase so it appears in the library and launches via
- * LaunchType.GogGameByPcEmulator (start_type=1409=0x581).
+ * GameLibraryDatabase so it appears as a tile in the library and launches via
+ * LaunchType.GogGameByPcEmulator (start_type=1409=0x581) when the user taps
+ * it.
  *
  * Implementation = Approach B from design doc §35 (programmatic DB insert).
  * Uses raw android.database.sqlite against db_game_library.db — bypasses
  * Room/Hilt/Continuation entirely; same shape as the proven retired
- * GogLibraryCard seeder.
+ * GogLibraryCard seeder. Row shape byte-verified from a live user row
+ * (God of War) in §35.4: t_game_launch_method.extension_data is JSON with
+ * gameId / name / coverImage / exePath / startType / isLocalGame / gogId.
  *
- * Row shape was byte-verified from a live user row (God of War) in §35.4:
- *   t_game_launch_method.extension_data is JSON with gameId / name /
- *   coverImage / exePath / startType / isLocalGame / (GOG)Id.
+ * Launching is intentionally NOT done here. Per user spec (2026-05-20):
+ * the only post-download action on any GOG screen is "Add to Library";
+ * launching is done manually by the user from the GameHub library tile,
+ * exactly like any other PC import. See §38.
  *
- * After insert, fires an Intent to com.xiaoji.egggame.MainActivity with
- * app_nav_target=local_game_launch + app_nav_game_id=<row id> — MainActivity
- * already handles this case (smali :173) and auto-launches the game via
- * the Wine container.
- *
- * Fail-safe: any error logs + toasts a hint and leaves the user in the GOG
+ * Fail-safe: any error logs + toasts a hint and leaves the user on the GOG
  * activity. Never crashes; never throws past this class.
  */
 public final class GogLaunchHelper {
@@ -61,10 +59,10 @@ public final class GogLaunchHelper {
         triggerLaunch(activity, exePath, game.gameId, game.title, game.imageUrl);
     }
 
-    /** Add the GOG game to GameHub's library WITHOUT launching it.
-     *  Used by the "Add Game" / "Add to Launcher" buttons — user stays on the
-     *  GOG screen and can keep adding more games. The library refresh (§37)
-     *  fires so the new row appears in-session. */
+    /** Add the GOG game to GameHub's library.
+     *  No auto-launch — launching is the user's job, done manually from the
+     *  GameHub library tile like any other PC import. The library refresh
+     *  (§37) fires so the new row appears in-session. */
     public static void addToLibrary(Activity activity, GogGame game, String exePath) {
         if (game == null) {
             Log.w(TAG, "GogLaunchHelper: null GogGame — abort");
@@ -100,64 +98,6 @@ public final class GogLaunchHelper {
             Log.e(TAG, "GogLaunchHelper.addToLibrary failed (non-fatal)", t);
             toast(activity, "Add to library failed — " + t.getClass().getSimpleName());
         }
-    }
-
-    /**
-     * Register the GOG game in GameHub's library and immediately launch it.
-     *
-     * @param activity caller (used for ctx + finish()); may be null only if
-     *                 the auto-launch step is undesirable
-     * @param exePath  filesystem path to the .exe to run (absolute)
-     * @param gogId    GOG game id (manifest's "gameId"); becomes our DB id
-     *                 with a "gog_" prefix
-     * @param title    display name; pre-fills game_name / start_name
-     * @param coverUrl cover image URL; pre-fills cover_image / logo / etc.
-     */
-    public static void triggerLaunch(Activity activity, String exePath,
-                                     String gogId, String title, String coverUrl) {
-        if (activity == null || exePath == null || gogId == null) {
-            Log.w(TAG, "GogLaunchHelper: required args null — abort"
-                    + " (activity=" + activity + " exe=" + exePath + " gogId=" + gogId + ")");
-            return;
-        }
-        final String safeName  = (title    != null && !title.isEmpty())    ? title    : "GOG Game";
-        final String safeCover = (coverUrl != null)                        ? coverUrl : "";
-        final String gameRowId = "gog_" + gogId;
-
-        try {
-            File dbFile = activity.getDatabasePath(DB_NAME);
-            if (dbFile == null || !dbFile.exists()) {
-                Log.e(TAG, "GogLaunchHelper: " + DB_NAME + " not present — "
-                        + "open GameHub once first, then retry");
-                toast(activity, "Library DB not initialised — open GameHub once, then retry");
-                return;
-            }
-            registerInLibrary(activity, dbFile, gameRowId, gogId, safeName, safeCover, exePath);
-            // §37: kick Room's InvalidationTracker so the library Flow re-emits
-            // in the running GameHub process. Our raw write is on a separate
-            // SQLite connection; Room would otherwise stay on its pre-write
-            // snapshot until cold-restart.
-            RoomRefreshHelper.refreshLibrary(activity);
-            dispatchLaunch(activity, gameRowId);
-            activity.finish();
-        } catch (Throwable t) {
-            Log.e(TAG, "GogLaunchHelper.triggerLaunch failed (non-fatal)", t);
-            toast(activity, "Add to library failed — " + t.getClass().getSimpleName());
-        }
-    }
-
-    /** Legacy ABI — kept so the old single-arg call site (if any) still compiles.
-     *  Without metadata we can't produce a useful row, so this just logs+toasts. */
-    public static void triggerLaunch(Activity activity, String exePath) {
-        Log.w(TAG, "GogLaunchHelper: legacy 2-arg triggerLaunch called — "
-                + "callers should pass GogGame or (gogId,title,coverUrl) "
-                + "for the WS5 bridge to write a library row. exe=" + exePath);
-        toast(activity, "GOG game installed — but library metadata missing");
-    }
-
-    /** Phase-1 no-op. The new flow doesn't use SharedPrefs handoff to onResume. */
-    public static void checkPendingLaunch(Activity activity) {
-        // Intentionally empty.
     }
 
     // ── Internals ────────────────────────────────────────────────────────────
@@ -251,20 +191,6 @@ public final class GogLaunchHelper {
     private static String esc(String s) {
         if (s == null) return "";
         return s.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
-
-    private static void dispatchLaunch(Activity activity, String gameRowId) {
-        Intent intent = new Intent();
-        intent.setClassName(activity.getPackageName(), "com.xiaoji.egggame.MainActivity");
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
-                | Intent.FLAG_ACTIVITY_CLEAR_TOP
-                | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        // MainActivity.smali:134-200 handles this pair (DeepLinkActivity uses
-        // the same convention — see DeepLinkActivity.smali:3951+).
-        intent.putExtra("app_nav_target", "local_game_launch");
-        intent.putExtra("app_nav_game_id", gameRowId);
-        activity.startActivity(intent);
-        Log.i(TAG, "GogLaunchHelper: dispatched local_game_launch id=" + gameRowId);
     }
 
     private static void toast(Activity activity, String msg) {

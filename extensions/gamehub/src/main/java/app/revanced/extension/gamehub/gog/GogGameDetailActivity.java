@@ -318,11 +318,13 @@ public class GogGameDetailActivity extends Activity {
         plLp.bottomMargin = dp(8);
         card.addView(progressLabel, plLp);
 
-        // Launch button
-        launchBtn = makeBtn("Launch", 0xFF2E7D32);
+        // Add to Library button — registers the game in GameHub's library.
+        // Launching is the user's job, done manually from the GameHub library
+        // tile like any other PC import.
+        launchBtn = makeBtn("Add to Library", 0xFF2E7D32);
         launchBtn.setOnClickListener(v -> {
             String exe = prefs.getString("gog_exe_" + gameId, null);
-            if (exe != null) GogLaunchHelper.triggerLaunch(this, exe, gameId, title, imageUrl);
+            if (exe != null) GogLaunchHelper.addToLibrary(this, exe, gameId, title, imageUrl);
         });
         card.addView(launchBtn, btnLp());
 

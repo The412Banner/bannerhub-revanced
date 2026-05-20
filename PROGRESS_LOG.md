@@ -2943,3 +2943,18 @@ Call site reassignment (sed-driven, surgical):
 Idempotency preserved: `registerInLibrary` already does DELETE-first INSERT keyed on `gog_<gogId>`, so re-tapping "Add to library" is safe — overwrites the row with current title/cover/exe and re-fires the refresh kick.
 
 Files: `GogLaunchHelper.java` (+~30 LOC `addToLibrary` methods), `GogGamesActivity.java` (4 call sites). Next: compile gate → grep SEVERE → pre16 → device test.
+
+## 2026-05-20 — GOG pre17: no in-GOG launching at all; Launch button → Add to Library; dead launch path removed (§38)
+
+User clarification (post-pre16 design): **no button inside any GOG screen launches the game.** The only post-download action is adding to GameHub's library; the user launches manually from the GameHub library tile like any other PC import. The pre16 split kept `triggerLaunch` for the green "Launch" button in `GogGameDetailActivity`; pre17 retires that button entirely.
+
+Changes:
+- `GogGameDetailActivity` line 322: relabel `launchBtn` from "Launch" → "Add to Library" (color stays 0xFF2E7D32 green — still the primary action), switch its `onClickListener` from `triggerLaunch` → `addToLibrary`. The field name `launchBtn` is preserved (visibility/enable logic at lines 110, 427, 573 still applies — "shown only when installed", "disabled while downloading"). Renaming the field is pure churn for no behavior change.
+- `GogLaunchHelper.java`: delete `triggerLaunch(activity, exePath, gogId, title, coverUrl)` (45 LOC), delete `triggerLaunch(activity, exePath)` legacy ABI stub (8 LOC), delete `dispatchLaunch(activity, gameRowId)` helper (13 LOC), delete `checkPendingLaunch(activity)` Phase-1 no-op (4 LOC), drop the now-unused `android.content.Intent` import. File-level Javadoc rewritten — the "fires an Intent to MainActivity / auto-launches" description was stale.
+- No call site referenced `checkPendingLaunch` or the 2-arg `triggerLaunch` legacy stub — both were defensive bridges from the very-early Phase-1 GogLaunchHelper stub. Safe to remove.
+
+This locks in the user's mental model: GOG screens are about library management (login → owned games → download → add to library). The launch surface is GameHub's library tab, where they pick a row and tap as they would for an EGS/Steam/Epic import. Removes ambiguity about what "Launch" means inside the GOG hub (vs. opening the original GOG game launcher EXE vs. the Wine container).
+
+Idempotency unchanged — `registerInLibrary` still does DELETE-first INSERT on `gog_<gogId>`. RoomRefreshHelper §37 fix still fires on every add. Toast `Added "<name>" to library` is the user-visible confirmation.
+
+Files: `GogLaunchHelper.java` (−70 LOC dead launch code, +file-Javadoc rewrite), `GogGameDetailActivity.java` (1-line button relabel + 1-line call switch), `GOG_LIBRARY_TAB_DESIGN.md` §38 (UX spec). Next: compile gate → grep SEVERE → pre17 → device test (verify NO Launch button anywhere on GOG screens; verify "Add to Library" in detail page works exactly like the list-page Add buttons).

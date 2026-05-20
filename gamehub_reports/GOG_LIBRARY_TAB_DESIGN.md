@@ -1,6 +1,6 @@
 # GOG Library Tab — Patch Design Doc
 
-**Status:** ⚑ **PHASE 1 + WS4 COMPLETE; WS5 device-tested pre14 → bridge works, library UI didn't refresh in-session → pre15 fix BUILT — CURRENT = §37.** GOG login + owned-library + download/install device-confirmed (pre2). WS4 menu row + retired card + `behind` rotation device-confirmed (pre13). **WS5 (this session, §35–§36):** Approach A killed by 6.0.4 bytecode recon (no `B3` equivalent; import flow is pure Compose-internal — confirmed via live capture of the import button); Approach B (programmatic DB insert) built — `GogLaunchHelper.triggerLaunch` now opens `db_game_library.db` directly via `SQLiteDatabase.openDatabase`, self-derives `extension_type`/`user_id` from existing rows (proven retired-seeder pattern), inserts 2 rows (`t_game_launch_method` with `start_type=1409=LaunchType.GogGameByPcEmulator.id`, `t_game_library_base` with FK), then fires `app_nav_target=local_game_launch` intent to MainActivity which already handles the launch via the existing Wine pipeline. Zero third-party deps; pure `android.database.sqlite` + `org.json`. JSON shape byte-verified against your live God of War row. Branch `feature/gog-explore-tab`.
+**Status:** ⚑ **PHASE 1 + WS4 + WS5 (DB-insert bridge + §37 in-session refresh) DEVICE-CONFIRMED through pre15; pre17 finalises UX — no in-GOG launch, single library-tile launch surface — CURRENT = §38.** GOG login + owned-library + download/install device-confirmed (pre2). WS4 menu row + retired card + `behind` rotation device-confirmed (pre13). **WS5 (this session, §35–§36):** Approach A killed by 6.0.4 bytecode recon (no `B3` equivalent; import flow is pure Compose-internal — confirmed via live capture of the import button); Approach B (programmatic DB insert) built — `GogLaunchHelper.triggerLaunch` now opens `db_game_library.db` directly via `SQLiteDatabase.openDatabase`, self-derives `extension_type`/`user_id` from existing rows (proven retired-seeder pattern), inserts 2 rows (`t_game_launch_method` with `start_type=1409=LaunchType.GogGameByPcEmulator.id`, `t_game_library_base` with FK), then fires `app_nav_target=local_game_launch` intent to MainActivity which already handles the launch via the existing Wine pipeline. Zero third-party deps; pure `android.database.sqlite` + `org.json`. JSON shape byte-verified against your live God of War row. Branch `feature/gog-explore-tab`.
 **Base:** GameHub 6.0.4, R8 map id `6a5cde6143fc8cf76f6f3a447d0fececd4794d83066e6ead7a9537e6527b057b`.
 **Author:** The412Banner. **Date:** 2026-05-19.
 
@@ -1264,3 +1264,42 @@ If a future GameHub release adds a second no-arg void method to InvalidationTrac
 - `extensions/gamehub/src/main/java/app/revanced/extension/gamehub/gog/GogLaunchHelper.java` — +1 call site, +4 lines comment
 - `PROGRESS_LOG.md` — pre15 entry
 - This doc — §37 (this section) + status header update
+
+## 38. pre16 + pre17 — UX scope: GOG hub is library-management-only, never launches games
+
+### 38.1 The spec (user, 2026-05-20)
+
+Post-pre15 device-confirm: "**No buttons inside the GOG game library after a game is downloaded launch the game. Only "Add to GameHub library." Launching the game is the user's job, done manually from the GameHub library, like any other game.**"
+
+Two-pass implementation:
+
+**pre16** — split add-only from add+launch in `GogLaunchHelper`. New `addToLibrary(...)` = `registerInLibrary` + `RoomRefreshHelper.refreshLibrary` + toast `Added "<name>" to library` (no `dispatchLaunch`, no `activity.finish()`). `triggerLaunch` kept for the Launch button. The 4 "Add Game" / "Add to Launcher" buttons in `GogGamesActivity` re-pointed to `addToLibrary`. *Partial — left the `GogGameDetailActivity` green "Launch" button alive.*
+
+**pre17 (this section)** — finish the job. Remove all launching from GOG screens.
+
+### 38.2 Why no in-GOG launch (rationale captured for memory)
+
+1. **Mental-model clarity.** "Launch" inside a GOG-themed screen is genuinely ambiguous — is it Galaxy's launcher? The .exe directly under Wine? The GameHub library tile pipeline? Removing the button removes the question.
+2. **Single launch surface.** Every game in GameHub's library — Steam, Epic, GOG, Amazon, plain PC import — should launch through the SAME library-tile UI. Anything else fragments the user's habit.
+3. **Less code, fewer failure modes.** The auto-launch path used a deep-link Intent to `MainActivity` with `app_nav_target=local_game_launch + app_nav_game_id=<row>`. Even though `MainActivity` does handle this case (smali :173, also used by `DeepLinkActivity`), an intent-based launch is one more thing that can fail or change shape between GameHub releases. The library-tile path is the path GameHub itself maintains.
+4. **The §37 fix made auto-launch unnecessary anyway.** Pre15 made the library refresh in-session, so the added GOG game is *immediately visible* in the library tab. The user doesn't have to hunt or restart to find it — they just navigate to the library tab and tap it. The pre14 auto-launch was a convenience that pre-§37 was masking a missing refresh; once refresh worked, the auto-launch was redundant *and* surface-fragmenting.
+
+### 38.3 Changes (pre17)
+
+- `GogGameDetailActivity.java` line 322–327: button label "Launch" → "Add to Library"; `triggerLaunch(this, exe, gameId, title, imageUrl)` → `addToLibrary(this, exe, gameId, title, imageUrl)`. The field name `launchBtn` is left as-is — the visibility/enable logic at lines 110, 427, 573 still applies as written ("shown only when installed", "disabled while downloading", which are correct semantics for the new Add button too). Renaming is pure churn.
+- `GogLaunchHelper.java` — strip dead code: `triggerLaunch(Activity, String, String, String, String)`, the 2-arg legacy ABI stub `triggerLaunch(Activity, String)`, `dispatchLaunch(Activity, String)`, the Phase-1 no-op `checkPendingLaunch(Activity)`. Drop the unused `android.content.Intent` import. Rewrite the file-level Javadoc — the prior "fires an Intent to MainActivity / auto-launches" description was stale.
+- The 4-arg `addToLibrary(Activity, GogGame, String)` convenience overload + the 5-arg `addToLibrary(Activity, String, String, String, String)` full form are the only public entry points for WS5 now.
+
+### 38.4 Verification
+
+- Compile gate green.
+- Grep SEVERE in run log = 0.
+- Device check: download a GOG game → both `GogGamesActivity` (Add Game / Add to Launcher dialog buttons) and `GogGameDetailActivity` (the green button now labelled "Add to Library") → only outcome is a toast `Added "<name>" to library`, no Wine launch fires, user stays on the GOG screen.
+- Library tab: the game tile appears immediately (§37). Tapping it launches via the existing `LaunchType.GogGameByPcEmulator` GameHub pipeline.
+
+### 38.5 Files (pre17)
+
+- `extensions/.../gog/GogLaunchHelper.java` — −70 LOC dead launch code, +file-Javadoc rewrite, drop `Intent` import
+- `extensions/.../gog/GogGameDetailActivity.java` — 1-line button relabel + 1-line call switch
+- `PROGRESS_LOG.md` — pre17 entry
+- This doc — §38

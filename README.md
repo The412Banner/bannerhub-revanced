@@ -235,6 +235,20 @@ GPU Spoof, the Legacy renderer toggle, and PC Vibration all share one per-game p
 
 Forces the **PC Game Settings** row to appear in the Explorer game-detail More Menu for *every* game type, including Steam-linked games where XiaoJi-native logic would normally hide it. The patch removes the single `if-eqz` gate immediately preceding the row's construction in `Lx57;->a`; every other row keeps its native gating untouched.
 
+### `Show Game ID menu row` ⭐ *new in v1.5.0-604*
+
+Adds a **Show Game ID** row to both per-game popup menus and a third entry in the library-list popup (the 3-dot menu on each tile). Tapping it opens a small dialog that shows the active game's **Local Game ID** — the integer `server_game_id` GameHub assigns each row — with **Close**, **Copy** (when scoped to a specific game), and **View All Games** buttons.
+
+The **View All Games** flow opens the GameHub library database (`db_game_library.db` Room, `t_game_library_base` table) **read-only** and renders the full library in a scrollable list — `<game name>` then `ID: <server_game_id>` (plus inline `· Steam: <appid>` / `· Epic: <UUID>` tags when those columns are populated), case-insensitive alphabetical. Tap any row → that game's id is copied to the clipboard with a toast. Pairs naturally with the **External launcher (Beacon / ES-DE / Daijishou)** support — users no longer need to grep logcat to find the id required by per-game external-launcher entries.
+
+Structural sibling of *PC Vibration Settings menu row* / *GPU Spoof* / *Renderer*: three injection sites (`Lx57;->a` More Menu, `Lted;->f` library-tile popup, `Lpzc;->j0` library-list popup), each hands row construction to a Java helper (`BhGameIdDisplayMenuRowClick`) via a single `invoke-static`. **Reuses** the single shared `Lxd3;->l1` resolver hook the vibration patch already injects — one `else if` line is added to `BhMenuRowClick.maybeResolveCustomLabel` mapping `"string:bh_gameid_label" → "Show Game ID"`. No new resolver head-block (a 2nd one ANRs MainActivity cold-start — established in earlier menu-row work).
+
+DB access is safe alongside the host's live Room writer: `SQLiteDatabase.OPEN_READONLY | NO_LOCALIZED_COLLATORS` against `getApplicationContext().getDatabasePath("db_game_library.db")`, with full fail-safe behaviour — absent file / missing table / any `SQLiteException` toasts a friendly message rather than crashing the menu flow. Resolves correctly across every variant pkg (`banner.hub`, `com.antutu.benchmark.full`, `gamehub.lite`, etc.) since `getDatabasePath` keys off the running app's data dir.
+
+### `Show Game ID label resource` ⭐ *new in v1.5.0-604*
+
+Companion to the menu-row patch — appends `bh_gameid_label = "Show Game ID"` to `features.home`'s Compose Multiplatform `.cvr` resource bundle across the 6 locale variants. Mirrors *PC Vibration Settings label resource* exactly: kept so the resource is reachable through any future manifest-aware resolver, even though runtime lookup currently goes through the shared `Lxd3;->l1` short-circuit.
+
 ### `Change app icon` ⭐ *new in v1.1.0-604*
 
 Replaces five in-APK drawables with BannerHub v6 branding:

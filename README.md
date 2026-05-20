@@ -34,8 +34,8 @@
 >
 > **BannerHub v6 does NOT replace BannerHub 3.7.x or BannerHub Lite — they are SEPARATE projects.**
 >
-> - **BannerHub** 3.7.x — built from the GameHub 5.3.5 ReVanced project by **PlayDay**.
-> - **BannerHub Lite** — built from GameHub Lite 5.1.4 by **Producdevity**.
+> - [**BannerHub**](https://github.com/The412Banner/BannerHub) 3.7.x — built from the GameHub 5.3.5 ReVanced project by **PlayDay**.
+> - [**BannerHub Lite**](https://github.com/The412Banner/Bannerhub-Lite) — built from GameHub Lite 5.1.4 by **Producdevity**.
 > - **BannerHub v6** *(this repo)* — built from XiaoJi GameHub 6.0.x on a brand-new pipeline.
 >
 > **None of the three are to be updated over by any of the others.** Each ships with its own package names, its own keystore, and its own component / Steam-client backend — Android won't accept an in-place update between them, and forcing one will leave you with a broken install. Uninstall first, then install the new project if you want to switch.

@@ -55,6 +55,14 @@ The only deliberate decision we made: **Steam and Epic are never removed from Li
 
 ---
 
+## Front-end launcher support (Beacon / ES-DE / Daijishou)
+
+Lite ships the same external-front-end intent contract as the full builds — pick a game in Beacon (or ES-DE / Daijishou), it hands off into Lite, and the game starts playing. The Lite package (`banner.hub.lite`) has its own action prefix; the per-variant `am` commands, the `localGameId` / `steamAppId` / `autoStartGame` extras, and how to find a game's ID are all documented in:
+
+📖 **[`beacon-setup.md`](beacon-setup.md)** — full setup guide covering all 9 variants (full + Lite).
+
+---
+
 ## Testing status (Beta 1)
 
 | Area | Status |

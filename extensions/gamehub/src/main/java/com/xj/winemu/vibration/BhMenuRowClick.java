@@ -368,6 +368,8 @@ public final class BhMenuRowClick implements Function1<Object, Object> {
                 label = "Renderer";
             } else if ("string:bh_gameid_label".equals(key)) {
                 label = "Show Game ID";
+            } else if ("string:bh_banner_tools_label".equals(key)) {
+                label = "Banner Tools";
             }
             if (label != null) {
                 Log.i(TAG, "maybeResolveCustomLabel key=" + key + " → '" + label + "'");

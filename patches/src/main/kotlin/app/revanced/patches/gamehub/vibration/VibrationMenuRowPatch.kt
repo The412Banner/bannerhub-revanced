@@ -60,12 +60,30 @@ val vibrationMenuRowPatch = bytecodePatch(
     dependsOn(vibrationMenuLabelPatch, menuGameIdCapturePatch)
 
     apply {
-        // Find the menu Composable structurally via firstMethod (returns
-        // a MutableMethod ready for addInstructions). Predicate:
-        //   - 4 params (Lf37;Lpo7;Lv83;I), returns void
-        //   - body constructs an Liae with the canonical 3-arg ctor
-        //   - body references the Remove-from-Library label (Lwhl;->S:Lxrl;)
-        val menuMethod = firstMethod {
+        // [feature/banner-tools-menu] On this experiment branch the 3
+        // standalone menu-row injections (Lx57;->a / Lted;->f / Lpzc;->j0)
+        // are removed. BannerToolsMenuRowPatch now owns those 3 injection
+        // sites and renders ONE consolidated "Banner Tools" row whose
+        // click handler pops a dialog dispatching into the existing per-
+        // feature handlers (BhMenuRowClick / BhGpuSpoofMenuRowClick /
+        // BhRendererMenuRowClick / BhGameIdDisplayMenuRowClick) — so all
+        // settings activities / dialogs / prefs / extensions remain in
+        // place and continue to work.
+        //
+        // The Lxd3;->l1 resolver hook below is KEPT — BannerToolsMenuRowPatch
+        // also injects an Lell-labelled row at Lpzc;->j0 with a new sentinel
+        // key ("string:bh_banner_tools_label") that this same resolver maps
+        // through BhMenuRowClick.maybeResolveCustomLabel.
+        //
+        // To restore the 3 standalone injections, see git history at
+        // gamehub-604-build:661a82d (parent of this branch).
+        //
+        // The Ljoc;->invoke probe at the end is also KEPT — pure diagnostic.
+        // ─────────────────────────────────────────────────────────────────────
+        // [START disabled standalone-row injections]
+        if (false) {
+            @Suppress("UNREACHABLE_CODE")
+            val menuMethod = firstMethod {
             parameterTypes == listOf("Lf37;", "Lpo7;", "Lv83;", "I") &&
                 returnType == "V" &&
                 (implementation?.instructions?.any { ins ->
@@ -269,6 +287,7 @@ val vibrationMenuRowPatch = bytecodePatch(
                 move-result-object v$returnReg
             """.trimIndent(),
         )
+        } // [END disabled standalone-row injections]
 
         // ─────────────────────────────────────────────────────────────────────
         // Patch the resolver Lxd3.l1 to short-circuit our sentinel key.

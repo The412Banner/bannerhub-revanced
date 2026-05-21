@@ -60,8 +60,18 @@ val localGameIdAssignmentPatch = bytecodePatch(
     dependsOn(sharedGamehubExtensionPatch)
 
     apply {
+        // `firstMethod` iterates across both concrete method *definitions* and
+        // method *references* embedded in invoke instructions elsewhere in the
+        // dex. The pre1 build hit `SEVERE: classDef is null` because the first
+        // match was a reference (some subclass's invoke-super onto BaseAndroidApp.onCreate)
+        // rather than the concrete method, and addInstructions can't write
+        // into a reference. Require `implementation != null` to filter the
+        // predicate down to the real implementation — same trick the Mob
+        // patch uses via `implementation?.instructions?.any { ... }`.
         firstMethod {
-            definingClass == BASE_ANDROID_APP_SMALI && name == "onCreate"
+            definingClass == BASE_ANDROID_APP_SMALI &&
+                name == "onCreate" &&
+                implementation != null
         }.addInstructions(
             0,
             """

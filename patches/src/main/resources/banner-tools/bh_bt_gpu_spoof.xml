@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="56dp"
+    android:height="56dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+
+    <!-- Dark rounded background, rx=112. -->
+    <path
+        android:pathData="M112,0 H400 A112,112 0 0 1 512,112 V400 A112,112 0 0 1 400,512 H112 A112,112 0 0 1 0,400 V112 A112,112 0 0 1 112,0 Z"
+        android:fillColor="#141218"/>
+
+    <!-- Chip outline (240x240 rx=32). Android VectorDrawable does not
+         support stroke-dasharray, so this ships as a solid stroke — the
+         chip silhouette still reads, just less "blueprint-esque". -->
+    <path
+        android:pathData="M168,136 H344 A32,32 0 0 1 376,168 V344 A32,32 0 0 1 344,376 H168 A32,32 0 0 1 136,344 V168 A32,32 0 0 1 168,136 Z"
+        android:strokeColor="#49454F"
+        android:strokeWidth="8"/>
+
+    <!-- 6 chip pin marks (top + bottom edges, 3 each). -->
+    <path
+        android:pathData="M200,110 V136 M256,110 V136 M312,110 V136 M200,376 V402 M256,376 V402 M312,376 V402"
+        android:strokeColor="#49454F"
+        android:strokeWidth="8"
+        android:strokeLineCap="round"/>
+
+    <!-- Spy/bandit mask body. -->
+    <path
+        android:pathData="M112,200 c0,0 20,-40 144,-40 s144,40 144,40 c0,0 16,60 -16,110 c-24,38 -72,62 -128,62 s-104,-24 -128,-62 c-32,-50 -16,-110 -16,-110 z"
+        android:fillColor="#D0BCFF"/>
+
+    <!-- Left eye-slit + pupil. -->
+    <path
+        android:pathData="M170,220 q16,-12 32,0 q-16,20 -32,0 z"
+        android:fillColor="#381E72"/>
+    <path
+        android:pathData="M182,222 A4,4 0 1 1 190,222 A4,4 0 1 1 182,222 Z"
+        android:fillColor="#381E72"/>
+
+    <!-- Right eye-slit + pupil. -->
+    <path
+        android:pathData="M310,220 q16,-12 32,0 q-16,20 -32,0 z"
+        android:fillColor="#381E72"/>
+    <path
+        android:pathData="M322,222 A4,4 0 1 1 330,222 A4,4 0 1 1 322,222 Z"
+        android:fillColor="#381E72"/>
+
+    <!-- Bandit hat (drawn last so it overlays the mask top), alpha 0.85. -->
+    <path
+        android:pathData="M100,170 C120,140 200,130 256,130 C312,130 392,140 412,170 Z"
+        android:fillColor="#381E72"
+        android:fillAlpha="0.85"/>
+</vector>

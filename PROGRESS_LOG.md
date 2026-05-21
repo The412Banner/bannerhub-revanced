@@ -1,5 +1,20 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-05-21 — Docs: link `beacon-setup.md` from v1.5.1-604 release notes + Lite doc
+
+Plumbed the front-end launcher setup guide into the two places it was missing:
+
+- **`v1.5.1-604` release notes.** The Imported/Epic/GOG launch-fix bullet now inlines a link to `beacon-setup.md`, and a new top-level "Front-end launcher setup (Beacon / ES-DE / Daijishou)" line sits alongside the Privacy/Credits links. Edited via `gh release edit` — release tag/assets/keystore unchanged, drop-in update unaffected.
+- **`bannerhub-v6-lite.md`.** Added a "Front-end launcher support (Beacon / ES-DE / Daijishou)" section between the "what stays" list and the testing-status table, with the same `beacon-setup.md` pointer. Notes that the Lite package (`banner.hub.lite`) has its own action prefix and that the guide covers all 9 variants (full + Lite).
+
+The README on both `gamehub-604-build` and `feature/lite-variant-tier1` already linked `beacon-setup.md` from the Frontend support section — this just closes the gap in the two surfaces (release page + Lite doc) that hadn't been refreshed.
+
+No code/patch/CI changes; docs-only. Lite rebuild not required.
+
+### Next
+
+Refresh `feature/lite-variant-tier1` from `gamehub-604-build` for the Lite-doc edit (same `--no-ff` merge as prior docs polish).
+
 ## 2026-05-21 — Docs: beacon-setup walkthrough audit — fix Normal-GHL launcher label + disambiguation + table column
 
 Audit of the "Beacon in-app walkthrough" section at the top of `beacon-setup.md`. One real correctness bug found, two gaps closed.

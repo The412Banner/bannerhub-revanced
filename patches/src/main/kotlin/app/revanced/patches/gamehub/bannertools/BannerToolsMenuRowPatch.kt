@@ -57,7 +57,9 @@ val bannerToolsMenuRowPatch = bytecodePatch(
     // (BhMenuRowClick.maybeResolveCustomLabel) that resolves our Injection-3
     // sentinel key. menuGameIdCapturePatch populates BhMenuGameId so the
     // per-feature handlers' invoke() can read the active gameId.
-    dependsOn(menuGameIdCapturePatch, vibrationMenuRowPatch)
+    // bannerToolsDrawablesPatch ships the 4 vector drawables that the
+    // dialog tile row inflates via Resources.getIdentifier().
+    dependsOn(menuGameIdCapturePatch, vibrationMenuRowPatch, bannerToolsDrawablesPatch)
 
     apply {
         // ── Injection 1: game-details More Menu (Lx57;->a) ──────────────────

@@ -1,5 +1,81 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-05-21 — feature/banner-tools-menu pre2: custom-icon 1×4 tile dialog (56dp vectors)
+
+### Decisions locked (user, 2026-05-21)
+1. **Icon size in dialog:** 56dp
+2. **Backgrounds:** keep self-contained dark Material 3 surface-container tiles (no host-theme tinting)
+3. **Ship format:** Android vector drawable XML
+
+### New files
+- `patches/src/main/resources/banner-tools/bh_bt_vibration.xml`
+- `patches/src/main/resources/banner-tools/bh_bt_gpu_spoof.xml`
+- `patches/src/main/resources/banner-tools/bh_bt_renderer.xml`
+- `patches/src/main/resources/banner-tools/bh_bt_game_id.xml`
+
+  Mechanical SVG → vector-drawable conversion of the 4 SVG templates archived in `/storage/emulated/0/Download/banner-tools-custom-icons-preview.html`. 512×512 viewport, 56dp intrinsic size, dark rounded-rect background path baked in (rx=112). Conversion rules: `<rect>` → multi-arc rounded-rect path; `<circle>` → 2-arc path; `transform="rotate(...)"` → `<group android:pivotX/Y android:rotation>`; `opacity="0.85"` → `android:fillAlpha`; `stroke-opacity="0.5"` → `android:strokeAlpha`.
+
+  **Known conversion loss:** the GPU Spoof chip outline used SVG `stroke-dasharray="16 12"`, which Android VectorDrawable does not support. Shipped as a solid stroke instead — chip silhouette still reads, just less "blueprint-esque." If the user later vetoes this, alternatives are (a) pre-compute 24+ short line segments around the rounded-rect perimeter, or (b) drop the chip outline entirely and rely on the 6 pin marks for chip identity.
+
+- `patches/src/main/kotlin/app/revanced/patches/gamehub/bannertools/BannerToolsDrawablesPatch.kt` — `resourcePatch` that ships the 4 vectors as new entries in `res/drawable/` of the staged APK. Mirrors the classloader-read pattern from `ChangeAppIconPatch`. Resource IDs are assigned by apktool/aapt2 at reassembly; runtime resolution is via `Resources.getIdentifier("bh_bt_*", "drawable", pkgName)` since the host R class is in the foreign package.
+
+### Modified files
+- `patches/src/main/kotlin/app/revanced/patches/gamehub/bannertools/BannerToolsMenuRowPatch.kt` — added `bannerToolsDrawablesPatch` to `dependsOn(...)` so the 4 drawables are guaranteed present before the bytecode patch applies.
+
+- `extensions/gamehub/src/main/java/com/xj/winemu/bannertools/BhBannerToolsMenuRowClick.java` — `showDialog()` rewritten:
+  - **Old (pre1):** `AlertDialog.Builder().setTitle(...).setItems(STRING_ARRAY, ...)` text list, 4 long labels.
+  - **New (pre2):** `setView(buildTileRow(...))` — programmatically built `LinearLayout` HORIZONTAL with 4 children, each a vertical tile (`ImageView` 56dp + `TextView` short label). Short labels: **Vibration / GPU Spoof / Renderer / Game ID**.
+  - Tile interaction: `selectableItemBackground` ripple, `clickable=true`, `focusable=true`. Per-tile click handler captures the tile index and dispatches into the same 4 per-feature handlers (`BhMenuRowClick` / `BhGpuSpoofMenuRowClick` / `BhRendererMenuRowClick` / `BhGameIdDisplayMenuRowClick`), then dismisses the dialog.
+  - Cancel-only action button (no OK) — `setNegativeButton(android.R.string.cancel, null)`.
+  - Drawables resolved at runtime via `res.getIdentifier(drawableName, "drawable", pkgName)` because the static R class belongs to GameHub's package, not BannerHub's. Missing-drawable case logs and falls through (tile renders without an icon rather than crashing).
+  - `dp(float density, int dp)` helper added; programmatic view construction avoids needing to inject an XML layout into the foreign package.
+
+### Why programmatic view (not XML layout)
+Injecting a new `res/layout/bh_banner_tools_dialog.xml` would mean adding a new layout entry to the staged APK's resource table and either reflectively resolving its ID or hardcoding one. Programmatic construction sidesteps both — only the 4 drawables ride along, which apktool handles cleanly (proven by `ChangeAppIconPatch`).
+
+### CI
+Pushing to `feature/banner-tools-menu`; triggering `Any branch compilation` workflow. On green build, `BannerHub-V6-1.5.0-604-banner-tools-pre2-Patched-Normal-GHL.apk` will be staged at `/storage/emulated/0/Download/banner-tools-pre2/` for device test.
+
+### Open follow-ups (after device test of pre2)
+- Confirm icon legibility at 56dp on user's device (font scale, screen density).
+- If GPU Spoof dashed-outline absence is too jarring, swap to alternative (a) or (b) above.
+- Once pre2 lands, address the Lx57.o Steam/Epic hide bug (separate from this branch — see `[[project_bannerhub_revanced]]` known-issue block).
+
+---
+
+## 2026-05-21 — feature/banner-tools-menu: pre1 device-tested + Layout 2 picked + custom icons received
+
+### Device test result
+Pre1 (text-list `AlertDialog`) installed from `/storage/emulated/0/Download/banner-tools-pre1/BannerHub-V6-1.5.0-604-banner-tools-pre1-Patched-Normal-GHL.apk` and confirmed working on device — single "Banner Tools" row appears at all 3 menu sites; tap opens the 4-item list; each item routes into the correct per-feature handler. No regressions to the 4 underlying settings activities / dialogs.
+
+### Dialog UX iteration → Layout 2 picked
+Mocked 3 dialog layouts in `/storage/emulated/0/Download/banner-tools-dialog-mockups.html` (Material 3 styled, 28dp rounded, light+dark adaptive). User picked **Variant 2 — 1×4 horizontal row of icon+label tiles**. Labels shortened to fit 4 tiles in a 360dp dialog: **Vibration / GPU Spoof / Renderer / Game ID** (vs pre1's longer "PC Vibration Settings" / "Show Game ID"). Cancel-only action button.
+
+### Custom icons received
+User supplied 4 self-contained SVG tiles (512×512 viewBox, 22% corner ratio, dark Material 3 surface-container backgrounds, multi-color hardcoded fills — no auto theme tinting):
+- **Vibration** — controller body + dpad + 2 action buttons + 4 haptic wave arcs (`#FFD284` waves, `#E6E1E5` controller)
+- **GPU Spoof** — spy/bandit mask over a dashed-outline chip with 6 pin marks (`#D0BCFF` mask, `#381E72` hat)
+- **Renderer** — inner chip (`#2D3033` + `#006684` outline) + 12 outer pin pads + Android-bot core with shader grid (`#00E676` bot, `#A3EDFF` grid bars)
+- **Game ID** — ID badge with avatar circle + barcode rows + decorative slot (`#BFC2C9` avatar, `#FFB4AB` accent bars)
+
+Full SVG markup preserved as JS templates in the preview HTML below — re-extract from there if originals are lost.
+
+### Preview HTML
+Written to `/storage/emulated/0/Download/banner-tools-custom-icons-preview.html`. Shows:
+- Layout 2 at 48dp / 56dp / 64dp icon sizes, light + dark themes side-by-side
+- Per-icon size sampler (32 / 40 / 48 / 64 / 96 px) so user can judge detail legibility
+- Pre1 text-list vs Layout 2 with custom icons A/B
+
+### Pending decisions before next code change
+1. **Icon size in dialog:** 48dp / 56dp / 64dp — recommended 56dp; 64dp would need dialog widened to ~400dp
+2. **Self-contained dark backgrounds:** keep as-is (always dark squares, bold visual identity) vs strip the first `<rect>` from each so glyphs sit on the dialog's own chip background and pick up host theme tinting
+3. **Ship format:** Android vector drawable XML (recommended — ~1–2 KB/icon, mechanical SVG→XML conversion since shapes are plain `<rect>`/`<circle>`/`<path>`/`<g>` with `transform="rotate(...)"`) vs PNG raster (20 files across 5 density buckets × 4 icons)
+
+### No code changes this session
+Branch head still `e156467` (pre1 scaffold). All work was UX/asset discussion — implementation of the new dialog + custom icons happens next session once the 3 pending decisions are answered.
+
+---
+
 ## 2026-05-21 — feature/banner-tools-menu pre1 (scaffold)
 
 Cut new branch off `gamehub-604-build@661a82d` for the Banner Tools menu-consolidation experiment listed in v1.5.0-604's "Upcoming features" section. Goal: collapse the 4 per-game More Menu rows (PC Vibration / GPU Spoof / Renderer / Show Game ID) into a single "Banner Tools" entry whose tap opens an `AlertDialog` listing the 4 sub-features. Each item dispatches into the existing per-feature handlers (`new BhMenuRowClick().invoke(null)`, etc.) so all settings activities / dialogs / prefs are reused unchanged.

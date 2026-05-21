@@ -2,8 +2,14 @@ package com.xj.winemu.bannertools;
 
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.DialogInterface;
+import android.content.res.Resources;
 import android.util.Log;
+import android.util.TypedValue;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import com.xj.winemu.common.BhMenuGameId;
 
@@ -40,11 +46,20 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
     private static final String ACTION_ID = "local_detail_menu_banner_tools";
     static final String LABEL_SENTINEL = "string:bh_banner_tools_label";
 
-    private static final String[] DIALOG_ITEMS = new String[] {
-        "PC Vibration Settings",
+    // Tile spec: short label + drawable name resolved at runtime via
+    // Resources.getIdentifier() (R class belongs to the foreign GameHub pkg).
+    // Order maps 1:1 onto dispatch(int).
+    private static final String[] TILE_LABELS = new String[] {
+        "Vibration",
         "GPU Spoof",
         "Renderer",
-        "Show Game ID",
+        "Game ID",
+    };
+    private static final String[] TILE_DRAWABLES = new String[] {
+        "bh_bt_vibration",
+        "bh_bt_gpu_spoof",
+        "bh_bt_renderer",
+        "bh_bt_game_id",
     };
 
     @Override
@@ -64,16 +79,108 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
 
     private static void showDialog(Activity host) {
         try {
-            new AlertDialog.Builder(host)
+            LinearLayout row = buildTileRow(host);
+
+            final AlertDialog dialog = new AlertDialog.Builder(host)
                 .setTitle(ROW_LABEL)
-                .setItems(DIALOG_ITEMS, (DialogInterface dialog, int which) -> {
-                    dispatch(which);
-                })
+                .setView(row)
                 .setNegativeButton(android.R.string.cancel, null)
-                .show();
+                .create();
+
+            // Wire per-tile clicks now that we have the dialog reference;
+            // each tap dispatches into the per-feature handler and dismisses.
+            for (int i = 0; i < row.getChildCount(); i++) {
+                final int which = i;
+                row.getChildAt(i).setOnClickListener(v -> {
+                    dispatch(which);
+                    dialog.dismiss();
+                });
+            }
+
+            dialog.show();
         } catch (Throwable t) {
             Log.w(TAG, "showDialog failed", t);
         }
+    }
+
+    // ── Custom 1×4 tile row (icon + short label per tile) ────────────────
+    // Built programmatically so we don't need an XML layout resource
+    // injected into the foreign package. Icons resolve to the bh_bt_*
+    // vector drawables shipped by BannerToolsDrawablesPatch.
+    private static LinearLayout buildTileRow(Activity host) {
+        final Resources res = host.getResources();
+        final String pkg = host.getPackageName();
+        final float density = res.getDisplayMetrics().density;
+
+        LinearLayout row = new LinearLayout(host);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        int padH = dp(density, 8);
+        int padV = dp(density, 12);
+        row.setPadding(padH, padV, padH, padV);
+
+        for (int i = 0; i < TILE_LABELS.length; i++) {
+            row.addView(buildTile(host, res, pkg, density, TILE_DRAWABLES[i], TILE_LABELS[i]));
+        }
+        return row;
+    }
+
+    private static View buildTile(Activity host, Resources res, String pkg,
+                                  float density, String drawableName, String label) {
+        LinearLayout tile = new LinearLayout(host);
+        tile.setOrientation(LinearLayout.VERTICAL);
+        tile.setGravity(Gravity.CENTER_HORIZONTAL);
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+            0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        int sideMargin = dp(density, 4);
+        lp.setMargins(sideMargin, 0, sideMargin, 0);
+        tile.setLayoutParams(lp);
+
+        int inner = dp(density, 8);
+        tile.setPadding(inner, inner, inner, inner);
+
+        // Ripple feedback — selectableItemBackground resolves to the host
+        // theme's ripple drawable, so M3 themes get bounded ripples and
+        // legacy themes get a sensible fallback.
+        TypedValue tv = new TypedValue();
+        if (host.getTheme().resolveAttribute(
+                android.R.attr.selectableItemBackground, tv, true)) {
+            tile.setBackgroundResource(tv.resourceId);
+        }
+        tile.setClickable(true);
+        tile.setFocusable(true);
+
+        // Icon — 56dp, self-contained dark background already baked into
+        // the vector drawable so we don't tint it.
+        ImageView iv = new ImageView(host);
+        int iconId = res.getIdentifier(drawableName, "drawable", pkg);
+        if (iconId != 0) {
+            iv.setImageResource(iconId);
+        } else {
+            Log.w(TAG, "drawable not found: " + drawableName);
+        }
+        int iconPx = dp(density, 56);
+        iv.setLayoutParams(new LinearLayout.LayoutParams(iconPx, iconPx));
+        tile.addView(iv);
+
+        // Label.
+        TextView txt = new TextView(host);
+        txt.setText(label);
+        txt.setGravity(Gravity.CENTER_HORIZONTAL);
+        txt.setSingleLine(true);
+        txt.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f);
+        LinearLayout.LayoutParams txtLp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        txtLp.topMargin = dp(density, 6);
+        txt.setLayoutParams(txtLp);
+        tile.addView(txt);
+
+        return tile;
+    }
+
+    private static int dp(float density, int dp) {
+        return Math.round(density * dp);
     }
 
     private static void dispatch(int which) {

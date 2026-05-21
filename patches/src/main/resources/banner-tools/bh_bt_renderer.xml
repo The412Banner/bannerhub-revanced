@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="56dp"
+    android:height="56dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+
+    <!-- Dark rounded background, rx=112. -->
+    <path
+        android:pathData="M112,0 H400 A112,112 0 0 1 512,112 V400 A112,112 0 0 1 400,512 H112 A112,112 0 0 1 0,400 V112 A112,112 0 0 1 112,0 Z"
+        android:fillColor="#1A1C1E"/>
+
+    <!-- Chip body (320x320 rx=48) with teal outline. -->
+    <path
+        android:pathData="M144,96 H368 A48,48 0 0 1 416,144 V368 A48,48 0 0 1 368,416 H144 A48,48 0 0 1 96,368 V144 A48,48 0 0 1 144,96 Z"
+        android:fillColor="#2D3033"
+        android:strokeColor="#006684"
+        android:strokeWidth="12"/>
+
+    <!-- 12 outer pin pads (3 per edge, 32x32 rx=8). Combined into one
+         multi-subpath path; all share the same teal fill. -->
+    <path
+        android:pathData="M148,64 h16 a8,8 0 0 1 8,8 v16 a8,8 0 0 1 -8,8 h-16 a8,8 0 0 1 -8,-8 v-16 a8,8 0 0 1 8,-8 z M248,64 h16 a8,8 0 0 1 8,8 v16 a8,8 0 0 1 -8,8 h-16 a8,8 0 0 1 -8,-8 v-16 a8,8 0 0 1 8,-8 z M348,64 h16 a8,8 0 0 1 8,8 v16 a8,8 0 0 1 -8,8 h-16 a8,8 0 0 1 -8,-8 v-16 a8,8 0 0 1 8,-8 z M148,416 h16 a8,8 0 0 1 8,8 v16 a8,8 0 0 1 -8,8 h-16 a8,8 0 0 1 -8,-8 v-16 a8,8 0 0 1 8,-8 z M248,416 h16 a8,8 0 0 1 8,8 v16 a8,8 0 0 1 -8,8 h-16 a8,8 0 0 1 -8,-8 v-16 a8,8 0 0 1 8,-8 z M348,416 h16 a8,8 0 0 1 8,8 v16 a8,8 0 0 1 -8,8 h-16 a8,8 0 0 1 -8,-8 v-16 a8,8 0 0 1 8,-8 z M72,140 h16 a8,8 0 0 1 8,8 v16 a8,8 0 0 1 -8,8 h-16 a8,8 0 0 1 -8,-8 v-16 a8,8 0 0 1 8,-8 z M72,240 h16 a8,8 0 0 1 8,8 v16 a8,8 0 0 1 -8,8 h-16 a8,8 0 0 1 -8,-8 v-16 a8,8 0 0 1 8,-8 z M72,340 h16 a8,8 0 0 1 8,8 v16 a8,8 0 0 1 -8,8 h-16 a8,8 0 0 1 -8,-8 v-16 a8,8 0 0 1 8,-8 z M424,140 h16 a8,8 0 0 1 8,8 v16 a8,8 0 0 1 -8,8 h-16 a8,8 0 0 1 -8,-8 v-16 a8,8 0 0 1 8,-8 z M424,240 h16 a8,8 0 0 1 8,8 v16 a8,8 0 0 1 -8,8 h-16 a8,8 0 0 1 -8,-8 v-16 a8,8 0 0 1 8,-8 z M424,340 h16 a8,8 0 0 1 8,8 v16 a8,8 0 0 1 -8,8 h-16 a8,8 0 0 1 -8,-8 v-16 a8,8 0 0 1 8,-8 z"
+        android:fillColor="#006684"/>
+
+    <!-- Android-bot head (semicircular cap), green. -->
+    <path
+        android:pathData="M200,240 a56,56 0 0 1 112,0 z"
+        android:fillColor="#00E676"/>
+
+    <!-- Bot antennas — 2 rotated rounded-rect "stalks". -->
+    <group
+        android:pivotX="210"
+        android:pivotY="156"
+        android:rotation="-30">
+        <path
+            android:pathData="M215,156 a5,5 0 0 1 5,5 v20 a5,5 0 0 1 -10,0 v-20 a5,5 0 0 1 5,-5 z"
+            android:fillColor="#00E676"/>
+    </group>
+    <group
+        android:pivotX="292"
+        android:pivotY="156"
+        android:rotation="30">
+        <path
+            android:pathData="M297,156 a5,5 0 0 1 5,5 v20 a5,5 0 0 1 -10,0 v-20 a5,5 0 0 1 5,-5 z"
+            android:fillColor="#00E676"/>
+    </group>
+
+    <!-- Bot eyes (chip-colour cutouts). -->
+    <path
+        android:pathData="M220,220 A8,8 0 1 1 236,220 A8,8 0 1 1 220,220 Z"
+        android:fillColor="#2D3033"/>
+    <path
+        android:pathData="M276,220 A8,8 0 1 1 292,220 A8,8 0 1 1 276,220 Z"
+        android:fillColor="#2D3033"/>
+
+    <!-- Shader bars (cyan). -->
+    <path
+        android:pathData="M164,270 h80 a8,8 0 0 1 8,8 v16 a8,8 0 0 1 -8,8 h-80 a8,8 0 0 1 -8,-8 v-16 a8,8 0 0 1 8,-8 z M268,270 h80 a8,8 0 0 1 8,8 v16 a8,8 0 0 1 -8,8 h-80 a8,8 0 0 1 -8,-8 v-16 a8,8 0 0 1 8,-8 z"
+        android:fillColor="#A3EDFF"/>
+
+    <!-- Grid cells (teal). -->
+    <path
+        android:pathData="M164,312 h28 a8,8 0 0 1 8,8 v28 a8,8 0 0 1 -8,8 h-28 a8,8 0 0 1 -8,-8 v-28 a8,8 0 0 1 8,-8 z M216,312 h28 a8,8 0 0 1 8,8 v28 a8,8 0 0 1 -8,8 h-28 a8,8 0 0 1 -8,-8 v-28 a8,8 0 0 1 8,-8 z M268,312 h28 a8,8 0 0 1 8,8 v28 a8,8 0 0 1 -8,8 h-28 a8,8 0 0 1 -8,-8 v-28 a8,8 0 0 1 8,-8 z M320,312 h28 a8,8 0 0 1 8,8 v28 a8,8 0 0 1 -8,8 h-28 a8,8 0 0 1 -8,-8 v-28 a8,8 0 0 1 8,-8 z"
+        android:fillColor="#006684"/>
+</vector>

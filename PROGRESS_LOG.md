@@ -1,5 +1,17 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-05-21 — local-gameid MERGED to gamehub-604-build + Lite refreshed
+
+Pre3 device-confirmed (-1 case via Beacon → 1,863,762,719 launches Blur) and pre4 (-1 + 0 predicate widening, build-green) merged into both branches.
+
+- **`gamehub-604-build`** ← `feature/local-gameid-assignment` via `--no-ff` merge `c270672` ("Merge branch 'feature/local-gameid-assignment' — local game-id assignment for catalog-miss rows"). 3 files / +444 / 0 (new files only).
+- **`feature/lite-variant-tier1`** ← `gamehub-604-build` via `--no-ff` merge `7e018e6` ("merge gamehub-604-build: local game-id assignment for catalog-miss rows"). PROGRESS_LOG.md conflict resolved in favor of incoming entries (Lite had no parallel changes).
+- Post-merge validation CI:
+  - `release.yml` on `gamehub-604-build` — run [26240296448](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26240296448) (version `1.5.0-604-local-gameid-merged`)
+  - `release.yml` on `feature/lite-variant-tier1` — run [26240298055](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26240298055) (version `1.5.0-604-local-gameid-merged-lite`)
+
+Pre4 device-test for the `server_game_id=0` (Epic/GOG) path remains pending — user without Epic/GOG installed sees no behavior delta vs pre3 by design. Epic/GOG external launching still needs the separate dispatcher-hook patch (queued in `ExternalLauncher.java` doc-comment) — minting unique IDs was step 1 of that work.
+
 ## 2026-05-21 — feature/local-gameid-assignment pre4: extend to server_game_id=0 (Epic/GOG)
 
 ### Device-test result for pre3

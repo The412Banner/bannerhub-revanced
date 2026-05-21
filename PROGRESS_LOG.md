@@ -33,8 +33,22 @@
 ### Why programmatic view (not XML layout)
 Injecting a new `res/layout/bh_banner_tools_dialog.xml` would mean adding a new layout entry to the staged APK's resource table and either reflectively resolving its ID or hardcoding one. Programmatic construction sidesteps both — only the 4 drawables ride along, which apktool handles cleanly (proven by `ChangeAppIconPatch`).
 
-### CI
-Pushing to `feature/banner-tools-menu`; triggering `Any branch compilation` workflow. On green build, `BannerHub-V6-1.5.0-604-banner-tools-pre2-Patched-Normal-GHL.apk` will be staged at `/storage/emulated/0/Download/banner-tools-pre2/` for device test.
+### CI — both runs green
+- **`build_pull_request` run [26228524223](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26228524223)** ✅ (1m55s) — patches bundle compile-only sanity check.
+- **`release.yml` workflow_dispatch run [26228708841](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26228708841)** ✅ — full pipeline: build patches bundle → revanced-cli matrix across all 9 variants → resign with BannerHub test key → upload `apk-*` artifacts. Triggered with `version="1.5.0-604-banner-tools-pre2"` and `stable=false` (per pre-release policy after v1.5.0-604 stable; the `Create GitHub Release` job is correctly skipped). All 9 patch jobs `success`. `Patch Normal-GHL` log shows `INFO: "Banner Tools drawables" succeeded` + `INFO: "Banner Tools menu row" succeeded`, zero `SEVERE`, output 116.1 MB pre-resign.
+
+### APK verification
+Downloaded `apk-Normal-GHL` artifact and verified the 4 vector drawables landed inside the APK:
+```
+res/drawable/bh_bt_game_id.xml    (2028 B)
+res/drawable/bh_bt_gpu_spoof.xml  (2252 B)
+res/drawable/bh_bt_renderer.xml   (4056 B)
+res/drawable/bh_bt_vibration.xml  (2268 B)
+```
+All 4 names match the runtime `Resources.getIdentifier("bh_bt_*", "drawable", pkg)` lookup keys in `BhBannerToolsMenuRowClick.buildTile`.
+
+### Staged for device test
+`/storage/emulated/0/Download/banner-tools-pre2/BannerHub-V6-1.5.0-604-banner-tools-pre2-Patched-Normal-GHL.apk` (≈111 MB, BannerHub test key signature unchanged from pre1 — in-place update over pre1).
 
 ### Open follow-ups (after device test of pre2)
 - Confirm icon legibility at 56dp on user's device (font scale, screen density).

@@ -1,5 +1,27 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-05-21 — 🚀 v1.5.1-604 STABLE SHIPPED (hotfix)
+
+Cut from `gamehub-604-build` after both feature merges landed earlier today (localgameid `c270672` + Banner Tools menu `0021862`). Stable keystore unchanged from v1.1.0+; cert SHA-256 `10895a311fe04f95f82e4da5c9a6c041ba9282bf211f1b578fe1cbeb894ce0ba`. 18 APKs attached (9 full + 9 Lite) + 3 `.rvp` bundles.
+
+### Two changes on top of v1.5.0-604
+
+1. **Imported / Epic / GOG games launch from external front-ends** — `feature/local-gameid-assignment` merged via `c270672`. PC-imported games whose catalog lookup missed (`server_game_id = -1`) and Epic-library + GOG-imported games (`server_game_id = 0`) get a stable synthetic 32-bit ID derived from the row's `local_<UUID>` so the deep-link contract (`Integer.parseInt(app_nav_game_id)`) can address each row individually. **Device-confirmed on Beacon (the412banner) AND ES-DE (slogik) for BOTH the `-1` AND `=0` cases — Epic and GOG games now launch end-to-end from external front-ends.** Earlier "separate dispatcher hook needed for Epic/GOG" speculation in the design doc is superseded: in practice the existing 6.0.4 source-type-specific launch paths fire correctly once each row has a distinct integer.
+2. **Banner Tools consolidated menu** — `feature/banner-tools-menu` merged via `0021862` (pre2). Collapses the 4 BannerHub per-game menu rows (PC Vibration / GPU Spoof / Renderer / Show Game ID) into a single **Banner Tools** entry that opens a 1×4 icon-tile dialog. Less menu clutter; underlying feature patches unchanged.
+
+### Docs
+
+- `.github/workflows/release.yml`: refreshed `### What's new in ${version}` template body + bumped prior-stable reference from `v1.4.0-604` → `v1.5.0-604`.
+- PROGRESS_LOG: this entry.
+- Memory: `project_bannerhub_revanced_local_gameid_assignment.md` updated to record the Epic/GOG end-to-end device confirmation (supersedes the earlier "dispatcher hook still future" note).
+
+### Known issues carried over (not regressions; pre-date v1.5.1)
+
+- Steam-source and Epic-source games hide all 4 BannerHub More Menu rows on the game-details page. PC Game Settings ungate works on the same games (so `Lx57.a` IS invoked); root cause is downstream in `Lx57.o` row iteration. Not blocking v1.5.1.
+- GOG WS4/5 add-to-GameHub-library work is **held separate by user directive** until the underlying add-to-library issues are resolved. Not shipped in v1.5.1.
+
+---
+
 ## 2026-05-21 — local-gameid MERGED to gamehub-604-build + Lite refreshed
 
 **What this patch fixes (plain language):** any library row whose `server_game_id` was a sentinel value — `-1` for imported PC games GameHub didn't recognize from its catalog, OR `0` for Epic-library and GOG-imported games — gets rewritten to a unique, stable integer in the 1.07B–2.15B range derived from the row's `local_<UUID>` id. That makes those previously-collision-stuck games individually addressable from external launchers.

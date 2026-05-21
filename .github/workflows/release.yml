@@ -311,12 +311,10 @@ jobs:
 
             ### What's new in ${{ needs.build.outputs.version }}
 
-            On top of `v1.4.0-604` (same keystore — installs in place):
+            On top of `v1.5.0-604` (same keystore — installs in place):
 
-            - **🎮 External launcher integration (Beacon / ES-DE / Daijishou).** PC and Steam games can now be launched directly from external front-ends. Intents accept both `--ei` (int) and `--es` (String) extras to match Beacon's actual call shape. Epic Games library was attempted but the upstream `GameDetailViewModel` ignores the `app_nav_epic_app_name` route — **Epic remains unsupported**; PC + Steam ship working end-to-end.
-            - **🪪 Show Game ID menu row + View All Games dialog.** A new **Show Game ID** row in the per-game menus pops up a dialog with the gameId (with a **Copy** button) so you can configure Beacon / ES-DE / Daijishou entries without grepping a logcat. The dialog's **View All Games** button opens the full library list backed by `db_game_library.db` — tap any row to copy its id.
-            - **🖼️ Proper menu row icons.** Vibration / GPU Spoof / Renderer rows previously shared the Remove-from-Library trash icon because of a wrong icon-field read. Each row now reads its correct field (`zz4.b0` / `zz4.v` / `zz4.c0`) and renders its own icon in both per-game menus. Thanks @TideGear (PR #6).
-            - **📱 PC Vibration Settings dialog — portrait layout.** Dialog detects orientation and reshapes for portrait phones: Mode + Intensity stack vertically, width caps at `min(360dp, screenW - 24dp)`, intensity slider caps at 220dp. Landscape unchanged (480dp side-by-side). Thanks @TideGear (PR #6).
+            - **🪪 Imported / Epic / GOG games now launch from external front-ends.** GameHub writes `server_game_id = -1` for PC-imported games it can't match to its catalog, and `0` for Epic-library + GOG-imported games — so multiple rows collide on the integer deep-link contract that Beacon / ES-DE / Daijishou use. Each sentinel row now gets a stable synthetic 32-bit ID (deterministic from the row's `id` so it survives renames/moves), written into `t_game_library_base` on every app start. The Show Game ID dialog displays the synthetic. **Device-confirmed on Beacon (the412banner) AND ES-DE (slogik) for both `-1` (PC-imported) and `0` (Epic + GOG) cases — Epic and GOG games now launch end-to-end from external front-ends.** Idempotent and self-healing: rows GameHub later re-matches to a real catalog ID are left alone.
+            - **🧰 Banner Tools menu — one entry-point for the four BannerHub rows.** A consolidated dialog replaces four separate per-game menu rows (Vibration / GPU Spoof / Renderer / Show Game ID) with one **Banner Tools** entry that opens a 1×4 icon-tile dialog. Less menu clutter; the underlying patches are unchanged.
 
             ### Variants
 

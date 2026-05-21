@@ -1,5 +1,16 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-05-21 — Docs: README **Frontend support** section + beacon-setup status refresh
+
+Post-v1.5.1-604 docs polish. No code/patch changes; build artefacts unaffected.
+
+- **README.md** — new top-level **Frontend support** section between Variants and Signing. Status table (Beacon ✅ / ES-DE ✅ device-verified / Daijishou ⚠️ untested), short note that PC-imported / Steam / Epic / GOG are all addressable as of v1.5.1-604, and a prominent link to [`beacon-setup.md`](beacon-setup.md) — same target the v1.5.0-604 release description used. TOC renumbered.
+- **beacon-setup.md** — top status banner updated: ES-DE flipped to ✅ device-confirmed (slogik, v1.5.1-604); Epic Games library line flipped from ❌ unsupported (the old `app_nav_epic_app_name` upstream block) to ℹ️ supported via the synthetic-ID rewrite; GOG noted alongside. Renamed the stale "Games that DON'T work via Beacon dispatch" section to "Game type coverage" and replaced the negative bullet list with a positive 5-row coverage table (Steam / PC-imported catalog match / PC-imported `-1` / Epic `0` / GOG `0`) — all five now ✅, with the last three flagged "since v1.5.1-604".
+
+### Next
+
+Refresh `feature/lite-variant-tier1` from `gamehub-604-build` (--no-ff merge, docs-only — no Lite rebuild needed).
+
 ## 2026-05-21 — 🚀 v1.5.1-604 STABLE SHIPPED (hotfix)
 
 Cut from `gamehub-604-build` after both feature merges landed earlier today (localgameid `c270672` + Banner Tools menu `0021862`). Stable keystore unchanged from v1.1.0+; cert SHA-256 `10895a311fe04f95f82e4da5c9a6c041ba9282bf211f1b578fe1cbeb894ce0ba`. 18 APKs attached (9 full + 9 Lite) + 3 `.rvp` bundles.

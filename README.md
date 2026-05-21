@@ -55,12 +55,13 @@
 3. [What this is](#what-this-is)
 4. [Source](#source)
 5. [Variants](#variants)
-6. [Signing](#signing)
-7. [Patches applied](#patches-applied)
-8. [Build it yourself](#build-it-yourself)
-9. [Releases](#releases)
-10. [Credits](#credits)
-11. [License](#license)
+6. [Frontend support](#frontend-support)
+7. [Signing](#signing)
+8. [Patches applied](#patches-applied)
+9. [Build it yourself](#build-it-yourself)
+10. [Releases](#releases)
+11. [Credits](#credits)
+12. [License](#license)
 
 ## AI Disclaimer
 
@@ -138,6 +139,20 @@ Each Lite APK strips a verified-dead duplicate 20 MB font, the Aliyun carrier-lo
 From `v1.3.0-604` onward every release also ships a **Lite** counterpart of all 9 variants (filenames carry a trailing `-Lite`, e.g. `BannerHub-V6-<version>-Patched-Normal-Lite.apk`). A Lite build is byte-identical to its full counterpart except it strips ~34.5 MB of dead/optional weight (≈32% on disk: ~114.5 → ~78.3 MB) — a verified-dead duplicate 20 MB MiSans font, the Aliyun carrier-login native lib, the Haima cloud-gaming stack, and the bundled avif-coil AVIF/HEIC image-codec stack. Cloud gaming is non-functional under the BannerHub catalog redirect anyway, and modern Android still decodes HEIF/AVIF via the platform decoder (JPEG/PNG/WebP unaffected). See [`bannerhub-v6-lite.md`](bannerhub-v6-lite.md) for the full report.
 
 Each Lite uses the **same package name** as its full counterpart, so installing a Lite APK **replaces** the matching full variant — they do not coexist; pick one per package. Only the launcher label differs (full label + " Lite"). Lite APKs are built from the separate, intentionally never-merged [`feature/lite-variant-tier1`](https://github.com/The412Banner/bannerhub-revanced/tree/feature/lite-variant-tier1) branch (same patch bundle + 4 `use=false` size-reduction strip patches) and attached to the release alongside the 9 full APKs.
+
+## Frontend support
+
+BannerHub v6 can be driven directly from external game-launcher front-ends — pick a game in your front-end, it hands off into the matching BannerHub variant, and (with `autoStartGame true`) the game starts playing without a stop in GameHub's UI. The same intent contract is shared across all 9 variants — only the package name and action prefix change per variant.
+
+| Frontend | Status |
+| --- | --- |
+| **Beacon** | ✅ Device-verified working |
+| **ES-DE** | ✅ Device-verified working |
+| **Daijishou** | ⚠️ Untested (same intent contract — *should* work; please report results) |
+
+What's addressable: PC-imported games, Steam-library games, and — as of `v1.5.1-604` — Epic-library and GOG-imported games (the synthetic-ID rewrite turns rows GameHub stamps with `server_game_id = 0`/`-1` into stable individually-addressable integer IDs). Game-ID lookup is via the in-app **Banner Tools → Show Game ID** dialog (added v1.5.0-604, consolidated into Banner Tools in v1.5.1-604).
+
+> 📖 **Full setup guide for all 9 variants → [`beacon-setup.md`](beacon-setup.md)** — per-variant `am` launch commands, intent contract + extras (`localGameId` / `steamAppId` / `autoStartGame`), how to find a game's ID (in-app dialog + rooted `sqlite3` fallback), and the list of game types that aren't addressable.
 
 ## Signing
 

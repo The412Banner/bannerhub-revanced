@@ -68,6 +68,12 @@ val localGameIdAssignmentPatch = bytecodePatch(
         // into a reference. Require `implementation != null` to filter the
         // predicate down to the real implementation — same trick the Mob
         // patch uses via `implementation?.instructions?.any { ... }`.
+        // BaseAndroidApp.onCreate declares `.registers 55`, so p0 (this)
+        // resolves to v54 — out of range for invoke-static's 4-bit register
+        // operand (max v15). Move p0 into v0 first via `move-object/from16`
+        // (which IS encoded for high regs), then pass v0 to invoke-static.
+        // This is the same pattern ExternalLauncherPatch uses on
+        // DeepLinkActivity.onCreate.
         firstMethod {
             definingClass == BASE_ANDROID_APP_SMALI &&
                 name == "onCreate" &&
@@ -75,7 +81,8 @@ val localGameIdAssignmentPatch = bytecodePatch(
         }.addInstructions(
             0,
             """
-                invoke-static {p0}, Lapp/revanced/extension/gamehub/localgameid/LocalGameIdAssignment;->scanAndAssign(Landroid/content/Context;)V
+                move-object/from16 v0, p0
+                invoke-static {v0}, Lapp/revanced/extension/gamehub/localgameid/LocalGameIdAssignment;->scanAndAssign(Landroid/content/Context;)V
             """.trimIndent(),
         )
     }

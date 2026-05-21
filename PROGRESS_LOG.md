@@ -1,5 +1,19 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-05-21 — Docs: beacon-setup walkthrough audit — fix Normal-GHL launcher label + disambiguation + table column
+
+Audit of the "Beacon in-app walkthrough" section at the top of `beacon-setup.md`. One real correctness bug found, two gaps closed.
+
+- **L23 bug fix.** Old walkthrough said *"select **GameHub Lite** for the Normal-GHL variant"* — wrong. `gamehub.lite` is only the **package name** (shared with Producdevity's BannerHub Lite project); the actual `android:label` set by our `ChangeAppNamePatch` for Normal-GHL is **"BannerHub v6"** (verified against `.github/workflows/release.yml` lines 133–141 for full and 146–154 for Lite). A user with both apps installed would have picked the wrong app entirely. Replaced with the correct launcher-label mapping and an example list covering all variants.
+- **Shared-label disambiguation.** Added a callout noting that 3 variants share the label *"BannerHub v6"* (Normal / Normal-GHL / Original) and 2 share *"BannerHub v6 AnTuTu"* (AnTuTu / alt-AnTuTu). Points users to the package-name column to disambiguate, and clarifies that the `am start command` is the authoritative selector — the Player-app picker just decides the icon Beacon shows on the platform card.
+- **Per-variant table column.** Added a **Launcher label** column to the "Per-variant configuration" table so the walkthrough's "pick the right app" step has an authoritative reference in the same doc. Also added " Lite" suffix note for Lite variants.
+
+No code/patch/CI changes; docs-only. Lite rebuild not required.
+
+### Next
+
+Refresh `feature/lite-variant-tier1` from `gamehub-604-build` (--no-ff merge).
+
 ## 2026-05-21 — Docs: README **Frontend support** section + beacon-setup status refresh
 
 Post-v1.5.1-604 docs polish. No code/patch changes; build artefacts unaffected.

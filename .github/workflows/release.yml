@@ -297,13 +297,12 @@ jobs:
 
             ### What's new in ${{ needs.build.outputs.version }}
 
-            On top of `v1.3.0-604` (same keystore — installs in place):
+            On top of `v1.4.0-604` (same keystore — installs in place):
 
-            - **🎛️ Per-game settings, properly isolated.** GPU Spoof / Legacy renderer / PC Vibration each save to BannerHub's own per-game store with explicit **Save / Cancel** buttons — no more silent reset when GameHub rewrites its own settings file, and a choice for one game never leaks into another or app-wide. Settings now correctly cross the `:wine` process boundary so launch-time scoping actually works.
-            - **🪪 GPU Spoof (per game).** A new **GPU Spoof** menu row + dialog reports a chosen GPU identity (preset NVIDIA/AMD/Intel list spanning legacy → modern, or a fully custom vendor/device/name) to DXVK via a per-game `dxvk.conf`. Fixes titles that refuse to start on an "unsupported" adapter (e.g. CryEngine — Crysis 2). Off by default; zero effect when Off.
-            - **🖼️ Legacy renderer toggle (per game).** Per-game opt-in to the proven 6.0.2 GLES2-era `libxserver.so`/`libwinemu.so` pair for games that regressed under 6.0.4's Vulkan X-server rewrite. Default **New** = stock 6.0.4, zero patch effect.
-            - **🎮 Rumble no longer cuts out after ~2 s.** The winebus duration patch is now actually applied at launch (the v1.3.0 hook landed as dead code on this base); sustained rumble holds indefinitely. Device-confirmed via GameConTest.exe.
-            - **📦 Offline component picker.** Every per-game component picker (GPU driver, DXVK, VKD3D, FEXCore/Box64, **and the Wine/Proton container**) now lists the components you've already downloaded when offline, in the same catalog order as online. Online behaviour is byte-identical and the patch is fully fail-safe (any error falls back to stock). Device-confirmed on 6.0.4.
+            - **🎮 External launcher integration (Beacon / ES-DE / Daijishou).** PC and Steam games can now be launched directly from external front-ends. Intents accept both `--ei` (int) and `--es` (String) extras to match Beacon's actual call shape. Epic Games library was attempted but the upstream `GameDetailViewModel` ignores the `app_nav_epic_app_name` route — **Epic remains unsupported**; PC + Steam ship working end-to-end.
+            - **🪪 Show Game ID menu row + View All Games dialog.** A new **Show Game ID** row in the per-game menus pops up a dialog with the gameId (with a **Copy** button) so you can configure Beacon / ES-DE / Daijishou entries without grepping a logcat. The dialog's **View All Games** button opens the full library list backed by `db_game_library.db` — tap any row to copy its id.
+            - **🖼️ Proper menu row icons.** Vibration / GPU Spoof / Renderer rows previously shared the Remove-from-Library trash icon because of a wrong icon-field read. Each row now reads its correct field (`zz4.b0` / `zz4.v` / `zz4.c0`) and renders its own icon in both per-game menus. Thanks @TideGear (PR #6).
+            - **📱 PC Vibration Settings dialog — portrait layout.** Dialog detects orientation and reshapes for portrait phones: Mode + Intensity stack vertically, width caps at `min(360dp, screenW - 24dp)`, intensity slider caps at 220dp. Landscape unchanged (480dp side-by-side). Thanks @TideGear (PR #6).
 
             ### Variants
 

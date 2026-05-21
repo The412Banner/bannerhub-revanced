@@ -1,5 +1,29 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-05-21 — 🚀 v1.5.0-604 STABLE SHIPPED
+
+Cut from `gamehub-604-build` at HEAD `af40a90` (PR #6 merge) — Lite refresh on `feature/lite-variant-tier1` at `af522a2` (merge of 604 into Lite). Stable keystore unchanged from v1.1.0+; cert SHA-256 `10895a311fe04f95f82e4da5c9a6c041ba9282bf211f1b578fe1cbeb894ce0ba`. 18 APKs attached (9 full + 9 Lite) + 3 `.rvp` bundles.
+
+### Four headline changes on top of v1.4.0-604
+
+1. **External launcher integration (Beacon / ES-DE / Daijishou)** — `feature/external-launcher` merged via `cec34f0`. Port of PlayDay's 5.3.5 patch forward to the 6.0.4 base. Intents accept both `--ei` (int) and `--es` (String) extras. Epic Games attempted across pre1–pre5 and dropped — the upstream `GameDetailViewModel` ignores the `app_nav_epic_app_name` route. PC + Steam ship working end-to-end.
+2. **Show Game ID menu row + View All Games dialog** — `feature/menu-gameid-display` merged via `090706e`. New per-game menu row pops a dialog with the gameId + Copy button + "View All Games" button that opens the full library list backed by `db_game_library.db`.
+3. **Proper menu row icons (TideGear PR #6)** — merged via `af40a90`. Vibration / GPU Spoof / Renderer rows previously read `zz4.m` (the Remove-from-Library trash icon); each now reads its correct icon field (`zz4.b0` / `zz4.v` / `zz4.c0` respectively).
+4. **Portrait layout for PC Vibration Settings dialog (TideGear PR #6)** — same merge. Dialog detects orientation, stacks Mode + Intensity vertically in portrait at `min(360dp, screenW - 24dp)` width, intensity slider caps at 220dp. Landscape unchanged.
+
+### Docs
+
+- README: bumped latest-stable badge + link to v1.5.0-604, rewrote "What's new" section, rotated v1.4.0 into the past-release archive line.
+- `.github/workflows/release.yml`: refreshed the `### What's new in ${version}` template body + changed prior-stable reference from `v1.3.0-604` → `v1.4.0-604`.
+- PROGRESS_LOG: this entry.
+- Memory: updated `project_bannerhub_revanced.md` with new active state.
+
+### Known issue (not blocking — flagged for next investigation)
+
+Steam-source and Epic-source games (e.g. Brawlhalla Steam id 291550, Doomblade Epic id 0) hide all 4 of our More Menu rows (Vibration / GPU Spoof / Renderer / Show Game ID) on the game-details page More Menu. PC Game Settings ungate works on the same games, confirming `Lx57.a` IS being invoked. A finalize-anchor fix (move injection from `lastIdx(Lx9d->add) + 1` to `firstIdx(Lqs2->v finalize)`) was built and device-tested on `fix/menu-row-anchor-merge-point` — did NOT resolve the issue, branch deleted. Root cause is downstream in `Lx57.o` row iteration (the 2×2 icon grid renderer at line 333+); not yet bottomed out. Tracked separately; not blocking v1.5.0-604.
+
+---
+
 ## 2026-05-01 — GameHub 6.0 port session
 
 ### Goal

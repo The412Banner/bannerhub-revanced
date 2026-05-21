@@ -9,7 +9,7 @@ How to configure **Beacon** (and the same intent contract is used by **ES-DE** a
 
 The intent contract is identical across all 9 variants — only the package name and the action prefix change. The `DeepLinkActivity` class FQN is the same everywhere because `ChangePackageNamePatch` only rewrites the manifest `package=` attribute, not class names.
 
-> 📺 **Video walkthrough (5.3.5-era; flow is identical for v6)** — covers creating PC-import game txt/iso files with localID numbers and Steam-game files with AppID numbers: <https://youtu.be/ENYnJhTvEvw?si=REvcfeCAu4qQyaQX>
+> 📺 **Video walkthrough (Bannerhub v6(Lite))** — covers creating PC-import game txt/iso files with GameID numbers: <https://youtu.be/hyjjs-ffpw4?si=JBpeFCMjNtzFlbY9>
 
 > 💡 **Why "alt-AnTuTu" exists.** The original **AnTuTu** variant (`com.antutu.ABenchMark`) is finicky with Beacon — historically it didn't work, which is why the **alt-AnTuTu** variant (`com.antutu.benchmark.full`) was created and is the recommended AnTuTu-flavored package for external-launcher setups.
 

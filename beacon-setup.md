@@ -3,8 +3,9 @@
 How to configure **Beacon** (and the same intent contract is used by **ES-DE** and **Daijishou**) to launch games into any of BannerHub v6's nine variants on the 6.0.4 base.
 
 > ✅ **Beacon — device-confirmed working.**
-> ⚠️ **ES-DE / Daijishou — untested but should work** (same intent contract). Please report results.
-> ❌ **Epic Games library — unsupported.** The upstream `GameDetailViewModel` ignores the `app_nav_epic_app_name` route. PC + Steam launches work end-to-end.
+> ✅ **ES-DE — device-confirmed working** (slogik, v1.5.1-604).
+> ⚠️ **Daijishou — untested but should work** (same intent contract). Please report results.
+> ℹ️ **Epic Games library** — as of `v1.5.1-604`, Epic-imported games launch end-to-end via the synthetic-ID rewrite (the previous `app_nav_epic_app_name` route was upstream-blocked at `GameDetailViewModel`; this is the workaround). GOG-imported games launch the same way.
 
 The intent contract is identical across all 9 variants — only the package name and the action prefix change. The `DeepLinkActivity` class FQN is the same everywhere because `ChangePackageNamePatch` only rewrites the manifest `package=` attribute, not class names.
 
@@ -150,15 +151,19 @@ Replace `<variant_pkg>` with the package matching your installed variant (e.g. `
 
 ---
 
-## Games that DON'T work via Beacon dispatch
+## Game type coverage
 
-The 6.0.4 deep-link dispatch only handles entries whose `server_game_id` is a **positive integer**. The following game types have `server_game_id = 0` or `-1` and are **not addressable** via this contract — they need to be launched from GameHub's library tile directly:
+The 6.0.4 deep-link dispatch parses `localGameId` as an `Integer` and only handles rows with a positive-integer `server_game_id`. Stock GameHub stamps `0` or `-1` for several game classes, which on a pre-v1.5.1 build all collided on the same nominal target and broke external launching. **As of `v1.5.1-604` the BannerHub patch rewrites those sentinels to stable synthetic 32-bit IDs** derived from the row's `local_<UUID>`, so each game becomes individually addressable.
 
-- **GOG-imported games** — `server_game_id = 0`
-- **Epic-imported games** — `server_game_id = 0`, `id` is a 32-char hex UUID
-- **Some manual imports** with no `server_game_id` assigned — `server_game_id = -1`
+| Game type | Stock `server_game_id` | Addressable from front-ends? |
+| --- | --- | --- |
+| Steam-library | positive int | ✅ Yes (always worked) |
+| PC-imported (catalog match) | positive int | ✅ Yes (always worked) |
+| PC-imported (no match) | `-1` | ✅ **Yes — since v1.5.1-604** |
+| Epic-imported | `0` | ✅ **Yes — since v1.5.1-604** |
+| GOG-imported | `0` | ✅ **Yes — since v1.5.1-604** |
 
-Steam-library and PC-imported games (any game whose `server_game_id` is a positive integer) work fine.
+The Show Game ID dialog (Banner Tools → Show Game ID) reports the rewritten synthetic for sentinel rows — copy that value into your Beacon / ES-DE / Daijishou `.txt` / `.iso` file as the `{file_content}`. The synthetic is deterministic (survives renames, library refreshes, install path moves), idempotent (re-runs are no-ops), and self-healing (rows GameHub later re-matches to a real catalog ID are left alone).
 
 ---
 

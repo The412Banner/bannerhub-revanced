@@ -53,8 +53,38 @@ All four distinct, all positive, all inside `[0x40000000, 0x7FFFFFFF]`. The firs
 
 ### Branch
 - `feature/local-gameid-assignment` off `gamehub-604-build@616d0ea`
-- Commits: `6e404e5` (extension) + `acc7dfe` (patch)
-- Pre1 CI: `release.yml` run [26235997506](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26235997506) — version `1.5.0-604-local-gameid-pre1`, stable=false.
+- Commits:
+  - `6e404e5` — extension (scanner)
+  - `acc7dfe` — patch (BaseAndroidApp.onCreate hook)
+  - `a1b218d` — docs (this entry's earlier draft)
+  - `80eeaca` — fix: filter `firstMethod` predicate by `implementation != null` (pre1 → pre2)
+  - `480e1c1` — fix: `move-object/from16 v0, p0` before invoke-static for high-register encoding (pre2 → pre3)
+- Pre1 CI: run [26235997506](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26235997506) — SEVERE on all 9 variants.
+- Pre2 CI: run [26236629500](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26236629500) — still SEVERE.
+- Pre3 CI: run [26237217658](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26237217658) ✅ all 9 variants, **`INFO: "Local game-id assignment" succeeded`**, 0 SEVERE, 38 patches succeeded on Normal-GHL.
+- APK staged: `/storage/emulated/0/Download/local-gameid-pre3/BannerHub-V6-1.5.0-604-local-gameid-pre3-Patched-Normal-GHL.apk` (~111 MB).
+
+### Pre1 / pre2 / pre3 — what went wrong, what fixed it
+**Pre1 failure (all 9 variants):** `SEVERE: "Local game-id assignment" failed: NullPointerException — Cannot invoke ClassDef.getMethods() because "classDef" is null` at `Instruction.kt:114` inside `addInstructions`. Initial hypothesis: `firstMethod` matched a method REFERENCE (from some subclass's invoke-super) instead of the concrete `BaseAndroidApp.onCreate` definition.
+
+**Pre2 fix:** Added `implementation != null` to the `firstMethod` predicate (the Mob patch's implicit filter). **Did not resolve the SEVERE** — identical NPE.
+
+**Real root cause (found by disassembling the base APK):** `BaseAndroidApp.onCreate` is declared `.registers 55` with 1 parameter (`this`), so `p0` resolves to `v54`. `invoke-static` encodes its register list with 4-bit nibbles (max v15). My pre1/pre2 snippet `invoke-static {p0}, ...` could not be encoded → smali parser failed deep inside Patcher's instruction-construction code, surfacing as the `classDef is null` NPE rather than a clearer "register out of range" error.
+
+**Pre3 fix:** Mirror the working pattern from `ExternalLauncherPatch` — emit `move-object/from16 v0, p0` first (encoded as 16-bit dest + 16-bit src, valid for any register), then `invoke-static {v0}, ...`. The original `BaseAndroidApp.onCreate` opens with the same `move-object/from16 v0, p0`, so our prepended pair is shape-consistent and the verifier accepts the join cleanly.
+
+### Lessons captured (memory)
+- Any patch injecting into a method with `.registers > 16` MUST move high-register parameters into v0–v15 before any 3rc/35c-encoded invoke. The clearer "register out of range" surfaces as the cryptic `classDef is null` NPE from Patcher; if you see that NPE, check `.registers N` on the target method first.
+- `firstMethod` predicate should always include `implementation != null` to avoid matching method references vs definitions — even when not strictly required, it eliminates a class of error.
+
+### Device-test resumption order
+1. Install `local-gameid-pre3-Patched-Normal-GHL.apk` over current build.
+2. Open GameHub; confirm "View All Games" dialog no longer shows `ID: -1` for unmatched imports (each shows a number in the 1.07B–2.15B range).
+3. In Beacon / ES-DE / Daijishou, configure a launch entry for one previously-unlaunchable game using the new ID; confirm launch.
+4. Optional: copy ID from one game, kill app, reopen, verify same ID — confirms `String.hashCode()` stability across process restarts.
+5. On success: merge to `gamehub-604-build` (--no-ff), refresh Lite (--no-ff), per the standard merge workflow.
+
+
 
 ### Why no UI changes
 The scanner has no UI of its own and adds no menu rows — it's a silent fix. The existing "View All Games" dialog and "Show Game ID" menu row will both stop showing `-1` for these rows after the scan runs (they query the same `server_game_id` column). External launcher routing continues to work via the existing `ExternalLauncher` extension; no changes there.

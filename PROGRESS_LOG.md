@@ -1,5 +1,16 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-05-21 — Banner Tools pre2 MERGED to gamehub-604-build + Lite refreshed
+
+Device-confirmed pre2 (1×4 tile dialog, 56dp vector icons) merged into both branches.
+
+- **`gamehub-604-build`** ← `feature/banner-tools-menu` via `--no-ff` merge commit `0021862` ("Merge branch 'feature/banner-tools-menu' — Banner Tools consolidated menu (pre2)"). 13 files / +1050 / −9.
+- **`feature/lite-variant-tier1`** ← `gamehub-604-build` via `--no-ff` merge commit `1f07d33` ("merge gamehub-604-build: Banner Tools consolidated menu (pre2)"). 14 files / +1053 / −10 (extra delta = README link auto-merge).
+- Validation CI on the merge tips:
+  - `release.yml` on `gamehub-604-build` — run [26231488560](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26231488560)
+  - `release.yml` on `feature/lite-variant-tier1` — run [26231454988](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26231454988)
+- Going-forward rule recorded in memory (`feedback_banner_tools_enrollment.md`): any new BannerHub patch that adds a row to the More Menu or Library-Tile popup MUST also enroll the feature into the Banner Tools consolidated dialog (drawable + arrays + dispatch case) and wrap its standalone `*MenuRowPatch` injection blocks in `if (false)`. Default = enroll; standalone is the exception, not the norm.
+
 ## 2026-05-21 — feature/banner-tools-menu pre2: custom-icon 1×4 tile dialog (56dp vectors)
 
 ### Decisions locked (user, 2026-05-21)

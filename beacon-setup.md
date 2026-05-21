@@ -8,6 +8,27 @@ How to configure **Beacon** (and the same intent contract is used by **ES-DE** a
 
 The intent contract is identical across all 9 variants — only the package name and the action prefix change. The `DeepLinkActivity` class FQN is the same everywhere because `ChangePackageNamePatch` only rewrites the manifest `package=` attribute, not class names.
 
+> 📺 **Video walkthrough (5.3.5-era; flow is identical for v6)** — covers creating PC-import game txt/iso files with localID numbers and Steam-game files with AppID numbers: <https://youtu.be/ENYnJhTvEvw?si=REvcfeCAu4qQyaQX>
+
+> 💡 **Why "alt-AnTuTu" exists.** The original **AnTuTu** variant (`com.antutu.ABenchMark`) is finicky with Beacon — historically it didn't work, which is why the **alt-AnTuTu** variant (`com.antutu.benchmark.full`) was created and is the recommended AnTuTu-flavored package for external-launcher setups.
+
+---
+
+## Beacon in-app walkthrough
+
+1. **Settings** → tap the **+ icon** to add a new platform.
+2. Fill in:
+   - **Platform Type**: `Windows`
+   - **Player app**: select the BannerHub variant you have installed (e.g. *GameHub Lite* for the **Normal-GHL** variant).
+   - **ROMs folder**: use the Android file picker to select the folder containing your game `.txt` / `.iso` files (each file's content is a single `localGameId` or `steamAppId` number — see [How to find a game's `localGameId`](#how-to-find-a-games-localgameid) below).
+3. Expand **Advanced**:
+   - **File handling**: `Default`
+   - **Use custom launch**: `True`
+   - **am start command**: paste the per-variant block from [Shell reference](#shell-reference-per-variant-am-examples) below — picking the row matching your installed variant.
+4. Tap **Save**.
+5. **Scan** the folder for your games.
+6. **Launch** a game — it should hand off into BannerHub and (with `autoStartGame true`) start playing directly.
+
 ---
 
 ## The intent contract
@@ -130,13 +151,40 @@ am launch -n com.xiaoji.egggame/com.xiaoji.egggame.DeepLinkActivity \
 
 ## How to find a game's `localGameId`
 
+> ⚠️ **CRITICAL — `localGameId` must be the INTEGER `server_game_id`**, not a prefixed text id. The 6.0.4 deep-link dispatch parses `localGameId` as an `Integer` and rejects anything that isn't a positive integer. If you see ids that look like `local__sUXtKCeS_...` or `gog_1709371377` somewhere else, those **will not work** — you need the numeric `server_game_id` (e.g. `49908` for God of War). The built-in **Show Game ID** dialog returns the correct integer value; use it.
+
+### Method 1 (recommended) — in-app Show Game ID dialog
+
 1. Open BannerHub v6 and navigate to the game's **Game Details** page (tap the game tile → View Details).
 2. Tap the **3-dot More Menu** button.
-3. Tap **Show Game ID** — a dialog pops up with the gameId GameHub uses internally.
+3. Tap **Show Game ID** — a dialog pops up with the integer `server_game_id` GameHub uses internally.
 4. Tap **Copy** to copy the id.
-5. Paste into your Beacon entry's `localGameId` extra (or the equivalent ES-DE / Daijishou config field).
+5. Save it into your `.txt` / `.iso` file (Beacon reads the file's content as the `{file_content}` value in the launch command).
 
 The same dialog has a **View All Games** button that opens the full library (backed by `db_game_library.db`) — tap any row to copy that game's id.
+
+### Method 2 (rooted devices) — bulk dump via sqlite3
+
+If you have many games to set up and a rooted device, you can dump the whole library at once:
+
+```sh
+sqlite3 /data/data/<variant_pkg>/databases/db_game_library.db \
+  "SELECT id, server_game_id, steam_app_id, game_name FROM t_game_library_base;"
+```
+
+Replace `<variant_pkg>` with the package matching your installed variant (e.g. `gamehub.lite` for Normal-GHL — see the [variant table](#per-variant-configuration) above).
+
+---
+
+## Games that DON'T work via Beacon dispatch
+
+The 6.0.4 deep-link dispatch only handles entries whose `server_game_id` is a **positive integer**. The following game types have `server_game_id = 0` or `-1` and are **not addressable** via this contract — they need to be launched from GameHub's library tile directly:
+
+- **GOG-imported games** — `server_game_id = 0`
+- **Epic-imported games** — `server_game_id = 0`, `id` is a 32-char hex UUID
+- **Some manual imports** with no `server_game_id` assigned — `server_game_id = -1`
+
+Steam-library and PC-imported games (any game whose `server_game_id` is a positive integer) work fine.
 
 ---
 

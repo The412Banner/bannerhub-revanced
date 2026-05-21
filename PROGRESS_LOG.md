@@ -1,5 +1,137 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-05-21 — feature/local-gameid-assignment pre4: extend to server_game_id=0 (Epic/GOG)
+
+### Device-test result for pre3
+User installed `local-gameid-pre3-Patched-Normal-GHL.apk` and confirmed the previously-stuck `-1` game (Blur) now shows `1,863,762,719` in "View All Games" and **launches successfully from Beacon** via the external-launcher path. This resolves the biggest open design risk (whether `GameDetailViewModel` would accept a synthetic `server_game_id` and find the local row, or whether it phones home to a catalog API). For PC-imported games (source_type=0) the lookup falls through to the local row data and the launch works without any catalog roundtrip.
+
+### Scope extension: also handle server_game_id=0
+`ExternalLauncher.java` doc comment documents that GameHub uses two sentinel values for "no catalog ID":
+- `-1` for PC-imported games (source_type=0) whose title didn't match the PlayDay catalog at import time
+- `0` for Epic-library games (source_type=2) and GOG-imported games, whose unique handle is the TEXT `id` column and where `server_game_id` is never populated
+
+Both collide at the dispatch surface for the same reason — `DeepLinkActivity` parses `app_nav_game_id` as Integer and routes by that single value, so any number of rows sharing a sentinel can't be addressed individually.
+
+Pre4 commit `49e28e1`: one-line predicate widening in `collectTargets`:
+
+```diff
+- WHERE server_game_id = -1
++ WHERE server_game_id IN (-1, 0)
+```
+
+Plus doc-comment + patch-description updates spelling out the broader scope and one important caveat:
+
+**Unique IDs are necessary but not sufficient for Beacon/ES-DE launching of Epic/GOG games.** After the row lookup, the 6.0.4 deep-link dispatch takes a source-type-specific launch path; the Epic/GOG paths need their own dispatcher hook to actually start the game (the "queued future patch" the ExternalLauncher comment talks about — hooks the in-app library-tile Compose route through MainActivity instead of DeepLinkActivity). Pre4 handles step 1 of that work (unique addressable IDs) so the future dispatcher patch has something to hand off to.
+
+### Pre4 CI
+- Branch head: `49e28e1` on `feature/local-gameid-assignment`
+- `release.yml` run [26239665214](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26239665214) ✅ all 9 variants green, `INFO: "Local game-id assignment" succeeded` on Normal-GHL, 0 SEVERE, 38 succeeded.
+- APK staged: `/storage/emulated/0/Download/local-gameid-pre4/BannerHub-V6-1.5.0-604-local-gameid-pre4-Patched-Normal-GHL.apk` (md5 `a3116528fe217cfd6be28483f11708be`).
+
+### Idempotence still holds
+- Re-runs match only rows where `server_game_id IN (-1, 0)`. Any row already in `[0x40000000, 0x7FFFFFFF]` (a previously-minted synthetic), or holding any other positive value (a real catalog ID), is left alone on every subsequent app start.
+- A user re-running GameHub's "search for matches" that finds a real catalog ID overwrites our synthetic; we don't fight that.
+- For users with no Epic/GOG games installed, the change is a silent no-op — same observable behavior as pre3.
+
+### Device-test resumption for pre4
+1. Install `local-gameid-pre4-…-Normal-GHL.apk` over current build.
+2. Confirm the previously-working `-1` flow still works (Blur → still launches via Beacon at `1,863,762,719`).
+3. If you have Epic-library or GOG-imported games: open "View All Games" and confirm those rows now show distinct numbers in the 1.07B–2.15B range instead of `ID: 0`.
+4. **Don't expect external launching of Epic/GOG games to work yet** — that's the deferred dispatcher-hook follow-up.
+5. On success: merge `feature/local-gameid-assignment` → `gamehub-604-build` (--no-ff), refresh Lite (--no-ff).
+
+## 2026-05-21 — feature/local-gameid-assignment pre1: synthesize server_game_id for -1 rows
+
+### Background
+A user-supplied screenshot of the "View All Games" dialog showed 3 imported PC games — Dispatch, Elementallis, Quartet — all displayed with `ID: -1`. Schema dump of `db_game_library.db` (`dbgl_dump.db`, on-device sample) confirms the value isn't a display artifact:
+
+```
+t_game_library_base.server_game_id INTEGER NOT NULL
+  -1     | 'local_eMB3uA3zTMKX8hrx4mIkow'  | source_type=0  | 'Blur'          ← catalog miss
+  49908  | 'local_PABUmurJS8u8D0wpv2BfDg'  | source_type=0  | 'God of War'    ← real GH id
+  131962 | 'local_McKtgYBRTPqk0LhFYFKIeQ'  | source_type=0  | 'Dirt 3'        ← real GH id
+  135805 | 'local_Nh0ZuHZBRgqjBli7rKceRQ'  | source_type=0  | 'PRAGMATA'      ← real GH id
+```
+
+GameHub assigns `server_game_id = -1` to PC-imported games when its catalog lookup finds no match. Every unmatched game collapses to the same `-1`, which collides at `DeepLinkActivity` because the deep-link dispatch parses `app_nav_game_id` as Integer (per `ExternalLauncher.java` doc comment). Beacon / ES-DE / Daijishou therefore can't address those games individually — they show up in the library and play fine in-app, but won't launch from external front ends.
+
+### Fix design
+New patch + extension that rewrites every `-1` row to a stable synthetic integer:
+
+```
+synthetic = (id.hashCode() & 0x3FFFFFFF) | 0x40000000
+          ∈ [0x40000000, 0x7FFFFFFF]
+          ∈ [1,073,741,824, 2,147,483,647]
+```
+
+- **Stable** — `id` is the `local_<UUID>` TEXT assigned by GameHub at game-import time and never rewritten across app restarts, library refreshes, or game moves. `String.hashCode()` is JLS-spec-stable.
+- **Collision-safe** — 2^30 value space; birthday-paradox 50% threshold ≈ 32 768 games. Effectively zero for the few hundred unmatched games a single user accumulates.
+- **Range-safe** — fits Java's signed 32-bit Integer (required by 6.0.4's `Integer.parseInt(app_nav_game_id)`); never collides with real GameHub catalog IDs (~10^5 in observed samples) or Steam appids (~10^7).
+- **Idempotent + self-healing** — re-runs match only `server_game_id = -1`, so previously-assigned synthetic rows stay put, and if GameHub later overwrites a row with a real catalog ID, we stop touching it.
+
+### Files added
+- `extensions/gamehub/src/main/java/app/revanced/extension/gamehub/localgameid/LocalGameIdAssignment.java`
+  - Public entrypoint `scanAndAssign(Context)` invoked from the bytecode hook.
+  - Single-shot daemon thread (priority MIN) so Application.onCreate never waits on disk I/O.
+  - Opens `db_game_library.db` `OPEN_READWRITE` (WAL-compatible with GameHub's own writer).
+  - SELECT `_id, id` WHERE `server_game_id = -1`; per row computes the synthetic; UPDATE in a single transaction keyed by `_id`; logs `assigned synthetic server_game_id to N row(s)`.
+  - All throwables caught and logged — Application startup never gated on this.
+- `patches/src/main/kotlin/app/revanced/patches/gamehub/localgameid/LocalGameIdAssignmentPatch.kt`
+  - Anchors on `Lcom/xiaoji/egggame/BaseAndroidApp;->onCreate()V` (stable non-mangled class name confirmed via `DisableMobPushPatch`).
+  - Injects one `invoke-static` at index 0 passing `p0` (the Application "this" reference, a Context) to `LocalGameIdAssignment.scanAndAssign`.
+  - Verifier-safe: single void-returning invoke, no v0 reuse, no move-result.
+  - Depends on `sharedGamehubExtensionPatch`.
+
+### Hash sanity-check (Python-equivalent of Java String.hashCode())
+```
+local_eMB3uA3zTMKX8hrx4mIkow → 1,566,639,775 (0x5D61069F) ✓ in range
+local_PABUmurJS8u8D0wpv2BfDg → 2,072,875,144 (0x7B8D9088) ✓ in range
+local_McKtgYBRTPqk0LhFYFKIeQ → 1,819,924,988 (0x6C79D9FC) ✓ in range
+local_Nh0ZuHZBRgqjBli7rKceRQ → 1,367,434,163 (0x518163B3) ✓ in range
+```
+All four distinct, all positive, all inside `[0x40000000, 0x7FFFFFFF]`. The first row (Blur, currently at -1) would become `1,566,639,775` after the first onCreate. The other three are already non-negative real catalog IDs and the scanner leaves them alone.
+
+### Branch
+- `feature/local-gameid-assignment` off `gamehub-604-build@616d0ea`
+- Commits:
+  - `6e404e5` — extension (scanner)
+  - `acc7dfe` — patch (BaseAndroidApp.onCreate hook)
+  - `a1b218d` — docs (this entry's earlier draft)
+  - `80eeaca` — fix: filter `firstMethod` predicate by `implementation != null` (pre1 → pre2)
+  - `480e1c1` — fix: `move-object/from16 v0, p0` before invoke-static for high-register encoding (pre2 → pre3)
+- Pre1 CI: run [26235997506](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26235997506) — SEVERE on all 9 variants.
+- Pre2 CI: run [26236629500](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26236629500) — still SEVERE.
+- Pre3 CI: run [26237217658](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26237217658) ✅ all 9 variants, **`INFO: "Local game-id assignment" succeeded`**, 0 SEVERE, 38 patches succeeded on Normal-GHL.
+- APK staged: `/storage/emulated/0/Download/local-gameid-pre3/BannerHub-V6-1.5.0-604-local-gameid-pre3-Patched-Normal-GHL.apk` (~111 MB).
+
+### Pre1 / pre2 / pre3 — what went wrong, what fixed it
+**Pre1 failure (all 9 variants):** `SEVERE: "Local game-id assignment" failed: NullPointerException — Cannot invoke ClassDef.getMethods() because "classDef" is null` at `Instruction.kt:114` inside `addInstructions`. Initial hypothesis: `firstMethod` matched a method REFERENCE (from some subclass's invoke-super) instead of the concrete `BaseAndroidApp.onCreate` definition.
+
+**Pre2 fix:** Added `implementation != null` to the `firstMethod` predicate (the Mob patch's implicit filter). **Did not resolve the SEVERE** — identical NPE.
+
+**Real root cause (found by disassembling the base APK):** `BaseAndroidApp.onCreate` is declared `.registers 55` with 1 parameter (`this`), so `p0` resolves to `v54`. `invoke-static` encodes its register list with 4-bit nibbles (max v15). My pre1/pre2 snippet `invoke-static {p0}, ...` could not be encoded → smali parser failed deep inside Patcher's instruction-construction code, surfacing as the `classDef is null` NPE rather than a clearer "register out of range" error.
+
+**Pre3 fix:** Mirror the working pattern from `ExternalLauncherPatch` — emit `move-object/from16 v0, p0` first (encoded as 16-bit dest + 16-bit src, valid for any register), then `invoke-static {v0}, ...`. The original `BaseAndroidApp.onCreate` opens with the same `move-object/from16 v0, p0`, so our prepended pair is shape-consistent and the verifier accepts the join cleanly.
+
+### Lessons captured (memory)
+- Any patch injecting into a method with `.registers > 16` MUST move high-register parameters into v0–v15 before any 3rc/35c-encoded invoke. The clearer "register out of range" surfaces as the cryptic `classDef is null` NPE from Patcher; if you see that NPE, check `.registers N` on the target method first.
+- `firstMethod` predicate should always include `implementation != null` to avoid matching method references vs definitions — even when not strictly required, it eliminates a class of error.
+
+### Device-test resumption order
+1. Install `local-gameid-pre3-Patched-Normal-GHL.apk` over current build.
+2. Open GameHub; confirm "View All Games" dialog no longer shows `ID: -1` for unmatched imports (each shows a number in the 1.07B–2.15B range).
+3. In Beacon / ES-DE / Daijishou, configure a launch entry for one previously-unlaunchable game using the new ID; confirm launch.
+4. Optional: copy ID from one game, kill app, reopen, verify same ID — confirms `String.hashCode()` stability across process restarts.
+5. On success: merge to `gamehub-604-build` (--no-ff), refresh Lite (--no-ff), per the standard merge workflow.
+
+
+
+### Why no UI changes
+The scanner has no UI of its own and adds no menu rows — it's a silent fix. The existing "View All Games" dialog and "Show Game ID" menu row will both stop showing `-1` for these rows after the scan runs (they query the same `server_game_id` column). External launcher routing continues to work via the existing `ExternalLauncher` extension; no changes there.
+
+### Not enrolled into Banner Tools
+Per the enrollment rule, only patches that ADD a new top-level menu row need to enroll into Banner Tools. This patch is invisible at the UI level — no row to enroll.
+
 ## 2026-05-21 — Banner Tools pre2 MERGED to gamehub-604-build + Lite refreshed
 
 Device-confirmed pre2 (1×4 tile dialog, 56dp vector icons) merged into both branches.

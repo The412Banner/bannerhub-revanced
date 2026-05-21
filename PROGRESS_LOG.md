@@ -2,7 +2,14 @@
 
 ## 2026-05-21 — local-gameid MERGED to gamehub-604-build + Lite refreshed
 
+**What this patch fixes (plain language):** any library row whose `server_game_id` was a sentinel value — `-1` for imported PC games GameHub didn't recognize from its catalog, OR `0` for Epic-library and GOG-imported games — gets rewritten to a unique, stable integer in the 1.07B–2.15B range derived from the row's `local_<UUID>` id. That makes those previously-collision-stuck games individually addressable from external launchers.
+
 Pre3 device-confirmed (-1 case via Beacon → 1,863,762,719 launches Blur) and pre4 (-1 + 0 predicate widening, build-green) merged into both branches.
+
+### Device confirmations
+- **Beacon** — confirmed by `the412banner` (project owner): previously-stuck imported game **Blur** (was `server_game_id = -1`) got synthetic `1,863,762,719` after the scan, and Beacon launches it via the existing ExternalLauncher patch.
+- **ES-DE** — confirmed by user **slogik**: same `-1`→synthetic flow works through ES-DE's external-launch mechanism. Validates that the fix isn't Beacon-specific and rides every launcher that emits the standard `*.LAUNCH_GAME` intent contract.
+- **Daijishou** — not yet device-confirmed but uses the same intent contract; expected to work without further changes.
 
 - **`gamehub-604-build`** ← `feature/local-gameid-assignment` via `--no-ff` merge `c270672` ("Merge branch 'feature/local-gameid-assignment' — local game-id assignment for catalog-miss rows"). 3 files / +444 / 0 (new files only).
 - **`feature/lite-variant-tier1`** ← `gamehub-604-build` via `--no-ff` merge `7e018e6` ("merge gamehub-604-build: local game-id assignment for catalog-miss rows"). PROGRESS_LOG.md conflict resolved in favor of incoming entries (Lite had no parallel changes).

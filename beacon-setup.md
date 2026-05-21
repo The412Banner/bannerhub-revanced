@@ -20,7 +20,7 @@ The intent contract is identical across all 9 variants — only the package name
 1. **Settings** → tap the **+ icon** to add a new platform.
 2. Fill in:
    - **Platform Type**: `Windows`
-   - **Player app**: select the BannerHub variant you have installed (e.g. *GameHub Lite* for the **Normal-GHL** variant).
+   - **Player app**: select the BannerHub v6 variant you have installed. The patch sets the Android launcher label, so the picker shows e.g. **BannerHub v6** for the Normal / Normal-GHL / Original variants, **BannerHub v6 PuBG** for PuBG, **BannerHub v6 AnTuTu** for both AnTuTu variants, etc. (full launcher-label column in the [variant table](#per-variant-configuration) below). Lite APKs append "Lite" → **BannerHub v6 Lite**, **BannerHub v6 PuBG Lite**, etc.
    - **ROMs folder**: use the Android file picker to select the folder containing your game `.txt` / `.iso` files (each file's content is a single `localGameId` or `steamAppId` number — see [How to find a game's `localGameId`](#how-to-find-a-games-localgameid) below).
 3. Expand **Advanced**:
    - **File handling**: `Default`
@@ -29,6 +29,8 @@ The intent contract is identical across all 9 variants — only the package name
 4. Tap **Save**.
 5. **Scan** the folder for your games.
 6. **Launch** a game — it should hand off into BannerHub and (with `autoStartGame true`) start playing directly.
+
+> ⚠️ **If you have multiple variants installed**, three of them share the launcher label **"BannerHub v6"** (Normal / Normal-GHL / Original) and two share **"BannerHub v6 AnTuTu"** (AnTuTu / alt-AnTuTu). Beacon's picker usually shows the package name underneath each entry — match the package against the [variant table](#per-variant-configuration) below to pick the right one. The `am start command` you paste in step 3 already encodes the package, so it's the authoritative selector — the Player-app picker mostly just decides which icon Beacon shows on the platform card.
 
 ---
 
@@ -56,19 +58,19 @@ The intent contract is identical across all 9 variants — only the package name
 
 Pick the row matching the BannerHub v6 variant you've installed.
 
-| Variant | Package | Component | Action |
-|---|---|---|---|
-| Normal | `banner.hub` | `banner.hub/com.xiaoji.egggame.DeepLinkActivity` | `banner.hub.LAUNCH_GAME` |
-| Normal-GHL | `gamehub.lite` | `gamehub.lite/com.xiaoji.egggame.DeepLinkActivity` | `gamehub.lite.LAUNCH_GAME` |
-| PuBG | `com.tencent.ig` | `com.tencent.ig/com.xiaoji.egggame.DeepLinkActivity` | `com.tencent.ig.LAUNCH_GAME` |
-| AnTuTu | `com.antutu.ABenchMark` | `com.antutu.ABenchMark/com.xiaoji.egggame.DeepLinkActivity` | `com.antutu.ABenchMark.LAUNCH_GAME` |
-| alt-AnTuTu | `com.antutu.benchmark.full` | `com.antutu.benchmark.full/com.xiaoji.egggame.DeepLinkActivity` | `com.antutu.benchmark.full.LAUNCH_GAME` |
-| PuBG-CrossFire | `com.tencent.tmgp.cf` | `com.tencent.tmgp.cf/com.xiaoji.egggame.DeepLinkActivity` | `com.tencent.tmgp.cf.LAUNCH_GAME` |
-| Ludashi | `com.ludashi.aibench` | `com.ludashi.aibench/com.xiaoji.egggame.DeepLinkActivity` | `com.ludashi.aibench.LAUNCH_GAME` |
-| Genshin | `com.miHoYo.GenshinImpact` | `com.miHoYo.GenshinImpact/com.xiaoji.egggame.DeepLinkActivity` | `com.miHoYo.GenshinImpact.LAUNCH_GAME` |
-| Original | `com.xiaoji.egggame` | `com.xiaoji.egggame/com.xiaoji.egggame.DeepLinkActivity` | `com.xiaoji.egggame.LAUNCH_GAME` |
+| Variant | Launcher label | Package | Component | Action |
+|---|---|---|---|---|
+| Normal | BannerHub v6 | `banner.hub` | `banner.hub/com.xiaoji.egggame.DeepLinkActivity` | `banner.hub.LAUNCH_GAME` |
+| Normal-GHL | BannerHub v6 | `gamehub.lite` | `gamehub.lite/com.xiaoji.egggame.DeepLinkActivity` | `gamehub.lite.LAUNCH_GAME` |
+| PuBG | BannerHub v6 PuBG | `com.tencent.ig` | `com.tencent.ig/com.xiaoji.egggame.DeepLinkActivity` | `com.tencent.ig.LAUNCH_GAME` |
+| AnTuTu | BannerHub v6 AnTuTu | `com.antutu.ABenchMark` | `com.antutu.ABenchMark/com.xiaoji.egggame.DeepLinkActivity` | `com.antutu.ABenchMark.LAUNCH_GAME` |
+| alt-AnTuTu | BannerHub v6 AnTuTu | `com.antutu.benchmark.full` | `com.antutu.benchmark.full/com.xiaoji.egggame.DeepLinkActivity` | `com.antutu.benchmark.full.LAUNCH_GAME` |
+| PuBG-CrossFire | BannerHub v6 PuBG CrossFire | `com.tencent.tmgp.cf` | `com.tencent.tmgp.cf/com.xiaoji.egggame.DeepLinkActivity` | `com.tencent.tmgp.cf.LAUNCH_GAME` |
+| Ludashi | BannerHub v6 Ludashi | `com.ludashi.aibench` | `com.ludashi.aibench/com.xiaoji.egggame.DeepLinkActivity` | `com.ludashi.aibench.LAUNCH_GAME` |
+| Genshin | BannerHub v6 Genshin | `com.miHoYo.GenshinImpact` | `com.miHoYo.GenshinImpact/com.xiaoji.egggame.DeepLinkActivity` | `com.miHoYo.GenshinImpact.LAUNCH_GAME` |
+| Original | BannerHub v6 | `com.xiaoji.egggame` | `com.xiaoji.egggame/com.xiaoji.egggame.DeepLinkActivity` | `com.xiaoji.egggame.LAUNCH_GAME` |
 
-> Lite variants (`-Lite` filenames) share their full counterpart's package and action — use the same row as the matching full variant.
+> **Lite variants** (`-Lite` filenames) share their full counterpart's package and action — use the same row as the matching full variant. The launcher label has " Lite" appended (e.g. **BannerHub v6 Lite**, **BannerHub v6 PuBG Lite**, **BannerHub v6 AnTuTu Lite**).
 
 ---
 

@@ -12,17 +12,32 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Scans {@code db_game_library.db} for rows where {@code server_game_id = -1}
- * and rewrites each one with a deterministic synthetic integer derived from
- * the row's stable {@code id} TEXT column.
+ * Scans {@code db_game_library.db} for rows where {@code server_game_id}
+ * is {@code -1} OR {@code 0} and rewrites each one with a deterministic
+ * synthetic integer derived from the row's stable {@code id} TEXT column.
  *
- * <p>Background: GameHub assigns {@code server_game_id = -1} to imported PC
- * games when its catalog lookup finds no match. Every unmatched game ends up
- * sharing the same {@code -1}, which collides at the external-launcher
- * dispatch surface ({@link app.revanced.extension.gamehub.launcher.ExternalLauncher})
+ * <p>Background: GameHub uses two sentinel values for "no catalog ID":
+ * <ul>
+ *   <li>{@code -1}: PC-imported games (source_type=0) whose title didn't
+ *       match the PlayDay catalog at import time.</li>
+ *   <li>{@code 0}: Epic-library games (source_type=2) and GOG-imported
+ *       games. Their unique handle is the TEXT {@code id} column (UUID
+ *       or {@code gog_*} prefix) — {@code server_game_id} is never
+ *       populated for these sources.</li>
+ * </ul>
+ *
+ * <p>Both sentinels collide at the external-launcher dispatch surface
+ * ({@link app.revanced.extension.gamehub.launcher.ExternalLauncher})
  * because {@code DeepLinkActivity} parses {@code app_nav_game_id} as
- * Integer and routes by that value. Beacon / ES-DE / Daijishou therefore
+ * Integer and routes by that value — Beacon / ES-DE / Daijishou therefore
  * can't address those games individually.
+ *
+ * <p>Note: minting a unique integer is necessary but not sufficient for
+ * external launching of Epic/GOG games. The 6.0.4 deep-link dispatch
+ * resolves the looked-up row via catalog/local lookup and then takes a
+ * source-type-specific launch path; the Epic/GOG paths need their own
+ * dispatcher hook to actually start the game. This scanner handles step
+ * one (unique addressable IDs); the dispatcher work is a separate patch.
  *
  * <p>Fix: replace each {@code -1} with {@code (id.hashCode() & 0x3FFFFFFF) | 0x40000000}
  * = a positive 32-bit integer in {@code [0x40000000, 0x7FFFFFFF]} (1,073,741,824
@@ -147,8 +162,14 @@ public final class LocalGameIdAssignment {
         List<long[]> out = new ArrayList<>();
         Cursor c = null;
         try {
+            // Match both sentinels GameHub uses for "no catalog ID":
+            //  -1 for PC-imported games with no catalog match,
+            //   0 for Epic-library and GOG-imported games (Epic/GOG never
+            //   populate server_game_id and route by the TEXT id column).
+            // Anything in our synthetic range [0x40000000, 0x7FFFFFFF] or
+            // any other positive value (real catalog ID) is left alone.
             c = db.rawQuery(
-                "SELECT _id, id FROM " + TABLE + " WHERE server_game_id = -1", null);
+                "SELECT _id, id FROM " + TABLE + " WHERE server_game_id IN (-1, 0)", null);
             while (c.moveToNext()) {
                 long rowId = c.getLong(0);
                 String idText = c.isNull(1) ? "" : c.getString(1);

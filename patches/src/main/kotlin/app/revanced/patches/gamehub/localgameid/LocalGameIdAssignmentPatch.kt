@@ -48,13 +48,15 @@ private const val BASE_ANDROID_APP_SMALI = "Lcom/xiaoji/egggame/BaseAndroidApp;"
 @Suppress("unused")
 val localGameIdAssignmentPatch = bytecodePatch(
     name = "Local game-id assignment",
-    description = "On app start, scans GameHub's library DB for PC-imported games whose " +
-        "catalog match failed (server_game_id = -1) and rewrites each one with a stable " +
-        "synthetic integer derived from the row's local_* UUID. After the scan, those games " +
-        "become individually addressable from external launchers (Beacon / ES-DE / Daijishou), " +
-        "which couldn't tell unmatched games apart while they all shared id -1. Idempotent " +
-        "and self-healing: rows whose ID is later overwritten by GameHub with a real catalog " +
-        "value are left alone on re-run.",
+    description = "On app start, scans GameHub's library DB for games stuck at a sentinel " +
+        "server_game_id (-1 for PC imports without a catalog match; 0 for Epic-library and " +
+        "GOG-imported games) and rewrites each one with a stable synthetic integer derived " +
+        "from the row's local_* UUID. After the scan, those games become individually " +
+        "addressable instead of all colliding on the same sentinel value. Note: unique IDs " +
+        "are necessary but not sufficient for Beacon/ES-DE launching of Epic/GOG games — " +
+        "the source-specific dispatch path is a separate patch. Idempotent and self-healing: " +
+        "rows whose ID is later overwritten by GameHub with a real catalog value are left " +
+        "alone on re-run.",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
     dependsOn(sharedGamehubExtensionPatch)

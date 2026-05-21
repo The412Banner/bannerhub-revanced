@@ -1,5 +1,45 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-05-21 — feature/local-gameid-assignment pre4: extend to server_game_id=0 (Epic/GOG)
+
+### Device-test result for pre3
+User installed `local-gameid-pre3-Patched-Normal-GHL.apk` and confirmed the previously-stuck `-1` game (Blur) now shows `1,863,762,719` in "View All Games" and **launches successfully from Beacon** via the external-launcher path. This resolves the biggest open design risk (whether `GameDetailViewModel` would accept a synthetic `server_game_id` and find the local row, or whether it phones home to a catalog API). For PC-imported games (source_type=0) the lookup falls through to the local row data and the launch works without any catalog roundtrip.
+
+### Scope extension: also handle server_game_id=0
+`ExternalLauncher.java` doc comment documents that GameHub uses two sentinel values for "no catalog ID":
+- `-1` for PC-imported games (source_type=0) whose title didn't match the PlayDay catalog at import time
+- `0` for Epic-library games (source_type=2) and GOG-imported games, whose unique handle is the TEXT `id` column and where `server_game_id` is never populated
+
+Both collide at the dispatch surface for the same reason — `DeepLinkActivity` parses `app_nav_game_id` as Integer and routes by that single value, so any number of rows sharing a sentinel can't be addressed individually.
+
+Pre4 commit `49e28e1`: one-line predicate widening in `collectTargets`:
+
+```diff
+- WHERE server_game_id = -1
++ WHERE server_game_id IN (-1, 0)
+```
+
+Plus doc-comment + patch-description updates spelling out the broader scope and one important caveat:
+
+**Unique IDs are necessary but not sufficient for Beacon/ES-DE launching of Epic/GOG games.** After the row lookup, the 6.0.4 deep-link dispatch takes a source-type-specific launch path; the Epic/GOG paths need their own dispatcher hook to actually start the game (the "queued future patch" the ExternalLauncher comment talks about — hooks the in-app library-tile Compose route through MainActivity instead of DeepLinkActivity). Pre4 handles step 1 of that work (unique addressable IDs) so the future dispatcher patch has something to hand off to.
+
+### Pre4 CI
+- Branch head: `49e28e1` on `feature/local-gameid-assignment`
+- `release.yml` run [26239665214](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26239665214) ✅ all 9 variants green, `INFO: "Local game-id assignment" succeeded` on Normal-GHL, 0 SEVERE, 38 succeeded.
+- APK staged: `/storage/emulated/0/Download/local-gameid-pre4/BannerHub-V6-1.5.0-604-local-gameid-pre4-Patched-Normal-GHL.apk` (md5 `a3116528fe217cfd6be28483f11708be`).
+
+### Idempotence still holds
+- Re-runs match only rows where `server_game_id IN (-1, 0)`. Any row already in `[0x40000000, 0x7FFFFFFF]` (a previously-minted synthetic), or holding any other positive value (a real catalog ID), is left alone on every subsequent app start.
+- A user re-running GameHub's "search for matches" that finds a real catalog ID overwrites our synthetic; we don't fight that.
+- For users with no Epic/GOG games installed, the change is a silent no-op — same observable behavior as pre3.
+
+### Device-test resumption for pre4
+1. Install `local-gameid-pre4-…-Normal-GHL.apk` over current build.
+2. Confirm the previously-working `-1` flow still works (Blur → still launches via Beacon at `1,863,762,719`).
+3. If you have Epic-library or GOG-imported games: open "View All Games" and confirm those rows now show distinct numbers in the 1.07B–2.15B range instead of `ID: 0`.
+4. **Don't expect external launching of Epic/GOG games to work yet** — that's the deferred dispatcher-hook follow-up.
+5. On success: merge `feature/local-gameid-assignment` → `gamehub-604-build` (--no-ff), refresh Lite (--no-ff).
+
 ## 2026-05-21 — feature/local-gameid-assignment pre1: synthesize server_game_id for -1 rows
 
 ### Background

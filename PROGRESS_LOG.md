@@ -1,5 +1,27 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-05-21 — feature/banner-tools-menu pre1 (scaffold)
+
+Cut new branch off `gamehub-604-build@661a82d` for the Banner Tools menu-consolidation experiment listed in v1.5.0-604's "Upcoming features" section. Goal: collapse the 4 per-game More Menu rows (PC Vibration / GPU Spoof / Renderer / Show Game ID) into a single "Banner Tools" entry whose tap opens an `AlertDialog` listing the 4 sub-features. Each item dispatches into the existing per-feature handlers (`new BhMenuRowClick().invoke(null)`, etc.) so all settings activities / dialogs / prefs are reused unchanged.
+
+### Scope (test branch — not for stable)
+- Pure consolidation. Lx57.o Steam/Epic hide bug **deferred**.
+- The 4 standalone *MenuRow patches are wrapped in `if (false) { @Suppress("UNREACHABLE_CODE") ... }` so their row injections do not run — the patches remain compiled and apply cleanly, but emit zero bytecode at the 3 menu sites. The shared `Lxd3;->l1` resolver hook in `VibrationMenuRowPatch` is **kept** (outside the `if (false)`) since `BannerToolsMenuRowPatch` reuses it for its Injection-3 Lell label sentinel.
+- Per-feature settings code (`BhVibrationSettingsActivity`, `BhGpuSpoofSettingsActivity`, `BhRendererSettingsActivity`, gameId dialog) is untouched.
+
+### New files
+- `patches/src/main/kotlin/app/revanced/patches/gamehub/bannertools/BannerToolsMenuRowPatch.kt` — structural clone of `GpuSpoofMenuRowPatch`; injects one row at all 3 standard sites (`Lx57;->a`, `Lted;->f`, `Lpzc;->j0`). `dependsOn(menuGameIdCapturePatch, vibrationMenuRowPatch)` for the shared `Lxd3;->l1` resolver.
+- `extensions/gamehub/src/main/java/com/xj/winemu/bannertools/BhBannerToolsMenuRowClick.java` — 3 `appendRow*` builders + `invoke()` that pops an `AlertDialog` with 4 items dispatching via `new <Sibling>().invoke(null)`. Sentinel key `"string:bh_banner_tools_label"`.
+
+### Modified files
+- `extensions/gamehub/src/main/java/com/xj/winemu/vibration/BhMenuRowClick.java` — added `"string:bh_banner_tools_label" → "Banner Tools"` mapping in `maybeResolveCustomLabel`.
+- 4 × `*MenuRowPatch.kt` — wrapped the existing 3-site injection blocks in `if (false) { ... }`. Header comment in each explains how to revert (parent commit `661a82d`).
+
+### Build
+Push to fork → CI builds via `Any branch compilation` workflow (per `[[feedback_ci_workflows]]`). No CI matrix changes.
+
+---
+
 ## 2026-05-21 — 🚀 v1.5.0-604 STABLE SHIPPED
 
 Cut from `gamehub-604-build` at HEAD `af40a90` (PR #6 merge) — Lite refresh on `feature/lite-variant-tier1` at `af522a2` (merge of 604 into Lite). Stable keystore unchanged from v1.1.0+; cert SHA-256 `10895a311fe04f95f82e4da5c9a6c041ba9282bf211f1b578fe1cbeb894ce0ba`. 18 APKs attached (9 full + 9 Lite) + 3 `.rvp` bundles.

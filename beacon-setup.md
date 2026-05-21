@@ -73,78 +73,53 @@ Pick the row matching the BannerHub v6 variant you've installed.
 
 ## Shell reference (per-variant `am` examples)
 
-Each block is the literal `am launch` you'd run on-device to validate that variant. Use `localGameId` (preferred — works for any game) or `steamAppId` (Steam games only). `{file_content}` is Beacon's own template-variable placeholder.
+Each block is the literal **single-line** `am launch` command to paste into Beacon's **am start command** field (or run on-device for validation). Use `localGameId` (preferred — works for any PC-import or Steam game) and/or `steamAppId` (Steam games only). `{file_content}` is Beacon's own template-variable placeholder — at scan time it's replaced with the content of the `.txt` / `.iso` file for that game.
+
+> ⚠️ Do **not** split these across multiple lines with `\` continuations — Beacon's field treats the whole thing as one command and the backslashes/newlines will break the launch. Paste as a single line.
 
 ### Normal — `banner.hub`
-```sh
-am launch -n banner.hub/com.xiaoji.egggame.DeepLinkActivity \
-    -a banner.hub.LAUNCH_GAME \
-    --es localGameId {file_content} --es steamAppId {file_content} \
-    --ez autoStartGame true
+```
+am launch -n banner.hub/com.xiaoji.egggame.DeepLinkActivity -a banner.hub.LAUNCH_GAME --es localGameId {file_content} --es steamAppId {file_content} --ez autoStartGame true
 ```
 
 ### Normal-GHL — `gamehub.lite`
-```sh
-am launch -n gamehub.lite/com.xiaoji.egggame.DeepLinkActivity \
-    -a gamehub.lite.LAUNCH_GAME \
-    --es localGameId {file_content} --es steamAppId {file_content} \
-    --ez autoStartGame true
+```
+am launch -n gamehub.lite/com.xiaoji.egggame.DeepLinkActivity -a gamehub.lite.LAUNCH_GAME --es localGameId {file_content} --es steamAppId {file_content} --ez autoStartGame true
 ```
 
 ### PuBG — `com.tencent.ig`
-```sh
-am launch -n com.tencent.ig/com.xiaoji.egggame.DeepLinkActivity \
-    -a com.tencent.ig.LAUNCH_GAME \
-    --es localGameId {file_content} --es steamAppId {file_content} \
-    --ez autoStartGame true
+```
+am launch -n com.tencent.ig/com.xiaoji.egggame.DeepLinkActivity -a com.tencent.ig.LAUNCH_GAME --es localGameId {file_content} --es steamAppId {file_content} --ez autoStartGame true
 ```
 
 ### AnTuTu — `com.antutu.ABenchMark`
-```sh
-am launch -n com.antutu.ABenchMark/com.xiaoji.egggame.DeepLinkActivity \
-    -a com.antutu.ABenchMark.LAUNCH_GAME \
-    --es localGameId {file_content} --es steamAppId {file_content} \
-    --ez autoStartGame true
+```
+am launch -n com.antutu.ABenchMark/com.xiaoji.egggame.DeepLinkActivity -a com.antutu.ABenchMark.LAUNCH_GAME --es localGameId {file_content} --es steamAppId {file_content} --ez autoStartGame true
 ```
 
 ### alt-AnTuTu — `com.antutu.benchmark.full`
-```sh
-am launch -n com.antutu.benchmark.full/com.xiaoji.egggame.DeepLinkActivity \
-    -a com.antutu.benchmark.full.LAUNCH_GAME \
-    --es localGameId {file_content} --es steamAppId {file_content} \
-    --ez autoStartGame true
+```
+am launch -n com.antutu.benchmark.full/com.xiaoji.egggame.DeepLinkActivity -a com.antutu.benchmark.full.LAUNCH_GAME --es localGameId {file_content} --es steamAppId {file_content} --ez autoStartGame true
 ```
 
 ### PuBG-CrossFire — `com.tencent.tmgp.cf`
-```sh
-am launch -n com.tencent.tmgp.cf/com.xiaoji.egggame.DeepLinkActivity \
-    -a com.tencent.tmgp.cf.LAUNCH_GAME \
-    --es localGameId {file_content} --es steamAppId {file_content} \
-    --ez autoStartGame true
+```
+am launch -n com.tencent.tmgp.cf/com.xiaoji.egggame.DeepLinkActivity -a com.tencent.tmgp.cf.LAUNCH_GAME --es localGameId {file_content} --es steamAppId {file_content} --ez autoStartGame true
 ```
 
 ### Ludashi — `com.ludashi.aibench`
-```sh
-am launch -n com.ludashi.aibench/com.xiaoji.egggame.DeepLinkActivity \
-    -a com.ludashi.aibench.LAUNCH_GAME \
-    --es localGameId {file_content} --es steamAppId {file_content} \
-    --ez autoStartGame true
+```
+am launch -n com.ludashi.aibench/com.xiaoji.egggame.DeepLinkActivity -a com.ludashi.aibench.LAUNCH_GAME --es localGameId {file_content} --es steamAppId {file_content} --ez autoStartGame true
 ```
 
 ### Genshin — `com.miHoYo.GenshinImpact`
-```sh
-am launch -n com.miHoYo.GenshinImpact/com.xiaoji.egggame.DeepLinkActivity \
-    -a com.miHoYo.GenshinImpact.LAUNCH_GAME \
-    --es localGameId {file_content} --es steamAppId {file_content} \
-    --ez autoStartGame true
+```
+am launch -n com.miHoYo.GenshinImpact/com.xiaoji.egggame.DeepLinkActivity -a com.miHoYo.GenshinImpact.LAUNCH_GAME --es localGameId {file_content} --es steamAppId {file_content} --ez autoStartGame true
 ```
 
 ### Original — `com.xiaoji.egggame`
-```sh
-am launch -n com.xiaoji.egggame/com.xiaoji.egggame.DeepLinkActivity \
-    -a com.xiaoji.egggame.LAUNCH_GAME \
-    --es localGameId {file_content} --es steamAppId {file_content} \
-    --ez autoStartGame true
+```
+am launch -n com.xiaoji.egggame/com.xiaoji.egggame.DeepLinkActivity -a com.xiaoji.egggame.LAUNCH_GAME --es localGameId {file_content} --es steamAppId {file_content} --ez autoStartGame true
 ```
 
 ---
@@ -168,8 +143,7 @@ The same dialog has a **View All Games** button that opens the full library (bac
 If you have many games to set up and a rooted device, you can dump the whole library at once:
 
 ```sh
-sqlite3 /data/data/<variant_pkg>/databases/db_game_library.db \
-  "SELECT id, server_game_id, steam_app_id, game_name FROM t_game_library_base;"
+sqlite3 /data/data/<variant_pkg>/databases/db_game_library.db "SELECT id, server_game_id, steam_app_id, game_name FROM t_game_library_base;"
 ```
 
 Replace `<variant_pkg>` with the package matching your installed variant (e.g. `gamehub.lite` for Normal-GHL — see the [variant table](#per-variant-configuration) above).

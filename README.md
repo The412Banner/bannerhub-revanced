@@ -119,6 +119,8 @@ It also fixes a launch-time `VerifyError` that the original 5.x `Disable Crashly
 
 ## Variants
 
+> 📄 Full Lite write-up: [`bannerhub-v6-lite.md`](bannerhub-v6-lite.md) — per-strip rationale, sizing table, and the variant filename map.
+
 This branch (`feature/lite-variant-tier1`) is the **Lite parallel track**. It is intentionally kept separate from `gamehub-604-build` (which owns the canonical 9 full variants + the GitHub Release) so Lite-specific regressions never touch the full set. It builds a **Lite counterpart of each of the 9 full variants** — same patch bundle, plus the 4 Tier-1–4 strip patches. Each Lite APK uses the **same package name** as its full counterpart, so installing it **replaces** the matching full variant (they do not coexist); only the launcher label differs (full label + " Lite"). These 9 Lite APKs are normally built artifact-only (no Release) and manually attached to the `gamehub-604-build` release.
 
 | Variant | APK file | Package | Launcher label |
@@ -133,7 +135,7 @@ This branch (`feature/lite-variant-tier1`) is the **Lite parallel track**. It is
 | Genshin-Lite | `BannerHub-V6-<version>-Patched-Genshin-Lite.apk` | `com.miHoYo.GenshinImpact` | BannerHub v6 Genshin Lite |
 | Original-Lite | `BannerHub-V6-<version>-Patched-Original-Lite.apk` | `com.xiaoji.egggame` | BannerHub v6 Lite |
 
-Each Lite APK strips a verified-dead duplicate 20 MB font, the Aliyun carrier-login native lib, the Haima cloud-gaming stack, and the avif-coil AVIF/HEIC image-codec stack — ~34.5 MB smaller on disk (≈32%: 114.5 → 78.3 MB). Removed features: cloud gaming (non-functional under the BannerHub catalog redirect anyway) and the bundled AVIF/HEIC decoder (modern Android renders HEIF/AVIF via the platform decoder; JPEG/PNG/WebP unaffected). Everything else is byte-identical to the matching full variant. Part of an incremental size-reduction track.
+Each Lite APK strips a verified-dead duplicate 20 MB font, the Aliyun carrier-login native lib, the Haima cloud-gaming stack, and the avif-coil AVIF/HEIC image-codec stack — ~34.5 MB smaller on disk (≈32%: 114.5 → 78.3 MB). Removed features: cloud gaming (non-functional under the BannerHub catalog redirect anyway) and the bundled AVIF/HEIC decoder (modern Android renders HEIF/AVIF via the platform decoder; JPEG/PNG/WebP unaffected). Everything else is byte-identical to the matching full variant. Part of an incremental size-reduction track — see [`bannerhub-v6-lite.md`](bannerhub-v6-lite.md) for the full report.
 
 ### 🪶 Lite variants
 

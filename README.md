@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.4.0-604"><strong>📥 Latest stable: v1.4.0-604</strong></a>
+  <a href="https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.5.0-604"><strong>📥 Latest stable: v1.5.0-604</strong></a>
   ·
   <a href="#patches-applied">Patches</a>
   ·
@@ -51,7 +51,7 @@
 ## Table of contents
 
 1. [AI Disclaimer](#ai-disclaimer)
-2. [What's new in v1.4.0-604](#whats-new-in-v140-604)
+2. [What's new in v1.5.0-604](#whats-new-in-v150-604)
 3. [What this is](#what-this-is)
 4. [Source](#source)
 5. [Variants](#variants)
@@ -72,35 +72,31 @@ This project has no source code — XiaoJi GameHub is closed-source and ships on
 
 Before any **stable release** is published, every change is **manually debugged and tested by me across multiple devices — both rooted and unrooted**. Debugging uses `logcat` output (captured with the [`getlog` Magisk helper](https://github.com/The412Banner/logcat-bridge) on rooted devices, plain `adb logcat` on unrooted) plus the in-app debug log files that the `Debug logging` patch produces. No release is cut until the change has been verified end-to-end on hardware.
 
-## What's new in v1.4.0-604
+## What's new in v1.5.0-604
 
-Five headline changes on top of `v1.3.0-604`. Drop-in update (stable keystore unchanged — installs in place).
+Four headline changes on top of `v1.4.0-604`. Drop-in update (stable keystore unchanged — installs in place).
 
-### 🎛️ Per-game settings, properly isolated
+### 🎮 External launcher integration (Beacon / ES-DE / Daijishou)
 
-GPU Spoof, the Legacy renderer toggle, and PC Vibration each now save to BannerHub's own per-game store with explicit **Save / Cancel** buttons. Previously these co-stored state in GameHub's own settings file (which the host rewrites, silently resetting the choice) and mirrored it to a global with a global fallback — so a per-game choice leaked app-wide and into other games. Now each setting is strictly per game in `bh_<feature>_prefs`; an unset game gets the stock default, never another game's value (a one-time read-only migration adopts any legacy value on first read). The captured game id is bridged across the `:wine` process boundary — `WineActivity` runs in `android:process=":wine"`, so the shared `BhMenuGameId` helper mirrors the id to SharedPreferences and reads it back launch-side so per-game scoping actually works.
+PC and Steam games can now be launched directly from external front-end launchers — **Beacon**, **ES-DE**, **Daijishou**. Port of PlayDay's 5.3.5 patch forward to the 6.0.4 base. The dispatch accepts both `--ei` (int) and `--es` (String) extras so it matches Beacon's actual call shape out of the box, no manual config needed. Epic Games library launches were attempted across the prerelease cycle but the upstream `GameDetailViewModel` ignores the `app_nav_epic_app_name` route — **Epic remains unsupported**; PC and Steam launches ship working end-to-end.
 
-### 🪪 GPU Spoof (per game)
+### 🪪 Show Game ID menu row + View All Games dialog
 
-A new **GPU Spoof** menu row + dialog reports a chosen GPU identity to DXVK via a per-game `dxvk.conf`: **Off** (default), a **preset** picker (a legacy NVIDIA/AMD/Intel list plus a modern RTX/RX/Arc set), or **Custom** (free vendor / device hex + name). The plumbing force-writes `customVendorId`/`customDeviceId` after the Wine env builder's conditional DXVK block so the spoof always applies, and no-ops entirely when Off. Fixes titles that hard-refuse an "unsupported video card" — e.g. CryEngine (Crysis 2).
+A new **Show Game ID** row in the per-game menus pops up a dialog with the gameId GameHub uses internally — with a **Copy** button — so you can configure Beacon / ES-DE / Daijishou entries without grepping a logcat. The same dialog has a **View All Games** button that opens the full library list (backed by `db_game_library.db`); tap any row to copy that game's id.
 
-### 🖼️ Legacy renderer toggle (per game)
+### 🖼️ Proper menu row icons — fixed (thanks @TideGear, PR #6)
 
-GameHub 6.0.4 rewrote its X-server renderer GLES2→Vulkan; some games regressed. A per-game **Renderer** row lets you choose **New** (default — stock 6.0.4 Vulkan, zero patch effect) or **Legacy** (the proven 6.0.2 GLES2-era `libxserver.so` + `libwinemu.so` pair, swapped in via a JNI bridge). Strictly gated per game — an unset game is pure stock, zero regression.
+The Vibration / GPU Spoof / Renderer rows previously read the wrong icon-holder field (`zz4.m`) and ended up sharing the Remove-from-Library trash icon. Each row now reads its correct field — vibration `zz4.b0`, GPU Spoof `zz4.v`, renderer `zz4.c0` — and renders with its own icon. Applies in both per-game menus.
 
-### 🎮 Rumble no longer cuts out after ~2 s
+### 📱 Portrait layout for the PC Vibration Settings dialog (thanks @TideGear, PR #6)
 
-The winebus duration patch is now actually applied at launch. On the 6.0.4 base the v1.3.0 hook landed as unreachable dead code (past a `goto`), so SDL2's ~1 s rumble auto-stop was never defeated; the hook is re-anchored to the env-builder entry. Sustained rumble now holds indefinitely — device-confirmed via GameConTest.exe.
+The vibration settings dialog now detects orientation and reshapes itself to fit portrait-mode phones: **Mode** and **Intensity** stack vertically (instead of side-by-side), dialog width caps at `min(360dp, screenW - 24dp)`, and the intensity slider caps at 220dp wide. Landscape unchanged (480dp, side-by-side).
 
-### 📦 Offline component picker
+### Carryover from `v1.4.0-604` and earlier
 
-Every per-game component picker — GPU driver, DXVK, VKD3D, FEXCore/Box64 translators, **and the Wine/Proton container** — now lists the components you've already downloaded when offline, in the same catalog order as online. Online behaviour is byte-identical and the patch is fully fail-safe (any error falls back to the stock code path, never a crash). Device-confirmed on 6.0.4. (Full mechanism in the *Offline component picker — local list* patch section below.)
+The full per-game-settings isolation rework (GPU Spoof / Renderer / Vibration each strict in their own `bh_<feature>_prefs`, explicit Save/Cancel, `:wine`-boundary id bridging), the per-game **GPU Spoof** dialog (preset NVIDIA/AMD/Intel + Custom vendor/device — fixes CryEngine "Unsupported video card"), the per-game **Legacy renderer** toggle (6.0.2 GLES2-era libxserver/libwinemu swap-in), the re-anchored winebus duration patch that defeats SDL2's ~1 s rumble auto-stop, and the **offline component picker** (every per-game picker including Wine/Proton container lists your downloaded components in catalog order when offline) all carry forward unchanged. Preload-free vibration (no `libevshim`/`LD_PRELOAD`), the 9 Lite builds (~34.5 MB smaller per variant — see [`bannerhub-v6-lite.md`](bannerhub-v6-lite.md)), the privacy-hardening stack + public [`PRIVACY.md`](PRIVACY.md), the always-visible PC Game Settings row in Explorer view, the stable keystore, and the BannerHub v6 visual rebrand also ship forward. Each Lite uses the **same package name** as its full counterpart, so a Lite APK **installs over (replaces)** the matching full variant — pick one per package.
 
-### Carryover from `v1.3.0-604` and earlier
-
-Preload-free PC-accurate vibration (no `libevshim`/`LD_PRELOAD`; on-disk `winebus.so` duration patch), the 9 Lite builds (~34.5 MB smaller per variant — strip-by-strip breakdown in [`bannerhub-v6-lite.md`](bannerhub-v6-lite.md)), the full privacy-hardening stack (7 functional patches + public [`PRIVACY.md`](PRIVACY.md)), the always-visible PC Game Settings row in Explorer view, the stable keystore, the PC Vibration Settings menu row, and the BannerHub v6 visual rebrand all carry forward unchanged. Each Lite uses the **same package name** as its full counterpart, so a Lite APK **installs over (replaces)** the matching full variant — pick one per package.
-
-> 📜 Past-release notes for `v1.3.0-604`, `v1.2.0-604`, `v1.1.0-604`, `v1.0.0-604`, `v1.0.0-602`, `v1.0.1-601`, `v1.0.0-601`, and `v1.0.1-600` are preserved on their respective [release pages](https://github.com/The412Banner/bannerhub-revanced/releases). The README keeps only the latest release in this section to stay focused on what's current.
+> 📜 Past-release notes for `v1.4.0-604`, `v1.3.0-604`, `v1.2.0-604`, `v1.1.0-604`, `v1.0.0-604`, `v1.0.0-602`, `v1.0.1-601`, `v1.0.0-601`, and `v1.0.1-600` are preserved on their respective [release pages](https://github.com/The412Banner/bannerhub-revanced/releases). The README keeps only the latest release in this section to stay focused on what's current.
 
 ---
 

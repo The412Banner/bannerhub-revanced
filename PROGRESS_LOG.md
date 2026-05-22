@@ -1,5 +1,149 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-05-22 — Docs: fold RetroHRAI into `beacon-setup.md` + README Frontend support
+
+Documentation refresh covering the RetroHRAI integration confirmed earlier today.
+
+**`beacon-setup.md`:**
+- Title changed from "Beacon launcher setup" to "External launcher setup" (covers all 4 front-ends; filename kept to preserve incoming links from release notes).
+- Top-of-doc status block lists all 4 front-ends with current status (Beacon ✅ / ES-DE ✅ / RetroHRAI ✅ / Daijishou ⚠ untested).
+- New **Placeholder syntax by front-end** section explicitly tables Beacon-family (`{file_content}`) vs. Daijishou-family (`{tags.localgameid}`), with the warning that `[localgameid]` is the IN-FILE marker syntax (NOT a command-line placeholder) — captures the 3-iteration debugging lesson permanently.
+- New **Shell reference — RetroHRAI / Daijishou** section with all 9 variant blocks using `{tags.localgameid}`; pairs with the existing Beacon/ES-DE blocks.
+- Method 1 step 5 and the synthetic-ID paragraph updated to mention both placeholder forms.
+
+**`README.md` `## Frontend support`:**
+- Table widened to 3 columns: Frontend / Status / Placeholder.
+- RetroHRAI row added with ✅ v1.5.1-604.
+- Daijishou row aligned with the RetroHRAI command form (same `{tags.localgameid}` placeholder family).
+- Section intro mentions both placeholder families explicitly.
+
+No code/patch/CI changes; docs-only. Will be back-merged into `feature/lite-variant-tier1` via `--no-ff` once landed on `gamehub-604-build`.
+
+### Next
+
+Refresh `feature/lite-variant-tier1` from `gamehub-604-build` to carry the docs forward.
+
+## 2026-05-22 — ✅ RetroHRAI UI round-trip end-to-end device-confirmed on banner.hub v1.5.1-604
+
+Final piece of the RetroHRAI integration: tapping the God of War tile in the RetroHRAI app launches BannerHub V6 + GoW under Wine end-to-end. Captured logcat slice (`/sdcard/Download/retrohrai-gow-launch.log*`):
+
+```
+12:04:06.522 D UnifiedEmulatorLauncher: Launching with player=custom.banner.hub.9b884536,
+                                        intent=action=banner.hub.LAUNCH_GAME,
+                                        component=ComponentInfo{banner.hub/com.xiaoji.egggame.DeepLinkActivity},
+                                        ... extras={localGameId=49908, autoStartGame=true}
+12:04:06.538 I ActivityTaskManager: START u0 {act=banner.hub.LAUNCH_GAME ... cmp=banner.hub/com.xiaoji.egggame.DeepLinkActivity} ... result code=0
+12:04:07.041 I BhExternalLauncher: rewrote banner.hub.LAUNCH_GAME → game_detail id=49908 autoStart=true
+12:04:10.915 W GameDetailViewModel: [Android] [Issue#1753] loadGameDetail rendered from local library after server/steam/epic failed. id=49908, sourceId=, sourceType=-1
+```
+
+Note `extras={localGameId=49908, ...}` — the INTEGER, not a placeholder string. That's the fix landing.
+
+**Placeholder-syntax saga (resolved for posterity):** Three iterations to find the right token.
+1. `{file_content}` — Beacon syntax. Doesn't match RetroHRAI's TAGS_PATTERN. Passed through literally.
+2. `[localgameid]` — Daijishou *in-file marker* syntax (used by RetroHRAI's `extractTagId` to find IDs inside the ROM file CONTENT, but NOT a valid command-line placeholder). Doesn't match TAGS_PATTERN. Passed through literally.
+3. `{tags.localgameid}` ✅ — matches `UnifiedEmulatorLauncher.TAGS_PATTERN = \{tags\.(\w+)\}`. Substitution flow: RetroHRAI sees `{tags.localgameid}` → opens the ROM file → reads `49908` → `extractTagId` fallback returns raw content → substitutes `{tags.localgameid}` with `49908` → fires intent with the integer.
+
+The two RetroHRAI regexes (`TAGS_PATTERN` for command placeholders vs. `DAIJISHOU_TAG_PATTERN` for in-file markers) have distinct purposes that look superficially similar — captured permanently in the [[project-retrohrai-bannerhub-integration]] memory's regex table to avoid future confusion.
+
+**User-facing doc:** `/storage/emulated/0/Download/retrohrai-bannerhub-commands.txt` rev 2 — all 9 BannerHub variant commands with `{tags.localgameid}` token and the regex distinction documented.
+
+**RetroHRAI DB:** `user_players.amStartArguments` row (`emulatorPackage='banner.hub'`) live-edited via direct SQL through `getlog --write` — no in-app edit needed by the user.
+
+**Front-ends matrix** ([[bannerhub-revanced-external-launcher]]): RetroHRAI moved from 🔄 to ✅ UI-confirmed alongside Beacon and ES-DE.
+
+### Next
+
+- Fold RetroHRAI into `beacon-setup.md` as a documented front-end (4th entry alongside Beacon / ES-DE / Daijishou).
+- Update README "Frontend support" badge/list to include RetroHRAI.
+- Pending UI test for Daijishou itself (uses same `LAUNCH_GAME` intent contract — expected to work without further changes).
+
+## 2026-05-22 — ✅ External Launcher end-to-end device-confirmed (direct `am start`) on banner.hub v1.5.1-604
+
+First end-to-end success of the External Launcher patch stack on a real PC-imported game (God of War, server_game_id=49908) via direct `am start` from this PRoot session through the logcat-bridge. Confirms the v1.5.1-604 patch shipped pipeline (External Launcher patch + LocalGameIdAssignment + GameDetailViewModel local-fallback) is sound end-to-end.
+
+Logcat proof:
+```
+11:54:22.597 I ActivityTaskManager: START u0 {act=banner.hub.LAUNCH_GAME ... cmp=banner.hub/com.xiaoji.egggame.DeepLinkActivity (has extras)} ... result code=0
+11:54:23.157 I BhExternalLauncher: rewrote banner.hub.LAUNCH_GAME → game_detail id=49908 autoStart=true
+11:54:25.588 W GameDetailViewModel: [Android] [Issue#1753] loadGameDetail rendered from local library after server/steam/epic failed. id=49908, sourceId=, sourceType=-1
+```
+
+User confirmed Wine session reached background (game launched). The "[Issue#1753] loadGameDetail rendered from local library after server/steam/epic failed" message is the documented fallback path — catalog miss is expected for PC imports; ViewModel correctly resolves from `t_game_library_base` locally and continues to launch.
+
+**Issue diagnosed and fixed along the way:** RetroHRAI uses Daijishou-style `[localgameid]` token, NOT Beacon's `{file_content}`. RetroHRAI's `UnifiedEmulatorLauncher.DAIJISHOU_TAG_PATTERN` (`classes4.dex`) defines the valid set: `[localgameid]` `[steamappid]` `[gog]` `[epicgame]` `[epic]` `[customgame]` `[pcgame]` `[vita_game_id]`. The user's `user_players.amStartArguments` row was rewritten via direct DB UPDATE (force-stop → SQL → push back via `getlog --write` preserving uid:gid:mode) so the next RetroHRAI UI launch will work without any in-app edit.
+
+**Doc deliverable for the user:** all 9 BannerHub variant launch commands saved to `/storage/emulated/0/Download/retrohrai-bannerhub-commands.txt` with `[localgameid]` token + verification recipe.
+
+**Front-ends matrix update** ([[bannerhub-revanced-external-launcher]] memory): RetroHRAI now marked ✅ for direct-am path. UI scan round-trip pending separate confirmation. Once that passes, fold RetroHRAI into `beacon-setup.md` as a documented front-end alongside Beacon / ES-DE / Daijishou.
+
+### Next
+
+User taps RetroHRAI tile → confirm full UI round-trip → fold into `beacon-setup.md` + update README "Frontend support" list to include RetroHRAI.
+
+## 2026-05-22 — PRE-LAUNCH anchor: RetroHRAI → God of War on banner.hub v1.5.1-604
+
+User about to fire the RetroHRAI tile for God of War with the v1.5.1-604 External Launcher contract. Captured here per the new memory-before-launch rule so if the PRoot session is killed by LMK during the launch, the next session can resume from this exact state.
+
+**Test target:** `banner.hub` (Normal variant, v1.5.1-604 patch stack on base 6.0.4, versionCode 114). RetroHRAI v0.4.2 (`com.retrohrai.launcher`). Custom platform "bannerhub" id `bacac28f-6003-46a7-bf55-cbcb471b60cc`, ROM folder `Download/bannerhub/frontend/Beacon`. God of War ROM file = bare 5 bytes `49908`. Matches `db_game_library.db` `t_game_library_base` row `_id=3`, `server_game_id=49908`, source_type=0 (PC-imported, real catalog ID — not synthetic).
+
+**Command staged in RetroHRAI Custom Player (single-line `am start arguments`):**
+
+```
+am start -n banner.hub/com.xiaoji.egggame.DeepLinkActivity -a banner.hub.LAUNCH_GAME --es localGameId {file_content} --ez autoStartGame true
+```
+
+Expands at scan time to `--es localGameId 49908 --ez autoStartGame true`. Matches the documented [[bannerhub-revanced-external-launcher]] contract (action `banner.hub.LAUNCH_GAME`, extras `localGameId` + `autoStartGame`) — replaces the prior 5.3.5-era VIEW + `app_nav_target=local_game_launch` form stored in `user_players.amStartArguments` until now.
+
+**On-device log capture pre-staged:** `logcat -v threadtime -r 4096 -n 4 -f /sdcard/Download/retrohrai-gow-launch.log` started under `nohup setsid` via the Magisk bridge so it survives a Claude session kill. Post-mortem read = `getlog --exec "tail -n 2000 /sdcard/Download/retrohrai-gow-launch.log"`.
+
+**Full failure-mode + resume-order checklist:** `~/.claude/projects/-home-claude-user/memory/project_retrohrai_gow_test_pending.md`. Includes 5-row failure-mode table (Activity not found / stuck on home / Play prompt instead of auto-launch / loadGameDetail failure / Wine crash post-launch) and the resume sequence for the next session.
+
+No code/patch/CI changes. Pure pre-launch state anchor.
+
+## 2026-05-22 — Note: RetroHRAI front-end test — manual `am start` via logcat-bridge confirmed launches, session-kill hazard
+
+In-progress device test of **RetroHRAI** (github.com/retrohrai/Releases) against `banner.hub` v1.5.1-604. Target game: God of War (PC-imported `.iso` mapping in RetroHRAI). Prior attempt cut off mid-test by the documented LMK session-kill on heavy Wine launches (see `~/NEWTERMUX_MEMORY_AND_PERSISTENCE_2026-05-21.md`).
+
+**Confirmed working manual command** (fired from inside this PRoot session via `getlog --exec`):
+
+```sh
+getlog --exec "am start -n banner.hub/com.xiaoji.egggame.DeepLinkActivity \
+  -a banner.hub.LAUNCH_GAME \
+  --es localGameId <int> \
+  --ez autoStartGame true"
+```
+
+Game launches end-to-end — the External Launcher patch's intent contract is honored. RetroHRAI itself uses the same `am`-driven contract, so the round-trip via RetroHRAI's library scan is expected to work; full end-to-end confirmation pending.
+
+**Session-kill hazard captured to memory.** Pulling the logcat **immediately** after firing (within 1-2s, before Wine balloons memory) preserves the launch trace in `~/logcat-banner.hub-*.txt` even if the PRoot session is killed by LMK. Added to `[[bannerhub-revanced-external-launcher]]` memory as a permanent operational note.
+
+**No code/patch/CI changes** — manual device-test workflow only. RetroHRAI added to the Front-ends matrix in the external-launcher memory (alongside Beacon ✅ / ES-DE ✅ / Daijishou ⚠).
+
+### Next
+
+User to re-fire RetroHRAI's GoW entry; pull logs immediately. If end-to-end works, fold RetroHRAI into `beacon-setup.md` as a tested front-end alongside Beacon / ES-DE / Daijishou.
+
+## 2026-05-22 — Note: game-id retrieval for front-end launchers is a solved problem
+
+Memory anchor for future sessions resuming on the External Launcher / front-end (Beacon / ES-DE / Daijishou / RetroArch-style) workflow. Verified against current `gamehub-604-build` HEAD on 2026-05-22 — no code changes, docs-only confirmation.
+
+As of **v1.5.1-604** (tag commit `1ca351d`), getting the right `localGameId` integer for any game in the library is fully solved end-to-end:
+
+- **Show Game ID menu row** (merge `090706e`, see entry 2026-05-20) — open any game's details page → tap **Show Game ID** to read the integer `server_game_id` that the front-end's `am launch … --es localGameId <int>` command needs. Also exposes a **View All Games** dialog browser over `db_game_library.db` / `t_game_library_base`.
+- **Local game-id assignment** (merge `c270672`, see entry 2026-05-21) — at app startup, rewrites every `server_game_id IN (-1, 0)` row to a stable synthetic 32-bit integer in `[0x40000000, 0x7FFFFFFF]` derived from the row's `local_<UUID>`. Catalog-miss PC imports (`-1`) and Epic/GOG rows (`0`) are now individually addressable.
+- Combined effect: **every** library row (PC import / Steam / Epic / GOG) carries a distinct positive integer that the existing 6.0.4 `DeepLinkActivity` dispatch resolves correctly. The earlier "Epic/GOG blocked because Steam-catalog-centric dispatch" framing (DOOMBLADE pre5 era, before localgameid) is **superseded** — the collision was on shared sentinels `0`, not on the dispatch logic.
+
+**Device-confirmed end-to-end** (per local-gameid-assignment entry):
+- Beacon (412banner) — `-1` case ("Blur" → synthetic `1,863,762,719` → launches) AND `=0` case (Epic + GOG launch)
+- ES-DE (slogik) — same coverage on both sentinel cases
+- Daijishou — not yet device-confirmed; same `LAUNCH_GAME` intent contract → expected to work
+- RetroArch-style / any frontend that fires the documented `am launch` command — same contract
+
+**Worked example for God of War (PC-imported):** open GoW details → **Show Game ID** → paste the integer into the frontend (Beacon "am start command" field, ES-DE custom systems, Daijishou, RetroArch, etc.) wrapping `--es localGameId <int>`. Full command per variant in `beacon-setup.md` (e.g. for `banner.hub`: `am launch -n banner.hub/com.xiaoji.egggame.DeepLinkActivity -a banner.hub.LAUNCH_GAME --es localGameId <int> --ez autoStartGame true`). For an alt-AnTuTu install the package is `com.antutu.benchmark.full` per `[[feedback_bannerhub_revanced_package]]`.
+
+No release artifact, no APK, no merge — pure documentation/reference checkpoint.
+
 ## 2026-05-21 — Docs: link `beacon-setup.md` from v1.5.1-604 release notes + Lite doc
 
 Plumbed the front-end launcher setup guide into the two places it was missing:

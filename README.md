@@ -140,17 +140,18 @@ Each Lite uses the **same package name** as its full counterpart, so installing 
 
 ## Frontend support
 
-BannerHub v6 can be driven directly from external game-launcher front-ends — pick a game in your front-end, it hands off into the matching BannerHub variant, and (with `autoStartGame true`) the game starts playing without a stop in GameHub's UI. The same intent contract is shared across all 9 variants — only the package name and action prefix change per variant.
+BannerHub v6 can be driven directly from external game-launcher front-ends — pick a game in your front-end, it hands off into the matching BannerHub variant, and (with `autoStartGame true`) the game starts playing without a stop in GameHub's UI. The same intent contract is shared across all 9 variants — only the package name and action prefix change per variant. The **placeholder syntax** for substituting the game's ID into the `am` command differs by front-end family (Beacon-style `{file_content}` vs. RetroHRAI / Daijishou-style `{tags.localgameid}`); both are documented in the setup guide.
 
-| Frontend | Status |
-| --- | --- |
-| **Beacon** | ✅ Device-verified working |
-| **ES-DE** | ✅ Device-verified working |
-| **Daijishou** | ⚠️ Untested (same intent contract — *should* work; please report results) |
+| Frontend | Status | Placeholder |
+| --- | --- | --- |
+| **Beacon** | ✅ Device-verified working | `{file_content}` |
+| **ES-DE** | ✅ Device-verified working | `{file_content}` |
+| **RetroHRAI** | ✅ Device-verified working (v1.5.1-604) | `{tags.localgameid}` |
+| **Daijishou** | ⚠️ Untested (same intent contract — *should* work with the RetroHRAI command form; please report results) | `{tags.localgameid}` |
 
 What's addressable: PC-imported games, Steam-library games, and — as of `v1.5.1-604` — Epic-library and GOG-imported games (the synthetic-ID rewrite turns rows GameHub stamps with `server_game_id = 0`/`-1` into stable individually-addressable integer IDs). Game-ID lookup is via the in-app **Banner Tools → Show Game ID** dialog (added v1.5.0-604, consolidated into Banner Tools in v1.5.1-604).
 
-> 📖 **Full setup guide for all 9 variants → [`beacon-setup.md`](beacon-setup.md)** — per-variant `am` launch commands, intent contract + extras (`localGameId` / `steamAppId` / `autoStartGame`), how to find a game's ID (in-app dialog + rooted `sqlite3` fallback), and the list of game types that aren't addressable.
+> 📖 **Full setup guide for all 9 variants → [`beacon-setup.md`](beacon-setup.md)** — per-variant `am` launch commands for both placeholder families, intent contract + extras (`localGameId` / `steamAppId` / `autoStartGame`), how to find a game's ID (in-app dialog + rooted `sqlite3` fallback), and the list of game types that aren't addressable.
 
 ## Signing
 

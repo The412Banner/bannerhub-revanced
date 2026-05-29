@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.5.1-604"><strong>📥 Latest stable: v1.5.1-604</strong></a>
+  <a href="https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.6.0-604"><strong>📥 Latest stable: v1.6.0-604</strong></a>
   ·
   <a href="#patches-applied">Patches</a>
   ·
@@ -44,14 +44,14 @@
 >
 > **USE AT YOUR OWN RISK.**
 
-**What it does** — removes the login requirement, redirects the catalog API to the BannerHub Cloudflare Worker, ships **preload-free** PC-accurate XInput rumble for Wine games (with a per-game settings dialog injected into both popup menus), mutes the UI feedback sounds, and rebrands the launcher icon + in-app artwork as BannerHub v6. Nine APK variants install side-by-side on the same device — and as of `v1.3.0-604` each also ships a ~34.5 MB-smaller **Lite** counterpart.
+**What it does** — removes the login requirement, redirects the catalog API to the BannerHub Cloudflare Worker, ships **preload-free** PC-accurate XInput rumble for Wine games (with a per-game settings dialog injected into both popup menus), adds in-app **GOG** sign-in / library / download-install reachable from a new BannerHub-owned **Explore** tab, mutes the UI feedback sounds (with an optional recording-compatible audio toggle), and rebrands the launcher icon + in-app artwork as BannerHub v6. Nine APK variants install side-by-side on the same device — and as of `v1.3.0-604` each also ships a ~34.5 MB-smaller **Lite** counterpart.
 
 > ✅ **In-place updates** — from `v1.1.0-604` onward, BannerHub releases are signed with a stable test keystore ([`keystore/README.md`](keystore/README.md)) so every future stable installs on top of the previous one with no uninstall. **One-time migration**: if you're still on `v1.0.0-604` or older (those used per-run ephemeral keys), uninstall your current BannerHub-ReVanced variant once before installing `v1.1.0-604`. From there on, regular Android updates flow normally.
 
 ## Table of contents
 
 1. [AI Disclaimer](#ai-disclaimer)
-2. [What's new in v1.5.1-604](#whats-new-in-v151-604)
+2. [What's new in v1.6.0-604](#whats-new-in-v160-604)
 3. [What this is](#what-this-is)
 4. [Source](#source)
 5. [Variants](#variants)
@@ -73,25 +73,27 @@ This project has no source code — XiaoJi GameHub is closed-source and ships on
 
 Before any **stable release** is published, every change is **manually debugged and tested by me across multiple devices — both rooted and unrooted**. Debugging uses `logcat` output (captured with the [`getlog` Magisk helper](https://github.com/The412Banner/logcat-bridge) on rooted devices, plain `adb logcat` on unrooted) plus the in-app debug log files that the `Debug logging` patch produces. No release is cut until the change has been verified end-to-end on hardware.
 
-## What's new in v1.5.1-604
+## What's new in v1.6.0-604
 
-Two changes on top of `v1.5.0-604`. Drop-in update (stable keystore unchanged — installs in place).
+Three new features on top of `v1.5.1-604`. Drop-in update (stable keystore unchanged — installs in place).
 
-### 🪪 Imported / Epic / GOG games now launch from external front-ends
+### 🎮 GOG integration
 
-GameHub writes `server_game_id = -1` for PC-imported games it couldn't match to its catalog, and `0` for Epic-library + GOG-imported games. Multiple such rows collide on the integer deep-link contract that Beacon / ES-DE / Daijishou use (`Integer.parseInt(app_nav_game_id)` — every `-1` game routes to the same nominal target). v1.5.1 rewrites every sentinel row to a stable synthetic 32-bit ID derived from the row's `local_<UUID>` so each game is individually addressable. The synthetic is deterministic (survives game renames, library refreshes, install path moves), idempotent (re-runs are no-ops), and self-healing (rows GameHub later re-matches to a real catalog ID are left alone). The Show Game ID dialog displays the synthetic.
+Sign in to GOG, browse your **owned library**, and **download + install** GOG games straight from BannerHub — no extra apps. Reach it from the new **Explore** tab's GOG card or the **Banner Tools → GOG** tile: log in with your GOG account, pick from your owned games, download + install, and the game is added to your GameHub library and launches like any other PC game. The single launch surface is the GameHub library tile (same path as Steam / Epic / PC imports) — GOG screens are library-management only. *A freshly added GOG game appears in your library after a GameHub restart.*
 
-**Device-confirmed on Beacon (the412banner) AND ES-DE (slogik) for both the `-1` (PC-imported) and `0` (Epic + GOG) cases — Epic and GOG games launch end-to-end from external front-ends.**
+### 🧭 BannerHub Explore screen
 
-### 🧰 Banner Tools consolidated menu
+The bottom-nav **Explore** tab — previously XiaoJi's online discovery feed (server-driven, not ours) — now opens a **BannerHub-owned, fully-offline screen**. v1 surfaces a **GOG** card (with logo) that opens the GOG hub. Content is bundled in the APK so it works with **no network**, and cards route to BannerHub's own destinations instead of the server feed. The tab hijack is **fail-safe** — if anything goes wrong it falls through to the stock screen, and it works in both handheld and explore layout modes.
 
-The four BannerHub per-game menu rows (**PC Vibration**, **GPU Spoof**, **Renderer**, **Show Game ID**) collapse into a single **Banner Tools** entry that opens a 1×4 icon-tile dialog. Less menu clutter; the underlying feature patches and per-game prefs are unchanged.
+### 🎙️ Recording-compatible audio toggle
 
-### Carryover from `v1.5.0-604` and earlier
+A global toggle under **Banner Tools → Audio** that fixes **silent screen recordings**. PulseAudio's AAudio MMAP fast-path bypassed the system mixer that screen recorders (MediaProjection) tap, so captures had no game audio; the toggle routes audio through the mixer (`pm=0`) so recordings pick up in-game sound. Off by default.
 
-The full v1.5.0 feature set ships forward unchanged: external launcher integration for Beacon / ES-DE / Daijishou (PC + Steam end-to-end; Epic library upstream-blocked at `GameDetailViewModel` level — but see Epic launching above, now solved via the front-end deep-link), the Show Game ID menu row + View All Games dialog, the proper menu row icons (TideGear PR #6 — `zz4.b0` / `zz4.v` / `zz4.c0`), and the portrait layout for PC Vibration Settings. The full per-game-settings isolation rework (GPU Spoof / Renderer / Vibration each strict in their own `bh_<feature>_prefs`, explicit Save/Cancel, `:wine`-boundary id bridging), the per-game **GPU Spoof** dialog, the per-game **Legacy renderer** toggle, the re-anchored winebus duration patch, and the **offline component picker** carry over too. Preload-free vibration (no `libevshim`/`LD_PRELOAD`), the 9 Lite builds (~34.5 MB smaller per variant — see [`bannerhub-v6-lite.md`](bannerhub-v6-lite.md)), the privacy-hardening stack + public [`PRIVACY.md`](PRIVACY.md), the always-visible PC Game Settings row in Explorer view, the stable keystore, and the BannerHub v6 visual rebrand also ship forward. Each Lite uses the **same package name** as its full counterpart, so a Lite APK **installs over (replaces)** the matching full variant — pick one per package.
+### Carryover from `v1.5.1-604` and earlier
 
-> 📜 Past-release notes for `v1.5.0-604`, `v1.4.0-604`, `v1.3.0-604`, `v1.2.0-604`, `v1.1.0-604`, `v1.0.0-604`, `v1.0.0-602`, `v1.0.1-601`, `v1.0.0-601`, and `v1.0.1-600` are preserved on their respective [release pages](https://github.com/The412Banner/bannerhub-revanced/releases). The README keeps only the latest release in this section to stay focused on what's current.
+Everything from v1.5.1 ships forward unchanged — the synthetic 32-bit ID rewrite that lets imported / Epic / GOG games launch from external front-ends (Beacon / ES-DE / Daijishou), and the **Banner Tools** consolidated menu (which now also hosts the new **Audio** and **GOG** tiles alongside PC Vibration / GPU Spoof / Renderer / Show Game ID). The full v1.5.0 feature set ships forward unchanged too: external launcher integration for Beacon / ES-DE / Daijishou (PC + Steam end-to-end; Epic library upstream-blocked at `GameDetailViewModel` level — but see Epic launching above, now solved via the front-end deep-link), the Show Game ID menu row + View All Games dialog, the proper menu row icons (TideGear PR #6 — `zz4.b0` / `zz4.v` / `zz4.c0`), and the portrait layout for PC Vibration Settings. The full per-game-settings isolation rework (GPU Spoof / Renderer / Vibration each strict in their own `bh_<feature>_prefs`, explicit Save/Cancel, `:wine`-boundary id bridging), the per-game **GPU Spoof** dialog, the per-game **Legacy renderer** toggle, the re-anchored winebus duration patch, and the **offline component picker** carry over too. Preload-free vibration (no `libevshim`/`LD_PRELOAD`), the 9 Lite builds (~34.5 MB smaller per variant — see [`bannerhub-v6-lite.md`](bannerhub-v6-lite.md)), the privacy-hardening stack + public [`PRIVACY.md`](PRIVACY.md), the always-visible PC Game Settings row in Explorer view, the stable keystore, and the BannerHub v6 visual rebrand also ship forward. Each Lite uses the **same package name** as its full counterpart, so a Lite APK **installs over (replaces)** the matching full variant — pick one per package.
+
+> 📜 Past-release notes for `v1.5.1-604`, `v1.5.0-604`, `v1.4.0-604`, `v1.3.0-604`, `v1.2.0-604`, `v1.1.0-604`, `v1.0.0-604`, `v1.0.0-602`, `v1.0.1-601`, `v1.0.0-601`, and `v1.0.1-600` are preserved on their respective [release pages](https://github.com/The412Banner/bannerhub-revanced/releases). The README keeps only the latest release in this section to stay focused on what's current.
 
 ---
 
@@ -275,6 +277,18 @@ Replaces five in-APK drawables with BannerHub v6 branding:
 - **Splash-screen banner** (`assets/composeResources/com.xiaoji.egggame.features.splash/drawable/splash_logo.png`) — 996×200 with 2 px transparent top/bottom pad for aspect preservation; RGBA so a future splash-background change can bleed through cleanly.
 
 Background drawable (`res/drawable/ic_launcher_background.xml`) and CN-locale variants are left untouched — most launchers mask the adaptive icon's foreground so the background only shows at the masked edge, and the CN drawables aren't displayed on overseas builds.
+
+### `GOG integration` ⭐ *new in v1.6.0-604*
+
+A self-contained GOG client ported into the extension: WebView OAuth login, owned-library listing (`embed.gog.com`), multi-CDN download + install into the app data dir, and a programmatic bridge that writes the installed game into GameHub's library DB (`t_game_library_base` + `t_game_launch_method`, `LaunchType.GogGameByPcEmulator`) so it launches through the normal Wine pipeline like any PC game. Reached from the **GOG** Banner Tools tile and the Explore tab's GOG card — both open `GogMainActivity`. The library row is written on a foreign DB connection (GameHub uses Room's bundled SQLite driver), so a freshly added game appears after a GameHub restart; the add itself is verified on-device.
+
+### `Explore tab hijack` + `Explore screen activity` + `Explore drawables` ⭐ *new in v1.6.0-604*
+
+Hijacks the unused bottom-nav **Explore** tab. A one-instruction guard at the head of the bottom-nav controller's tab-select dispatch (`w1a.q(Lyw9;)V`) detects the Explore tab (enum ordinal 0) and opens our own `BannerExploreActivity` instead of XiaoJi's server-driven discovery feed — falling through to the stock screen on any error (fail-safe), and covering both handheld and explore layout modes from the single shared controller. The screen is classic Android views (no Compose), immersive-fullscreen, populated from a **bundled JSON manifest** so it works fully offline, with a **GOG** card whose logo is copied into `res/drawable` by the companion `Explore drawables` resource patch. Cards route to BannerHub's own destinations, never the server feed.
+
+### `Recording-compatible audio` ⭐ *new in v1.6.0-604*
+
+Global **Banner Tools → Audio** toggle that appends `pm=0` to PulseAudio's `module-aaudio-sink`, routing audio through the system mixer instead of the AAudio MMAP fast-path so MediaProjection screen recorders capture in-game sound (otherwise recordings are silent). Off by default; in-game audio path is otherwise untouched.
 
 ### `Redirect catalog API`
 

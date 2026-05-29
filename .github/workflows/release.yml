@@ -284,6 +284,9 @@ jobs:
             - **Custom catalog API** — the catalog is redirected to the BannerHub Cloudflare Worker for **curated component delivery** (hand-picked DXVK, VKD3D-Proton, Box64, FEX, Mesa Turnip driver builds, etc.) instead of the stock upstream set.
             - **Privacy-hardened** — upstream telemetry/analytics channels stripped at the bytecode level (see the `PRIVACY.md` link above for the full list).
             - **PC-accurate controller vibration** — real XInput rumble routed into Android's VibratorManager with independent dual-motor support, configurable **per-game** (mode + intensity) via the **PC Vibration Settings** menu row. Preload-free — no `libevshim` / `LD_PRELOAD`.
+            - **GOG integration** — sign in to GOG, browse your owned library, and download + install GOG games in-app; they're added to your GameHub library and launch like any other PC game. Reached from the Explore tab's GOG card or the Banner Tools → GOG tile.
+            - **BannerHub Explore screen** — the bottom-nav "Explore" tab opens a BannerHub-owned, fully-offline screen (bundled content, routes to BannerHub destinations) instead of the stock online discovery feed.
+            - **Recording-compatible audio** — optional toggle (Banner Tools → Audio) that routes PulseAudio through the mixer so screen recorders capture in-game sound.
             - **9 side-by-side variants** — different package names + launcher labels so multiple builds coexist on one device (`Original` replaces stock GameHub; the rest install alongside it).
             - **Optional Lite builds** — a ~34.5 MB-smaller counterpart of every variant.
             - **Muted UI sounds** — menu/button click sounds silenced; in-game audio untouched.
@@ -297,10 +300,11 @@ jobs:
 
             ### What's new in ${{ needs.build.outputs.version }}
 
-            On top of `v1.5.0-604` (same keystore — installs in place):
+            On top of `v1.5.1-604` (same keystore — installs in place):
 
-            - **🪪 Imported / Epic / GOG games now launch from external front-ends.** GameHub writes `server_game_id = -1` for PC-imported games it can't match to its catalog, and `0` for Epic-library + GOG-imported games — so multiple rows collide on the integer deep-link contract that Beacon / ES-DE / Daijishou use. Each sentinel row now gets a stable synthetic 32-bit ID (deterministic from the row's `id` so it survives renames/moves), written into `t_game_library_base` on every app start. The Show Game ID dialog displays the synthetic. **Device-confirmed on Beacon (the412banner) AND ES-DE (slogik) for both `-1` (PC-imported) and `0` (Epic + GOG) cases — Epic and GOG games now launch end-to-end from external front-ends.** Idempotent and self-healing: rows GameHub later re-matches to a real catalog ID are left alone.
-            - **🧰 Banner Tools menu — one entry-point for the four BannerHub rows.** A consolidated dialog replaces four separate per-game menu rows (Vibration / GPU Spoof / Renderer / Show Game ID) with one **Banner Tools** entry that opens a 1×4 icon-tile dialog. Less menu clutter; the underlying patches are unchanged.
+            - **🎮 GOG integration — sign in, browse your owned library, and download + install GOG games** straight from BannerHub, no extra apps. Reach it from the new **Explore** tab's GOG card or the **Banner Tools → GOG** tile: log in with your GOG account, pick from your owned games, download + install, and the game is added to your GameHub library and launches like any other PC game. *Note: a freshly added GOG game shows up in your library after a GameHub restart.*
+            - **🧭 BannerHub Explore screen — the bottom-nav "Explore" tab now opens a BannerHub-owned, fully-offline screen** instead of the stock online discovery feed. v1 surfaces a **GOG** card (with logo) that opens the GOG hub; content is bundled in the APK, so it works with no network and routes to BannerHub's own destinations.
+            - **🎙️ Recording-compatible audio toggle (Banner Tools → Audio)** — fixes **silent screen recordings**. PulseAudio's AAudio MMAP fast-path bypassed the system mixer that screen recorders tap, so captures had no game audio; the toggle routes audio through the mixer (`pm=0`) so MediaProjection picks up in-game sound. Global setting, off by default.
 
             ### Variants
 

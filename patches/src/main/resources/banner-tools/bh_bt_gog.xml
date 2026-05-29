@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="56dp"
+    android:height="56dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+
+    <!-- Dark rounded background, rx=112 (matches the other Banner Tools tiles). -->
+    <path
+        android:pathData="M112,0 H400 A112,112 0 0 1 512,112 V400 A112,112 0 0 1 400,512 H112 A112,112 0 0 1 0,400 V112 A112,112 0 0 1 112,0 Z"
+        android:fillColor="#1A1C1E"/>
+
+    <!-- GOG purple squircle badge (brand violet). -->
+    <path
+        android:pathData="M192,96 H320 A96,96 0 0 1 416,192 V320 A96,96 0 0 1 320,416 H192 A96,96 0 0 1 96,320 V192 A96,96 0 0 1 192,96 Z"
+        android:fillColor="#8B5BD0"/>
+
+    <!-- White GOG-style face: left eye. -->
+    <path
+        android:pathData="M204,206 m-22,0 a22,22 0 1 0 44,0 a22,22 0 1 0 -44,0 z"
+        android:fillColor="#FFFFFF"/>
+
+    <!-- White GOG-style face: right eye. -->
+    <path
+        android:pathData="M308,206 m-22,0 a22,22 0 1 0 44,0 a22,22 0 1 0 -44,0 z"
+        android:fillColor="#FFFFFF"/>
+
+    <!-- White smile arc. -->
+    <path
+        android:pathData="M188,288 a68,68 0 0 0 136,0"
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="26"
+        android:strokeLineCap="round"/>
+</vector>

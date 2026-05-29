@@ -3,10 +3,14 @@ package app.revanced.extension.gamehub.explore;
 import android.app.Activity;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -37,6 +41,7 @@ public class BannerExploreActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        hideSystemBars();
 
         ScrollView scroller = new ScrollView(this);
         scroller.setBackgroundColor(BG);
@@ -65,6 +70,42 @@ public class BannerExploreActivity extends Activity {
         }
 
         setContentView(scroller);
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        // Re-assert immersive after dialogs / returning from GogMainActivity so
+        // the status + nav bars don't linger visible.
+        if (hasFocus) hideSystemBars();
+    }
+
+    /**
+     * Match GameHub's fullscreen look — hide both the top status/notification bar
+     * and the bottom navigation bar (immersive sticky; a swipe from an edge shows
+     * them transiently). Our base theme is plain NoTitleBar, so without this the
+     * system bars appear over the screen. WindowInsetsController on API 30+,
+     * legacy SYSTEM_UI_FLAG_* below.
+     */
+    private void hideSystemBars() {
+        Window window = getWindow();
+        if (Build.VERSION.SDK_INT >= 30) {
+            window.setDecorFitsSystemWindows(false);
+            WindowInsetsController c = window.getInsetsController();
+            if (c != null) {
+                c.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                c.setSystemBarsBehavior(
+                    WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            }
+        } else {
+            window.getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                | View.SYSTEM_UI_FLAG_FULLSCREEN
+                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+        }
     }
 
     // ── Rail ────────────────────────────────────────────────────────────────

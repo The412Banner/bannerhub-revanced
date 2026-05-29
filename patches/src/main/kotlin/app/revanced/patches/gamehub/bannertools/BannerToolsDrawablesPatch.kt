@@ -28,6 +28,7 @@ private val DRAWABLE_NAMES = listOf(
     "bh_bt_gpu_spoof",
     "bh_bt_renderer",
     "bh_bt_game_id",
+    "bh_bt_audio",
 )
 
 // Sentinel for classloader access — same trick as ChangeAppIconPatch's

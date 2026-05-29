@@ -54,12 +54,14 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
         "GPU Spoof",
         "Renderer",
         "Game ID",
+        "Audio",
     };
     private static final String[] TILE_DRAWABLES = new String[] {
         "bh_bt_vibration",
         "bh_bt_gpu_spoof",
         "bh_bt_renderer",
         "bh_bt_game_id",
+        "bh_bt_audio",
     };
 
     @Override
@@ -197,6 +199,9 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
                     break;
                 case 3:
                     new com.xj.winemu.gameid.BhGameIdDisplayMenuRowClick().invoke(null);
+                    break;
+                case 4:
+                    new com.xj.winemu.audio.BhAudioMenuRowClick().invoke(null);
                     break;
                 default:
                     Log.w(TAG, "unknown dialog item index " + which);

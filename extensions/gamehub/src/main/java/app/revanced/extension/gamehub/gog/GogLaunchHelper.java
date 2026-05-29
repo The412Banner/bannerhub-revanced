@@ -1,8 +1,6 @@
 package app.revanced.extension.gamehub.gog;
 
 import android.app.Activity;
-import android.content.Context;
-import android.content.Intent;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.util.Log;
@@ -30,17 +28,19 @@ import java.io.File;
  * launching is done manually by the user from the GameHub library tile,
  * exactly like any other PC import. See §38.
  *
- * §39 (pre20): after the raw insert + RoomRefreshHelper, dispatch a no-payload
- * Intent to MainActivity with FLAG_ACTIVITY_REORDER_TO_FRONT. pre19 toast diag
- * confirmed RoomRefreshHelper resolves the tracker and invokes its refresh
- * method cleanly, but the library Flow still doesn't re-emit until the host
- * recomposes — Room's tracker scan finds no version delta for an
- * externally-written row. Bringing MainActivity to the front (without
- * clearing the GOG back stack) forces a recomposition, and the library Flow
- * re-collects from Room with the new row visible. No
- * app_nav_target=local_game_launch extra means MainActivity will NOT
- * auto-launch the game (§38 preserved); the bh_refresh_only=true marker is a
- * debug breadcrumb only.
+ * §40 (pre23): in-session refresh root-caused & fixed. Device-verified
+ * 2026-05-29 that GameHub's Room keeps NO persisted invalidation triggers and
+ * NO persisted room_table_modification_log in db_game_library.db — both are
+ * connection-local TEMP objects on Room's own connection. A write on the
+ * foreign SQLiteDatabase.openDatabase connection (the old path) therefore
+ * never fires Room's triggers, so refreshLibrary() scanned an empty log
+ * (no-op) and the §39 REORDER_TO_FRONT nudge only re-read an unchanged
+ * StateFlow. FIX: run the INSERTs on Room's OWN connection (located via
+ * RoomRefreshHelper.getRoomConnection) so its TEMP triggers fire and mark the
+ * log dirty; refreshLibrary() then makes the tracker poll and the library Flow
+ * re-emits in-session — no restart, no nudge. The §39 nudge is removed. The
+ * foreign-connection write is kept ONLY as a fallback so behavior never
+ * regresses below "restart shows it".
  *
  * Fail-safe: any error logs + toasts a hint and leaves the user on the GOG
  * activity. Never crashes; never throws past this class.
@@ -87,87 +87,107 @@ public final class GogLaunchHelper {
         final String safeCover = (coverUrl != null)                        ? coverUrl : "";
         final String gameRowId = "gog_" + gogId;
 
+        SQLiteDatabase roomDb = null;   // Room's own connection — must NOT be closed by us.
+        SQLiteDatabase ownDb  = null;   // fallback foreign connection — we own & close it.
         try {
-            File dbFile = activity.getDatabasePath(DB_NAME);
-            if (dbFile == null || !dbFile.exists()) {
-                Log.e(TAG, "GogLaunchHelper.addToLibrary: " + DB_NAME + " not present");
-                toast(activity, "Library DB not initialised — open GameHub once, then retry");
-                return;
+            // §40 preferred path: write on Room's own connection so its TEMP
+            // invalidation triggers fire (the only way the library Flow can
+            // re-emit in-session). getRoomConnection returns null if the live
+            // Room SQLiteDatabase can't be reached reflectively.
+            roomDb = RoomRefreshHelper.getRoomConnection(activity);
+            SQLiteDatabase db = roomDb;
+            if (db == null) {
+                // Fallback (old behavior): foreign connection. Row still lands
+                // correctly — it just won't appear until the app is restarted.
+                File dbFile = activity.getDatabasePath(DB_NAME);
+                if (dbFile == null || !dbFile.exists()) {
+                    Log.e(TAG, "GogLaunchHelper.addToLibrary: " + DB_NAME + " not present");
+                    toast(activity, "Library DB not initialised — open GameHub once, then retry");
+                    return;
+                }
+                ownDb = SQLiteDatabase.openDatabase(
+                        dbFile.getAbsolutePath(), null, SQLiteDatabase.OPEN_READWRITE);
+                db = ownDb;
+                Log.w(TAG, "GogLaunchHelper: Room connection unavailable — foreign-connection"
+                        + " write; row needs an app restart to appear");
             }
-            registerInLibrary(activity, dbFile, gameRowId, gogId, safeName, safeCover, exePath);
-            // §37: kick Room InvalidationTracker so the library Flow re-emits.
+
+            registerInLibrary(db, gameRowId, gogId, safeName, safeCover, exePath);
+
+            // Make Room poll its modification log. On the Room-connection path
+            // our INSERT just fired the TEMP triggers so the log is dirty and
+            // this re-emits the library Flow; harmless on the fallback path.
             RoomRefreshHelper.refreshLibrary(activity);
-            // §39: REORDER_TO_FRONT MainActivity to force Compose recomposition
-            // — the tracker call alone is necessary but not sufficient.
-            dispatchLibraryRefreshNudge(activity);
             toast(activity, "Added “" + safeName + "” to library");
         } catch (Throwable t) {
             Log.e(TAG, "GogLaunchHelper.addToLibrary failed (non-fatal)", t);
             toast(activity, "Add to library failed — " + t.getClass().getSimpleName());
+        } finally {
+            if (ownDb != null) {
+                try { ownDb.close(); } catch (Throwable ignored) {}
+            }
+            // roomDb intentionally left open — it belongs to Room.
         }
     }
 
     // ── Internals ────────────────────────────────────────────────────────────
 
-    private static void registerInLibrary(Context ctx, File dbFile, String gameRowId,
+    /** Insert the GOG row pair. The caller supplies the open connection and owns
+     *  its lifecycle (it may be Room's live connection, which we must not close).
+     *  We never close {@code db} here. */
+    private static void registerInLibrary(SQLiteDatabase db, String gameRowId,
                                           String gogId, String name, String coverUrl,
                                           String exePath) {
-        SQLiteDatabase db = SQLiteDatabase.openDatabase(
-                dbFile.getAbsolutePath(), null, SQLiteDatabase.OPEN_READWRITE);
+        String userId = FALLBACK_USER_ID;
+        int    extType = FALLBACK_EXT_TYPE;
+        try (Cursor c = db.rawQuery(
+                "SELECT extension_type,user_id FROM t_game_library_base "
+                        + "WHERE id<>? LIMIT 1", new String[]{gameRowId})) {
+            if (c.moveToFirst()) {
+                extType = c.getInt(0);
+                String u = c.getString(1);
+                if (u != null && !u.isEmpty()) userId = u;
+            }
+        }
+
+        String extData = buildExtensionData(gameRowId, gogId, name, coverUrl, exePath);
+
+        db.beginTransaction();
         try {
-            String userId = FALLBACK_USER_ID;
-            int    extType = FALLBACK_EXT_TYPE;
-            try (Cursor c = db.rawQuery(
-                    "SELECT extension_type,user_id FROM t_game_library_base "
-                            + "WHERE id<>? LIMIT 1", new String[]{gameRowId})) {
-                if (c.moveToFirst()) {
-                    extType = c.getInt(0);
-                    String u = c.getString(1);
-                    if (u != null && !u.isEmpty()) userId = u;
-                }
+            // Idempotent: a re-install of the same GOG game replaces its rows
+            // rather than failing on the (id,user_id) UNIQUE index.
+            db.execSQL("DELETE FROM t_game_launch_method WHERE linked_game_id=?",
+                    new Object[]{gameRowId});
+            db.execSQL("DELETE FROM t_game_library_base WHERE id=?",
+                    new Object[]{gameRowId});
+
+            db.execSQL(
+                    "INSERT INTO t_game_launch_method "
+                            + "(linked_game_id,start_type,start_name,extension_data) "
+                            + "VALUES (?,?,?,?)",
+                    new Object[]{gameRowId, START_TYPE_GOG, name, extData});
+
+            long lmId;
+            try (Cursor c = db.rawQuery("SELECT last_insert_rowid()", null)) {
+                c.moveToFirst();
+                lmId = c.getLong(0);
             }
 
-            String extData = buildExtensionData(gameRowId, gogId, name, coverUrl, exePath);
+            db.execSQL(
+                    "INSERT INTO t_game_library_base "
+                            + "(id,user_id,server_game_id,extension_type,launch_method_id,"
+                            + "game_name,game_source,source_type,`from`,source_id,"
+                            + "cover_image,cover_ver_image,logo,icon_url,square_image) "
+                            + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    new Object[]{gameRowId, userId, 0, extType, lmId,
+                            name, 3, 0, 0, gogId,
+                            coverUrl, coverUrl, coverUrl, coverUrl, coverUrl});
 
-            db.beginTransaction();
-            try {
-                // Idempotent: a re-install of the same GOG game replaces its rows
-                // rather than failing on the (id,user_id) UNIQUE index.
-                db.execSQL("DELETE FROM t_game_launch_method WHERE linked_game_id=?",
-                        new Object[]{gameRowId});
-                db.execSQL("DELETE FROM t_game_library_base WHERE id=?",
-                        new Object[]{gameRowId});
-
-                db.execSQL(
-                        "INSERT INTO t_game_launch_method "
-                                + "(linked_game_id,start_type,start_name,extension_data) "
-                                + "VALUES (?,?,?,?)",
-                        new Object[]{gameRowId, START_TYPE_GOG, name, extData});
-
-                long lmId;
-                try (Cursor c = db.rawQuery("SELECT last_insert_rowid()", null)) {
-                    c.moveToFirst();
-                    lmId = c.getLong(0);
-                }
-
-                db.execSQL(
-                        "INSERT INTO t_game_library_base "
-                                + "(id,user_id,server_game_id,extension_type,launch_method_id,"
-                                + "game_name,game_source,source_type,`from`,source_id,"
-                                + "cover_image,cover_ver_image,logo,icon_url,square_image) "
-                                + "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                        new Object[]{gameRowId, userId, 0, extType, lmId,
-                                name, 3, 0, 0, gogId,
-                                coverUrl, coverUrl, coverUrl, coverUrl, coverUrl});
-
-                db.setTransactionSuccessful();
-                Log.i(TAG, "GogLaunchHelper: registered " + gameRowId
-                        + " (lm=" + lmId + " user=" + userId + " ext=" + extType + ")");
-            } finally {
-                db.endTransaction();
-            }
+            db.setTransactionSuccessful();
+            Log.i(TAG, "GogLaunchHelper: registered " + gameRowId
+                    + " (lm=" + lmId + " user=" + userId + " ext=" + extType + ")");
         } finally {
-            try { db.close(); } catch (Throwable ignored) {}
+            db.endTransaction();
         }
     }
 
@@ -198,27 +218,6 @@ public final class GogLaunchHelper {
     private static String esc(String s) {
         if (s == null) return "";
         return s.replace("\\", "\\\\").replace("\"", "\\\"");
-    }
-
-    private static void dispatchLibraryRefreshNudge(Activity activity) {
-        try {
-            Intent intent = new Intent();
-            intent.setClassName(activity.getPackageName(), "com.xiaoji.egggame.MainActivity");
-            // REORDER_TO_FRONT: bring MainActivity to the top of the existing
-            // task without clearing intermediate GOG activities. onResume +
-            // Compose recomposition fires → library Flow re-collects from
-            // Room and picks up our newly-inserted row.
-            //
-            // No app_nav_target=local_game_launch extra — that's the pre15
-            // auto-launch path we explicitly killed in §38. bh_refresh_only is
-            // a marker for any future receiver / debugging only.
-            intent.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
-            intent.putExtra("bh_refresh_only", true);
-            activity.startActivity(intent);
-            Log.i(TAG, "GogLaunchHelper: dispatched library-refresh nudge to MainActivity");
-        } catch (Throwable t) {
-            Log.w(TAG, "GogLaunchHelper: refresh-nudge dispatch failed (non-fatal)", t);
-        }
     }
 
     private static void toast(Activity activity, String msg) {

@@ -1,6 +1,7 @@
 package app.revanced.extension.gamehub.gog;
 
 import android.content.Context;
+import android.database.sqlite.SQLiteDatabase;
 import android.util.Log;
 
 import java.lang.reflect.Field;
@@ -15,25 +16,29 @@ import java.util.Map;
  * WS5 §37 — kick GameHub's Room InvalidationTracker after a raw-SQLite write to
  * db_game_library.db.
  *
- * Why this exists: GogLaunchHelper.registerInLibrary() uses
- * SQLiteDatabase.openDatabase on the file directly (matches the proven
- * retired-seeder pattern; zero new deps). That opens a SEPARATE SQLite
- * connection from the one Room owns. Room's InvalidationTracker is wired to
- * Room's own connection only — so the SQL triggers Room installed do populate
- * room_table_modification_log for our writes (triggers are SQL-level and
- * fire for any writer), but Room never polls them. Library Flow/LiveData
- * observers stay stuck on the pre-write snapshot → game appears only after a
- * full app restart (cold path re-reads from disk).
+ * §40 CORRECTION (device-verified 2026-05-29): the earlier premise here —
+ * "the SQL triggers Room installed fire for any writer" — was WRONG. Room's
+ * invalidation triggers AND its room_table_modification_log are connection-local
+ * TEMP objects (neither is persisted in db_game_library.db's sqlite_master).
+ * A write on a SEPARATE SQLiteDatabase.openDatabase connection therefore never
+ * fires them, so refreshLibrary() scans an empty log and notifies nobody — it
+ * was a guaranteed no-op for foreign-connection writes.
  *
- * Fix: reach a live GameLibraryDatabase instance via reflective field walk
- * from the Application, call getInvalidationTracker() (name preserved by Room
- * codegen — *_Impl overrides), and invoke the tracker's no-arg void method
- * (R8-renamed but uniquely identified by signature). That forces Room to
- * re-read the modification log, see our dirty tables, and notify observers —
- * library UI refreshes in-session.
+ * Two coordinated parts now make in-session refresh work:
+ *   1. {@link #getRoomConnection(Context)} hands GogLaunchHelper Room's OWN live
+ *      android.database.sqlite.SQLiteDatabase so the INSERT fires Room's TEMP
+ *      triggers and marks the (TEMP) modification log dirty.
+ *   2. {@link #refreshLibrary(Context)} then invokes the InvalidationTracker's
+ *      refresh — which now finds dirty tables and re-emits the library Flow.
  *
- * Fail-safe: any reflection miss logs+returns; behavior degrades to the
- * pre-pre15 state (restart works). Never throws past this class.
+ * Both reach a live GameLibraryDatabase via a reflective field walk from the
+ * Application (the @Database class name survives R8 — schema hash depends on
+ * the FQN). The tracker's refresh method is R8-renamed but uniquely identified
+ * by signature (no-arg, void).
+ *
+ * Fail-safe: any reflection miss logs+returns null/no-op; GogLaunchHelper then
+ * falls back to a foreign-connection write (row lands, needs restart to show).
+ * Never throws past this class.
  */
 public final class RoomRefreshHelper {
 
@@ -66,6 +71,102 @@ public final class RoomRefreshHelper {
             cachedTracker = null;
             cachedRefresh = null;
         }
+    }
+
+    /** Return Room's own live SQLite connection for GameLibraryDatabase, or null
+     *  if it can't be reached. Callers MUST NOT close the returned connection —
+     *  it belongs to Room. Writing through it fires Room's connection-local TEMP
+     *  invalidation triggers, which is the only way a subsequent refreshLibrary()
+     *  can re-emit the library Flow in-session. */
+    public static SQLiteDatabase getRoomConnection(Context ctx) {
+        try {
+            Object db = findRoomDatabase(ctx);
+            if (db == null) {
+                Log.w(TAG, "RoomRefresh: GameLibraryDatabase not reachable — no Room connection");
+                return null;
+            }
+            SQLiteDatabase conn = bfsForSqlite(db);
+            if (conn == null) {
+                Log.w(TAG, "RoomRefresh: no open android SQLiteDatabase reachable from Room db");
+                return null;
+            }
+            Log.i(TAG, "RoomRefresh: resolved Room SQLiteDatabase connection (open="
+                    + conn.isOpen() + ")");
+            return conn;
+        } catch (Throwable t) {
+            Log.w(TAG, "RoomRefresh: getRoomConnection failed (non-fatal)", t);
+            return null;
+        }
+    }
+
+    /** BFS over instance fields (and array/collection/map elements) from the
+     *  Room database instance, returning the first OPEN framework SQLiteDatabase.
+     *  android.database.sqlite.SQLiteDatabase is a framework type so R8 can't
+     *  rename it — the match is exact and obfuscation-proof. Room wraps exactly
+     *  this object inside FrameworkSQLiteDatabase.mDelegate; writes on it route
+     *  to the primary connection where the TEMP triggers live. */
+    private static SQLiteDatabase bfsForSqlite(Object root) {
+        IdentityHashMap<Object, Boolean> visited = new IdentityHashMap<>();
+        ArrayDeque<Object> queue = new ArrayDeque<>();
+        queue.add(root);
+        visited.put(root, Boolean.TRUE);
+
+        int budget = VISIT_BUDGET;
+        while (!queue.isEmpty() && budget-- > 0) {
+            Object cur = queue.poll();
+            if (cur instanceof SQLiteDatabase) {
+                SQLiteDatabase d = (SQLiteDatabase) cur;
+                if (d.isOpen()) return d;
+                continue;
+            }
+
+            Class<?> cc = cur.getClass();
+            // Containers: traverse elements rather than treating them as POJOs.
+            if (cur instanceof Iterable<?>) {
+                try {
+                    for (Object e : (Iterable<?>) cur) enqueueSqlite(e, queue, visited);
+                } catch (Throwable ignored) {}
+                continue;
+            }
+            if (cur instanceof Map<?, ?>) {
+                try {
+                    for (Map.Entry<?, ?> e : ((Map<?, ?>) cur).entrySet()) {
+                        enqueueSqlite(e.getValue(), queue, visited);
+                    }
+                } catch (Throwable ignored) {}
+                continue;
+            }
+            if (cc.isArray() && !cc.getComponentType().isPrimitive()) {
+                Object[] arr;
+                try { arr = (Object[]) cur; } catch (Throwable t) { continue; }
+                for (Object e : arr) enqueueSqlite(e, queue, visited);
+                continue;
+            }
+
+            for (Class<?> c = cc; c != null && c != Object.class; c = c.getSuperclass()) {
+                Field[] fields;
+                try { fields = c.getDeclaredFields(); } catch (Throwable t) { continue; }
+                for (Field f : fields) {
+                    if (Modifier.isStatic(f.getModifiers())) continue;
+                    if (isLeafType(f.getType())) continue;
+                    try { f.setAccessible(true); } catch (Throwable t) { continue; }
+                    Object v;
+                    try { v = f.get(cur); } catch (Throwable t) { continue; }
+                    enqueueSqlite(v, queue, visited);
+                }
+            }
+        }
+        return null;
+    }
+
+    private static void enqueueSqlite(Object v, ArrayDeque<Object> queue,
+                                      IdentityHashMap<Object, Boolean> visited) {
+        if (v == null || visited.containsKey(v)) return;
+        if (!(v instanceof SQLiteDatabase) && isLeafType(v.getClass())) return;
+        visited.put(v, Boolean.TRUE);
+        // Prioritise direct hits so we don't exhaust the budget elsewhere first.
+        if (v instanceof SQLiteDatabase) queue.addFirst(v);
+        else queue.add(v);
     }
 
     private static boolean resolve(Context ctx) {

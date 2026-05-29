@@ -1,6 +1,8 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
-## 2026-05-28 — 🔊 PulseAudio screen-record fix: "Recording-compatible audio" global toggle (BUILT ✅ — pending device test)
+## 2026-05-28 — 🔊 PulseAudio screen-record fix: "Recording-compatible audio" global toggle (DEVICE-VERIFIED ✅)
+
+**Device-verified:** user installed `apk-Normal` (pkg banner.hub), Banner Tools → Audio → "Recording-compatible", relaunched with PulseAudio → screen recording now captures audio. Confirmed working.
 
 **Branch:** `feature/audio-recording-mode` off `gamehub-604-build`.
 **Build:** compile-check green (run 26611029714); release build green (run 26611119950, `1.5.2-604-audio-pre1`, artifact-only). Both patches applied across all 9 variants — `"Recording-compatible audio"` + `"Recording-compatible audio settings activity"` succeeded → the `Lqnh;->c()` const-string fingerprint resolved against GameHub 6.0.4.
@@ -17,7 +19,7 @@
 - Banner Tools enrollment: 5th tile + `bh_bt_audio` drawable + dispatch case.
 
 ### Next
-Device-test: install the matching variant, Banner Tools → Audio → "Recording-compatible", relaunch with PulseAudio driver, screen-record → audio present (or verify the stream lands on a `MIXER` thread via dumpsys, as in the diagnosis). On pass: merge → `gamehub-604-build`, `--no-ff` back-merge → `feature/lite-variant-tier1`.
+Merge `feature/audio-recording-mode` → `gamehub-604-build`, then `--no-ff` back-merge → `feature/lite-variant-tier1`. Then it ships in the next BannerHub v6 build.
 
 ## 2026-05-22 — Docs: fold RetroHRAI into `beacon-setup.md` + README Frontend support
 

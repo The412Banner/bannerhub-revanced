@@ -1398,3 +1398,66 @@ If the recomposition kick stops working on a future GameHub base (e.g. MainActiv
 - `extensions/.../gog/RoomRefreshHelper.java` — −`diagToast` method, −9 diag call sites, −3 imports (Handler / Looper / Toast), Log.i/Log.w in each branch retained
 - `PROGRESS_LOG.md` — pre20 entry
 - This doc — §39
+
+## 42. "Own Explore screen" — BannerHub-owned discovery surface (SCOPE, 2026-05-29)
+
+**Premise:** GameHub's Explore tab is a server-driven discovery feed from xiaoji's backend (`gamehub.xiaoji.com`/`xgp.xiaoji.com`/`clientgsw.vgabc.com`); we do NOT control it. Rather than stub/forge that feed (HTTP interception + RE the feed JSON schema + dead-card problem — see [[reference_gamehub_explore_tab_server_feed]]), **hijack the unused Explore bottom-nav tab to open our own classic-Java screen**, populated from content we own, cards routing to our own handlers. Deliberately avoids all 3 high-risk classes: no Compose authoring (our extension has no Compose compiler plugin), no obfuscated-Kotlin enum surgery, no feed-schema RE.
+
+### 42.1 Verified structure
+- Bottom nav = enum `ja` (`sources/defpackage/ja.java`), 6 tabs: `Global(0)`, **`Explore(1)→h9.a`**, `Play(2)`, `Leaderboard(3)`, `Library(4)→h9.d`, `Profile(5)`. Screen-key enum = `h9` (a=Explore … e=Profile).
+- Tab-selection dispatch exists: string `home_tab_selection_request`, handlers in `tcn/av9/y80/o77.java`.
+- We already ship classic-Java `android.app.Activity` screens (the GOG activities, device-confirmed) registered via a `resourcePatch` injecting `<activity>` nodes into the merged manifest (`GogManifestPatch`). No Compose plugin required.
+
+### 42.2 Design (v1, user-locked 2026-05-29)
+1. **Entry = full hijack of Explore tab (smali).** Intercept tab-selection where ordinal 1 / `h9.a` is chosen → `startActivity(BannerExploreActivity)` + consume the event so the NavHost never renders xiaoji's Explore. Mode-independent (handheld + explore), per the shipped menu-row click-interception playbook. **Full hijack** chosen — no fallback to xiaoji's feed. Reuses the existing Explore icon (`ic_nav_explore`) + label (`features_home_nav_explore`).
+   - Rejected: adding a NEW tab → `ja`+`h9` enum extension + NavHost Compose injection (§12.7 dual-enum nightmare).
+2. **Screen = `BannerExploreActivity`** — classic Java + programmatic `RecyclerView` rails (GOG-screen pattern). exported=false, registered like the GOG activities.
+3. **Content = bundled local JSON manifest** (in-APK) → fully offline, zero network. (Future v2 = a `bannerhub-api` `getExploreFeed` endpoint reusing the worker+Pages mechanism — NOT v1.)
+4. **v1 rails = GOG only.** Single rail; card → `GogMainActivity` (reuse `BhGogMenuRowClick.resolveTopActivity`/startActivity). Cards never deep-link xiaoji game-detail (no dead grid).
+5. **Manifest:** add `BannerExploreActivity` to a manifest patch (new `ExploreManifestPatch` or fold into Gog's), exported=false.
+
+### 42.3 Effort / risk
+- Tab-click interception (smali): MODERATE — the one real RE risk = fingerprinting the ordinal→navigate seam in `tcn/av9/y80/o77`; iterate-prone but proven class (menu-row playbook).
+- `BannerExploreActivity` + RecyclerView: LOW (pure Java).
+- Bundled JSON: LOW.
+- GOG card→`GogMainActivity` routing: LOW (reuse existing helper).
+
+### 42.4 SPIKE DONE (2026-05-29) — seam found, clean
+
+`home_tab_selection_request` (handlers `tcn/av9/y80/o77`) turned out to be a SECONDARY nav-result channel (cross-screen "go to tab X" via the `gme` navigator), NOT the primary tap. The real bottom-nav controller is **`w1a.java`** (extends ViewModel `pd1`, smali_classes5) — the only class consuming both tab + screen state.
+
+**Tab enum = `yw9`** (NOT `ja`/`h9` for clicks): `HOME(0)`, `PLAY(1)`, `LEADERBOARD(2)`, `LIBRARY(3)`, `PROFILE(4)`. **The "Explore" bar item = `yw9.a` (HOME, ordinal 0)** — confirmed by `w1a.n()`'s analytics ladder mapping ordinal 0 → `"nav_click" nav_item="explore"`. (`ja`/`h9` are the static tab *descriptors*; `yw9` is the live selected-tab enum. The Explore label maps to the HOME screen.)
+
+**Flow:** UI tap → `n(r1a)` handles a `q1a` (`SelectTab(tab=yw9)`, `q1a.a`=the tab) → logs `nav_click` → calls **`q(yw9)`**. `q(Lyw9;)V` (w1a:197) updates the nav `StateFlow` (`akk` `this.n`, CAS loop) → Compose NavHost swaps screen, then `o(yw9)`.
+
+**🎯 INJECT POINT = top of `w1a.q(Lyw9;)V`**, after `yw9Var.getClass()`:
+```
+if (yw9Var == yw9.a) {            // ordinal 0 = HOME = the Explore bar item
+    BhExploreTabClick.open();     // resolveTopActivity → startActivity(BannerExploreActivity)
+    return;                       // skip the StateFlow tab-switch
+}
+```
+
+**Why `q()` (not `n()`):**
+- **Mode-independent for free** — `w1a` is a SINGLE shared VM for both modes; its ctor builds both tab orderings (`[HOME,PLAY,LEADERBOARD,LIBRARY,PROFILE]` portrait/explore + `[LIBRARY,PLAY,HOME,LEADERBOARD,PROFILE]` handheld). One seam = both modes (solves the §33 mode-split).
+- **Catches every route** — UI tap (`n`→`q`) AND programmatic deep-links (`zu9.java:108` `home_tab_selection_request` handler routes non-library targets via `w1aVar.q(yw9)`) both converge on `q()`.
+- **No startup misfire** — the ctor seeds the default tab directly into `n1a` state, NOT via `q()`, so `q()` only runs on real navigation.
+- **No Context needed** — `w1a` is a ViewModel; reuse `BhGogMenuRowClick.resolveTopActivity()` ActivityThread walk for `startActivity`.
+
+**Fingerprint (`ExploreTabHijackPatch`):** `w1a`/`q` names are R8-volatile → anchor via `w1a.n(r1a)`'s stable string ladder `"explore"/"play"/"rank"/"library"/"me"` + `"nav_click"` to locate `w1a`; target the `(Lyw9;)V` method `n` calls after the `nav_click` log (= `q`, recognizable by the `"main_menu"` literal + `yw9.d` compare + the `akk.i(...)` CAS loop). Enum ordinal 0 stable (`$VALUES` order fixed).
+
+**Risk: LOW–MODERATE** (lower than scoped) — one existing method, `invoke-static` + guard + `return-void`, no new type refs (classes5 has headroom), no enum surgery, no Compose. Caveat: early-return leaves the bar highlight on the prior tab while our Activity is on top (acceptable for full hijack). **Spike clears the build — next is implementation (BannerExploreActivity + ExploreTabHijackPatch + bundled GOG-rail JSON).**
+
+### 42.5 Files
+
+**IMPLEMENTED 2026-05-29 (v1, not yet built):**
+- `extensions/.../com/xj/winemu/explore/BhExploreTabClick.java` — smali-callable `maybeHijack(Ljava/lang/Object;)Z`: `instanceof Enum` + `ordinal()==0` (HOME/Explore) → `resolveTopActivity()` (ActivityThread walk, cloned from BhGogMenuRowClick) → `startActivity(BannerExploreActivity)`; returns true if opened, **false on anything else → native Explore (fail-safe, never crashes nav)**.
+- `extensions/.../app/revanced/extension/gamehub/explore/BannerExploreActivity.java` — classic Java screen (ScrollView + per-rail HorizontalScrollView of cards, dark theme `#0D0D0D`, purple accent). No Compose.
+- `…/explore/BhExploreManifest.java` — JSON model (`Rail`/`Card`) + `load(ctx)`: tries asset `bh_explore.json` (not shipped in v1) then falls back to `BUNDLED_JSON` constant (GOG rail only). The JSON wire format is the v2 contract.
+- `…/explore/BhExploreActions.java` — `dispatch(activity, action, arg)`: `gog`→GogMainActivity, `url`→ACTION_VIEW, else "Coming soon" toast.
+- `patches/.../gamehub/explore/ExploreTabHijackPatch.kt` — bytecodePatch. Fingerprints `q(Lyw9;)V` via `parameterTypes==["Lyw9;"] && returnType=="V" && const-string "main_menu"`. Injects at head:
+  `move-object/from16 v0, p1` / `invoke-static {v0}, …BhExploreTabClick;->maybeHijack(…)Z` / `move-result v0` / `if-eqz v0, :continue` / `return-void` / `:continue`(=orig first instr via `ExternalLabel`). `from16` dodges the high-register trap; v0 is a free local in q's CAS-loop body.
+- `patches/.../gamehub/explore/ExploreManifestPatch.kt` — resourcePatch, registers `BannerExploreActivity` (exported=false, `behind` orientation per GogManifest §34 rationale, configChanges).
+
+Auto-discovered (patcher 22.0.0, no central registry). FQNs/sig verified consistent across the Java↔Kotlin boundary. **NEXT = CI build (`feature/gog-explore-tab`) → device test: tap Explore tab in both handheld + explore modes → our screen opens; GOG card → GogMainActivity; verify cold-start lands on normal home (no hijack misfire).**
+- This doc — §42

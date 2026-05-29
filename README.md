@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.4.0-604"><strong>📥 Latest stable: v1.4.0-604</strong></a>
+  <a href="https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.5.1-604"><strong>📥 Latest stable: v1.5.1-604</strong></a>
   ·
   <a href="#patches-applied">Patches</a>
   ·
@@ -34,8 +34,8 @@
 >
 > **BannerHub v6 does NOT replace BannerHub 3.7.x or BannerHub Lite — they are SEPARATE projects.**
 >
-> - **BannerHub** 3.7.x — built from the GameHub 5.3.5 ReVanced project by **PlayDay**.
-> - **BannerHub Lite** — built from GameHub Lite 5.1.4 by **Producdevity**.
+> - [**BannerHub**](https://github.com/The412Banner/BannerHub) 3.7.x — built from the GameHub 5.3.5 ReVanced project by **PlayDay**.
+> - [**BannerHub Lite**](https://github.com/The412Banner/Bannerhub-Lite) — built from GameHub Lite 5.1.4 by **Producdevity**.
 > - **BannerHub v6** *(this repo)* — built from XiaoJi GameHub 6.0.x on a brand-new pipeline.
 >
 > **None of the three are to be updated over by any of the others.** Each ships with its own package names, its own keystore, and its own component / Steam-client backend — Android won't accept an in-place update between them, and forcing one will leave you with a broken install. Uninstall first, then install the new project if you want to switch.
@@ -51,16 +51,17 @@
 ## Table of contents
 
 1. [AI Disclaimer](#ai-disclaimer)
-2. [What's new in v1.4.0-604](#whats-new-in-v140-604)
+2. [What's new in v1.5.1-604](#whats-new-in-v151-604)
 3. [What this is](#what-this-is)
 4. [Source](#source)
 5. [Variants](#variants)
-6. [Signing](#signing)
-7. [Patches applied](#patches-applied)
-8. [Build it yourself](#build-it-yourself)
-9. [Releases](#releases)
-10. [Credits](#credits)
-11. [License](#license)
+6. [Frontend support](#frontend-support)
+7. [Signing](#signing)
+8. [Patches applied](#patches-applied)
+9. [Build it yourself](#build-it-yourself)
+10. [Releases](#releases)
+11. [Credits](#credits)
+12. [License](#license)
 
 ## AI Disclaimer
 
@@ -72,35 +73,25 @@ This project has no source code — XiaoJi GameHub is closed-source and ships on
 
 Before any **stable release** is published, every change is **manually debugged and tested by me across multiple devices — both rooted and unrooted**. Debugging uses `logcat` output (captured with the [`getlog` Magisk helper](https://github.com/The412Banner/logcat-bridge) on rooted devices, plain `adb logcat` on unrooted) plus the in-app debug log files that the `Debug logging` patch produces. No release is cut until the change has been verified end-to-end on hardware.
 
-## What's new in v1.4.0-604
+## What's new in v1.5.1-604
 
-Five headline changes on top of `v1.3.0-604`. Drop-in update (stable keystore unchanged — installs in place).
+Two changes on top of `v1.5.0-604`. Drop-in update (stable keystore unchanged — installs in place).
 
-### 🎛️ Per-game settings, properly isolated
+### 🪪 Imported / Epic / GOG games now launch from external front-ends
 
-GPU Spoof, the Legacy renderer toggle, and PC Vibration each now save to BannerHub's own per-game store with explicit **Save / Cancel** buttons. Previously these co-stored state in GameHub's own settings file (which the host rewrites, silently resetting the choice) and mirrored it to a global with a global fallback — so a per-game choice leaked app-wide and into other games. Now each setting is strictly per game in `bh_<feature>_prefs`; an unset game gets the stock default, never another game's value (a one-time read-only migration adopts any legacy value on first read). The captured game id is bridged across the `:wine` process boundary — `WineActivity` runs in `android:process=":wine"`, so the shared `BhMenuGameId` helper mirrors the id to SharedPreferences and reads it back launch-side so per-game scoping actually works.
+GameHub writes `server_game_id = -1` for PC-imported games it couldn't match to its catalog, and `0` for Epic-library + GOG-imported games. Multiple such rows collide on the integer deep-link contract that Beacon / ES-DE / Daijishou use (`Integer.parseInt(app_nav_game_id)` — every `-1` game routes to the same nominal target). v1.5.1 rewrites every sentinel row to a stable synthetic 32-bit ID derived from the row's `local_<UUID>` so each game is individually addressable. The synthetic is deterministic (survives game renames, library refreshes, install path moves), idempotent (re-runs are no-ops), and self-healing (rows GameHub later re-matches to a real catalog ID are left alone). The Show Game ID dialog displays the synthetic.
 
-### 🪪 GPU Spoof (per game)
+**Device-confirmed on Beacon (the412banner) AND ES-DE (slogik) for both the `-1` (PC-imported) and `0` (Epic + GOG) cases — Epic and GOG games launch end-to-end from external front-ends.**
 
-A new **GPU Spoof** menu row + dialog reports a chosen GPU identity to DXVK via a per-game `dxvk.conf`: **Off** (default), a **preset** picker (a legacy NVIDIA/AMD/Intel list plus a modern RTX/RX/Arc set), or **Custom** (free vendor / device hex + name). The plumbing force-writes `customVendorId`/`customDeviceId` after the Wine env builder's conditional DXVK block so the spoof always applies, and no-ops entirely when Off. Fixes titles that hard-refuse an "unsupported video card" — e.g. CryEngine (Crysis 2).
+### 🧰 Banner Tools consolidated menu
 
-### 🖼️ Legacy renderer toggle (per game)
+The four BannerHub per-game menu rows (**PC Vibration**, **GPU Spoof**, **Renderer**, **Show Game ID**) collapse into a single **Banner Tools** entry that opens a 1×4 icon-tile dialog. Less menu clutter; the underlying feature patches and per-game prefs are unchanged.
 
-GameHub 6.0.4 rewrote its X-server renderer GLES2→Vulkan; some games regressed. A per-game **Renderer** row lets you choose **New** (default — stock 6.0.4 Vulkan, zero patch effect) or **Legacy** (the proven 6.0.2 GLES2-era `libxserver.so` + `libwinemu.so` pair, swapped in via a JNI bridge). Strictly gated per game — an unset game is pure stock, zero regression.
+### Carryover from `v1.5.0-604` and earlier
 
-### 🎮 Rumble no longer cuts out after ~2 s
+The full v1.5.0 feature set ships forward unchanged: external launcher integration for Beacon / ES-DE / Daijishou (PC + Steam end-to-end; Epic library upstream-blocked at `GameDetailViewModel` level — but see Epic launching above, now solved via the front-end deep-link), the Show Game ID menu row + View All Games dialog, the proper menu row icons (TideGear PR #6 — `zz4.b0` / `zz4.v` / `zz4.c0`), and the portrait layout for PC Vibration Settings. The full per-game-settings isolation rework (GPU Spoof / Renderer / Vibration each strict in their own `bh_<feature>_prefs`, explicit Save/Cancel, `:wine`-boundary id bridging), the per-game **GPU Spoof** dialog, the per-game **Legacy renderer** toggle, the re-anchored winebus duration patch, and the **offline component picker** carry over too. Preload-free vibration (no `libevshim`/`LD_PRELOAD`), the 9 Lite builds (~34.5 MB smaller per variant — see [`bannerhub-v6-lite.md`](bannerhub-v6-lite.md)), the privacy-hardening stack + public [`PRIVACY.md`](PRIVACY.md), the always-visible PC Game Settings row in Explorer view, the stable keystore, and the BannerHub v6 visual rebrand also ship forward. Each Lite uses the **same package name** as its full counterpart, so a Lite APK **installs over (replaces)** the matching full variant — pick one per package.
 
-The winebus duration patch is now actually applied at launch. On the 6.0.4 base the v1.3.0 hook landed as unreachable dead code (past a `goto`), so SDL2's ~1 s rumble auto-stop was never defeated; the hook is re-anchored to the env-builder entry. Sustained rumble now holds indefinitely — device-confirmed via GameConTest.exe.
-
-### 📦 Offline component picker
-
-Every per-game component picker — GPU driver, DXVK, VKD3D, FEXCore/Box64 translators, **and the Wine/Proton container** — now lists the components you've already downloaded when offline, in the same catalog order as online. Online behaviour is byte-identical and the patch is fully fail-safe (any error falls back to the stock code path, never a crash). Device-confirmed on 6.0.4. (Full mechanism in the *Offline component picker — local list* patch section below.)
-
-### Carryover from `v1.3.0-604` and earlier
-
-Preload-free PC-accurate vibration (no `libevshim`/`LD_PRELOAD`; on-disk `winebus.so` duration patch), the 9 Lite builds (~34.5 MB smaller per variant — strip-by-strip breakdown in [`bannerhub-v6-lite.md`](bannerhub-v6-lite.md)), the full privacy-hardening stack (7 functional patches + public [`PRIVACY.md`](PRIVACY.md)), the always-visible PC Game Settings row in Explorer view, the stable keystore, the PC Vibration Settings menu row, and the BannerHub v6 visual rebrand all carry forward unchanged. Each Lite uses the **same package name** as its full counterpart, so a Lite APK **installs over (replaces)** the matching full variant — pick one per package.
-
-> 📜 Past-release notes for `v1.3.0-604`, `v1.2.0-604`, `v1.1.0-604`, `v1.0.0-604`, `v1.0.0-602`, `v1.0.1-601`, `v1.0.0-601`, and `v1.0.1-600` are preserved on their respective [release pages](https://github.com/The412Banner/bannerhub-revanced/releases). The README keeps only the latest release in this section to stay focused on what's current.
+> 📜 Past-release notes for `v1.5.0-604`, `v1.4.0-604`, `v1.3.0-604`, `v1.2.0-604`, `v1.1.0-604`, `v1.0.0-604`, `v1.0.0-602`, `v1.0.1-601`, `v1.0.0-601`, and `v1.0.1-600` are preserved on their respective [release pages](https://github.com/The412Banner/bannerhub-revanced/releases). The README keeps only the latest release in this section to stay focused on what's current.
 
 ---
 
@@ -141,9 +132,33 @@ Three variants (Normal, Normal-GHL, Original) share the bare "BannerHub v6" laun
 
 ### 🪶 Lite variants
 
-From `v1.3.0-604` onward every release also ships a **Lite** counterpart of all 9 variants (filenames carry a trailing `-Lite`, e.g. `BannerHub-V6-<version>-Patched-Normal-Lite.apk`). A Lite build is byte-identical to its full counterpart except it strips ~34.5 MB of dead/optional weight (≈32% on disk: ~114.5 → ~78.3 MB) — a verified-dead duplicate 20 MB MiSans font, the Aliyun carrier-login native lib, the Haima cloud-gaming stack, and the bundled avif-coil AVIF/HEIC image-codec stack. Cloud gaming is non-functional under the BannerHub catalog redirect anyway, and modern Android still decodes HEIF/AVIF via the platform decoder (JPEG/PNG/WebP unaffected).
+> 📄 Full Lite write-up: [`bannerhub-v6-lite.md`](bannerhub-v6-lite.md) — per-strip rationale, sizing table, and the variant filename map.
+
+From `v1.3.0-604` onward every release also ships a **Lite** counterpart of all 9 variants (filenames carry a trailing `-Lite`, e.g. `BannerHub-V6-<version>-Patched-Normal-Lite.apk`). A Lite build is byte-identical to its full counterpart except it strips ~34.5 MB of dead/optional weight (≈32% on disk: ~114.5 → ~78.3 MB) — a verified-dead duplicate 20 MB MiSans font, the Aliyun carrier-login native lib, the Haima cloud-gaming stack, and the bundled avif-coil AVIF/HEIC image-codec stack. Cloud gaming is non-functional under the BannerHub catalog redirect anyway, and modern Android still decodes HEIF/AVIF via the platform decoder (JPEG/PNG/WebP unaffected). See [`bannerhub-v6-lite.md`](bannerhub-v6-lite.md) for the full report.
 
 Each Lite uses the **same package name** as its full counterpart, so installing a Lite APK **replaces** the matching full variant — they do not coexist; pick one per package. Only the launcher label differs (full label + " Lite"). Lite APKs are built from the separate, intentionally never-merged [`feature/lite-variant-tier1`](https://github.com/The412Banner/bannerhub-revanced/tree/feature/lite-variant-tier1) branch (same patch bundle + 4 `use=false` size-reduction strip patches) and attached to the release alongside the 9 full APKs.
+
+## Frontend support
+
+BannerHub v6 can be driven directly from external game-launcher front-ends — pick a game in your front-end, it hands off into the matching BannerHub variant, and (with `autoStartGame true`) the game starts playing without a stop in GameHub's UI. The same intent contract is shared across all 9 variants — only the package name and action prefix change per variant. The **placeholder syntax** for substituting the game's ID into the `am` command differs by front-end family (Beacon-style `{file_content}` vs. RetroHRAI / NeoStation / Daijishou-style `{tags.localgameid}`); both are documented in the setup guide.
+
+| Frontend | Status | Placeholder |
+| --- | --- | --- |
+| **Beacon** | ✅ Device-verified working | `{file_content}` |
+| **ES-DE** | ✅ Device-verified working | `{file_content}` |
+| **RetroHRAI** | ✅ Device-verified working (v1.5.1-604) | `{tags.localgameid}` |
+| **NeoStation** | ✅ Device-verified working (v1.5.1-604) | `{tags.localgameid}` |
+| **Daijishou** | ⚠️ Untested (same intent contract — *should* work with the RetroHRAI command form; please report results) | `{tags.localgameid}` |
+
+What's addressable: PC-imported games, Steam-library games, and — as of `v1.5.1-604` — Epic-library and GOG-imported games (the synthetic-ID rewrite turns rows GameHub stamps with `server_game_id = 0`/`-1` into stable individually-addressable integer IDs). Game-ID lookup is via the in-app **Banner Tools → Show Game ID** dialog (added v1.5.0-604, consolidated into Banner Tools in v1.5.1-604).
+
+### 📺 Video walkthroughs
+
+- **Beacon** — [youtu.be/hyjjs-ffpw4](https://youtu.be/hyjjs-ffpw4?si=Lp6CCGhwFKGR0tAA) (also covers creating PC-import game `.txt` / `.iso` files with GameID numbers)
+- **RetroHRAI** — [youtu.be/tcYGLLRtCPY](https://youtu.be/tcYGLLRtCPY?si=0oEWYZo-8QopFQey)
+- **NeoStation** — [youtu.be/mTn7La43LpQ](https://youtu.be/mTn7La43LpQ?si=4PPV_gpKl_AwTchM)
+
+> 📖 **Full setup guide for all 9 variants → [`beacon-setup.md`](beacon-setup.md)** — per-variant `am` launch commands for both placeholder families, intent contract + extras (`localGameId` / `steamAppId` / `autoStartGame`), how to find a game's ID (in-app dialog + rooted `sqlite3` fallback), and the list of game types that aren't addressable.
 
 ## Signing
 
@@ -234,6 +249,20 @@ GPU Spoof, the Legacy renderer toggle, and PC Vibration all share one per-game p
 ### `Show PC Game Settings row` ⭐ *new in v1.2.0-604*
 
 Forces the **PC Game Settings** row to appear in the Explorer game-detail More Menu for *every* game type, including Steam-linked games where XiaoJi-native logic would normally hide it. The patch removes the single `if-eqz` gate immediately preceding the row's construction in `Lx57;->a`; every other row keeps its native gating untouched.
+
+### `Show Game ID menu row` ⭐ *new in v1.5.0-604*
+
+Adds a **Show Game ID** row to both per-game popup menus and a third entry in the library-list popup (the 3-dot menu on each tile). Tapping it opens a small dialog that shows the active game's **Local Game ID** — the integer `server_game_id` GameHub assigns each row — with **Close**, **Copy** (when scoped to a specific game), and **View All Games** buttons.
+
+The **View All Games** flow opens the GameHub library database (`db_game_library.db` Room, `t_game_library_base` table) **read-only** and renders the full library in a scrollable list — `<game name>` then `ID: <server_game_id>` (plus inline `· Steam: <appid>` / `· Epic: <UUID>` tags when those columns are populated), case-insensitive alphabetical. Tap any row → that game's id is copied to the clipboard with a toast. Pairs naturally with the **External launcher (Beacon / ES-DE / Daijishou)** support — users no longer need to grep logcat to find the id required by per-game external-launcher entries.
+
+Structural sibling of *PC Vibration Settings menu row* / *GPU Spoof* / *Renderer*: three injection sites (`Lx57;->a` More Menu, `Lted;->f` library-tile popup, `Lpzc;->j0` library-list popup), each hands row construction to a Java helper (`BhGameIdDisplayMenuRowClick`) via a single `invoke-static`. **Reuses** the single shared `Lxd3;->l1` resolver hook the vibration patch already injects — one `else if` line is added to `BhMenuRowClick.maybeResolveCustomLabel` mapping `"string:bh_gameid_label" → "Show Game ID"`. No new resolver head-block (a 2nd one ANRs MainActivity cold-start — established in earlier menu-row work).
+
+DB access is safe alongside the host's live Room writer: `SQLiteDatabase.OPEN_READONLY | NO_LOCALIZED_COLLATORS` against `getApplicationContext().getDatabasePath("db_game_library.db")`, with full fail-safe behaviour — absent file / missing table / any `SQLiteException` toasts a friendly message rather than crashing the menu flow. Resolves correctly across every variant pkg (`banner.hub`, `com.antutu.benchmark.full`, `gamehub.lite`, etc.) since `getDatabasePath` keys off the running app's data dir.
+
+### `Show Game ID label resource` ⭐ *new in v1.5.0-604*
+
+Companion to the menu-row patch — appends `bh_gameid_label = "Show Game ID"` to `features.home`'s Compose Multiplatform `.cvr` resource bundle across the 6 locale variants. Mirrors *PC Vibration Settings label resource* exactly: kept so the resource is reachable through any future manifest-aware resolver, even though runtime lookup currently goes through the shared `Lxd3;->l1` short-circuit.
 
 ### `Change app icon` ⭐ *new in v1.1.0-604*
 

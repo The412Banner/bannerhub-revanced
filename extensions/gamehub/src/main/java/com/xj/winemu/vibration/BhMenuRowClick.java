@@ -128,16 +128,16 @@ public final class BhMenuRowClick implements Function1<Object, Object> {
             // class for menu-row icons; the `m` field holds an Lxrl wrapper
             // whose getValue() returns an Lo05 (Painter or vector ref).
             Class<?> zz4Cls = Class.forName("zz4");
-            Field iconHolderField = zz4Cls.getDeclaredField("m");
+            Field iconHolderField = zz4Cls.getDeclaredField("b0");
             iconHolderField.setAccessible(true);
             Object xrlWrapper = iconHolderField.get(null);
             if (xrlWrapper == null) {
-                Log.w(TAG, "zz4.m is null; cannot resolve icon");
+                Log.w(TAG, "zz4.b0 is null; cannot resolve icon");
                 return;
             }
             Object iconValue = xrlWrapper.getClass().getMethod("getValue").invoke(xrlWrapper);
             if (!o05Cls.isInstance(iconValue)) {
-                Log.w(TAG, "zz4.m.getValue() did not return Lo05");
+                Log.w(TAG, "zz4.b0.getValue() did not return Lo05");
                 return;
             }
 
@@ -199,7 +199,7 @@ public final class BhMenuRowClick implements Function1<Object, Object> {
             Class<?> nw6Cls = Class.forName("nw6");
             Class<?> zz4Cls = Class.forName("zz4");
 
-            Field iconField = zz4Cls.getDeclaredField("k");
+            Field iconField = zz4Cls.getDeclaredField("b0");
             iconField.setAccessible(true);
             Object xrlWrapper = iconField.get(null);
             if (xrlWrapper == null) return safeReturn(original);
@@ -368,6 +368,10 @@ public final class BhMenuRowClick implements Function1<Object, Object> {
                 label = "Renderer";
             } else if ("string:bh_gog_label".equals(key)) {
                 label = "GOG";
+            } else if ("string:bh_gameid_label".equals(key)) {
+                label = "Show Game ID";
+            } else if ("string:bh_banner_tools_label".equals(key)) {
+                label = "Banner Tools";
             }
             if (label != null) {
                 Log.i(TAG, "maybeResolveCustomLabel key=" + key + " → '" + label + "'");

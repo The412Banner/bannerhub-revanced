@@ -1,5 +1,545 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-05-29 — GOG enrolled into Banner Tools + 604 merged into gog branch (pre22)
+
+**Branch:** `feature/gog-explore-tab`. Merged `gamehub-604-build` (51 commits: Banner Tools dialog, audio toggle, external-launcher/localgameid, docs) **into** the isolated gog branch so the Banner Tools consolidated dialog exists here — direction preserves the "keep GOG separate" directive (we pull 604 *into* gog; GOG does not leak into 604/Lite). Merge conflicts (2): `BhMenuRowClick.java` resolver — union of all three label mappings (`bh_gog_label`→GOG kept alongside 604's `bh_gameid_label`/`bh_banner_tools_label`); `PROGRESS_LOG.md` — kept both sides' entries.
+
+**GOG enrollment (per banner-tools-enrollment rule, "only inside Banner Tools"):**
+- `BhBannerToolsMenuRowClick`: added 6th tile — `TILE_LABELS`+`TILE_DRAWABLES` "GOG"/`bh_bt_gog`, `dispatch()` case 5 → `new com.xj.winemu.gog.BhGogMenuRowClick().invoke(null)` (opens `GogMainActivity`, not a dialog like the others).
+- New `bh_bt_gog.xml` (purple GOG-face squircle on the shared dark tile) + registered in `BannerToolsDrawablesPatch` `DRAWABLE_NAMES`.
+- `GogMenuRowPatch`: 3 standalone row injections wrapped in `if (false) { @Suppress("UNREACHABLE_CODE") … }` (same idiom as GpuSpoof/Renderer/GameId) — GOG no longer appears as its own per-game row; `dependsOn(vibrationMenuRowPatch)` retained for the shared `Lxd3;->l1` resolver. No change to `BannerToolsMenuRowPatch.dependsOn` (matches the other 4 tiles; GOG classes ride the shared extension, `GogMainActivity` via default-applied `gogManifestPatch`).
+- Tile grid refactor: `buildTileRow`→`buildTilesView`, wraps at **5 per row** (greedy, left-aligned; short final row padded with weighted spacers) so the 6th tile doesn't clip 56dp icons on portrait; inter-tile side margin tightened 4dp→2dp. Click wiring now drives off an ordered tile list so which==dispatch case regardless of row grouping.
+
+Next: compile gate → grep SEVERE → pre22 artifact build → device test (per-game menu → Banner Tools → GOG tile → GogMainActivity opens). pre21 (§39 refresh nudge, separate test) still running. Pre-release: artifact-only.
+
+## 2026-05-28 — 🔊 PulseAudio screen-record fix: "Recording-compatible audio" global toggle (MERGED ✅)
+
+**Device-verified:** user installed `apk-Normal` (pkg banner.hub), Banner Tools → Audio → "Recording-compatible", relaunched with PulseAudio → screen recording now captures audio. Confirmed working.
+
+**Branch:** `feature/audio-recording-mode` off `gamehub-604-build`.
+**Build:** compile-check green (run 26611029714); release build green (run 26611119950, `1.5.2-604-audio-pre1`, artifact-only). Both patches applied across all 9 variants — `"Recording-compatible audio"` + `"Recording-compatible audio settings activity"` succeeded → the `Lqnh;->c()` const-string fingerprint resolved against GameHub 6.0.4.
+**UI:** final settings dialog (`-pre4`, run 26612253314) is a clone of `BhRendererSettingsActivity` — dark rounded card, "Audio"/"All games" header, a Spinner (Low latency / Recording-compatible), Cancel/Save. The first AlertDialog `Switch` rendered invisibly under `Theme.Translucent.NoTitleBar`; lesson recorded: these settings activities need explicit colors / native widgets (clone the Renderer dialog).
+
+**Problem (device-diagnosed via root logcat/dumpsys):** With the in-game audio driver set to **PulseAudio**, Android screen recording captures video but **no audio**; **ALSA records fine**. Root cause: banner.hub's pulse sink (`module-aaudio-sink`) opens an AAudio **low-latency** stream → the framework grants it as **MMAP**, which bypasses the AudioFlinger mixer that MediaProjection's `AudioPlaybackCapture` taps → silence. ALSA uses a legacy mixed `AudioTrack` → captured.
+
+- Confirmed live: stream shows `type:AAudio usage=USAGE_MEDIA` in a `MMAP_PLAYBACK` thread, absent from normal mixer tracks. Forcing `setprop aaudio.mmap_policy 1` (NEVER) + `audioserver` restart moved it onto a `MIXER` thread → recording then had sound (user-verified). Global prop reverted afterward.
+- **Module RE (objdump):** `module-aaudio-sink` computes `AAudioStreamBuilder_setPerformanceMode(pm + 10)`. So config `pm=0` → `PERFORMANCE_MODE_NONE`(10) → no low-latency request → no MMAP → mixer → **capturable**. Default (no `pm=`) = LOW_LATENCY → MMAP (the bug).
+
+**Fix being built (ReVanced Patcher):**
+- **Global on/off toggle** "Recording-compatible audio", default **OFF** (stock low-latency, zero regression for non-recording users). Lives as a **5th tile in the Banner Tools consolidated dialog** (`Vibration·GPU Spoof·Renderer·Game ID·Audio`).
+- New extension `com/xj/winemu/audio/` (`BhAudioController` global pref `bh_audio_prefs`/`bh_audio_recording_mode` + `BhAudioSettingsActivity`), cloned from the Renderer feature.
+- Functional hook patch on `PulseAudioComponent` (target `com.xiaoji.egggame` 6.0.4): anchor on the `module-aaudio-sink` const-string (R8-proof), rewrite the line via `BhAudioController.configLine(String)` to append **` pm=0`** when the toggle is ON.
+- Banner Tools enrollment: 5th tile + `bh_bt_audio` drawable + dispatch case.
+
+**Merged ✅:** `feature/audio-recording-mode` → `gamehub-604-build` (`4bfe029`) → `--no-ff` back-merge → `feature/lite-variant-tier1` (`e68cd38`), both pushed, no conflicts. Post-merge artifact-only builds both green: trunk run 26612540444 (`1.5.2-604-audio`), lite run 26612541277 (`1.5.2-604-audio-lite`). No GitHub Release cut — stays pre-release until "stable".
+
+### Next
+Ships in the next BannerHub v6 build. Enroll the toggle into any future Banner-Tools-wide UX changes; nothing else outstanding.
+
+## 2026-05-22 — Docs: fold RetroHRAI into `beacon-setup.md` + README Frontend support
+
+Documentation refresh covering the RetroHRAI integration confirmed earlier today.
+
+**`beacon-setup.md`:**
+- Title changed from "Beacon launcher setup" to "External launcher setup" (covers all 4 front-ends; filename kept to preserve incoming links from release notes).
+- Top-of-doc status block lists all 4 front-ends with current status (Beacon ✅ / ES-DE ✅ / RetroHRAI ✅ / Daijishou ⚠ untested).
+- New **Placeholder syntax by front-end** section explicitly tables Beacon-family (`{file_content}`) vs. Daijishou-family (`{tags.localgameid}`), with the warning that `[localgameid]` is the IN-FILE marker syntax (NOT a command-line placeholder) — captures the 3-iteration debugging lesson permanently.
+- New **Shell reference — RetroHRAI / Daijishou** section with all 9 variant blocks using `{tags.localgameid}`; pairs with the existing Beacon/ES-DE blocks.
+- Method 1 step 5 and the synthetic-ID paragraph updated to mention both placeholder forms.
+
+**`README.md` `## Frontend support`:**
+- Table widened to 3 columns: Frontend / Status / Placeholder.
+- RetroHRAI row added with ✅ v1.5.1-604.
+- Daijishou row aligned with the RetroHRAI command form (same `{tags.localgameid}` placeholder family).
+- Section intro mentions both placeholder families explicitly.
+
+No code/patch/CI changes; docs-only. Will be back-merged into `feature/lite-variant-tier1` via `--no-ff` once landed on `gamehub-604-build`.
+
+### Next
+
+Refresh `feature/lite-variant-tier1` from `gamehub-604-build` to carry the docs forward.
+
+## 2026-05-22 — ✅ RetroHRAI UI round-trip end-to-end device-confirmed on banner.hub v1.5.1-604
+
+Final piece of the RetroHRAI integration: tapping the God of War tile in the RetroHRAI app launches BannerHub V6 + GoW under Wine end-to-end. Captured logcat slice (`/sdcard/Download/retrohrai-gow-launch.log*`):
+
+```
+12:04:06.522 D UnifiedEmulatorLauncher: Launching with player=custom.banner.hub.9b884536,
+                                        intent=action=banner.hub.LAUNCH_GAME,
+                                        component=ComponentInfo{banner.hub/com.xiaoji.egggame.DeepLinkActivity},
+                                        ... extras={localGameId=49908, autoStartGame=true}
+12:04:06.538 I ActivityTaskManager: START u0 {act=banner.hub.LAUNCH_GAME ... cmp=banner.hub/com.xiaoji.egggame.DeepLinkActivity} ... result code=0
+12:04:07.041 I BhExternalLauncher: rewrote banner.hub.LAUNCH_GAME → game_detail id=49908 autoStart=true
+12:04:10.915 W GameDetailViewModel: [Android] [Issue#1753] loadGameDetail rendered from local library after server/steam/epic failed. id=49908, sourceId=, sourceType=-1
+```
+
+Note `extras={localGameId=49908, ...}` — the INTEGER, not a placeholder string. That's the fix landing.
+
+**Placeholder-syntax saga (resolved for posterity):** Three iterations to find the right token.
+1. `{file_content}` — Beacon syntax. Doesn't match RetroHRAI's TAGS_PATTERN. Passed through literally.
+2. `[localgameid]` — Daijishou *in-file marker* syntax (used by RetroHRAI's `extractTagId` to find IDs inside the ROM file CONTENT, but NOT a valid command-line placeholder). Doesn't match TAGS_PATTERN. Passed through literally.
+3. `{tags.localgameid}` ✅ — matches `UnifiedEmulatorLauncher.TAGS_PATTERN = \{tags\.(\w+)\}`. Substitution flow: RetroHRAI sees `{tags.localgameid}` → opens the ROM file → reads `49908` → `extractTagId` fallback returns raw content → substitutes `{tags.localgameid}` with `49908` → fires intent with the integer.
+
+The two RetroHRAI regexes (`TAGS_PATTERN` for command placeholders vs. `DAIJISHOU_TAG_PATTERN` for in-file markers) have distinct purposes that look superficially similar — captured permanently in the [[project-retrohrai-bannerhub-integration]] memory's regex table to avoid future confusion.
+
+**User-facing doc:** `/storage/emulated/0/Download/retrohrai-bannerhub-commands.txt` rev 2 — all 9 BannerHub variant commands with `{tags.localgameid}` token and the regex distinction documented.
+
+**RetroHRAI DB:** `user_players.amStartArguments` row (`emulatorPackage='banner.hub'`) live-edited via direct SQL through `getlog --write` — no in-app edit needed by the user.
+
+**Front-ends matrix** ([[bannerhub-revanced-external-launcher]]): RetroHRAI moved from 🔄 to ✅ UI-confirmed alongside Beacon and ES-DE.
+
+### Next
+
+- Fold RetroHRAI into `beacon-setup.md` as a documented front-end (4th entry alongside Beacon / ES-DE / Daijishou).
+- Update README "Frontend support" badge/list to include RetroHRAI.
+- Pending UI test for Daijishou itself (uses same `LAUNCH_GAME` intent contract — expected to work without further changes).
+
+## 2026-05-22 — ✅ External Launcher end-to-end device-confirmed (direct `am start`) on banner.hub v1.5.1-604
+
+First end-to-end success of the External Launcher patch stack on a real PC-imported game (God of War, server_game_id=49908) via direct `am start` from this PRoot session through the logcat-bridge. Confirms the v1.5.1-604 patch shipped pipeline (External Launcher patch + LocalGameIdAssignment + GameDetailViewModel local-fallback) is sound end-to-end.
+
+Logcat proof:
+```
+11:54:22.597 I ActivityTaskManager: START u0 {act=banner.hub.LAUNCH_GAME ... cmp=banner.hub/com.xiaoji.egggame.DeepLinkActivity (has extras)} ... result code=0
+11:54:23.157 I BhExternalLauncher: rewrote banner.hub.LAUNCH_GAME → game_detail id=49908 autoStart=true
+11:54:25.588 W GameDetailViewModel: [Android] [Issue#1753] loadGameDetail rendered from local library after server/steam/epic failed. id=49908, sourceId=, sourceType=-1
+```
+
+User confirmed Wine session reached background (game launched). The "[Issue#1753] loadGameDetail rendered from local library after server/steam/epic failed" message is the documented fallback path — catalog miss is expected for PC imports; ViewModel correctly resolves from `t_game_library_base` locally and continues to launch.
+
+**Issue diagnosed and fixed along the way:** RetroHRAI uses Daijishou-style `[localgameid]` token, NOT Beacon's `{file_content}`. RetroHRAI's `UnifiedEmulatorLauncher.DAIJISHOU_TAG_PATTERN` (`classes4.dex`) defines the valid set: `[localgameid]` `[steamappid]` `[gog]` `[epicgame]` `[epic]` `[customgame]` `[pcgame]` `[vita_game_id]`. The user's `user_players.amStartArguments` row was rewritten via direct DB UPDATE (force-stop → SQL → push back via `getlog --write` preserving uid:gid:mode) so the next RetroHRAI UI launch will work without any in-app edit.
+
+**Doc deliverable for the user:** all 9 BannerHub variant launch commands saved to `/storage/emulated/0/Download/retrohrai-bannerhub-commands.txt` with `[localgameid]` token + verification recipe.
+
+**Front-ends matrix update** ([[bannerhub-revanced-external-launcher]] memory): RetroHRAI now marked ✅ for direct-am path. UI scan round-trip pending separate confirmation. Once that passes, fold RetroHRAI into `beacon-setup.md` as a documented front-end alongside Beacon / ES-DE / Daijishou.
+
+### Next
+
+User taps RetroHRAI tile → confirm full UI round-trip → fold into `beacon-setup.md` + update README "Frontend support" list to include RetroHRAI.
+
+## 2026-05-22 — PRE-LAUNCH anchor: RetroHRAI → God of War on banner.hub v1.5.1-604
+
+User about to fire the RetroHRAI tile for God of War with the v1.5.1-604 External Launcher contract. Captured here per the new memory-before-launch rule so if the PRoot session is killed by LMK during the launch, the next session can resume from this exact state.
+
+**Test target:** `banner.hub` (Normal variant, v1.5.1-604 patch stack on base 6.0.4, versionCode 114). RetroHRAI v0.4.2 (`com.retrohrai.launcher`). Custom platform "bannerhub" id `bacac28f-6003-46a7-bf55-cbcb471b60cc`, ROM folder `Download/bannerhub/frontend/Beacon`. God of War ROM file = bare 5 bytes `49908`. Matches `db_game_library.db` `t_game_library_base` row `_id=3`, `server_game_id=49908`, source_type=0 (PC-imported, real catalog ID — not synthetic).
+
+**Command staged in RetroHRAI Custom Player (single-line `am start arguments`):**
+
+```
+am start -n banner.hub/com.xiaoji.egggame.DeepLinkActivity -a banner.hub.LAUNCH_GAME --es localGameId {file_content} --ez autoStartGame true
+```
+
+Expands at scan time to `--es localGameId 49908 --ez autoStartGame true`. Matches the documented [[bannerhub-revanced-external-launcher]] contract (action `banner.hub.LAUNCH_GAME`, extras `localGameId` + `autoStartGame`) — replaces the prior 5.3.5-era VIEW + `app_nav_target=local_game_launch` form stored in `user_players.amStartArguments` until now.
+
+**On-device log capture pre-staged:** `logcat -v threadtime -r 4096 -n 4 -f /sdcard/Download/retrohrai-gow-launch.log` started under `nohup setsid` via the Magisk bridge so it survives a Claude session kill. Post-mortem read = `getlog --exec "tail -n 2000 /sdcard/Download/retrohrai-gow-launch.log"`.
+
+**Full failure-mode + resume-order checklist:** `~/.claude/projects/-home-claude-user/memory/project_retrohrai_gow_test_pending.md`. Includes 5-row failure-mode table (Activity not found / stuck on home / Play prompt instead of auto-launch / loadGameDetail failure / Wine crash post-launch) and the resume sequence for the next session.
+
+No code/patch/CI changes. Pure pre-launch state anchor.
+
+## 2026-05-22 — Note: RetroHRAI front-end test — manual `am start` via logcat-bridge confirmed launches, session-kill hazard
+
+In-progress device test of **RetroHRAI** (github.com/retrohrai/Releases) against `banner.hub` v1.5.1-604. Target game: God of War (PC-imported `.iso` mapping in RetroHRAI). Prior attempt cut off mid-test by the documented LMK session-kill on heavy Wine launches (see `~/NEWTERMUX_MEMORY_AND_PERSISTENCE_2026-05-21.md`).
+
+**Confirmed working manual command** (fired from inside this PRoot session via `getlog --exec`):
+
+```sh
+getlog --exec "am start -n banner.hub/com.xiaoji.egggame.DeepLinkActivity \
+  -a banner.hub.LAUNCH_GAME \
+  --es localGameId <int> \
+  --ez autoStartGame true"
+```
+
+Game launches end-to-end — the External Launcher patch's intent contract is honored. RetroHRAI itself uses the same `am`-driven contract, so the round-trip via RetroHRAI's library scan is expected to work; full end-to-end confirmation pending.
+
+**Session-kill hazard captured to memory.** Pulling the logcat **immediately** after firing (within 1-2s, before Wine balloons memory) preserves the launch trace in `~/logcat-banner.hub-*.txt` even if the PRoot session is killed by LMK. Added to `[[bannerhub-revanced-external-launcher]]` memory as a permanent operational note.
+
+**No code/patch/CI changes** — manual device-test workflow only. RetroHRAI added to the Front-ends matrix in the external-launcher memory (alongside Beacon ✅ / ES-DE ✅ / Daijishou ⚠).
+
+### Next
+
+User to re-fire RetroHRAI's GoW entry; pull logs immediately. If end-to-end works, fold RetroHRAI into `beacon-setup.md` as a tested front-end alongside Beacon / ES-DE / Daijishou.
+
+## 2026-05-22 — Note: game-id retrieval for front-end launchers is a solved problem
+
+Memory anchor for future sessions resuming on the External Launcher / front-end (Beacon / ES-DE / Daijishou / RetroArch-style) workflow. Verified against current `gamehub-604-build` HEAD on 2026-05-22 — no code changes, docs-only confirmation.
+
+As of **v1.5.1-604** (tag commit `1ca351d`), getting the right `localGameId` integer for any game in the library is fully solved end-to-end:
+
+- **Show Game ID menu row** (merge `090706e`, see entry 2026-05-20) — open any game's details page → tap **Show Game ID** to read the integer `server_game_id` that the front-end's `am launch … --es localGameId <int>` command needs. Also exposes a **View All Games** dialog browser over `db_game_library.db` / `t_game_library_base`.
+- **Local game-id assignment** (merge `c270672`, see entry 2026-05-21) — at app startup, rewrites every `server_game_id IN (-1, 0)` row to a stable synthetic 32-bit integer in `[0x40000000, 0x7FFFFFFF]` derived from the row's `local_<UUID>`. Catalog-miss PC imports (`-1`) and Epic/GOG rows (`0`) are now individually addressable.
+- Combined effect: **every** library row (PC import / Steam / Epic / GOG) carries a distinct positive integer that the existing 6.0.4 `DeepLinkActivity` dispatch resolves correctly. The earlier "Epic/GOG blocked because Steam-catalog-centric dispatch" framing (DOOMBLADE pre5 era, before localgameid) is **superseded** — the collision was on shared sentinels `0`, not on the dispatch logic.
+
+**Device-confirmed end-to-end** (per local-gameid-assignment entry):
+- Beacon (412banner) — `-1` case ("Blur" → synthetic `1,863,762,719` → launches) AND `=0` case (Epic + GOG launch)
+- ES-DE (slogik) — same coverage on both sentinel cases
+- Daijishou — not yet device-confirmed; same `LAUNCH_GAME` intent contract → expected to work
+- RetroArch-style / any frontend that fires the documented `am launch` command — same contract
+
+**Worked example for God of War (PC-imported):** open GoW details → **Show Game ID** → paste the integer into the frontend (Beacon "am start command" field, ES-DE custom systems, Daijishou, RetroArch, etc.) wrapping `--es localGameId <int>`. Full command per variant in `beacon-setup.md` (e.g. for `banner.hub`: `am launch -n banner.hub/com.xiaoji.egggame.DeepLinkActivity -a banner.hub.LAUNCH_GAME --es localGameId <int> --ez autoStartGame true`). For an alt-AnTuTu install the package is `com.antutu.benchmark.full` per `[[feedback_bannerhub_revanced_package]]`.
+
+No release artifact, no APK, no merge — pure documentation/reference checkpoint.
+
+## 2026-05-21 — Docs: link `beacon-setup.md` from v1.5.1-604 release notes + Lite doc
+
+Plumbed the front-end launcher setup guide into the two places it was missing:
+
+- **`v1.5.1-604` release notes.** The Imported/Epic/GOG launch-fix bullet now inlines a link to `beacon-setup.md`, and a new top-level "Front-end launcher setup (Beacon / ES-DE / Daijishou)" line sits alongside the Privacy/Credits links. Edited via `gh release edit` — release tag/assets/keystore unchanged, drop-in update unaffected.
+- **`bannerhub-v6-lite.md`.** Added a "Front-end launcher support (Beacon / ES-DE / Daijishou)" section between the "what stays" list and the testing-status table, with the same `beacon-setup.md` pointer. Notes that the Lite package (`banner.hub.lite`) has its own action prefix and that the guide covers all 9 variants (full + Lite).
+
+The README on both `gamehub-604-build` and `feature/lite-variant-tier1` already linked `beacon-setup.md` from the Frontend support section — this just closes the gap in the two surfaces (release page + Lite doc) that hadn't been refreshed.
+
+No code/patch/CI changes; docs-only. Lite rebuild not required.
+
+### Next
+
+Refresh `feature/lite-variant-tier1` from `gamehub-604-build` for the Lite-doc edit (same `--no-ff` merge as prior docs polish).
+
+## 2026-05-21 — Docs: beacon-setup walkthrough audit — fix Normal-GHL launcher label + disambiguation + table column
+
+Audit of the "Beacon in-app walkthrough" section at the top of `beacon-setup.md`. One real correctness bug found, two gaps closed.
+
+- **L23 bug fix.** Old walkthrough said *"select **GameHub Lite** for the Normal-GHL variant"* — wrong. `gamehub.lite` is only the **package name** (shared with Producdevity's BannerHub Lite project); the actual `android:label` set by our `ChangeAppNamePatch` for Normal-GHL is **"BannerHub v6"** (verified against `.github/workflows/release.yml` lines 133–141 for full and 146–154 for Lite). A user with both apps installed would have picked the wrong app entirely. Replaced with the correct launcher-label mapping and an example list covering all variants.
+- **Shared-label disambiguation.** Added a callout noting that 3 variants share the label *"BannerHub v6"* (Normal / Normal-GHL / Original) and 2 share *"BannerHub v6 AnTuTu"* (AnTuTu / alt-AnTuTu). Points users to the package-name column to disambiguate, and clarifies that the `am start command` is the authoritative selector — the Player-app picker just decides the icon Beacon shows on the platform card.
+- **Per-variant table column.** Added a **Launcher label** column to the "Per-variant configuration" table so the walkthrough's "pick the right app" step has an authoritative reference in the same doc. Also added " Lite" suffix note for Lite variants.
+
+No code/patch/CI changes; docs-only. Lite rebuild not required.
+
+### Next
+
+Refresh `feature/lite-variant-tier1` from `gamehub-604-build` (--no-ff merge).
+
+## 2026-05-21 — Docs: README **Frontend support** section + beacon-setup status refresh
+
+Post-v1.5.1-604 docs polish. No code/patch changes; build artefacts unaffected.
+
+- **README.md** — new top-level **Frontend support** section between Variants and Signing. Status table (Beacon ✅ / ES-DE ✅ device-verified / Daijishou ⚠️ untested), short note that PC-imported / Steam / Epic / GOG are all addressable as of v1.5.1-604, and a prominent link to [`beacon-setup.md`](beacon-setup.md) — same target the v1.5.0-604 release description used. TOC renumbered.
+- **beacon-setup.md** — top status banner updated: ES-DE flipped to ✅ device-confirmed (slogik, v1.5.1-604); Epic Games library line flipped from ❌ unsupported (the old `app_nav_epic_app_name` upstream block) to ℹ️ supported via the synthetic-ID rewrite; GOG noted alongside. Renamed the stale "Games that DON'T work via Beacon dispatch" section to "Game type coverage" and replaced the negative bullet list with a positive 5-row coverage table (Steam / PC-imported catalog match / PC-imported `-1` / Epic `0` / GOG `0`) — all five now ✅, with the last three flagged "since v1.5.1-604".
+
+### Next
+
+Refresh `feature/lite-variant-tier1` from `gamehub-604-build` (--no-ff merge, docs-only — no Lite rebuild needed).
+
+## 2026-05-21 — 🚀 v1.5.1-604 STABLE SHIPPED (hotfix)
+
+Cut from `gamehub-604-build` after both feature merges landed earlier today (localgameid `c270672` + Banner Tools menu `0021862`). Stable keystore unchanged from v1.1.0+; cert SHA-256 `10895a311fe04f95f82e4da5c9a6c041ba9282bf211f1b578fe1cbeb894ce0ba`. 18 APKs attached (9 full + 9 Lite) + 3 `.rvp` bundles.
+
+### Two changes on top of v1.5.0-604
+
+1. **Imported / Epic / GOG games launch from external front-ends** — `feature/local-gameid-assignment` merged via `c270672`. PC-imported games whose catalog lookup missed (`server_game_id = -1`) and Epic-library + GOG-imported games (`server_game_id = 0`) get a stable synthetic 32-bit ID derived from the row's `local_<UUID>` so the deep-link contract (`Integer.parseInt(app_nav_game_id)`) can address each row individually. **Device-confirmed on Beacon (the412banner) AND ES-DE (slogik) for BOTH the `-1` AND `=0` cases — Epic and GOG games now launch end-to-end from external front-ends.** Earlier "separate dispatcher hook needed for Epic/GOG" speculation in the design doc is superseded: in practice the existing 6.0.4 source-type-specific launch paths fire correctly once each row has a distinct integer.
+2. **Banner Tools consolidated menu** — `feature/banner-tools-menu` merged via `0021862` (pre2). Collapses the 4 BannerHub per-game menu rows (PC Vibration / GPU Spoof / Renderer / Show Game ID) into a single **Banner Tools** entry that opens a 1×4 icon-tile dialog. Less menu clutter; underlying feature patches unchanged.
+
+### Docs
+
+- `.github/workflows/release.yml`: refreshed `### What's new in ${version}` template body + bumped prior-stable reference from `v1.4.0-604` → `v1.5.0-604`.
+- PROGRESS_LOG: this entry.
+- Memory: `project_bannerhub_revanced_local_gameid_assignment.md` updated to record the Epic/GOG end-to-end device confirmation (supersedes the earlier "dispatcher hook still future" note).
+
+### Known issues carried over (not regressions; pre-date v1.5.1)
+
+- Steam-source and Epic-source games hide all 4 BannerHub More Menu rows on the game-details page. PC Game Settings ungate works on the same games (so `Lx57.a` IS invoked); root cause is downstream in `Lx57.o` row iteration. Not blocking v1.5.1.
+- GOG WS4/5 add-to-GameHub-library work is **held separate by user directive** until the underlying add-to-library issues are resolved. Not shipped in v1.5.1.
+
+---
+
+## 2026-05-21 — local-gameid MERGED to gamehub-604-build + Lite refreshed
+
+**What this patch fixes (plain language):** any library row whose `server_game_id` was a sentinel value — `-1` for imported PC games GameHub didn't recognize from its catalog, OR `0` for Epic-library and GOG-imported games — gets rewritten to a unique, stable integer in the 1.07B–2.15B range derived from the row's `local_<UUID>` id. That makes those previously-collision-stuck games individually addressable from external launchers.
+
+Pre3 device-confirmed (-1 case via Beacon → 1,863,762,719 launches Blur) and pre4 (-1 + 0 predicate widening, build-green) merged into both branches.
+
+### Device confirmations
+- **Beacon** — confirmed by `the412banner` (project owner): previously-stuck imported game **Blur** (was `server_game_id = -1`) got synthetic `1,863,762,719` after the scan, and Beacon launches it via the existing ExternalLauncher patch.
+- **ES-DE** — confirmed by user **slogik**: same `-1`→synthetic flow works through ES-DE's external-launch mechanism. Validates that the fix isn't Beacon-specific and rides every launcher that emits the standard `*.LAUNCH_GAME` intent contract.
+- **Daijishou** — not yet device-confirmed but uses the same intent contract; expected to work without further changes.
+
+- **`gamehub-604-build`** ← `feature/local-gameid-assignment` via `--no-ff` merge `c270672` ("Merge branch 'feature/local-gameid-assignment' — local game-id assignment for catalog-miss rows"). 3 files / +444 / 0 (new files only).
+- **`feature/lite-variant-tier1`** ← `gamehub-604-build` via `--no-ff` merge `7e018e6` ("merge gamehub-604-build: local game-id assignment for catalog-miss rows"). PROGRESS_LOG.md conflict resolved in favor of incoming entries (Lite had no parallel changes).
+- Post-merge validation CI:
+  - `release.yml` on `gamehub-604-build` — run [26240296448](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26240296448) (version `1.5.0-604-local-gameid-merged`)
+  - `release.yml` on `feature/lite-variant-tier1` — run [26240298055](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26240298055) (version `1.5.0-604-local-gameid-merged-lite`)
+
+Pre4 device-test for the `server_game_id=0` (Epic/GOG) path remains pending — user without Epic/GOG installed sees no behavior delta vs pre3 by design. Epic/GOG external launching still needs the separate dispatcher-hook patch (queued in `ExternalLauncher.java` doc-comment) — minting unique IDs was step 1 of that work.
+
+## 2026-05-21 — feature/local-gameid-assignment pre4: extend to server_game_id=0 (Epic/GOG)
+
+### Device-test result for pre3
+User installed `local-gameid-pre3-Patched-Normal-GHL.apk` and confirmed the previously-stuck `-1` game (Blur) now shows `1,863,762,719` in "View All Games" and **launches successfully from Beacon** via the external-launcher path. This resolves the biggest open design risk (whether `GameDetailViewModel` would accept a synthetic `server_game_id` and find the local row, or whether it phones home to a catalog API). For PC-imported games (source_type=0) the lookup falls through to the local row data and the launch works without any catalog roundtrip.
+
+### Scope extension: also handle server_game_id=0
+`ExternalLauncher.java` doc comment documents that GameHub uses two sentinel values for "no catalog ID":
+- `-1` for PC-imported games (source_type=0) whose title didn't match the PlayDay catalog at import time
+- `0` for Epic-library games (source_type=2) and GOG-imported games, whose unique handle is the TEXT `id` column and where `server_game_id` is never populated
+
+Both collide at the dispatch surface for the same reason — `DeepLinkActivity` parses `app_nav_game_id` as Integer and routes by that single value, so any number of rows sharing a sentinel can't be addressed individually.
+
+Pre4 commit `49e28e1`: one-line predicate widening in `collectTargets`:
+
+```diff
+- WHERE server_game_id = -1
++ WHERE server_game_id IN (-1, 0)
+```
+
+Plus doc-comment + patch-description updates spelling out the broader scope and one important caveat:
+
+**Unique IDs are necessary but not sufficient for Beacon/ES-DE launching of Epic/GOG games.** After the row lookup, the 6.0.4 deep-link dispatch takes a source-type-specific launch path; the Epic/GOG paths need their own dispatcher hook to actually start the game (the "queued future patch" the ExternalLauncher comment talks about — hooks the in-app library-tile Compose route through MainActivity instead of DeepLinkActivity). Pre4 handles step 1 of that work (unique addressable IDs) so the future dispatcher patch has something to hand off to.
+
+### Pre4 CI
+- Branch head: `49e28e1` on `feature/local-gameid-assignment`
+- `release.yml` run [26239665214](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26239665214) ✅ all 9 variants green, `INFO: "Local game-id assignment" succeeded` on Normal-GHL, 0 SEVERE, 38 succeeded.
+- APK staged: `/storage/emulated/0/Download/local-gameid-pre4/BannerHub-V6-1.5.0-604-local-gameid-pre4-Patched-Normal-GHL.apk` (md5 `a3116528fe217cfd6be28483f11708be`).
+
+### Idempotence still holds
+- Re-runs match only rows where `server_game_id IN (-1, 0)`. Any row already in `[0x40000000, 0x7FFFFFFF]` (a previously-minted synthetic), or holding any other positive value (a real catalog ID), is left alone on every subsequent app start.
+- A user re-running GameHub's "search for matches" that finds a real catalog ID overwrites our synthetic; we don't fight that.
+- For users with no Epic/GOG games installed, the change is a silent no-op — same observable behavior as pre3.
+
+### Device-test resumption for pre4
+1. Install `local-gameid-pre4-…-Normal-GHL.apk` over current build.
+2. Confirm the previously-working `-1` flow still works (Blur → still launches via Beacon at `1,863,762,719`).
+3. If you have Epic-library or GOG-imported games: open "View All Games" and confirm those rows now show distinct numbers in the 1.07B–2.15B range instead of `ID: 0`.
+4. **Don't expect external launching of Epic/GOG games to work yet** — that's the deferred dispatcher-hook follow-up.
+5. On success: merge `feature/local-gameid-assignment` → `gamehub-604-build` (--no-ff), refresh Lite (--no-ff).
+
+## 2026-05-21 — feature/local-gameid-assignment pre1: synthesize server_game_id for -1 rows
+
+### Background
+A user-supplied screenshot of the "View All Games" dialog showed 3 imported PC games — Dispatch, Elementallis, Quartet — all displayed with `ID: -1`. Schema dump of `db_game_library.db` (`dbgl_dump.db`, on-device sample) confirms the value isn't a display artifact:
+
+```
+t_game_library_base.server_game_id INTEGER NOT NULL
+  -1     | 'local_eMB3uA3zTMKX8hrx4mIkow'  | source_type=0  | 'Blur'          ← catalog miss
+  49908  | 'local_PABUmurJS8u8D0wpv2BfDg'  | source_type=0  | 'God of War'    ← real GH id
+  131962 | 'local_McKtgYBRTPqk0LhFYFKIeQ'  | source_type=0  | 'Dirt 3'        ← real GH id
+  135805 | 'local_Nh0ZuHZBRgqjBli7rKceRQ'  | source_type=0  | 'PRAGMATA'      ← real GH id
+```
+
+GameHub assigns `server_game_id = -1` to PC-imported games when its catalog lookup finds no match. Every unmatched game collapses to the same `-1`, which collides at `DeepLinkActivity` because the deep-link dispatch parses `app_nav_game_id` as Integer (per `ExternalLauncher.java` doc comment). Beacon / ES-DE / Daijishou therefore can't address those games individually — they show up in the library and play fine in-app, but won't launch from external front ends.
+
+### Fix design
+New patch + extension that rewrites every `-1` row to a stable synthetic integer:
+
+```
+synthetic = (id.hashCode() & 0x3FFFFFFF) | 0x40000000
+          ∈ [0x40000000, 0x7FFFFFFF]
+          ∈ [1,073,741,824, 2,147,483,647]
+```
+
+- **Stable** — `id` is the `local_<UUID>` TEXT assigned by GameHub at game-import time and never rewritten across app restarts, library refreshes, or game moves. `String.hashCode()` is JLS-spec-stable.
+- **Collision-safe** — 2^30 value space; birthday-paradox 50% threshold ≈ 32 768 games. Effectively zero for the few hundred unmatched games a single user accumulates.
+- **Range-safe** — fits Java's signed 32-bit Integer (required by 6.0.4's `Integer.parseInt(app_nav_game_id)`); never collides with real GameHub catalog IDs (~10^5 in observed samples) or Steam appids (~10^7).
+- **Idempotent + self-healing** — re-runs match only `server_game_id = -1`, so previously-assigned synthetic rows stay put, and if GameHub later overwrites a row with a real catalog ID, we stop touching it.
+
+### Files added
+- `extensions/gamehub/src/main/java/app/revanced/extension/gamehub/localgameid/LocalGameIdAssignment.java`
+  - Public entrypoint `scanAndAssign(Context)` invoked from the bytecode hook.
+  - Single-shot daemon thread (priority MIN) so Application.onCreate never waits on disk I/O.
+  - Opens `db_game_library.db` `OPEN_READWRITE` (WAL-compatible with GameHub's own writer).
+  - SELECT `_id, id` WHERE `server_game_id = -1`; per row computes the synthetic; UPDATE in a single transaction keyed by `_id`; logs `assigned synthetic server_game_id to N row(s)`.
+  - All throwables caught and logged — Application startup never gated on this.
+- `patches/src/main/kotlin/app/revanced/patches/gamehub/localgameid/LocalGameIdAssignmentPatch.kt`
+  - Anchors on `Lcom/xiaoji/egggame/BaseAndroidApp;->onCreate()V` (stable non-mangled class name confirmed via `DisableMobPushPatch`).
+  - Injects one `invoke-static` at index 0 passing `p0` (the Application "this" reference, a Context) to `LocalGameIdAssignment.scanAndAssign`.
+  - Verifier-safe: single void-returning invoke, no v0 reuse, no move-result.
+  - Depends on `sharedGamehubExtensionPatch`.
+
+### Hash sanity-check (Python-equivalent of Java String.hashCode())
+```
+local_eMB3uA3zTMKX8hrx4mIkow → 1,566,639,775 (0x5D61069F) ✓ in range
+local_PABUmurJS8u8D0wpv2BfDg → 2,072,875,144 (0x7B8D9088) ✓ in range
+local_McKtgYBRTPqk0LhFYFKIeQ → 1,819,924,988 (0x6C79D9FC) ✓ in range
+local_Nh0ZuHZBRgqjBli7rKceRQ → 1,367,434,163 (0x518163B3) ✓ in range
+```
+All four distinct, all positive, all inside `[0x40000000, 0x7FFFFFFF]`. The first row (Blur, currently at -1) would become `1,566,639,775` after the first onCreate. The other three are already non-negative real catalog IDs and the scanner leaves them alone.
+
+### Branch
+- `feature/local-gameid-assignment` off `gamehub-604-build@616d0ea`
+- Commits:
+  - `6e404e5` — extension (scanner)
+  - `acc7dfe` — patch (BaseAndroidApp.onCreate hook)
+  - `a1b218d` — docs (this entry's earlier draft)
+  - `80eeaca` — fix: filter `firstMethod` predicate by `implementation != null` (pre1 → pre2)
+  - `480e1c1` — fix: `move-object/from16 v0, p0` before invoke-static for high-register encoding (pre2 → pre3)
+- Pre1 CI: run [26235997506](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26235997506) — SEVERE on all 9 variants.
+- Pre2 CI: run [26236629500](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26236629500) — still SEVERE.
+- Pre3 CI: run [26237217658](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26237217658) ✅ all 9 variants, **`INFO: "Local game-id assignment" succeeded`**, 0 SEVERE, 38 patches succeeded on Normal-GHL.
+- APK staged: `/storage/emulated/0/Download/local-gameid-pre3/BannerHub-V6-1.5.0-604-local-gameid-pre3-Patched-Normal-GHL.apk` (~111 MB).
+
+### Pre1 / pre2 / pre3 — what went wrong, what fixed it
+**Pre1 failure (all 9 variants):** `SEVERE: "Local game-id assignment" failed: NullPointerException — Cannot invoke ClassDef.getMethods() because "classDef" is null` at `Instruction.kt:114` inside `addInstructions`. Initial hypothesis: `firstMethod` matched a method REFERENCE (from some subclass's invoke-super) instead of the concrete `BaseAndroidApp.onCreate` definition.
+
+**Pre2 fix:** Added `implementation != null` to the `firstMethod` predicate (the Mob patch's implicit filter). **Did not resolve the SEVERE** — identical NPE.
+
+**Real root cause (found by disassembling the base APK):** `BaseAndroidApp.onCreate` is declared `.registers 55` with 1 parameter (`this`), so `p0` resolves to `v54`. `invoke-static` encodes its register list with 4-bit nibbles (max v15). My pre1/pre2 snippet `invoke-static {p0}, ...` could not be encoded → smali parser failed deep inside Patcher's instruction-construction code, surfacing as the `classDef is null` NPE rather than a clearer "register out of range" error.
+
+**Pre3 fix:** Mirror the working pattern from `ExternalLauncherPatch` — emit `move-object/from16 v0, p0` first (encoded as 16-bit dest + 16-bit src, valid for any register), then `invoke-static {v0}, ...`. The original `BaseAndroidApp.onCreate` opens with the same `move-object/from16 v0, p0`, so our prepended pair is shape-consistent and the verifier accepts the join cleanly.
+
+### Lessons captured (memory)
+- Any patch injecting into a method with `.registers > 16` MUST move high-register parameters into v0–v15 before any 3rc/35c-encoded invoke. The clearer "register out of range" surfaces as the cryptic `classDef is null` NPE from Patcher; if you see that NPE, check `.registers N` on the target method first.
+- `firstMethod` predicate should always include `implementation != null` to avoid matching method references vs definitions — even when not strictly required, it eliminates a class of error.
+
+### Device-test resumption order
+1. Install `local-gameid-pre3-Patched-Normal-GHL.apk` over current build.
+2. Open GameHub; confirm "View All Games" dialog no longer shows `ID: -1` for unmatched imports (each shows a number in the 1.07B–2.15B range).
+3. In Beacon / ES-DE / Daijishou, configure a launch entry for one previously-unlaunchable game using the new ID; confirm launch.
+4. Optional: copy ID from one game, kill app, reopen, verify same ID — confirms `String.hashCode()` stability across process restarts.
+5. On success: merge to `gamehub-604-build` (--no-ff), refresh Lite (--no-ff), per the standard merge workflow.
+
+
+
+### Why no UI changes
+The scanner has no UI of its own and adds no menu rows — it's a silent fix. The existing "View All Games" dialog and "Show Game ID" menu row will both stop showing `-1` for these rows after the scan runs (they query the same `server_game_id` column). External launcher routing continues to work via the existing `ExternalLauncher` extension; no changes there.
+
+### Not enrolled into Banner Tools
+Per the enrollment rule, only patches that ADD a new top-level menu row need to enroll into Banner Tools. This patch is invisible at the UI level — no row to enroll.
+
+## 2026-05-21 — Banner Tools pre2 MERGED to gamehub-604-build + Lite refreshed
+
+Device-confirmed pre2 (1×4 tile dialog, 56dp vector icons) merged into both branches.
+
+- **`gamehub-604-build`** ← `feature/banner-tools-menu` via `--no-ff` merge commit `0021862` ("Merge branch 'feature/banner-tools-menu' — Banner Tools consolidated menu (pre2)"). 13 files / +1050 / −9.
+- **`feature/lite-variant-tier1`** ← `gamehub-604-build` via `--no-ff` merge commit `1f07d33` ("merge gamehub-604-build: Banner Tools consolidated menu (pre2)"). 14 files / +1053 / −10 (extra delta = README link auto-merge).
+- Validation CI on the merge tips:
+  - `release.yml` on `gamehub-604-build` — run [26231488560](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26231488560)
+  - `release.yml` on `feature/lite-variant-tier1` — run [26231454988](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26231454988)
+- Going-forward rule recorded in memory (`feedback_banner_tools_enrollment.md`): any new BannerHub patch that adds a row to the More Menu or Library-Tile popup MUST also enroll the feature into the Banner Tools consolidated dialog (drawable + arrays + dispatch case) and wrap its standalone `*MenuRowPatch` injection blocks in `if (false)`. Default = enroll; standalone is the exception, not the norm.
+
+## 2026-05-21 — feature/banner-tools-menu pre2: custom-icon 1×4 tile dialog (56dp vectors)
+
+### Decisions locked (user, 2026-05-21)
+1. **Icon size in dialog:** 56dp
+2. **Backgrounds:** keep self-contained dark Material 3 surface-container tiles (no host-theme tinting)
+3. **Ship format:** Android vector drawable XML
+
+### New files
+- `patches/src/main/resources/banner-tools/bh_bt_vibration.xml`
+- `patches/src/main/resources/banner-tools/bh_bt_gpu_spoof.xml`
+- `patches/src/main/resources/banner-tools/bh_bt_renderer.xml`
+- `patches/src/main/resources/banner-tools/bh_bt_game_id.xml`
+
+  Mechanical SVG → vector-drawable conversion of the 4 SVG templates archived in `/storage/emulated/0/Download/banner-tools-custom-icons-preview.html`. 512×512 viewport, 56dp intrinsic size, dark rounded-rect background path baked in (rx=112). Conversion rules: `<rect>` → multi-arc rounded-rect path; `<circle>` → 2-arc path; `transform="rotate(...)"` → `<group android:pivotX/Y android:rotation>`; `opacity="0.85"` → `android:fillAlpha`; `stroke-opacity="0.5"` → `android:strokeAlpha`.
+
+  **Known conversion loss:** the GPU Spoof chip outline used SVG `stroke-dasharray="16 12"`, which Android VectorDrawable does not support. Shipped as a solid stroke instead — chip silhouette still reads, just less "blueprint-esque." If the user later vetoes this, alternatives are (a) pre-compute 24+ short line segments around the rounded-rect perimeter, or (b) drop the chip outline entirely and rely on the 6 pin marks for chip identity.
+
+- `patches/src/main/kotlin/app/revanced/patches/gamehub/bannertools/BannerToolsDrawablesPatch.kt` — `resourcePatch` that ships the 4 vectors as new entries in `res/drawable/` of the staged APK. Mirrors the classloader-read pattern from `ChangeAppIconPatch`. Resource IDs are assigned by apktool/aapt2 at reassembly; runtime resolution is via `Resources.getIdentifier("bh_bt_*", "drawable", pkgName)` since the host R class is in the foreign package.
+
+### Modified files
+- `patches/src/main/kotlin/app/revanced/patches/gamehub/bannertools/BannerToolsMenuRowPatch.kt` — added `bannerToolsDrawablesPatch` to `dependsOn(...)` so the 4 drawables are guaranteed present before the bytecode patch applies.
+
+- `extensions/gamehub/src/main/java/com/xj/winemu/bannertools/BhBannerToolsMenuRowClick.java` — `showDialog()` rewritten:
+  - **Old (pre1):** `AlertDialog.Builder().setTitle(...).setItems(STRING_ARRAY, ...)` text list, 4 long labels.
+  - **New (pre2):** `setView(buildTileRow(...))` — programmatically built `LinearLayout` HORIZONTAL with 4 children, each a vertical tile (`ImageView` 56dp + `TextView` short label). Short labels: **Vibration / GPU Spoof / Renderer / Game ID**.
+  - Tile interaction: `selectableItemBackground` ripple, `clickable=true`, `focusable=true`. Per-tile click handler captures the tile index and dispatches into the same 4 per-feature handlers (`BhMenuRowClick` / `BhGpuSpoofMenuRowClick` / `BhRendererMenuRowClick` / `BhGameIdDisplayMenuRowClick`), then dismisses the dialog.
+  - Cancel-only action button (no OK) — `setNegativeButton(android.R.string.cancel, null)`.
+  - Drawables resolved at runtime via `res.getIdentifier(drawableName, "drawable", pkgName)` because the static R class belongs to GameHub's package, not BannerHub's. Missing-drawable case logs and falls through (tile renders without an icon rather than crashing).
+  - `dp(float density, int dp)` helper added; programmatic view construction avoids needing to inject an XML layout into the foreign package.
+
+### Why programmatic view (not XML layout)
+Injecting a new `res/layout/bh_banner_tools_dialog.xml` would mean adding a new layout entry to the staged APK's resource table and either reflectively resolving its ID or hardcoding one. Programmatic construction sidesteps both — only the 4 drawables ride along, which apktool handles cleanly (proven by `ChangeAppIconPatch`).
+
+### CI — both runs green
+- **`build_pull_request` run [26228524223](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26228524223)** ✅ (1m55s) — patches bundle compile-only sanity check.
+- **`release.yml` workflow_dispatch run [26228708841](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26228708841)** ✅ — full pipeline: build patches bundle → revanced-cli matrix across all 9 variants → resign with BannerHub test key → upload `apk-*` artifacts. Triggered with `version="1.5.0-604-banner-tools-pre2"` and `stable=false` (per pre-release policy after v1.5.0-604 stable; the `Create GitHub Release` job is correctly skipped). All 9 patch jobs `success`. `Patch Normal-GHL` log shows `INFO: "Banner Tools drawables" succeeded` + `INFO: "Banner Tools menu row" succeeded`, zero `SEVERE`, output 116.1 MB pre-resign.
+
+### APK verification
+Downloaded `apk-Normal-GHL` artifact and verified the 4 vector drawables landed inside the APK:
+```
+res/drawable/bh_bt_game_id.xml    (2028 B)
+res/drawable/bh_bt_gpu_spoof.xml  (2252 B)
+res/drawable/bh_bt_renderer.xml   (4056 B)
+res/drawable/bh_bt_vibration.xml  (2268 B)
+```
+All 4 names match the runtime `Resources.getIdentifier("bh_bt_*", "drawable", pkg)` lookup keys in `BhBannerToolsMenuRowClick.buildTile`.
+
+### Staged for device test
+`/storage/emulated/0/Download/banner-tools-pre2/BannerHub-V6-1.5.0-604-banner-tools-pre2-Patched-Normal-GHL.apk` (≈111 MB, BannerHub test key signature unchanged from pre1 — in-place update over pre1).
+
+### Open follow-ups (after device test of pre2)
+- Confirm icon legibility at 56dp on user's device (font scale, screen density).
+- If GPU Spoof dashed-outline absence is too jarring, swap to alternative (a) or (b) above.
+- Once pre2 lands, address the Lx57.o Steam/Epic hide bug (separate from this branch — see `[[project_bannerhub_revanced]]` known-issue block).
+
+---
+
+## 2026-05-21 — feature/banner-tools-menu: pre1 device-tested + Layout 2 picked + custom icons received
+
+### Device test result
+Pre1 (text-list `AlertDialog`) installed from `/storage/emulated/0/Download/banner-tools-pre1/BannerHub-V6-1.5.0-604-banner-tools-pre1-Patched-Normal-GHL.apk` and confirmed working on device — single "Banner Tools" row appears at all 3 menu sites; tap opens the 4-item list; each item routes into the correct per-feature handler. No regressions to the 4 underlying settings activities / dialogs.
+
+### Dialog UX iteration → Layout 2 picked
+Mocked 3 dialog layouts in `/storage/emulated/0/Download/banner-tools-dialog-mockups.html` (Material 3 styled, 28dp rounded, light+dark adaptive). User picked **Variant 2 — 1×4 horizontal row of icon+label tiles**. Labels shortened to fit 4 tiles in a 360dp dialog: **Vibration / GPU Spoof / Renderer / Game ID** (vs pre1's longer "PC Vibration Settings" / "Show Game ID"). Cancel-only action button.
+
+### Custom icons received
+User supplied 4 self-contained SVG tiles (512×512 viewBox, 22% corner ratio, dark Material 3 surface-container backgrounds, multi-color hardcoded fills — no auto theme tinting):
+- **Vibration** — controller body + dpad + 2 action buttons + 4 haptic wave arcs (`#FFD284` waves, `#E6E1E5` controller)
+- **GPU Spoof** — spy/bandit mask over a dashed-outline chip with 6 pin marks (`#D0BCFF` mask, `#381E72` hat)
+- **Renderer** — inner chip (`#2D3033` + `#006684` outline) + 12 outer pin pads + Android-bot core with shader grid (`#00E676` bot, `#A3EDFF` grid bars)
+- **Game ID** — ID badge with avatar circle + barcode rows + decorative slot (`#BFC2C9` avatar, `#FFB4AB` accent bars)
+
+Full SVG markup preserved as JS templates in the preview HTML below — re-extract from there if originals are lost.
+
+### Preview HTML
+Written to `/storage/emulated/0/Download/banner-tools-custom-icons-preview.html`. Shows:
+- Layout 2 at 48dp / 56dp / 64dp icon sizes, light + dark themes side-by-side
+- Per-icon size sampler (32 / 40 / 48 / 64 / 96 px) so user can judge detail legibility
+- Pre1 text-list vs Layout 2 with custom icons A/B
+
+### Pending decisions before next code change
+1. **Icon size in dialog:** 48dp / 56dp / 64dp — recommended 56dp; 64dp would need dialog widened to ~400dp
+2. **Self-contained dark backgrounds:** keep as-is (always dark squares, bold visual identity) vs strip the first `<rect>` from each so glyphs sit on the dialog's own chip background and pick up host theme tinting
+3. **Ship format:** Android vector drawable XML (recommended — ~1–2 KB/icon, mechanical SVG→XML conversion since shapes are plain `<rect>`/`<circle>`/`<path>`/`<g>` with `transform="rotate(...)"`) vs PNG raster (20 files across 5 density buckets × 4 icons)
+
+### No code changes this session
+Branch head still `e156467` (pre1 scaffold). All work was UX/asset discussion — implementation of the new dialog + custom icons happens next session once the 3 pending decisions are answered.
+
+---
+
+## 2026-05-21 — feature/banner-tools-menu pre1 (scaffold)
+
+Cut new branch off `gamehub-604-build@661a82d` for the Banner Tools menu-consolidation experiment listed in v1.5.0-604's "Upcoming features" section. Goal: collapse the 4 per-game More Menu rows (PC Vibration / GPU Spoof / Renderer / Show Game ID) into a single "Banner Tools" entry whose tap opens an `AlertDialog` listing the 4 sub-features. Each item dispatches into the existing per-feature handlers (`new BhMenuRowClick().invoke(null)`, etc.) so all settings activities / dialogs / prefs are reused unchanged.
+
+### Scope (test branch — not for stable)
+- Pure consolidation. Lx57.o Steam/Epic hide bug **deferred**.
+- The 4 standalone *MenuRow patches are wrapped in `if (false) { @Suppress("UNREACHABLE_CODE") ... }` so their row injections do not run — the patches remain compiled and apply cleanly, but emit zero bytecode at the 3 menu sites. The shared `Lxd3;->l1` resolver hook in `VibrationMenuRowPatch` is **kept** (outside the `if (false)`) since `BannerToolsMenuRowPatch` reuses it for its Injection-3 Lell label sentinel.
+- Per-feature settings code (`BhVibrationSettingsActivity`, `BhGpuSpoofSettingsActivity`, `BhRendererSettingsActivity`, gameId dialog) is untouched.
+
+### New files
+- `patches/src/main/kotlin/app/revanced/patches/gamehub/bannertools/BannerToolsMenuRowPatch.kt` — structural clone of `GpuSpoofMenuRowPatch`; injects one row at all 3 standard sites (`Lx57;->a`, `Lted;->f`, `Lpzc;->j0`). `dependsOn(menuGameIdCapturePatch, vibrationMenuRowPatch)` for the shared `Lxd3;->l1` resolver.
+- `extensions/gamehub/src/main/java/com/xj/winemu/bannertools/BhBannerToolsMenuRowClick.java` — 3 `appendRow*` builders + `invoke()` that pops an `AlertDialog` with 4 items dispatching via `new <Sibling>().invoke(null)`. Sentinel key `"string:bh_banner_tools_label"`.
+
+### Modified files
+- `extensions/gamehub/src/main/java/com/xj/winemu/vibration/BhMenuRowClick.java` — added `"string:bh_banner_tools_label" → "Banner Tools"` mapping in `maybeResolveCustomLabel`.
+- 4 × `*MenuRowPatch.kt` — wrapped the existing 3-site injection blocks in `if (false) { ... }`. Header comment in each explains how to revert (parent commit `661a82d`).
+
+### Build
+Push to fork → CI builds via `Any branch compilation` workflow (per `[[feedback_ci_workflows]]`). No CI matrix changes.
+
+---
+
+## 2026-05-21 — 🚀 v1.5.0-604 STABLE SHIPPED
+
+Cut from `gamehub-604-build` at HEAD `af40a90` (PR #6 merge) — Lite refresh on `feature/lite-variant-tier1` at `af522a2` (merge of 604 into Lite). Stable keystore unchanged from v1.1.0+; cert SHA-256 `10895a311fe04f95f82e4da5c9a6c041ba9282bf211f1b578fe1cbeb894ce0ba`. 18 APKs attached (9 full + 9 Lite) + 3 `.rvp` bundles.
+
+### Four headline changes on top of v1.4.0-604
+
+1. **External launcher integration (Beacon / ES-DE / Daijishou)** — `feature/external-launcher` merged via `cec34f0`. Port of PlayDay's 5.3.5 patch forward to the 6.0.4 base. Intents accept both `--ei` (int) and `--es` (String) extras. Epic Games attempted across pre1–pre5 and dropped — the upstream `GameDetailViewModel` ignores the `app_nav_epic_app_name` route. PC + Steam ship working end-to-end.
+2. **Show Game ID menu row + View All Games dialog** — `feature/menu-gameid-display` merged via `090706e`. New per-game menu row pops a dialog with the gameId + Copy button + "View All Games" button that opens the full library list backed by `db_game_library.db`.
+3. **Proper menu row icons (TideGear PR #6)** — merged via `af40a90`. Vibration / GPU Spoof / Renderer rows previously read `zz4.m` (the Remove-from-Library trash icon); each now reads its correct icon field (`zz4.b0` / `zz4.v` / `zz4.c0` respectively).
+4. **Portrait layout for PC Vibration Settings dialog (TideGear PR #6)** — same merge. Dialog detects orientation, stacks Mode + Intensity vertically in portrait at `min(360dp, screenW - 24dp)` width, intensity slider caps at 220dp. Landscape unchanged.
+
+### Docs
+
+- README: bumped latest-stable badge + link to v1.5.0-604, rewrote "What's new" section, rotated v1.4.0 into the past-release archive line.
+- `.github/workflows/release.yml`: refreshed the `### What's new in ${version}` template body + changed prior-stable reference from `v1.3.0-604` → `v1.4.0-604`.
+- PROGRESS_LOG: this entry.
+- Memory: updated `project_bannerhub_revanced.md` with new active state.
+
+### Known issue (not blocking — flagged for next investigation)
+
+Steam-source and Epic-source games (e.g. Brawlhalla Steam id 291550, Doomblade Epic id 0) hide all 4 of our More Menu rows (Vibration / GPU Spoof / Renderer / Show Game ID) on the game-details page More Menu. PC Game Settings ungate works on the same games, confirming `Lx57.a` IS being invoked. A finalize-anchor fix (move injection from `lastIdx(Lx9d->add) + 1` to `firstIdx(Lqs2->v finalize)`) was built and device-tested on `fix/menu-row-anchor-merge-point` — did NOT resolve the issue, branch deleted. Root cause is downstream in `Lx57.o` row iteration (the 2×2 icon grid renderer at line 333+); not yet bottomed out. Tracked separately; not blocking v1.5.0-604.
+
+---
+
 ## 2026-05-01 — GameHub 6.0 port session
 
 ### Goal
@@ -2976,3 +3516,228 @@ Why: Room's `InvalidationTracker.refresh()` enqueues a scan of `room_table_modif
 **pre20 fix:** restore the recomposition kick, sans the auto-launch payload (§38 still in force). New `GogLaunchHelper.dispatchLibraryRefreshNudge(activity)` fires an Intent at `com.xiaoji.egggame.MainActivity` with `FLAG_ACTIVITY_REORDER_TO_FRONT` and a `bh_refresh_only=true` marker extra (purely a debug breadcrumb — no Intent receiver acts on it). `REORDER_TO_FRONT` brings MainActivity to the top of the existing task without clearing intermediate GOG activities. MainActivity's `onResume` + Compose recomposition fires → library Flow re-collects from Room → newly-inserted row visible. User backs out through the stack into a library that's already up to date — no app restart. Called after `RoomRefreshHelper.refreshLibrary(activity)` in `addToLibrary`; the tracker kick stays in place since it's harmless and may help in cases where the recomposition alone isn't enough. pre19's `diagToast` machinery is stripped in the same commit — answers known, on-screen toasts are now noise. `Log.i`/`Log.w` calls in each branch are retained for future debugging.
 
 Files: `GogLaunchHelper.java` (+`android.content.Intent` import, +`dispatchLibraryRefreshNudge`, +1 call site, +file-Javadoc §39 paragraph), `RoomRefreshHelper.java` (−`diagToast`, −Handler/Looper/Toast imports, −9 diag call sites, ~−35 LOC net), `GOG_LIBRARY_TAB_DESIGN.md` §39 (root cause + fix writeup). Next: compile gate → grep SEVERE → pre20 → device test (download a GOG game → tap "Add to Library" → MainActivity briefly surfaces → user backs out → library shows the row, no restart).
+## 2026-05-20 — External launcher (Beacon / ES-DE / Daijishou) port to 6.0.4 (branch `feature/external-launcher`)
+
+Ports PlayDay's 5.3.5 `ExternalLauncherPatch` ("External launcher support") to GameHub 6.0.4. The 5.3.5 hook (`Lcom/xj/landscape/launcher/ui/gamedetail/GameDetailActivity;->initView` + `<intent-filter>` on `GameDetailActivity`) is dead — 6.0.4 has no `GameDetailActivity` (game detail is a Compose screen reached via Compose navigation).
+
+**Discovery — 6.0.4 already has the dispatch natively.** `com.xiaoji.egggame.DeepLinkActivity.onCreate` consumes:
+- `app_nav_target` = `"game_detail"` (sswitch_8 hash `-0x19542ac2`, at ~line 3507 of the 6.0.4 smali)
+- `app_nav_game_id` (String → int via `Liml;->t0`)
+- `app_nav_steam_app_id` (int)
+- `app_nav_auto_start_game` (boolean — already powers auto-launch!)
+- plus `app_nav_source_id` / `_type` / `_slug` / `app_nav_epic_app_name` as optional metadata
+
+So the port is purely extras-translation glue — no need to rewrite the dispatch.
+
+**New files (branch `feature/external-launcher` off `gamehub-604-build@27d98d4`):**
+
+- `extensions/gamehub/src/main/java/app/revanced/extension/gamehub/launcher/ExternalLauncher.java`
+  - `static void rewriteIntent(Activity activity, Intent intent)`
+  - Matches action via `activity.getPackageName() + ".LAUNCH_GAME"` (per-variant) PLUS the literal `gamehub.lite.LAUNCH_GAME` as a forgiveness fallback for users who copy/paste old 5.3.5-Lite-style Beacon configs against a renamed BannerHub variant.
+  - Translates `localGameId` / `steamAppId` / `autoStartGame` → `app_nav_game_id` / `app_nav_steam_app_id` / `app_nav_auto_start_game` + sets `app_nav_target=game_detail` + `target_type=game_detail`.
+  - localGameId wins over steamAppId; fall back to steamAppId if localGameId is missing.
+  - `type` extra (5.3.5-only) ignored — 6.0.4 dispatcher doesn't need it.
+  - Logs to tag `BhExternalLauncher` for getlog verification.
+
+- `patches/src/main/kotlin/app/revanced/patches/gamehub/misc/launcher/ExternalLauncherPatch.kt`
+  - Private `externalLauncherManifestPatch` (resourcePatch, `afterDependents`, depends on `changePackageNamePatch`): finds `com.xiaoji.egggame.DeepLinkActivity` in `AndroidManifest.xml`, sets `android:exported="true"` defensively (already true in 6.0.4), and appends an `<intent-filter>` with `<action android:name="$variantPackage.LAUNCH_GAME"/>` + `DEFAULT` category. Variant package read via `packageNameOption.value?.takeIf { it != packageNameOption.default } ?: manifestPackage` (same idiom as `FileManagerAccessPatch`). Idempotency-checked by suffix `.LAUNCH_GAME`.
+  - Public `externalLauncherPatch` (bytecodePatch): depends on `sharedGamehubExtensionPatch` + `externalLauncherManifestPatch`. Injects 3 instructions at index 0 of `Lcom/xiaoji/egggame/DeepLinkActivity;->onCreate(Landroid/os/Bundle;)V`:
+    ```smali
+    invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+    move-result-object v0
+    invoke-static {p0, v0}, Lapp/revanced/extension/gamehub/launcher/ExternalLauncher;->rewriteIntent(Landroid/app/Activity;Landroid/content/Intent;)V
+    ```
+    v0 reuse is safe — the original method's next instruction (`sget-object v0, Lejm;->a:Lghd;`) writes v0 but its result is never read.
+
+**Beacon instructions delta for 6.0.4.** The per-variant `<package>.LAUNCH_GAME` action names in `/storage/emulated/0/Download/beacon instructions.txt` stay correct. The only change is the activity component — `com.xj.landscape.launcher.ui.gamedetail.GameDetailActivity` → `com.xiaoji.egggame.DeepLinkActivity` for ALL variants (the activity FQN sits in the `com.xiaoji.egggame.*` namespace and is unaffected by `ChangePackageNamePatch`, which only rewrites `manifest@package`). Example for the default Lite variant:
+
+```
+am launch -n gamehub.lite/com.xiaoji.egggame.DeepLinkActivity \
+  -a gamehub.lite.LAUNCH_GAME \
+  --es localGameId {file_content} --es steamAppId {file_content} \
+  --ez autoStartGame true
+```
+
+**Re-derivation on future base bumps.** `DeepLinkActivity` is at the package root (not behind R8 letter renames) — stable. Native `app_nav_*` extra names appear as const-string literals in `onCreate`'s smali — grep to verify they still feed the same dispatch on a future base.
+
+Pending: CI dispatch on `feature/external-launcher`, per-patch SEVERE check on the run log per `[[feedback_revanced_verify_patch_applied]]`, device test (Lite variant first via Beacon).
+
+## 2026-05-20 (cont.) — `extlaunch-pre1` Release SEVERE'd → smali register-limit fix
+
+`Build pull request` compiled green ([run 26159954724](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26159954724)) but that workflow does NOT invoke revanced-cli, so it only validates Kotlin compilation. Dispatched artifact-only Release ([run 26160401818](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26160401818), version `1.4.0-604-extlaunch-pre1`, `stable=false`) to get the actual patch-apply check. All 4 patch jobs reported `SEVERE: "External launcher support" failed` with `app.revanced.patcher.patch.PatchException: Collection is empty` — classic silent-no-apply per `[[feedback_revanced_verify_patch_applied]]`. Underlying smali error (printed above the SEVERE line in the log):
+
+```
+[5,16] The maximum allowed register in this context is list of registers is v15
+[5,0] Cannot invoke "Object.hashCode()" because "key" is null
+[5,56] mismatched tree node: UP expecting I_CATCHES
+[3,0] A non-abstract/non-native method must have at least 1 instruction
+[7,24] mismatched tree node: Lapp/revanced/extension/gamehub/launcher/ExternalLauncher; expecting I_FIELDS
+```
+
+Root cause: `DeepLinkActivity.onCreate` declares `.locals 34`, which aliases `p0` to `v34`. The injected `invoke-static {p0, v0}, ...` uses the non-range invoke form, which only accepts 4-bit register references (`v0`–`v15`). `v34` blew that limit on the FIRST register slot, the assembler bailed, the rest of the cascade followed.
+
+**Fix:** drop the `Activity` parameter entirely from the extension. The Intent's action string already contains the variant package (`<pkg>.LAUNCH_GAME`), so we can check `action.endsWith(".LAUNCH_GAME")` without ever calling `getPackageName()`. That collapses the smali to two single-register invokes (`{p0}` alone, then `{v0}` alone), both of which are valid even with `.locals 34`:
+
+```smali
+invoke-virtual {p0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+move-result-object v0
+invoke-static {v0}, Lapp/revanced/extension/gamehub/launcher/ExternalLauncher;->rewriteIntent(Landroid/content/Intent;)V
+```
+
+Behavioral equivalence preserved — `endsWith(".LAUNCH_GAME")` matches every per-variant action AND the literal `gamehub.lite.LAUNCH_GAME` PlayDay-compatibility fallback in one expression.
+
+**Lesson captured for memory:** when injecting into a method with `.locals >= 16`, every `invoke-…` that uses the non-range form must be checked — any `p0` reference becomes `v(locals)` and silently exceeds the 4-bit register cap. Solutions: (a) drop the receiver/Activity parameter and pull state from the Intent or other low-register sources; (b) `move-object/from16 vLow, p0` first; (c) use `/range` form with a contiguous register window. Option (a) is cleanest when feasible.
+
+## 2026-05-20 (cont.) — `extlaunch-pre2` SEVERE'd again; `{p0}` ALSO violates 4-bit limit
+
+pre2 ([run 26161013383](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26161013383)) still SEVERE'd on all 9 variants. The `[5,16] maximum register v15` line was gone (so the `{p0, v0}` → `{v0}` simplification worked), but a more subtle cascade remained:
+
+```
+[5,0] Cannot invoke "Object.hashCode()" because "key" is null
+[5,56] mismatched tree node: UP expecting I_CATCHES
+[3,0] A non-abstract/non-native method must have at least 1 instruction
+[7,20] mismatched tree node: Lapp/revanced/extension/gamehub/launcher/ExternalLauncher; expecting I_FIELDS
+```
+
+The smali assembler NPE'd on `invoke-virtual {p0}` because `{p0}` is ALSO the non-range form (format 35c), and `p0 = v34` blows the 4-bit register field. Unlike the `{p0, v0}` case, this didn't get a clean "register out of range" error — the assembler crashed internally on a null `key.hashCode()` lookup mid-emit, then the parser tried to recover and emitted nonsense follow-ups. The fix is the canonical move-down dance — same recipe as `VibrationPatch`'s `ENV_BUILDER->a` hook:
+
+```smali
+move-object/from16 v0, p0
+invoke-virtual {v0}, Landroid/app/Activity;->getIntent()Landroid/content/Intent;
+move-result-object v0
+invoke-static {v0}, Lapp/revanced/extension/gamehub/launcher/ExternalLauncher;->rewriteIntent(Landroid/content/Intent;)V
+```
+
+`move-object/from16 vA, vBBBB` accepts any 16-bit source register, so it can read `p0=v34` into `v0`. Then every subsequent invoke operates on `v0` (low register) and the 4-bit limit never bites. v0 reuse remains safe because the original `onCreate`'s first instruction (`sget-object v0, Lejm;->a:Lghd;`) overwrites it on the very next instruction without ever reading the prior value.
+
+**Lesson reinforced:** when `.locals >= 16`, every reference to `p0` in a non-range smali instruction is suspect — not just multi-register invokes. The minimal-cost cure is one `move-object/from16 vLow, p0` at the head of the injected block, then operate exclusively on `vLow`. Doc'd as a follow-up pattern next to `VibrationPatch`'s precedent.
+
+## 2026-05-20 (cont.) — `extlaunch-pre3` applied cleanly + user-driven discovery of extra-type bug (pre4)
+
+`extlaunch-pre3` ([run 26161429594](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26161429594)) green across all 9 variants: `"External launcher support" succeeded`, 0 SEVERE. Lite (Normal-GHL) APK at `/storage/emulated/0/Download/extlaunch-pre3/BannerHub-V6-1.4.0-604-extlaunch-pre3-Patched-Normal-GHL.apk` md5 not captured.
+
+**User-driven device-side bug surfaced while building the test command.** User wired a Beacon entry with `--es localGameId {file_content} --es steamAppId {file_content} --ez autoStartGame true`. The `--es` form puts STRING extras, but `ExternalLauncher.rewriteIntent` was reading via `intent.getIntExtra("localGameId", -1)`. `getIntExtra` returns the default when the actual extra type is String → both ids resolved to `-1` → patch bailed with the "no usable id" log → no rewrite → DeepLinkActivity finished without navigating.
+
+This explains why a correct numeric `server_game_id` would also have failed against pre3 — the extra-type mismatch is on the read side, independent of what the user puts in the file.
+
+**Schema-driven discovery alongside.** The user's library DBs were dumped via the root bridge (`getlog --cat` for `.db` + `.db-wal` + `.db-shm`, then `python3 -m sqlite3`-style query because `/system/bin/sqlite3` isn't present on the device):
+
+- `gamehub.lite/databases/db_game_library.db` → Dead Cells (server_game_id `10417`), God of War (`49908`), Gunslugs (`0` — GOG, not deep-link-addressable)
+- `banner.hub/databases/db_game_library.db` → Blur (`-1` — not addressable), Dirt 3 (`131962`), God of War (`49908`), PRAGMATA (`135805`)
+
+Important consequence: 6.0.4's `t_game_library_base.id` is TEXT with prefixes like `local_*` / `gog_*` — those cannot be parsed by the dispatch's `Liml;->t0(radix 10, String)` Integer-parse step. The 5.3.5-style numeric `localGameId` arg only maps onto 6.0.4's INTEGER `server_game_id` column. The "Show game IDs" menu-row patch (queued) must surface `server_game_id` as the user-facing "Local Game ID", not the raw `id` TEXT.
+
+**Fix in pre4 (commit pending).** `ExternalLauncher.readIdExtra(intent, key)` now reads `getStringExtra` first and `Integer.parseInt(trim())` it; falls back to `getIntExtra` for any future caller using `--ei`. Bad String values are logged but treated as missing (no crash). Same idea for `autoStartGame` via `readBoolExtra`, since `--ez` and `--es "true"` are both plausible — `--ez` is preferred but the String form is tolerated.
+
+## 2026-05-20 (cont.) — `extlaunch-pre4` device-confirmed end-to-end + Epic gap → pre5
+
+`extlaunch-pre4` ([run 26162931869](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26162931869)) green across all 9 variants. md5 of Normal-GHL APK = `a78178e0d42a8b3b3b554ab48b40e32b`.
+
+**Device-confirmed paths (1.4.0-604-extlaunch-pre4 on `gamehub.lite`):**
+1. **PC-imported (`source_type=0`)** — God of War (`server_game_id=49908`, `id="local_YigsP7W-…"`). Beacon `--es localGameId 49908 --ez autoStartGame true` → `ActivityTaskManager: START act=gamehub.lite.LAUNCH_GAME cmp=…/com.xiaoji.egggame.DeepLinkActivity` → `GameDetailViewModel: loadGameDetail rendered from local library after server/steam/epic failed. id=, sourceId=49908, sourceType=1` → `WinEmuModule: startGame(null-49908-1593500)` → Wine pipeline launched `GoW.exe`. End-to-end works.
+2. **Steam-library (`source_type=1`)** — Brawlhalla (`id == server_game_id == steam_app_id == 291550`). Beacon `--es localGameId 291550` resolved via server-lookup branch (not fallback). User-confirmed working.
+3. **Epic-library (`source_type=2`)** — DOOMBLADE (`id == epic_app_name == "818572d480784b9a904e54aab004d1c4"`, `server_game_id=0`). **Pre4 cannot launch this** — the 32-char hex UUID fails `Liml;->t0` Integer parse on `app_nav_game_id`, and `server_game_id=0` is the only numeric handle (a "no catalog id" sentinel, not addressable).
+
+**Cosmetic note:** the `Log.i(TAG="BhExternalLauncher")` line didn't surface in the captured logcat for the pre4 test even with `-n 20000` unfiltered. System-side `ActivityTaskManager` log + GameHub's own `GameDetailViewModel` log together prove the rewrite happened (without our extension, `app_nav_game_id` wouldn't be populated from the Beacon `--es localGameId` extra). Possibly device-level Log.i filter; not gating anything.
+
+**Pre5 extension change for Epic support.** Same Beacon command template; the user just puts the right handle in the per-game `.iso/.txt` file:
+- PC-import / Steam-library → numeric `server_game_id`
+- Epic-library → 32-char hex `epic_app_name` UUID
+
+`ExternalLauncher.rewriteIntent` now:
+1. Reads `localGameId` as String, tries `Integer.parseInt`.
+2. If parse fails AND the string matches the Epic UUID shape (hex, ≥8 chars), treats it as `epicAppName`.
+3. Explicit `--es epicAppName <uuid>` extra is also accepted (preferred for callers that want to be explicit).
+4. Epic branch sets:
+   - `target_type = app_nav_target = "game_detail"`
+   - `app_nav_game_id = "0"` (the dispatch's "no catalog id" sentinel — required because the Integer parse must succeed; without it the dispatch bails)
+   - `app_nav_epic_app_name = <uuid>`
+   - `app_nav_source_type = 2`
+   - `app_nav_auto_start_game = <bool>`
+5. PC / Steam branch unchanged.
+
+This is still partly speculative — the `game_id=0` + `epic_app_name=<uuid>` combination needs device verification against DOOMBLADE. If the dispatch ignores `epic_app_name` when `game_id` is 0, the fix is more invasive (e.g. construct the navigation route manually rather than going through the int-game-id dispatch).
+
+## 2026-05-20 (cont.) — `extlaunch-pre5` Epic device test FAILED → ship as PC+Steam only
+
+`extlaunch-pre5` ([run 26165219171](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26165219171)) applied cleanly across all 9 variants (0 SEVERE). Normal-GHL APK md5 `a3b329f6b32e777a66b48693c2327d3e`.
+
+**Device test result for DOOMBLADE (Epic-library):** `BhExternalLauncher: rewrote gamehub.lite.LAUNCH_GAME → epic game_detail epicAppName=818572d480784b9a904e54aab004d1c4 autoStart=true` — extension fired correctly and set the Epic extras. But `GameDetailViewModel` logged: `[Issue#1753] loadGameDetail fallback exhausted → show empty. id=0, sourceId=, sourceType=-1, apiError=Business error: code=401, message=Please login first`. The dispatch's `app_nav_source_type` and `app_nav_epic_app_name` extras were ignored by the ViewModel — only `app_nav_game_id` (which we set to `"0"` as the Epic sentinel) propagated, and the resulting `loadGameDetail(0)` failed all branches (server lookup 401'd against the fake-login; steam/epic/local-fallback all failed because no row matched `_id`/`server_game_id`/`id` against `0`).
+
+**Architectural conclusion.** The 6.0.4 `DeepLinkActivity` dispatch is fundamentally Integer-game-id-based, and the server-resolution branch hits Steam's catalog via `server_game_id` / Steam appid. Epic-library entries have no usable numeric handle (their unique identifier is the 32-char hex `epic_app_name` UUID, stored in `t_game_library_base.id` AND `epic_app_name` columns; `server_game_id=0`). For PC and Steam games the catalog API bridges `server_game_id` → the right local row, so Beacon works. For Epic that bridge doesn't exist in the deep-link surface at all.
+
+**Evidence the in-app library-tile path goes elsewhere.** When the user tapped DOOMBLADE in GameHub Lite's library, the launch chain was `MainActivity → (Compose nav, NO DeepLinkActivity) → WineActivity` — taskId 10286, no DeepLinkActivity in the trace. The launch method's `extension_data` JSON drives the launch:
+```json
+{
+  "gameId": "818572d480784b9a904e54aab004d1c4",
+  "name": "DOOMBLADE",
+  "startType": 1408,
+  "exePath": "/data/user/0/gamehub.lite/files/xj_winemu/xj_install/game/<uuid>",
+  "gameDir": "/data/user/0/gamehub.lite/files/xj_winemu/xj_install/game/<uuid>"
+}
+```
+`start_type=1408` is the Epic launch flow; `start_type=1407` is Steam; `start_type=1403` is PC-import. The library-tile code path reads `t_game_launch_method.extension_data` (NOT the deep-link extras) and invokes `WineActivity` with the right args.
+
+**Side-discovery: `_id=10` resolves to Counter-Strike on Steam.** When testing with DOOMBLADE's `_id` (`10`), Beacon dispatched to CS:GO's storefront. Steam appid `10` IS Counter-Strike, so the server-lookup branch hit Steam's catalog directly. Confirms the dispatch is Steam-appid-centric for its primary lookup, with local-fallback only used when server lookup fails AND the row has a matching `server_game_id`.
+
+**Ship decision.** Pre5 is final for the External-launcher feature. Three Epic-support paths exist (hook MainActivity / direct-to-WineActivity / patch GameDetailViewModel) but each is a multi-iteration patch project on the scale of `VibrationMenuRowPatch` — not worth blocking the PC+Steam-supported feature. Ship pre5 as the External-launcher feature; document Epic + GOG as library-tile-only in release notes and the beacon instructions txt.
+
+**Beacon contract (final for this branch):**
+
+| Game type | What goes in the per-game `.iso/.txt` file |
+|---|---|
+| PC-imported (`source_type=0`) | numeric `server_game_id` from `t_game_library_base` (e.g. `49908` for God of War) |
+| Steam-library (`source_type=1`) | numeric `server_game_id`, which equals the Steam appid for these rows (e.g. `291550` for Brawlhalla) |
+| Epic-library (`source_type=2`) | **Not supported via Beacon** — launch from GameHub's library tile directly |
+| GOG-imported (`server_game_id=0`) | **Not supported via Beacon** — same reason as Epic |
+
+`beacon instructions.txt` updated in lockstep at `/storage/emulated/0/Download/beacon instructions.txt`.
+
+## 2026-05-20 (cont.) — Show Game ID menu row + View All Games dialog (`gameid-pre1`, MERGED to 604 + Lite)
+
+Companion to External Launcher (above): users wiring Beacon / ES-DE / Daijishou had no in-app way to read the `server_game_id` GameHub uses — they had to grep logcat. New menu row surfaces it directly in all three per-game popup menus, and a "View All Games" button on the dialog walks the entire library DB so any game's id can be copied without browsing per-tile.
+
+### Patch layout — clone of the vibration / gpuspoof menu-row family
+
+- `patches/.../gameid/GameIdDisplayMenuRowPatch.kt` — three injection sites (`Lx57;->a` More Menu / `Lted;->f` library-tile popup / `Lpzc;->j0` library-list popup), each a single `invoke-static {vN}, BhGameIdDisplayMenuRowClick;->append…(Object)…` that hands row construction to a Java helper (no register clobbering, no verifier risk). `dependsOn(menuGameIdCapturePatch, vibrationMenuRowPatch, gameIdDisplayMenuLabelPatch)` — explicitly reuses the shared `Lxd3;->l1` resolver hook owned by `vibrationMenuRowPatch`. **No second `Lxd3;->l1` head-block** (the 2026-05-17 GpuSpoof saga proved stacking a 2nd one ANRs MainActivity cold-start); the resolver entry is added as one `else if` line in `BhMenuRowClick.maybeResolveCustomLabel` mapping `"string:bh_gameid_label" → "Show Game ID"`.
+- `patches/.../gameid/GameIdDisplayMenuLabelPatch.kt` — appends `bh_gameid_label = "Show Game ID"` to `features.home`'s Compose Multiplatform `.cvr` resource bundle across the 6 locale variants (`values`, `values-en`, `values-zh-rCN`, `values-ja-rJP`, `values-pt-rBR`, `values-ru-rRU`). Resource is reachable through any future manifest-aware resolver; runtime lookup currently goes through the shared `l1` short-circuit.
+- `extensions/.../gameid/BhGameIdDisplayMenuRowClick.java` — Function1 click handler + three `append*` helpers + an `AlertDialog` with `Close / Copy / View All Games` buttons. Reuses the existing `BhMenuGameId.getCaptured()` channel and the same `ActivityThread.mActivities` walk pattern every other menu-row click handler uses, so no new Context resolution surface. View All flow opens the GameHub library DB read-only and renders an `ArrayAdapter` list; tap row → copy that game's `server_game_id`.
+
+### View All Games — DB-backed library browser
+
+Sources data from GameHub's own Room database. Schema confirmed live via `getlog --ls /data/data/banner.hub/databases/` + a python `sqlite3` read of the copied `.db` (no on-device `sqlite3` binary; PRoot can't `apt install` without root):
+
+```
+db_game_library.db → t_game_library_base
+  server_game_id INTEGER  (the integer gameId external launchers expect; matches MMKV pc_g_setting<id>)
+  game_name      TEXT
+  steam_app_id   TEXT     (when source_type = 1)
+  epic_app_name  TEXT     (when source_type = 2, the 32-char UUID — see External Launcher pre5 note)
+  source_type/source_id/last_launch_time + several catalog fields
+```
+
+Read-only open with `SQLiteDatabase.OPEN_READONLY | NO_LOCALIZED_COLLATORS` works alongside the host Room writer's WAL connection — no lock contention. `getApplicationContext().getDatabasePath("db_game_library.db")` resolves relative to the variant's data dir (`banner.hub` / `com.antutu.benchmark.full` / `gamehub.lite` / etc.) so the same code reads the right DB across every variant. Absent file (Room creates it lazily on first write — fresh install with no library yet) toasts "open a game once to initialise it"; missing table / any SQLite error toasts "Couldn't open library DB". Empty library renders its own "No games yet" sub-dialog. No crash path.
+
+### Reusable findings captured
+
+1. **`BhMenuGameId.GAMEINFO_CLS = "com.xiaoji.egggame.game.di.model.game.GameInfo"` is dead code on 6.0.4.** `find smali* -path "*xiaoji*game*"` returns nothing under that prefix; the class doesn't exist in the base APK at all. The toString-regex path (`ServerGameId(value=<int>)` / `gameId=<int>`) is the only one that ever fires. Don't rely on the GameInfo fallback for new features — the comment in `BhMenuGameId.java` referencing kept-name `GameInfo.getServerGameId()` is from a different GameHub generation.
+2. **GameHub's library catalog lives in `db_game_library.db`** — not in any of the three `*_Impl` Room classes visible in smali (`psplay/AppDatabase`, `movingrtc/SpeedTurnDatabase`, `movingrtc/RtcStateDatabase`); the GameLibrary Room class is generated under an R8-renamed `_Impl` that doesn't ship its raw name. Search by file rather than by class.
+3. **Rows can have `server_game_id = -1`** (locally added non-server games — e.g. `Blur` on the device dump). The patch surfaces them anyway since that's what GameHub stores; users who pass `-1` to an external launcher get the same "no usable id" behavior they would have got otherwise.
+
+### CI proof
+
+| Stage | Run ID | Result | Notes |
+|---|---|---|---|
+| Feature branch (`feature/menu-gameid-display`) | [26183057664](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26183057664) | FAILED (validation) | Forgot `-f version=…` on `workflow_dispatch` — the Release workflow's `Derive version` step requires it. |
+| Feature branch — corrected | [26183100272](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26183100272) | ✅ all 9 patch jobs green, 0 SEVERE | version `1.5.0-604-gameid-pre1` (Normal + alt-AnTuTu device-tested by user; "works great") |
+| `gamehub-604-build` back-merge (no-artifact) | [26184783602](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26184783602) | ✅ `./gradlew build --no-daemon`, 0 errors | Build pull request workflow — patch DSL compiles cleanly on the integration branch with no Release sign-off. |
+| `feature/lite-variant-tier1` back-merge (Lite refresh) | [26184541960](https://github.com/The412Banner/bannerhub-revanced/actions/runs/26184541960) | ✅ all 9 Lite jobs green, 0 SEVERE | version `1.5.0-604-Lite-gameid-pre1` — Lite absorbed cleanly, no Tier-1–4 strip regression. |
+
+### Merge ledger
+
+- Feature branch `feature/menu-gameid-display`: HEAD `e928da5` (4 files, +741 LOC).
+- Merged into `gamehub-604-build` at merge commit **`090706e`** (`--no-ff`).
+- Back-merged into `feature/lite-variant-tier1` at merge commit **`09fa1d8`** (one-way pattern, mirrors `2d04579` for External Launcher).
+- GOG branch (`feature/gog-explore-tab` HEAD `0114f75`) verified isolated — `git branch --contains 0114f75` returns nothing under 604 / Lite / main per user directive ("leave it separate until we figure out the add-game-to-GameHub-library issues").
+
+Ships in v1.5.0-604 alongside External Launcher when the next stable is cut. Pre-release policy resumes per the BannerHub pre-release rule.

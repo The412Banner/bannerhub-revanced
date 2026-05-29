@@ -52,8 +52,17 @@ val gpuSpoofMenuRowPatch = bytecodePatch(
     dependsOn(menuGameIdCapturePatch, vibrationMenuRowPatch)
 
     apply {
+        // [feature/banner-tools-menu] Standalone row injections disabled —
+        // BannerToolsMenuRowPatch owns the 3 sites on this branch and
+        // dispatches into the per-feature handlers (incl. this one's
+        // BhGpuSpoofSettingsActivity) from a single consolidated dialog.
+        // dependsOn(vibrationMenuRowPatch) above is RETAINED so the shared
+        // Lxd3;->l1 resolver hook is still applied.
+        // [START disabled standalone-row injections]
+        if (false) {
+            @Suppress("UNREACHABLE_CODE")
         // ── Injection 1: game-details More Menu (Lx57;->a) ──────────────────
-        val menuMethod = firstMethod {
+            val menuMethod = firstMethod {
             parameterTypes == listOf("Lf37;", "Lpo7;", "Lv83;", "I") &&
                 returnType == "V" &&
                 (implementation?.instructions?.any { ins ->
@@ -195,5 +204,6 @@ val gpuSpoofMenuRowPatch = bytecodePatch(
                 move-result-object v$pzcReturnReg
             """.trimIndent(),
         )
+        } // [END disabled standalone-row injections]
     }
 }

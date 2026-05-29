@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="56dp"
+    android:height="56dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+
+    <!-- Dark rounded background (Material 3 surface-container look, rx=112). -->
+    <path
+        android:pathData="M112,0 H400 A112,112 0 0 1 512,112 V400 A112,112 0 0 1 400,512 H112 A112,112 0 0 1 0,400 V112 A112,112 0 0 1 112,0 Z"
+        android:fillColor="#1C1B1F"/>
+
+    <!-- Left haptic-wave arcs. -->
+    <path
+        android:pathData="M80,180 A100,100 0 0 0 80,332"
+        android:strokeColor="#FFD284"
+        android:strokeWidth="14"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M50,150 A140,140 0 0 0 50,362"
+        android:strokeColor="#FFD284"
+        android:strokeWidth="10"
+        android:strokeAlpha="0.5"
+        android:strokeLineCap="round"/>
+
+    <!-- Right haptic-wave arcs. -->
+    <path
+        android:pathData="M432,180 A100,100 0 0 1 432,332"
+        android:strokeColor="#FFD284"
+        android:strokeWidth="14"
+        android:strokeLineCap="round"/>
+    <path
+        android:pathData="M462,150 A140,140 0 0 1 462,362"
+        android:strokeColor="#FFD284"
+        android:strokeWidth="10"
+        android:strokeAlpha="0.5"
+        android:strokeLineCap="round"/>
+
+    <!-- Controller body. -->
+    <path
+        android:pathData="M192,160 h128 c44,0 80,36 80,80 v48 c0,44 -36,80 -80,80 c-16,0 -32,-8 -44,-20 l-16,-20 h-44 l-16,20 c-12,12 -28,20 -44,20 c-44,0 -80,-36 -80,-80 v-48 c0,-44 36,-80 80,-80 z"
+        android:fillColor="#E6E1E5"/>
+
+    <!-- D-pad. -->
+    <path
+        android:pathData="M180,220 h20 v20 h20 v20 h-20 v20 h-20 v-20 h-20 v-20 h20 z"
+        android:fillColor="#49454F"/>
+
+    <!-- Action buttons. -->
+    <path
+        android:pathData="M300,230 A10,10 0 1 1 320,230 A10,10 0 1 1 300,230 Z"
+        android:fillColor="#49454F"/>
+    <path
+        android:pathData="M324,254 A10,10 0 1 1 344,254 A10,10 0 1 1 324,254 Z"
+        android:fillColor="#49454F"/>
+</vector>

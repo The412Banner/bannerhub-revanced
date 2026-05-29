@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="56dp"
+    android:height="56dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+
+    <!-- Dark rounded background, rx=112. -->
+    <path
+        android:pathData="M112,0 H400 A112,112 0 0 1 512,112 V400 A112,112 0 0 1 400,512 H112 A112,112 0 0 1 0,400 V112 A112,112 0 0 1 112,0 Z"
+        android:fillColor="#121318"/>
+
+    <!-- ID badge body (288x288 rx=40) with subtle outline. -->
+    <path
+        android:pathData="M152,112 H360 A40,40 0 0 1 400,152 V360 A40,40 0 0 1 360,400 H152 A40,40 0 0 1 112,360 V152 A40,40 0 0 1 152,112 Z"
+        android:fillColor="#2F3036"
+        android:strokeColor="#45464F"
+        android:strokeWidth="8"/>
+
+    <!-- Avatar head. -->
+    <path
+        android:pathData="M212,210 A44,44 0 1 1 300,210 A44,44 0 1 1 212,210 Z"
+        android:fillColor="#BFC2C9"/>
+
+    <!-- Avatar shoulders. -->
+    <path
+        android:pathData="M180,300 c0,-30 34,-44 76,-44 s76,14 76,44 v10 H180 z"
+        android:fillColor="#BFC2C9"/>
+
+    <!-- Barcode-style bars: 2 accent + 2 text bars. -->
+    <path
+        android:pathData="M164,336 h16 a4,4 0 0 1 4,4 v16 a4,4 0 0 1 -4,4 h-16 a4,4 0 0 1 -4,-4 v-16 a4,4 0 0 1 4,-4 z M328,342 h20 a4,4 0 0 1 4,4 v4 a4,4 0 0 1 -4,4 h-20 a4,4 0 0 1 -4,-4 v-4 a4,4 0 0 1 4,-4 z"
+        android:fillColor="#FFB4AB"/>
+    <path
+        android:pathData="M200,342 h32 a4,4 0 0 1 4,4 v4 a4,4 0 0 1 -4,4 h-32 a4,4 0 0 1 -4,-4 v-4 a4,4 0 0 1 4,-4 z M252,342 h56 a4,4 0 0 1 4,4 v4 a4,4 0 0 1 -4,4 h-56 a4,4 0 0 1 -4,-4 v-4 a4,4 0 0 1 4,-4 z"
+        android:fillColor="#E2E2E9"/>
+
+    <!-- Decorative top slot (background-colour cutout). -->
+    <path
+        android:pathData="M232,132 h48 a6,6 0 0 1 0,12 h-48 a6,6 0 0 1 0,-12 z"
+        android:fillColor="#121318"/>
+</vector>

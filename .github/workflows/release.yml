@@ -297,13 +297,10 @@ jobs:
 
             ### What's new in ${{ needs.build.outputs.version }}
 
-            On top of `v1.3.0-604` (same keystore — installs in place):
+            On top of `v1.5.0-604` (same keystore — installs in place):
 
-            - **🎛️ Per-game settings, properly isolated.** GPU Spoof / Legacy renderer / PC Vibration each save to BannerHub's own per-game store with explicit **Save / Cancel** buttons — no more silent reset when GameHub rewrites its own settings file, and a choice for one game never leaks into another or app-wide. Settings now correctly cross the `:wine` process boundary so launch-time scoping actually works.
-            - **🪪 GPU Spoof (per game).** A new **GPU Spoof** menu row + dialog reports a chosen GPU identity (preset NVIDIA/AMD/Intel list spanning legacy → modern, or a fully custom vendor/device/name) to DXVK via a per-game `dxvk.conf`. Fixes titles that refuse to start on an "unsupported" adapter (e.g. CryEngine — Crysis 2). Off by default; zero effect when Off.
-            - **🖼️ Legacy renderer toggle (per game).** Per-game opt-in to the proven 6.0.2 GLES2-era `libxserver.so`/`libwinemu.so` pair for games that regressed under 6.0.4's Vulkan X-server rewrite. Default **New** = stock 6.0.4, zero patch effect.
-            - **🎮 Rumble no longer cuts out after ~2 s.** The winebus duration patch is now actually applied at launch (the v1.3.0 hook landed as dead code on this base); sustained rumble holds indefinitely. Device-confirmed via GameConTest.exe.
-            - **📦 Offline component picker.** Every per-game component picker (GPU driver, DXVK, VKD3D, FEXCore/Box64, **and the Wine/Proton container**) now lists the components you've already downloaded when offline, in the same catalog order as online. Online behaviour is byte-identical and the patch is fully fail-safe (any error falls back to stock). Device-confirmed on 6.0.4.
+            - **🪪 Imported / Epic / GOG games now launch from external front-ends.** GameHub writes `server_game_id = -1` for PC-imported games it can't match to its catalog, and `0` for Epic-library + GOG-imported games — so multiple rows collide on the integer deep-link contract that Beacon / ES-DE / Daijishou use. Each sentinel row now gets a stable synthetic 32-bit ID (deterministic from the row's `id` so it survives renames/moves), written into `t_game_library_base` on every app start. The Show Game ID dialog displays the synthetic. **Device-confirmed on Beacon (the412banner) AND ES-DE (slogik) for both `-1` (PC-imported) and `0` (Epic + GOG) cases — Epic and GOG games now launch end-to-end from external front-ends.** Idempotent and self-healing: rows GameHub later re-matches to a real catalog ID are left alone.
+            - **🧰 Banner Tools menu — one entry-point for the four BannerHub rows.** A consolidated dialog replaces four separate per-game menu rows (Vibration / GPU Spoof / Renderer / Show Game ID) with one **Banner Tools** entry that opens a 1×4 icon-tile dialog. Less menu clutter; the underlying patches are unchanged.
 
             ### Variants
 

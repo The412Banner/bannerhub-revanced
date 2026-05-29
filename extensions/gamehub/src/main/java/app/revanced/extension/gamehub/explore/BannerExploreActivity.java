@@ -12,6 +12,7 @@ import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
 import android.widget.HorizontalScrollView;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -168,15 +169,31 @@ public class BannerExploreActivity extends Activity {
         lp.rightMargin = dp(12);
         cardView.setLayoutParams(lp);
 
-        // Accent chip
-        View chip = new View(this);
-        GradientDrawable chipBg = new GradientDrawable();
-        chipBg.setColor(ACCENT);
-        chipBg.setCornerRadius(dp(6));
-        chip.setBackground(chipBg);
-        LinearLayout.LayoutParams chipLp = new LinearLayout.LayoutParams(dp(40), dp(40));
-        chipLp.bottomMargin = dp(12);
-        cardView.addView(chip, chipLp);
+        // Icon: a bundled drawable (resolved by name against the host app's
+        // res, e.g. our injected "bh_explore_gog") when the card specifies one
+        // and it's present; otherwise an accent-colour placeholder. Never throws.
+        View iconView = null;
+        if (card.icon != null && !card.icon.isEmpty()) {
+            try {
+                int id = getResources().getIdentifier(card.icon, "drawable", getPackageName());
+                if (id != 0) {
+                    ImageView iv = new ImageView(this);
+                    iv.setImageResource(id);
+                    iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                    iconView = iv;
+                }
+            } catch (Throwable ignored) { }
+        }
+        if (iconView == null) {
+            View chip = new View(this);
+            GradientDrawable chipBg = new GradientDrawable();
+            chipBg.setColor(ACCENT);
+            chipBg.setCornerRadius(dp(6));
+            iconView = chip;
+        }
+        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(dp(56), dp(56));
+        iconLp.bottomMargin = dp(12);
+        cardView.addView(iconView, iconLp);
 
         TextView label = new TextView(this);
         label.setText(card.label);

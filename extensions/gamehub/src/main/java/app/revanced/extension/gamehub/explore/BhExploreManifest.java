@@ -41,7 +41,7 @@ public final class BhExploreManifest {
         "{"
         + "\"rails\":["
         + "{\"title\":\"GOG\",\"cards\":["
-        + "{\"label\":\"GOG\",\"subtitle\":\"Sign in & browse your GOG library\",\"action\":\"gog\"}"
+        + "{\"label\":\"GOG\",\"subtitle\":\"Sign in & browse your GOG library\",\"action\":\"gog\",\"icon\":\"bh_explore_gog\"}"
         + "]}"
         + "]}";
 
@@ -52,12 +52,17 @@ public final class BhExploreManifest {
         public final String subtitle;
         public final String action;
         public final String arg;
+        /** Optional android drawable resource NAME (resolved at runtime via
+         *  getIdentifier against the host app's res, e.g. our injected
+         *  "bh_bt_gog"). Null → the screen draws an accent-colour placeholder. */
+        public final String icon;
 
-        Card(String label, String subtitle, String action, String arg) {
+        Card(String label, String subtitle, String action, String arg, String icon) {
             this.label = label;
             this.subtitle = subtitle;
             this.action = action;
             this.arg = arg;
+            this.icon = icon;
         }
     }
 
@@ -110,7 +115,8 @@ public final class BhExploreManifest {
                         cj.optString("label", action),
                         cj.optString("subtitle", null),
                         action,
-                        cj.optString("arg", null)));
+                        cj.optString("arg", null),
+                        cj.optString("icon", null)));
                 }
             }
             if (!cards.isEmpty()) rails.add(new Rail(title, cards));

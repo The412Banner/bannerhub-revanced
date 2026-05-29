@@ -1,11 +1,12 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
-## 2026-05-28 — 🔊 PulseAudio screen-record fix: "Recording-compatible audio" global toggle (DEVICE-VERIFIED ✅)
+## 2026-05-28 — 🔊 PulseAudio screen-record fix: "Recording-compatible audio" global toggle (MERGED ✅)
 
 **Device-verified:** user installed `apk-Normal` (pkg banner.hub), Banner Tools → Audio → "Recording-compatible", relaunched with PulseAudio → screen recording now captures audio. Confirmed working.
 
 **Branch:** `feature/audio-recording-mode` off `gamehub-604-build`.
 **Build:** compile-check green (run 26611029714); release build green (run 26611119950, `1.5.2-604-audio-pre1`, artifact-only). Both patches applied across all 9 variants — `"Recording-compatible audio"` + `"Recording-compatible audio settings activity"` succeeded → the `Lqnh;->c()` const-string fingerprint resolved against GameHub 6.0.4.
+**UI:** final settings dialog (`-pre4`, run 26612253314) is a clone of `BhRendererSettingsActivity` — dark rounded card, "Audio"/"All games" header, a Spinner (Low latency / Recording-compatible), Cancel/Save. The first AlertDialog `Switch` rendered invisibly under `Theme.Translucent.NoTitleBar`; lesson recorded: these settings activities need explicit colors / native widgets (clone the Renderer dialog).
 
 **Problem (device-diagnosed via root logcat/dumpsys):** With the in-game audio driver set to **PulseAudio**, Android screen recording captures video but **no audio**; **ALSA records fine**. Root cause: banner.hub's pulse sink (`module-aaudio-sink`) opens an AAudio **low-latency** stream → the framework grants it as **MMAP**, which bypasses the AudioFlinger mixer that MediaProjection's `AudioPlaybackCapture` taps → silence. ALSA uses a legacy mixed `AudioTrack` → captured.
 
@@ -18,8 +19,10 @@
 - Functional hook patch on `PulseAudioComponent` (target `com.xiaoji.egggame` 6.0.4): anchor on the `module-aaudio-sink` const-string (R8-proof), rewrite the line via `BhAudioController.configLine(String)` to append **` pm=0`** when the toggle is ON.
 - Banner Tools enrollment: 5th tile + `bh_bt_audio` drawable + dispatch case.
 
+**Merged ✅:** `feature/audio-recording-mode` → `gamehub-604-build` (`4bfe029`) → `--no-ff` back-merge → `feature/lite-variant-tier1` (`e68cd38`), both pushed, no conflicts. Post-merge artifact-only builds both green: trunk run 26612540444 (`1.5.2-604-audio`), lite run 26612541277 (`1.5.2-604-audio-lite`). No GitHub Release cut — stays pre-release until "stable".
+
 ### Next
-Merge `feature/audio-recording-mode` → `gamehub-604-build`, then `--no-ff` back-merge → `feature/lite-variant-tier1`. Then it ships in the next BannerHub v6 build.
+Ships in the next BannerHub v6 build. Enroll the toggle into any future Banner-Tools-wide UX changes; nothing else outstanding.
 
 ## 2026-05-22 — Docs: fold RetroHRAI into `beacon-setup.md` + README Frontend support
 

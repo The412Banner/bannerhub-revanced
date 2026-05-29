@@ -41,7 +41,6 @@ public class BannerExploreActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        hideSystemBars();
 
         ScrollView scroller = new ScrollView(this);
         scroller.setBackgroundColor(BG);
@@ -70,6 +69,7 @@ public class BannerExploreActivity extends Activity {
         }
 
         setContentView(scroller);
+        hideSystemBars();
     }
 
     @Override
@@ -88,23 +88,33 @@ public class BannerExploreActivity extends Activity {
      * legacy SYSTEM_UI_FLAG_* below.
      */
     private void hideSystemBars() {
-        Window window = getWindow();
-        if (Build.VERSION.SDK_INT >= 30) {
-            window.setDecorFitsSystemWindows(false);
-            WindowInsetsController c = window.getInsetsController();
-            if (c != null) {
-                c.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
-                c.setSystemBarsBehavior(
-                    WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+        try {
+            Window window = getWindow();
+            // getDecorView() forces decor creation — window.getInsetsController()
+            // NPEs on a null DecorView if called before the decor exists
+            // (pre26 crash: called pre-setContentView). Use the decor's own
+            // controller and only call after setContentView / on focus.
+            View decor = window.getDecorView();
+            if (Build.VERSION.SDK_INT >= 30) {
+                window.setDecorFitsSystemWindows(false);
+                WindowInsetsController c = decor.getWindowInsetsController();
+                if (c != null) {
+                    c.hide(WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars());
+                    c.setSystemBarsBehavior(
+                        WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                }
+            } else {
+                decor.setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
             }
-        } else {
-            window.getDecorView().setSystemUiVisibility(
-                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                | View.SYSTEM_UI_FLAG_FULLSCREEN
-                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+        } catch (Throwable t) {
+            // Cosmetic only — never let immersive setup crash the screen.
+            android.util.Log.w("BhExplore", "hideSystemBars failed", t);
         }
     }
 

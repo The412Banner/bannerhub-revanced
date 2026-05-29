@@ -1,5 +1,23 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-05-28 — 🔊 PulseAudio screen-record fix: "Recording-compatible audio" global toggle (BUILDING)
+
+**Branch:** `feature/audio-recording-mode` off `gamehub-604-build`.
+
+**Problem (device-diagnosed via root logcat/dumpsys):** With the in-game audio driver set to **PulseAudio**, Android screen recording captures video but **no audio**; **ALSA records fine**. Root cause: banner.hub's pulse sink (`module-aaudio-sink`) opens an AAudio **low-latency** stream → the framework grants it as **MMAP**, which bypasses the AudioFlinger mixer that MediaProjection's `AudioPlaybackCapture` taps → silence. ALSA uses a legacy mixed `AudioTrack` → captured.
+
+- Confirmed live: stream shows `type:AAudio usage=USAGE_MEDIA` in a `MMAP_PLAYBACK` thread, absent from normal mixer tracks. Forcing `setprop aaudio.mmap_policy 1` (NEVER) + `audioserver` restart moved it onto a `MIXER` thread → recording then had sound (user-verified). Global prop reverted afterward.
+- **Module RE (objdump):** `module-aaudio-sink` computes `AAudioStreamBuilder_setPerformanceMode(pm + 10)`. So config `pm=0` → `PERFORMANCE_MODE_NONE`(10) → no low-latency request → no MMAP → mixer → **capturable**. Default (no `pm=`) = LOW_LATENCY → MMAP (the bug).
+
+**Fix being built (ReVanced Patcher):**
+- **Global on/off toggle** "Recording-compatible audio", default **OFF** (stock low-latency, zero regression for non-recording users). Lives as a **5th tile in the Banner Tools consolidated dialog** (`Vibration·GPU Spoof·Renderer·Game ID·Audio`).
+- New extension `com/xj/winemu/audio/` (`BhAudioController` global pref `bh_audio_prefs`/`bh_audio_recording_mode` + `BhAudioSettingsActivity`), cloned from the Renderer feature.
+- Functional hook patch on `PulseAudioComponent` (target `com.xiaoji.egggame` 6.0.4): anchor on the `module-aaudio-sink` const-string (R8-proof), rewrite the line via `BhAudioController.configLine(String)` to append **` pm=0`** when the toggle is ON.
+- Banner Tools enrollment: 5th tile + `bh_bt_audio` drawable + dispatch case.
+
+### Next
+Write the extension + patch, compile-check via `build_pull_request.yml`, installable APKs via `release.yml` on this branch (artifact-only pre-release). Device-test (PulseAudio + toggle ON → audio present in the recording), then merge → `gamehub-604-build`, `--no-ff` back-merge → `feature/lite-variant-tier1`.
+
 ## 2026-05-22 — Docs: fold RetroHRAI into `beacon-setup.md` + README Frontend support
 
 Documentation refresh covering the RetroHRAI integration confirmed earlier today.

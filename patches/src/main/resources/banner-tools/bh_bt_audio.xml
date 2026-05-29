@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="56dp"
+    android:height="56dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+
+    <!-- Dark rounded background, rx=112 (matches the other Banner Tools tiles). -->
+    <path
+        android:pathData="M112,0 H400 A112,112 0 0 1 512,112 V400 A112,112 0 0 1 400,512 H112 A112,112 0 0 1 0,400 V112 A112,112 0 0 1 112,0 Z"
+        android:fillColor="#1A1C1E"/>
+
+    <!-- Mic capsule body (rounded rect), cyan. -->
+    <path
+        android:pathData="M256,80 a40,40 0 0 1 40,40 v52 a40,40 0 0 1 -80,0 v-52 a40,40 0 0 1 40,-40 z"
+        android:fillColor="#A3EDFF"/>
+
+    <!-- Mic holder arc (U-shape), teal stroke. -->
+    <path
+        android:pathData="M172,188 a84,84 0 0 0 168,0"
+        android:fillColor="#00000000"
+        android:strokeColor="#006684"
+        android:strokeWidth="22"
+        android:strokeLineCap="round"/>
+
+    <!-- Stand. -->
+    <path
+        android:pathData="M256,272 v64"
+        android:fillColor="#00000000"
+        android:strokeColor="#006684"
+        android:strokeWidth="22"
+        android:strokeLineCap="round"/>
+
+    <!-- Base. -->
+    <path
+        android:pathData="M196,356 h120 a14,14 0 0 1 14,14 a14,14 0 0 1 -14,14 h-120 a14,14 0 0 1 -14,-14 a14,14 0 0 1 14,-14 z"
+        android:fillColor="#006684"/>
+
+    <!-- Record dot (red), top-right corner — signals "recording". -->
+    <path
+        android:pathData="M396,116 m-30,0 a30,30 0 1 0 60,0 a30,30 0 1 0 -60,0 z"
+        android:fillColor="#FF5252"/>
+</vector>

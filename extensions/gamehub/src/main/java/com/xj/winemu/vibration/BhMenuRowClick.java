@@ -366,6 +366,8 @@ public final class BhMenuRowClick implements Function1<Object, Object> {
                 label = "GPU Spoof";
             } else if ("string:bh_renderer_label".equals(key)) {
                 label = "Renderer";
+            } else if ("string:bh_gog_label".equals(key)) {
+                label = "GOG";
             } else if ("string:bh_gameid_label".equals(key)) {
                 label = "Show Game ID";
             } else if ("string:bh_banner_tools_label".equals(key)) {

@@ -55,6 +55,7 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
         "Renderer",
         "Game ID",
         "Audio",
+        "GOG",
     };
     private static final String[] TILE_DRAWABLES = new String[] {
         "bh_bt_vibration",
@@ -62,6 +63,7 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
         "bh_bt_renderer",
         "bh_bt_game_id",
         "bh_bt_audio",
+        "bh_bt_gog",
     };
 
     @Override
@@ -81,19 +83,20 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
 
     private static void showDialog(Activity host) {
         try {
-            LinearLayout row = buildTileRow(host);
+            java.util.List<View> tiles = new java.util.ArrayList<>();
+            LinearLayout content = buildTilesView(host, tiles);
 
             final AlertDialog dialog = new AlertDialog.Builder(host)
                 .setTitle(ROW_LABEL)
-                .setView(row)
+                .setView(content)
                 .setNegativeButton(android.R.string.cancel, null)
                 .create();
 
             // Wire per-tile clicks now that we have the dialog reference;
-            // each tap dispatches into the per-feature handler and dismisses.
-            for (int i = 0; i < row.getChildCount(); i++) {
+            // tiles are in dispatch-index order so which == dispatch case.
+            for (int i = 0; i < tiles.size(); i++) {
                 final int which = i;
-                row.getChildAt(i).setOnClickListener(v -> {
+                tiles.get(i).setOnClickListener(v -> {
                     dispatch(which);
                     dialog.dismiss();
                 });
@@ -105,25 +108,56 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
         }
     }
 
-    // ── Custom 1×4 tile row (icon + short label per tile) ────────────────
+    // ── Tile grid (icon + short label per tile) ──────────────────────────
     // Built programmatically so we don't need an XML layout resource
     // injected into the foreign package. Icons resolve to the bh_bt_*
-    // vector drawables shipped by BannerToolsDrawablesPatch.
-    private static LinearLayout buildTileRow(Activity host) {
+    // vector drawables shipped by BannerToolsDrawablesPatch. Tiles wrap at
+    // 5 per row (greedy, left-aligned) so 6+ tiles don't clip the fixed-size
+    // 56dp icons on narrow/portrait screens; the short final row is padded
+    // with weighted spacers to keep its tiles the same width as a full row.
+    // Tiles are appended to outTiles in dispatch-index order so click wiring
+    // stays 1:1 with dispatch(int) regardless of how they're grouped.
+    private static LinearLayout buildTilesView(Activity host, java.util.List<View> outTiles) {
         final Resources res = host.getResources();
         final String pkg = host.getPackageName();
         final float density = res.getDisplayMetrics().density;
 
-        LinearLayout row = new LinearLayout(host);
-        row.setOrientation(LinearLayout.HORIZONTAL);
+        final int n = TILE_LABELS.length;
+        // 5 tiles across, then start a new row.
+        final int perRow = 5;
+
+        LinearLayout container = new LinearLayout(host);
+        container.setOrientation(LinearLayout.VERTICAL);
         int padH = dp(density, 8);
         int padV = dp(density, 12);
-        row.setPadding(padH, padV, padH, padV);
+        container.setPadding(padH, padV, padH, padV);
 
-        for (int i = 0; i < TILE_LABELS.length; i++) {
-            row.addView(buildTile(host, res, pkg, density, TILE_DRAWABLES[i], TILE_LABELS[i]));
+        LinearLayout currentRow = null;
+        for (int i = 0; i < n; i++) {
+            if (i % perRow == 0) {
+                currentRow = new LinearLayout(host);
+                currentRow.setOrientation(LinearLayout.HORIZONTAL);
+                LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+                rowLp.topMargin = (i == 0) ? 0 : dp(density, 8);
+                container.addView(currentRow, rowLp);
+            }
+            View tile = buildTile(host, res, pkg, density, TILE_DRAWABLES[i], TILE_LABELS[i]);
+            currentRow.addView(tile);
+            outTiles.add(tile);
         }
-        return row;
+        // Pad the final row with weighted spacers so its tiles keep the same
+        // width as full rows (otherwise a short last row stretches its tiles).
+        int remainder = n % perRow;
+        if (remainder != 0) {
+            for (int k = remainder; k < perRow; k++) {
+                View spacer = new View(host);
+                spacer.setLayoutParams(new LinearLayout.LayoutParams(0, 1, 1f));
+                currentRow.addView(spacer);
+            }
+        }
+        return container;
     }
 
     private static View buildTile(Activity host, Resources res, String pkg,
@@ -134,7 +168,7 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
 
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
             0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        int sideMargin = dp(density, 4);
+        int sideMargin = dp(density, 2);
         lp.setMargins(sideMargin, 0, sideMargin, 0);
         tile.setLayoutParams(lp);
 
@@ -202,6 +236,12 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
                     break;
                 case 4:
                     new com.xj.winemu.audio.BhAudioMenuRowClick().invoke(null);
+                    break;
+                case 5:
+                    // GOG tile opens the GOG login/library hub Activity
+                    // (not a dialog like the others); BhGogMenuRowClick.invoke
+                    // walks to the top Activity and startActivity(GogMainActivity).
+                    new com.xj.winemu.gog.BhGogMenuRowClick().invoke(null);
                     break;
                 default:
                     Log.w(TAG, "unknown dialog item index " + which);

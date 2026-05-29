@@ -1,8 +1,9 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
-## 2026-05-28 — 🔊 PulseAudio screen-record fix: "Recording-compatible audio" global toggle (BUILDING)
+## 2026-05-28 — 🔊 PulseAudio screen-record fix: "Recording-compatible audio" global toggle (BUILT ✅ — pending device test)
 
 **Branch:** `feature/audio-recording-mode` off `gamehub-604-build`.
+**Build:** compile-check green (run 26611029714); release build green (run 26611119950, `1.5.2-604-audio-pre1`, artifact-only). Both patches applied across all 9 variants — `"Recording-compatible audio"` + `"Recording-compatible audio settings activity"` succeeded → the `Lqnh;->c()` const-string fingerprint resolved against GameHub 6.0.4.
 
 **Problem (device-diagnosed via root logcat/dumpsys):** With the in-game audio driver set to **PulseAudio**, Android screen recording captures video but **no audio**; **ALSA records fine**. Root cause: banner.hub's pulse sink (`module-aaudio-sink`) opens an AAudio **low-latency** stream → the framework grants it as **MMAP**, which bypasses the AudioFlinger mixer that MediaProjection's `AudioPlaybackCapture` taps → silence. ALSA uses a legacy mixed `AudioTrack` → captured.
 
@@ -16,7 +17,7 @@
 - Banner Tools enrollment: 5th tile + `bh_bt_audio` drawable + dispatch case.
 
 ### Next
-Write the extension + patch, compile-check via `build_pull_request.yml`, installable APKs via `release.yml` on this branch (artifact-only pre-release). Device-test (PulseAudio + toggle ON → audio present in the recording), then merge → `gamehub-604-build`, `--no-ff` back-merge → `feature/lite-variant-tier1`.
+Device-test: install the matching variant, Banner Tools → Audio → "Recording-compatible", relaunch with PulseAudio driver, screen-record → audio present (or verify the stream lands on a `MIXER` thread via dumpsys, as in the diagnosis). On pass: merge → `gamehub-604-build`, `--no-ff` back-merge → `feature/lite-variant-tier1`.
 
 ## 2026-05-22 — Docs: fold RetroHRAI into `beacon-setup.md` + README Frontend support
 

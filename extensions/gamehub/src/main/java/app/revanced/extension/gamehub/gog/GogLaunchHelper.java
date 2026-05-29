@@ -28,19 +28,20 @@ import java.io.File;
  * launching is done manually by the user from the GameHub library tile,
  * exactly like any other PC import. See §38.
  *
- * §40 (pre23): in-session refresh root-caused & fixed. Device-verified
- * 2026-05-29 that GameHub's Room keeps NO persisted invalidation triggers and
- * NO persisted room_table_modification_log in db_game_library.db — both are
- * connection-local TEMP objects on Room's own connection. A write on the
- * foreign SQLiteDatabase.openDatabase connection (the old path) therefore
- * never fires Room's triggers, so refreshLibrary() scanned an empty log
- * (no-op) and the §39 REORDER_TO_FRONT nudge only re-read an unchanged
- * StateFlow. FIX: run the INSERTs on Room's OWN connection (located via
- * RoomRefreshHelper.getRoomConnection) so its TEMP triggers fire and mark the
- * log dirty; refreshLibrary() then makes the tracker poll and the library Flow
- * re-emits in-session — no restart, no nudge. The §39 nudge is removed. The
- * foreign-connection write is kept ONLY as a fallback so behavior never
- * regresses below "restart shows it".
+ * §41 (pre24): in-session refresh is NOT achievable from here, by design of the
+ * base app — accepted. Decompile (2026-05-29) proved GameHub's library DB runs
+ * on androidx.room 2.7+ with the BundledSQLiteDriver (its own statically-linked
+ * native SQLite, libsqliteJni.so) — there is no android.database.sqlite
+ * connection and no SupportSQLiteOpenHelper for it. Room's invalidation triggers
+ * + room_table_modification_log are connection-local TEMP objects inside that
+ * bundled connection, so ANY write we make from a separate android.database
+ * .sqlite connection is invisible to Room's tracker and can never trigger an
+ * in-session re-query. (This also means §37/§39/§40 never could have worked.)
+ * The row still commits correctly and shows after a process restart (the
+ * library is process-scoped). Per user decision 2026-05-29 we keep the simple
+ * external write and tell the truth in the toast: "restart GameHub to see it".
+ * Driving Room's own connection / DAO was rejected as too fragile + risky
+ * (coroutine-mutex race on the live native connection).
  *
  * Fail-safe: any error logs + toasts a hint and leaves the user on the GOG
  * activity. Never crashes; never throws past this class.
@@ -65,8 +66,9 @@ public final class GogLaunchHelper {
 
     /** Add the GOG game to GameHub's library.
      *  No auto-launch — launching is the user's job, done manually from the
-     *  GameHub library tile like any other PC import. The library refresh
-     *  (§37) fires so the new row appears in-session. */
+     *  GameHub library tile like any other PC import. The row appears after a
+     *  GameHub restart (see class header §41 for why in-session refresh is not
+     *  possible from outside Room's bundled native connection). */
     public static void addToLibrary(Activity activity, GogGame game, String exePath) {
         if (game == null) {
             Log.w(TAG, "GogLaunchHelper: null GogGame — abort");
@@ -87,54 +89,35 @@ public final class GogLaunchHelper {
         final String safeCover = (coverUrl != null)                        ? coverUrl : "";
         final String gameRowId = "gog_" + gogId;
 
-        SQLiteDatabase roomDb = null;   // Room's own connection — must NOT be closed by us.
-        SQLiteDatabase ownDb  = null;   // fallback foreign connection — we own & close it.
+        SQLiteDatabase db = null;
         try {
-            // §40 preferred path: write on Room's own connection so its TEMP
-            // invalidation triggers fire (the only way the library Flow can
-            // re-emit in-session). getRoomConnection returns null if the live
-            // Room SQLiteDatabase can't be reached reflectively.
-            roomDb = RoomRefreshHelper.getRoomConnection(activity);
-            SQLiteDatabase db = roomDb;
-            if (db == null) {
-                // Fallback (old behavior): foreign connection. Row still lands
-                // correctly — it just won't appear until the app is restarted.
-                File dbFile = activity.getDatabasePath(DB_NAME);
-                if (dbFile == null || !dbFile.exists()) {
-                    Log.e(TAG, "GogLaunchHelper.addToLibrary: " + DB_NAME + " not present");
-                    toast(activity, "Library DB not initialised — open GameHub once, then retry");
-                    return;
-                }
-                ownDb = SQLiteDatabase.openDatabase(
-                        dbFile.getAbsolutePath(), null, SQLiteDatabase.OPEN_READWRITE);
-                db = ownDb;
-                Log.w(TAG, "GogLaunchHelper: Room connection unavailable — foreign-connection"
-                        + " write; row needs an app restart to appear");
+            File dbFile = activity.getDatabasePath(DB_NAME);
+            if (dbFile == null || !dbFile.exists()) {
+                Log.e(TAG, "GogLaunchHelper.addToLibrary: " + DB_NAME + " not present");
+                toast(activity, "Library DB not initialised — open GameHub once, then retry");
+                return;
             }
-
+            db = SQLiteDatabase.openDatabase(
+                    dbFile.getAbsolutePath(), null, SQLiteDatabase.OPEN_READWRITE);
             registerInLibrary(db, gameRowId, gogId, safeName, safeCover, exePath);
-
-            // Make Room poll its modification log. On the Room-connection path
-            // our INSERT just fired the TEMP triggers so the log is dirty and
-            // this re-emits the library Flow; harmless on the fallback path.
-            RoomRefreshHelper.refreshLibrary(activity);
-            toast(activity, "Added “" + safeName + "” to library");
+            // The row commits fine, but GameHub's Room (BundledSQLiteDriver, its
+            // own native SQLite) can't see a foreign-connection write to invalidate
+            // its library Flow — so it only appears after a restart. Say so. (§41)
+            toast(activity, "Added “" + safeName + "” — restart GameHub to see it in your library");
         } catch (Throwable t) {
             Log.e(TAG, "GogLaunchHelper.addToLibrary failed (non-fatal)", t);
             toast(activity, "Add to library failed — " + t.getClass().getSimpleName());
         } finally {
-            if (ownDb != null) {
-                try { ownDb.close(); } catch (Throwable ignored) {}
+            if (db != null) {
+                try { db.close(); } catch (Throwable ignored) {}
             }
-            // roomDb intentionally left open — it belongs to Room.
         }
     }
 
     // ── Internals ────────────────────────────────────────────────────────────
 
     /** Insert the GOG row pair. The caller supplies the open connection and owns
-     *  its lifecycle (it may be Room's live connection, which we must not close).
-     *  We never close {@code db} here. */
+     *  its lifecycle (closes it). We never close {@code db} here. */
     private static void registerInLibrary(SQLiteDatabase db, String gameRowId,
                                           String gogId, String name, String coverUrl,
                                           String exePath) {

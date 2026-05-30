@@ -112,45 +112,43 @@ public class BannerExploreActivity extends Activity {
         return logoId != 0 ? buildLogoHero(card, logoId) : buildPhotoHero(card);
     }
 
-    /** Logo emblem (FIT_CENTER, no crop) on the left + text on the right. */
+    /** Wide BannerHub wordmark across the top, text below — on a dark band that
+     *  blends the logo's black background. */
     private View buildLogoHero(final BhExploreManifest.Card card, int logoId) {
         LinearLayout hero = new LinearLayout(this);
-        hero.setOrientation(LinearLayout.HORIZONTAL);
-        hero.setGravity(Gravity.CENTER_VERTICAL);
-        hero.setPadding(dp(16), dp(16), dp(18), dp(16));
-        LinearLayout.LayoutParams heroLp = new LinearLayout.LayoutParams(-1, dp(176));
+        hero.setOrientation(LinearLayout.VERTICAL);
+        hero.setPadding(dp(18), dp(18), dp(18), dp(18));
+        LinearLayout.LayoutParams heroLp = new LinearLayout.LayoutParams(-1, -2);
         heroLp.bottomMargin = dp(24);
         hero.setLayoutParams(heroLp);
 
         GradientDrawable bg = new GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
-            new int[]{ 0xFF231A3A, 0xFF120E1F });   // deep purple → near-black
+            new int[]{ 0xFF1C1530, 0xFF0A0A0C });   // dark purple → near-black
         bg.setCornerRadius(dp(18));
-        bg.setStroke(dp(1), 0xFF362A5A);
+        bg.setStroke(dp(1), 0xFF2E2650);
         hero.setBackground(bg);
         hero.setClipToOutline(true);
+
+        if (notEmpty(card.badge)) hero.addView(badge(card.badge));
 
         ImageView logo = new ImageView(this);
         logo.setImageResource(logoId);
         logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
-        LinearLayout.LayoutParams logoLp = new LinearLayout.LayoutParams(dp(120), dp(120));
-        logoLp.rightMargin = dp(16);
+        logo.setAdjustViewBounds(true);
+        LinearLayout.LayoutParams logoLp = new LinearLayout.LayoutParams(-1, dp(64));
+        logoLp.topMargin = dp(10);
+        logoLp.gravity = Gravity.START;
         hero.addView(logo, logoLp);
-
-        LinearLayout textCol = new LinearLayout(this);
-        textCol.setOrientation(LinearLayout.VERTICAL);
-        hero.addView(textCol, new LinearLayout.LayoutParams(0, -2, 1f));
-
-        if (notEmpty(card.badge)) textCol.addView(badge(card.badge));
 
         TextView t = new TextView(this);
         t.setText(card.label);
         t.setTextColor(TEXT);
-        t.setTextSize(22);
+        t.setTextSize(20);
         t.setTypeface(Typeface.DEFAULT_BOLD);
         LinearLayout.LayoutParams tLp = new LinearLayout.LayoutParams(-1, -2);
-        tLp.topMargin = dp(8);
-        textCol.addView(t, tLp);
+        tLp.topMargin = dp(14);
+        hero.addView(t, tLp);
 
         if (notEmpty(card.subtitle)) {
             TextView s = new TextView(this);
@@ -159,7 +157,7 @@ public class BannerExploreActivity extends Activity {
             s.setTextSize(13);
             LinearLayout.LayoutParams sLp = new LinearLayout.LayoutParams(-1, -2);
             sLp.topMargin = dp(4);
-            textCol.addView(s, sLp);
+            hero.addView(s, sLp);
         }
 
         hero.setOnClickListener(new View.OnClickListener() {

@@ -65,6 +65,8 @@ public final class BhExploreActions {
             card.body != null ? card.body : (card.subtitle != null ? card.subtitle : ""));
         intent.putExtra(BannerExploreArticleActivity.EXTRA_IMAGE, card.image);
         intent.putExtra(BannerExploreArticleActivity.EXTRA_META, card.date);
+        intent.putExtra(BannerExploreArticleActivity.EXTRA_ICON, card.icon);
+        intent.putExtra(BannerExploreArticleActivity.EXTRA_LINK, card.arg);
         host.startActivity(intent);
     }
 

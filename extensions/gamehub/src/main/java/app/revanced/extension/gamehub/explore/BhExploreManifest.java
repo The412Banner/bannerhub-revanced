@@ -54,9 +54,26 @@ public final class BhExploreManifest {
 
         // ── Hero banner ────────────────────────────────────────────────
         + "{\"type\":\"hero\",\"cards\":["
-        +   "{\"label\":\"BannerHub v1.6.0\",\"subtitle\":\"GOG integration, a new Explore tab & recording-safe audio\",\"badge\":\"WHAT'S NEW\",\"action\":\"article\","
+        +   "{\"label\":\"Features & What's New\",\"subtitle\":\"Everything BannerHub adds to GameHub\",\"badge\":\"WHAT'S NEW\",\"action\":\"article\","
         +     "\"icon\":\"bh_explore_logo\","
-        +     "\"body\":\"This release adds full GOG library integration, our own Explore surface, and a recording-compatible audio toggle so screen recordings keep their sound.\\n\\nOpen Banner Tools to explore the new options.\"}"
+        +     "\"arg\":\"https://github.com/The412Banner/bannerhub-revanced\","
+        +     "\"body\":\""
+        +       "WHAT'S NEW IN v1.6.0\\n"
+        +       "\\u2022 GOG integration \\u2014 sign in and play your GOG library\\n"
+        +       "\\u2022 BannerHub Explore \\u2014 our own offline discovery tab (this screen)\\n"
+        +       "\\u2022 Recording-compatible audio \\u2014 screen recordings keep their game sound\\n"
+        +       "\\nEVERYTHING WE'VE ADDED\\n"
+        +       "\\u2022 No-login launch \\u2014 straight to your library, no account needed\\n"
+        +       "\\u2022 Offline play for imported PC games (works in airplane mode)\\n"
+        +       "\\u2022 PC-accurate controller vibration & rumble, with per-game settings\\n"
+        +       "\\u2022 GPU spoof for better game compatibility\\n"
+        +       "\\u2022 Legacy GLES2 renderer toggle\\n"
+        +       "\\u2022 Strict per-game settings store\\n"
+        +       "\\u2022 PC Game Settings & Game ID menu rows\\n"
+        +       "\\u2022 BannerHub component catalog \\u2014 drivers, DXVK, VKD3D, translators\\n"
+        +       "\\u2022 Custom BannerHub branding & app icon\\n"
+        +       "\\u2022 Muted UI click sounds\\n"
+        +       "\\nTap below to view the project on GitHub.\"}"
         + "]},"
 
         // ── News / changelog rail ──────────────────────────────────────

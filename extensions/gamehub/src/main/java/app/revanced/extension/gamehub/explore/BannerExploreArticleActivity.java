@@ -31,6 +31,10 @@ public class BannerExploreArticleActivity extends Activity {
     static final String EXTRA_BODY  = "bh_body";
     static final String EXTRA_IMAGE = "bh_image";
     static final String EXTRA_META  = "bh_meta";
+    static final String EXTRA_ICON  = "bh_icon";   // bundled drawable name (logo)
+    static final String EXTRA_LINK  = "bh_link";   // optional URL → browser button
+
+    private static final int ACCENT = 0xFF8B5CF6;
 
     private static final int BG       = 0xFF0D0D0D;
     private static final int TEXT     = 0xFFFFFFFF;
@@ -45,6 +49,8 @@ public class BannerExploreArticleActivity extends Activity {
         String body  = getIntent().getStringExtra(EXTRA_BODY);
         String image = getIntent().getStringExtra(EXTRA_IMAGE);
         String meta  = getIntent().getStringExtra(EXTRA_META);
+        String icon  = getIntent().getStringExtra(EXTRA_ICON);
+        final String link = getIntent().getStringExtra(EXTRA_LINK);
 
         ScrollView scroller = new ScrollView(this);
         scroller.setBackgroundColor(BG);
@@ -55,20 +61,41 @@ public class BannerExploreArticleActivity extends Activity {
         column.setOrientation(LinearLayout.VERTICAL);
         scroller.addView(column, new ScrollView.LayoutParams(-1, -1));
 
-        // Image header with a dark scrim + a back chip.
+        // Header: a bundled logo drawable (centered on a dark band) when given,
+        // otherwise a network photo with a scrim. Always carries a back chip.
         FrameLayout header = new FrameLayout(this);
-        header.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(210)));
-        ImageView img = new ImageView(this);
-        img.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        img.setBackgroundColor(PLACE);
-        header.addView(img, new FrameLayout.LayoutParams(-1, -1));
-        if (image != null && !image.isEmpty()) BhImageLoader.load(img, image);
+        header.setLayoutParams(new LinearLayout.LayoutParams(-1, dp(168)));
 
-        View scrim = new View(this);
-        scrim.setBackground(new GradientDrawable(
-            GradientDrawable.Orientation.TOP_BOTTOM,
-            new int[]{ 0x66000000, Color.TRANSPARENT, 0xCC000000 }));
-        header.addView(scrim, new FrameLayout.LayoutParams(-1, -1));
+        int logoId = 0;
+        if (icon != null && !icon.isEmpty()) {
+            try { logoId = getResources().getIdentifier(icon, "drawable", getPackageName()); }
+            catch (Throwable ignored) { }
+        }
+
+        if (logoId != 0) {
+            header.setBackground(new GradientDrawable(
+                GradientDrawable.Orientation.TL_BR, new int[]{ 0xFF1C1530, 0xFF0A0A0C }));
+            ImageView logo = new ImageView(this);
+            logo.setImageResource(logoId);
+            logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            logo.setAdjustViewBounds(true);
+            FrameLayout.LayoutParams logoLp = new FrameLayout.LayoutParams(-2, dp(72));
+            logoLp.gravity = Gravity.CENTER;
+            logoLp.setMargins(dp(24), dp(24), dp(24), dp(24));
+            header.addView(logo, logoLp);
+        } else {
+            ImageView img = new ImageView(this);
+            img.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            img.setBackgroundColor(PLACE);
+            header.addView(img, new FrameLayout.LayoutParams(-1, -1));
+            if (image != null && !image.isEmpty()) BhImageLoader.load(img, image);
+
+            View scrim = new View(this);
+            scrim.setBackground(new GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{ 0x66000000, Color.TRANSPARENT, 0xCC000000 }));
+            header.addView(scrim, new FrameLayout.LayoutParams(-1, -1));
+        }
 
         TextView back = new TextView(this);
         back.setText("←  Back");
@@ -118,6 +145,36 @@ public class BannerExploreArticleActivity extends Activity {
         LinearLayout.LayoutParams bLp = new LinearLayout.LayoutParams(-1, -2);
         bLp.topMargin = dp(16);
         content.addView(b, bLp);
+
+        // Optional CTA → open a link (e.g. the GitHub repo) in the browser.
+        if (link != null && !link.isEmpty()) {
+            TextView btn = new TextView(this);
+            btn.setText("View on GitHub  →");
+            btn.setTextColor(0xFFFFFFFF);
+            btn.setTextSize(15);
+            btn.setTypeface(Typeface.DEFAULT_BOLD);
+            btn.setGravity(Gravity.CENTER);
+            btn.setPadding(dp(20), dp(14), dp(20), dp(14));
+            GradientDrawable btnBg = new GradientDrawable();
+            btnBg.setColor(ACCENT);
+            btnBg.setCornerRadius(dp(12));
+            btn.setBackground(btnBg);
+            LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(-1, -2);
+            btnLp.topMargin = dp(24);
+            content.addView(btn, btnLp);
+            btn.setOnClickListener(new View.OnClickListener() {
+                @Override public void onClick(View v) {
+                    try {
+                        android.content.Intent i = new android.content.Intent(
+                            android.content.Intent.ACTION_VIEW, android.net.Uri.parse(link));
+                        i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                        startActivity(i);
+                    } catch (Throwable t) {
+                        android.util.Log.w("BhExplore", "open link failed", t);
+                    }
+                }
+            });
+        }
 
         setContentView(scroller);
         hideSystemBars();

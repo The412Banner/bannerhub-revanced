@@ -33,22 +33,29 @@ val exploreManifestPatch = resourcePatch(
         document("AndroidManifest.xml").use { dom ->
             val app = dom.getNode("application") as Element
 
-            val name = "$PKG.BannerExploreActivity"
+            // Both Explore screens: the homepage and the article/detail page.
+            val names = listOf(
+                "$PKG.BannerExploreActivity",
+                "$PKG.BannerExploreArticleActivity",
+            )
 
-            // Idempotent: skip if already registered.
-            val nodes = app.getElementsByTagName("activity")
-            for (i in 0 until nodes.length) {
-                if ((nodes.item(i) as Element).getAttribute("android:name") == name) return@use
+            val existing = app.getElementsByTagName("activity")
+            val present = HashSet<String>()
+            for (i in 0 until existing.length) {
+                present.add((existing.item(i) as Element).getAttribute("android:name"))
             }
 
-            val activity = dom.createElement("activity").apply {
-                setAttribute("android:name", name)
-                setAttribute("android:exported", "false")
-                setAttribute("android:theme", "@android:style/Theme.Black.NoTitleBar")
-                setAttribute("android:configChanges", "orientation|screenSize|keyboardHidden")
-                setAttribute("android:screenOrientation", "behind")
+            for (name in names) {
+                if (present.contains(name)) continue // idempotent
+                val activity = dom.createElement("activity").apply {
+                    setAttribute("android:name", name)
+                    setAttribute("android:exported", "false")
+                    setAttribute("android:theme", "@android:style/Theme.Black.NoTitleBar")
+                    setAttribute("android:configChanges", "orientation|screenSize|keyboardHidden")
+                    setAttribute("android:screenOrientation", "behind")
+                }
+                app.appendChild(activity)
             }
-            app.appendChild(activity)
         }
     }
 }

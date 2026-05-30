@@ -11,7 +11,7 @@
           "action": "article",
           "icon": "bh_explore_logo",
           "arg": "https://github.com/The412Banner/bannerhub-revanced",
-          "body": "WHAT'S NEW IN v1.6.0\n• GOG integration — sign in and play your GOG library\n• BannerHub Explore — our own offline discovery tab (this screen)\n• Recording-compatible audio — screen recordings keep their game sound\n\nEVERYTHING WE'VE ADDED\n• No-login launch — straight to your library, no account needed\n• Offline play for imported PC games (works in airplane mode)\n• PC-accurate controller vibration & rumble, with per-game settings\n• GPU spoof for better game compatibility\n• Legacy GLES2 renderer toggle\n• Strict per-game settings store\n• PC Game Settings & Game ID menu rows\n• BannerHub component catalog — drivers, DXVK, VKD3D, translators\n• Custom BannerHub branding & app icon\n• Muted UI click sounds\n\nTap below to view the project on GitHub."
+          "body": "WHAT'S NEW IN v1.6.0-604\n• GOG integration\n• BannerHub Explore screen\n• Recording-compatible audio toggle\n\nEVERYTHING WE'VE ADDED\n• No-login launch — straight to your library, no account needed\n• Offline play for imported PC games (works in airplane mode)\n• PC-accurate controller vibration & rumble, with per-game settings\n• GPU spoof for better game compatibility\n• Legacy GLES2 renderer toggle\n• Strict per-game settings store\n• PC Game Settings & Game ID menu rows\n• BannerHub component catalog — drivers, DXVK, VKD3D, translators\n• Custom BannerHub branding & app icon\n• Muted UI click sounds\n\nTap below to view the project on GitHub."
         }
       ]
     },
@@ -48,28 +48,76 @@
       "title": "Plays great on BannerHub",
       "type": "games",
       "cards": [
-        { "label": "GTA V", "action": "article", "image": "https://picsum.photos/seed/gtav/300/430", "body": "Verified in airplane mode. DXVK 2.4.1, Proton 9 arm64ec, Turnip R4." },
-        { "label": "DOOM", "action": "article", "image": "https://picsum.photos/seed/doom/300/430", "body": "Controller + audio confirmed with the proton10 arm64x xinput fix." },
-        { "label": "Tomb Raider", "action": "article", "image": "https://picsum.photos/seed/tomb/300/430", "body": "Solid with Zink renderer; try Vegas FrameGen for higher frame rates." },
-        { "label": "Genshin", "action": "article", "image": "https://picsum.photos/seed/genshin/300/430", "body": "Runs in the Genshin variant build." }
+        {
+          "label": "GTA V",
+          "action": "article",
+          "image": "https://picsum.photos/seed/gtav/300/430",
+          "body": "Verified in airplane mode. DXVK 2.4.1, Proton 9 arm64ec, Turnip R4."
+        },
+        {
+          "label": "DOOM",
+          "action": "article",
+          "image": "https://picsum.photos/seed/doom/300/430",
+          "body": "Controller + audio confirmed with the proton10 arm64x xinput fix."
+        },
+        {
+          "label": "Tomb Raider",
+          "action": "article",
+          "image": "https://picsum.photos/seed/tomb/300/430",
+          "body": "Solid with Zink renderer; try Vegas FrameGen for higher frame rates."
+        },
+        {
+          "label": "Genshin",
+          "action": "article",
+          "image": "https://picsum.photos/seed/genshin/300/430",
+          "body": "Runs in the Genshin variant build."
+        }
       ]
     },
     {
       "title": "Your stores",
       "type": "shortcuts",
       "cards": [
-        { "label": "GOG", "subtitle": "Sign in & browse your library", "action": "gog", "icon": "bh_explore_gog" },
-        { "label": "Epic Games", "subtitle": "Coming soon", "action": "soon" },
-        { "label": "Steam", "subtitle": "Coming soon", "action": "soon" }
+        {
+          "label": "GOG",
+          "subtitle": "Sign in & browse your library",
+          "action": "gog",
+          "icon": "bh_explore_gog"
+        },
+        {
+          "label": "Epic Games",
+          "subtitle": "Coming soon",
+          "action": "soon"
+        },
+        {
+          "label": "Steam",
+          "subtitle": "Coming soon",
+          "action": "soon"
+        }
       ]
     },
     {
       "title": "Tips & tricks",
       "type": "shortcuts",
       "cards": [
-        { "label": "Recording-safe audio", "subtitle": "Banner Tools → Audio", "action": "article", "body": "Enable the recording-compatible audio toggle so MediaProjection captures game sound instead of silence." },
-        { "label": "Pick a renderer", "subtitle": "Zink works today", "action": "article", "body": "The per-container Renderer dropdown lets you choose the GL backend. Zink is the shipped, working option." },
-        { "label": "Frame generation", "subtitle": "Vegas FrameGen", "action": "article", "body": "Vegas FrameGen (GameHub AI Frame Gen) boosts perceived frame rate on supported titles." }
+        {
+          "label": "Recording-safe audio",
+          "subtitle": "Banner Tools → Audio",
+          "action": "article",
+          "body": "Enable the recording-compatible audio toggle so MediaProjection captures game sound instead of silence."
+        },
+        {
+          "label": "Pick a renderer",
+          "subtitle": "Zink works today",
+          "action": "article",
+          "body": "The per-container Renderer dropdown lets you choose the GL backend. Zink is the shipped, working option."
+        },
+        {
+          "label": "Frame generation",
+          "subtitle": "Vegas FrameGen",
+          "action": "article",
+          "body": "Vegas FrameGen (GameHub AI Frame Gen) boosts perceived frame rate on supported titles."
+        }
       ]
     }
   ]

@@ -99,6 +99,13 @@ jobs:
             --repo ${{ github.repository }} \
             --output GameHub_6.0.4.apk
 
+      - name: Sync Explore What's New from release notes
+        # Regenerates explore/bh_explore.json's hero "What's New" block from the
+        # README "What's new in <ver>" section, so the in-app What's New matches
+        # the release notes without hand-editing two places. Fail-safe: leaves
+        # the manifest untouched (exit 0) if the notes format changes.
+        run: python3 explore/gen_whatsnew.py
+
       - name: Stage shared artifacts
         run: |
           mkdir -p shared

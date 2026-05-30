@@ -76,38 +76,9 @@ public final class BhExploreManifest {
         +       "\\nTap below to view the project on GitHub.\"}"
         + "]},"
 
-        // ── News / changelog rail ──────────────────────────────────────
-        + "{\"title\":\"What's New\",\"type\":\"news\",\"cards\":["
-        +   "{\"label\":\"New Turnip R4 driver available\",\"date\":\"May 29\",\"badge\":\"DRIVER\",\"action\":\"article\","
-        +     "\"image\":\"https://picsum.photos/seed/turnip/600/340\","
-        +     "\"body\":\"A fresh Turnip R4 build is out with a One UI gralloc fix and a7xx performance work. Grab it from the in-app driver downloader.\"},"
-        +   "{\"label\":\"Dirt 3 now runs end-to-end\",\"date\":\"May 27\",\"badge\":\"COMPAT\",\"action\":\"article\","
-        +     "\"image\":\"https://picsum.photos/seed/dirt3/600/340\","
-        +     "\"body\":\"Dirt 3 launches cleanly with DXVK 2.4.1 + Proton 9 arm64ec. Pin DXVK 2.4.1 to avoid the Turnip timeline-semaphore regression in 2.5+.\"},"
-        +   "{\"label\":\"Join the community\",\"date\":\"\",\"badge\":\"DISCORD\",\"action\":\"url\",\"arg\":\"https://discord.gg/\","
-        +     "\"image\":\"https://picsum.photos/seed/discord/600/340\"}"
-        + "]},"
-
-        // ── Featured games rail (cover art) ────────────────────────────
-        + "{\"title\":\"Plays great on BannerHub\",\"type\":\"games\",\"cards\":["
-        +   "{\"label\":\"GTA V\",\"action\":\"article\",\"image\":\"https://picsum.photos/seed/gtav/300/430\",\"body\":\"Verified in airplane mode. DXVK 2.4.1, Proton 9 arm64ec, Turnip R4.\"},"
-        +   "{\"label\":\"DOOM\",\"action\":\"article\",\"image\":\"https://picsum.photos/seed/doom/300/430\",\"body\":\"Controller + audio confirmed with the proton10 arm64x xinput fix.\"},"
-        +   "{\"label\":\"Tomb Raider\",\"action\":\"article\",\"image\":\"https://picsum.photos/seed/tomb/300/430\",\"body\":\"Solid with Zink renderer; try Vegas FrameGen for higher frame rates.\"},"
-        +   "{\"label\":\"Genshin\",\"action\":\"article\",\"image\":\"https://picsum.photos/seed/genshin/300/430\",\"body\":\"Runs in the Genshin variant build.\"}"
-        + "]},"
-
-        // ── Stores rail (real bundled GOG logo + compact cards) ────────
+        // ── Stores rail (real bundled GOG logo) ──────────────
         + "{\"title\":\"Your stores\",\"type\":\"shortcuts\",\"cards\":["
-        +   "{\"label\":\"GOG\",\"subtitle\":\"Sign in & browse your library\",\"action\":\"gog\",\"icon\":\"bh_explore_gog\"},"
-        +   "{\"label\":\"Epic Games\",\"subtitle\":\"Coming soon\",\"action\":\"soon\"},"
-        +   "{\"label\":\"Steam\",\"subtitle\":\"Coming soon\",\"action\":\"soon\"}"
-        + "]},"
-
-        // ── Tips rail (compact) ────────────────────────────────────────
-        + "{\"title\":\"Tips & tricks\",\"type\":\"shortcuts\",\"cards\":["
-        +   "{\"label\":\"Recording-safe audio\",\"subtitle\":\"Banner Tools \\u2192 Audio\",\"action\":\"article\",\"body\":\"Enable the recording-compatible audio toggle so MediaProjection captures game sound instead of silence.\"},"
-        +   "{\"label\":\"Pick a renderer\",\"subtitle\":\"Zink works today\",\"action\":\"article\",\"body\":\"The per-container Renderer dropdown lets you choose the GL backend. Zink is the shipped, working option.\"},"
-        +   "{\"label\":\"Frame generation\",\"subtitle\":\"Vegas FrameGen\",\"action\":\"article\",\"body\":\"Vegas FrameGen (GameHub AI Frame Gen) boosts perceived frame rate on supported titles.\"}"
+        +   "{\"label\":\"GOG\",\"subtitle\":\"Sign in & browse your library\",\"action\":\"gog\",\"icon\":\"bh_explore_gog\"}"
         + "]}"
 
         + "]}";

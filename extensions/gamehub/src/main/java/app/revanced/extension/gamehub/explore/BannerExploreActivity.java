@@ -1,6 +1,7 @@
 package app.revanced.extension.gamehub.explore;
 
 import android.app.Activity;
+import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
@@ -11,6 +12,7 @@ import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
+import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -25,10 +27,15 @@ import java.util.List;
  * via {@link com.xj.winemu.explore.BhExploreTabClick}.
  *
  * Instead of forging xiaoji's server-driven discovery feed (which we don't
- * control), this renders content WE own from {@link BhExploreManifest}
- * (bundled JSON in v1), with each card routed to our own handlers by
- * {@link BhExploreActions}. Classic programmatic Views only — our ReVanced
- * extension has no Compose compiler plugin. See GOG_LIBRARY_TAB_DESIGN §42.
+ * control), this renders content WE own from {@link BhExploreManifest}, with
+ * each card routed to our own handlers by {@link BhExploreActions}. Classic
+ * programmatic Views only — our ReVanced extension has no Compose compiler
+ * plugin. See GOG_LIBRARY_TAB_DESIGN §42.
+ *
+ * This build is the "how fancy can it get" prototype: a store-style homepage
+ * with a hero banner, cover-art game rails, a news rail that opens article
+ * pages, badges, and network image loading (with an offline gradient
+ * fallback). Layout is driven entirely by the manifest's rail {@code type}.
  */
 public class BannerExploreActivity extends Activity {
 
@@ -38,6 +45,7 @@ public class BannerExploreActivity extends Activity {
     private static final int TEXT        = 0xFFFFFFFF;
     private static final int TEXT_DIM    = 0xFFB0B0B5;
     private static final int ACCENT      = 0xFF8B5CF6; // GOG-ish purple
+    private static final int PLACEHOLDER = 0xFF26262B;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -46,16 +54,17 @@ public class BannerExploreActivity extends Activity {
         ScrollView scroller = new ScrollView(this);
         scroller.setBackgroundColor(BG);
         scroller.setFillViewport(true);
+        scroller.setVerticalScrollBarEnabled(false);
 
         LinearLayout column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
-        column.setPadding(dp(16), dp(20), dp(16), dp(24));
+        column.setPadding(dp(16), dp(18), dp(16), dp(28));
         scroller.addView(column, new ScrollView.LayoutParams(-1, -1));
 
         TextView title = new TextView(this);
         title.setText("Explore");
         title.setTextColor(TEXT);
-        title.setTextSize(26);
+        title.setTextSize(28);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setPadding(dp(4), 0, 0, dp(16));
         column.addView(title);
@@ -76,25 +85,337 @@ public class BannerExploreActivity extends Activity {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        // Re-assert immersive after dialogs / returning from GogMainActivity so
-        // the status + nav bars don't linger visible.
         if (hasFocus) hideSystemBars();
+    }
+
+    // ── Rail dispatch ────────────────────────────────────────────────────────
+
+    private View buildRail(BhExploreManifest.Rail rail) {
+        String type = rail.type == null ? "shortcuts" : rail.type;
+        switch (type) {
+            case "hero":  return buildHero(rail);
+            case "news":  return buildCarousel(rail, CardStyle.NEWS);
+            case "games": return buildCarousel(rail, CardStyle.GAME);
+            default:      return buildCarousel(rail, CardStyle.SHORTCUT);
+        }
+    }
+
+    // ── Hero banner ──────────────────────────────────────────────────────────
+
+    private View buildHero(BhExploreManifest.Rail rail) {
+        final BhExploreManifest.Card card = rail.cards.get(0);
+
+        FrameLayout hero = new FrameLayout(this);
+        LinearLayout.LayoutParams heroLp = new LinearLayout.LayoutParams(-1, dp(190));
+        heroLp.bottomMargin = dp(24);
+        hero.setLayoutParams(heroLp);
+        hero.setClipToOutline(true);
+
+        GradientDrawable frame = new GradientDrawable();
+        frame.setColor(PLACEHOLDER);
+        frame.setCornerRadius(dp(18));
+        hero.setBackground(frame);
+
+        ImageView img = new ImageView(this);
+        img.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        hero.addView(img, new FrameLayout.LayoutParams(-1, -1));
+        roundClip(img, dp(18));
+        BhImageLoader.load(img, card.image);
+
+        // Dark bottom-up scrim so text stays legible over any image.
+        View scrim = new View(this);
+        GradientDrawable scrimBg = new GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            new int[]{ Color.TRANSPARENT, 0x00000000, 0xCC000000 });
+        scrimBg.setCornerRadius(dp(18));
+        scrim.setBackground(scrimBg);
+        hero.addView(scrim, new FrameLayout.LayoutParams(-1, -1));
+
+        LinearLayout overlay = new LinearLayout(this);
+        overlay.setOrientation(LinearLayout.VERTICAL);
+        overlay.setPadding(dp(18), dp(18), dp(18), dp(18));
+        FrameLayout.LayoutParams overlayLp = new FrameLayout.LayoutParams(-1, -2);
+        overlayLp.gravity = Gravity.BOTTOM;
+        hero.addView(overlay, overlayLp);
+
+        if (notEmpty(card.badge)) overlay.addView(badge(card.badge));
+
+        TextView t = new TextView(this);
+        t.setText(card.label);
+        t.setTextColor(TEXT);
+        t.setTextSize(22);
+        t.setTypeface(Typeface.DEFAULT_BOLD);
+        LinearLayout.LayoutParams tLp = new LinearLayout.LayoutParams(-1, -2);
+        tLp.topMargin = dp(8);
+        overlay.addView(t, tLp);
+
+        if (notEmpty(card.subtitle)) {
+            TextView s = new TextView(this);
+            s.setText(card.subtitle);
+            s.setTextColor(0xFFE0E0E5);
+            s.setTextSize(13);
+            overlay.addView(s);
+        }
+
+        hero.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { dispatch(card); }
+        });
+        return hero;
+    }
+
+    // ── Carousels (news / games / shortcuts) ──────────────────────────────────
+
+    private enum CardStyle { NEWS, GAME, SHORTCUT }
+
+    private View buildCarousel(BhExploreManifest.Rail rail, CardStyle style) {
+        LinearLayout section = new LinearLayout(this);
+        section.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams sectionLp = new LinearLayout.LayoutParams(-1, -2);
+        sectionLp.bottomMargin = dp(22);
+        section.setLayoutParams(sectionLp);
+
+        if (notEmpty(rail.title)) {
+            TextView header = new TextView(this);
+            header.setText(rail.title);
+            header.setTextColor(TEXT);
+            header.setTextSize(19);
+            header.setTypeface(Typeface.DEFAULT_BOLD);
+            header.setPadding(dp(4), 0, 0, dp(12));
+            section.addView(header);
+        }
+
+        HorizontalScrollView hsv = new HorizontalScrollView(this);
+        hsv.setHorizontalScrollBarEnabled(false);
+        hsv.setClipChildren(false);
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        hsv.addView(row, new HorizontalScrollView.LayoutParams(-2, -2));
+
+        for (BhExploreManifest.Card card : rail.cards) {
+            switch (style) {
+                case NEWS: row.addView(buildNewsCard(card)); break;
+                case GAME: row.addView(buildGameCard(card)); break;
+                default:   row.addView(buildShortcutCard(card)); break;
+            }
+        }
+        section.addView(hsv);
+        return section;
+    }
+
+    /** Wide 16:9 image + headline + date. */
+    private View buildNewsCard(final BhExploreManifest.Card card) {
+        LinearLayout cardView = new LinearLayout(this);
+        cardView.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(264), -2);
+        lp.rightMargin = dp(14);
+        cardView.setLayoutParams(lp);
+        applyCardBg(cardView);
+
+        FrameLayout imgWrap = new FrameLayout(this);
+        ImageView img = new ImageView(this);
+        img.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        img.setBackgroundColor(PLACEHOLDER);
+        imgWrap.addView(img, new FrameLayout.LayoutParams(-1, dp(148)));
+        roundClip(img, dp(14));
+        BhImageLoader.load(img, card.image);
+        if (notEmpty(card.badge)) {
+            FrameLayout.LayoutParams bLp = new FrameLayout.LayoutParams(-2, -2);
+            bLp.setMargins(dp(10), dp(10), 0, 0);
+            View b = badge(card.badge);
+            imgWrap.addView(b, bLp);
+        }
+        cardView.addView(imgWrap, new LinearLayout.LayoutParams(-1, dp(148)));
+
+        LinearLayout textCol = new LinearLayout(this);
+        textCol.setOrientation(LinearLayout.VERTICAL);
+        textCol.setPadding(dp(12), dp(12), dp(12), dp(14));
+
+        TextView headline = new TextView(this);
+        headline.setText(card.label);
+        headline.setTextColor(TEXT);
+        headline.setTextSize(15);
+        headline.setTypeface(Typeface.DEFAULT_BOLD);
+        headline.setMaxLines(2);
+        textCol.addView(headline);
+
+        if (notEmpty(card.date)) {
+            TextView d = new TextView(this);
+            d.setText(card.date);
+            d.setTextColor(TEXT_DIM);
+            d.setTextSize(12);
+            LinearLayout.LayoutParams dLp = new LinearLayout.LayoutParams(-1, -2);
+            dLp.topMargin = dp(6);
+            textCol.addView(d, dLp);
+        }
+        cardView.addView(textCol);
+
+        cardView.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { dispatch(card); }
+        });
+        return cardView;
+    }
+
+    /** Portrait cover-art card. */
+    private View buildGameCard(final BhExploreManifest.Card card) {
+        LinearLayout cardView = new LinearLayout(this);
+        cardView.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(124), -2);
+        lp.rightMargin = dp(12);
+        cardView.setLayoutParams(lp);
+
+        ImageView img = new ImageView(this);
+        img.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        GradientDrawable ph = new GradientDrawable(
+            GradientDrawable.Orientation.TL_BR, new int[]{ 0xFF2A2A30, 0xFF18181C });
+        ph.setCornerRadius(dp(14));
+        img.setBackground(ph);
+        img.setClipToOutline(true);
+        roundClip(img, dp(14));
+        cardView.addView(img, new LinearLayout.LayoutParams(dp(124), dp(176)));
+        BhImageLoader.load(img, card.image);
+
+        TextView label = new TextView(this);
+        label.setText(card.label);
+        label.setTextColor(TEXT);
+        label.setTextSize(14);
+        label.setTypeface(Typeface.DEFAULT_BOLD);
+        label.setMaxLines(1);
+        LinearLayout.LayoutParams labelLp = new LinearLayout.LayoutParams(-1, -2);
+        labelLp.topMargin = dp(8);
+        labelLp.leftMargin = dp(2);
+        cardView.addView(label, labelLp);
+
+        cardView.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { dispatch(card); }
+        });
+        return cardView;
+    }
+
+    /** The original compact card: drawable icon (or accent chip) + label + sub. */
+    private View buildShortcutCard(final BhExploreManifest.Card card) {
+        LinearLayout cardView = new LinearLayout(this);
+        cardView.setOrientation(LinearLayout.VERTICAL);
+        cardView.setPadding(dp(14), dp(14), dp(14), dp(14));
+        applyCardBg(cardView);
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(168), -2);
+        lp.rightMargin = dp(12);
+        cardView.setLayoutParams(lp);
+
+        View iconView = null;
+        if (notEmpty(card.icon)) {
+            try {
+                int id = getResources().getIdentifier(card.icon, "drawable", getPackageName());
+                if (id != 0) {
+                    ImageView iv = new ImageView(this);
+                    iv.setImageResource(id);
+                    iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+                    iconView = iv;
+                }
+            } catch (Throwable ignored) { }
+        }
+        if (iconView == null) {
+            View chip = new View(this);
+            GradientDrawable chipBg = new GradientDrawable();
+            chipBg.setColor(ACCENT);
+            chipBg.setCornerRadius(dp(8));
+            chip.setBackground(chipBg);
+            iconView = chip;
+        }
+        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(dp(48), dp(48));
+        iconLp.bottomMargin = dp(12);
+        cardView.addView(iconView, iconLp);
+
+        TextView label = new TextView(this);
+        label.setText(card.label);
+        label.setTextColor(TEXT);
+        label.setTextSize(16);
+        label.setTypeface(Typeface.DEFAULT_BOLD);
+        cardView.addView(label);
+
+        if (notEmpty(card.subtitle)) {
+            TextView sub = new TextView(this);
+            sub.setText(card.subtitle);
+            sub.setTextColor(TEXT_DIM);
+            sub.setTextSize(12);
+            LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(-1, -2);
+            subLp.topMargin = dp(4);
+            cardView.addView(sub, subLp);
+        }
+
+        cardView.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { dispatch(card); }
+        });
+        return cardView;
+    }
+
+    // ── Shared bits ───────────────────────────────────────────────────────────
+
+    private void dispatch(BhExploreManifest.Card card) {
+        BhExploreActions.dispatch(this, card);
+    }
+
+    private TextView badge(String text) {
+        TextView b = new TextView(this);
+        b.setText(text);
+        b.setTextColor(0xFFFFFFFF);
+        b.setTextSize(10);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+        b.setAllCaps(true);
+        b.setPadding(dp(8), dp(3), dp(8), dp(3));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(ACCENT);
+        bg.setCornerRadius(dp(20));
+        b.setBackground(bg);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+        b.setLayoutParams(lp);
+        return b;
+    }
+
+    private void applyCardBg(View v) {
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(CARD_BG);
+        bg.setCornerRadius(dp(14));
+        bg.setStroke(dp(1), CARD_STROKE);
+        v.setBackground(bg);
+        v.setClipToOutline(true);
+    }
+
+    /** Round-clip a view to a radius (API 21+, ignored below). */
+    private void roundClip(final View v, final int radius) {
+        if (Build.VERSION.SDK_INT >= 21) {
+            v.setClipToOutline(true);
+            v.setOutlineProvider(new android.view.ViewOutlineProvider() {
+                @Override public void getOutline(View view, android.graphics.Outline outline) {
+                    outline.setRoundRect(0, 0, view.getWidth(), view.getHeight(), radius);
+                }
+            });
+        }
+    }
+
+    private View emptyState() {
+        TextView tv = new TextView(this);
+        tv.setText("Nothing here yet.");
+        tv.setTextColor(TEXT_DIM);
+        tv.setTextSize(15);
+        tv.setGravity(Gravity.CENTER);
+        tv.setPadding(0, dp(48), 0, 0);
+        return tv;
+    }
+
+    private static boolean notEmpty(String s) {
+        return s != null && !s.isEmpty();
     }
 
     /**
      * Match GameHub's fullscreen look — hide both the top status/notification bar
-     * and the bottom navigation bar (immersive sticky; a swipe from an edge shows
-     * them transiently). Our base theme is plain NoTitleBar, so without this the
-     * system bars appear over the screen. WindowInsetsController on API 30+,
-     * legacy SYSTEM_UI_FLAG_* below.
+     * and the bottom navigation bar (immersive sticky). WindowInsetsController on
+     * API 30+, legacy SYSTEM_UI_FLAG_* below. Must run AFTER setContentView so the
+     * decor view exists (pre26 crash: NPE on a null DecorView's controller).
      */
     private void hideSystemBars() {
         try {
             Window window = getWindow();
-            // getDecorView() forces decor creation — window.getInsetsController()
-            // NPEs on a null DecorView if called before the decor exists
-            // (pre26 crash: called pre-setContentView). Use the decor's own
-            // controller and only call after setContentView / on focus.
             View decor = window.getDecorView();
             if (Build.VERSION.SDK_INT >= 30) {
                 window.setDecorFitsSystemWindows(false);
@@ -114,121 +435,8 @@ public class BannerExploreActivity extends Activity {
                     | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
             }
         } catch (Throwable t) {
-            // Cosmetic only — never let immersive setup crash the screen.
             android.util.Log.w("BhExplore", "hideSystemBars failed", t);
         }
-    }
-
-    // ── Rail ────────────────────────────────────────────────────────────────
-
-    private View buildRail(BhExploreManifest.Rail rail) {
-        LinearLayout section = new LinearLayout(this);
-        section.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams sectionLp =
-            new LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT);
-        sectionLp.bottomMargin = dp(20);
-        section.setLayoutParams(sectionLp);
-
-        if (rail.title != null && !rail.title.isEmpty()) {
-            TextView header = new TextView(this);
-            header.setText(rail.title);
-            header.setTextColor(TEXT);
-            header.setTextSize(18);
-            header.setTypeface(Typeface.DEFAULT_BOLD);
-            header.setPadding(dp(4), 0, 0, dp(10));
-            section.addView(header);
-        }
-
-        HorizontalScrollView hsv = new HorizontalScrollView(this);
-        hsv.setHorizontalScrollBarEnabled(false);
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        hsv.addView(row, new HorizontalScrollView.LayoutParams(-2, -2));
-
-        for (BhExploreManifest.Card card : rail.cards) {
-            row.addView(buildCard(card));
-        }
-        section.addView(hsv);
-        return section;
-    }
-
-    // ── Card ──────────────────────────────────────────────────────────────
-
-    private View buildCard(final BhExploreManifest.Card card) {
-        LinearLayout cardView = new LinearLayout(this);
-        cardView.setOrientation(LinearLayout.VERTICAL);
-        cardView.setPadding(dp(14), dp(14), dp(14), dp(14));
-
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(CARD_BG);
-        bg.setCornerRadius(dp(14));
-        bg.setStroke(dp(1), CARD_STROKE);
-        cardView.setBackground(bg);
-
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(168), -2);
-        lp.rightMargin = dp(12);
-        cardView.setLayoutParams(lp);
-
-        // Icon: a bundled drawable (resolved by name against the host app's
-        // res, e.g. our injected "bh_explore_gog") when the card specifies one
-        // and it's present; otherwise an accent-colour placeholder. Never throws.
-        View iconView = null;
-        if (card.icon != null && !card.icon.isEmpty()) {
-            try {
-                int id = getResources().getIdentifier(card.icon, "drawable", getPackageName());
-                if (id != 0) {
-                    ImageView iv = new ImageView(this);
-                    iv.setImageResource(id);
-                    iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
-                    iconView = iv;
-                }
-            } catch (Throwable ignored) { }
-        }
-        if (iconView == null) {
-            View chip = new View(this);
-            GradientDrawable chipBg = new GradientDrawable();
-            chipBg.setColor(ACCENT);
-            chipBg.setCornerRadius(dp(6));
-            iconView = chip;
-        }
-        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(dp(56), dp(56));
-        iconLp.bottomMargin = dp(12);
-        cardView.addView(iconView, iconLp);
-
-        TextView label = new TextView(this);
-        label.setText(card.label);
-        label.setTextColor(TEXT);
-        label.setTextSize(16);
-        label.setTypeface(Typeface.DEFAULT_BOLD);
-        cardView.addView(label);
-
-        if (card.subtitle != null && !card.subtitle.isEmpty()) {
-            TextView sub = new TextView(this);
-            sub.setText(card.subtitle);
-            sub.setTextColor(TEXT_DIM);
-            sub.setTextSize(12);
-            LinearLayout.LayoutParams subLp = new LinearLayout.LayoutParams(-1, -2);
-            subLp.topMargin = dp(4);
-            cardView.addView(sub, subLp);
-        }
-
-        cardView.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                BhExploreActions.dispatch(BannerExploreActivity.this, card.action, card.arg);
-            }
-        });
-        return cardView;
-    }
-
-    private View emptyState() {
-        TextView tv = new TextView(this);
-        tv.setText("Nothing here yet.");
-        tv.setTextColor(TEXT_DIM);
-        tv.setTextSize(15);
-        tv.setGravity(Gravity.CENTER);
-        tv.setPadding(0, dp(48), 0, 0);
-        return tv;
     }
 
     private int dp(int v) {

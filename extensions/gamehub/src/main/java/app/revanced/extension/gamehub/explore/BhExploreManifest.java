@@ -36,13 +36,63 @@ public final class BhExploreManifest {
 
     private static final String TAG = "BhExplore";
 
-    /** v1 GOG-only rail. Full hijack, offline. */
+    /**
+     * Prototype manifest exercising every rail style so we can judge how "fancy"
+     * the classic-View Explore screen can look:
+     *   - "hero"      one full-width featured banner (network image + scrim)
+     *   - "news"      wide cards w/ 16:9 image + headline + date → article page
+     *   - "games"     portrait cover-art cards
+     *   - "shortcuts" the original compact cards (default when type omitted)
+     *
+     * Network images use picsum.photos (seeded, so they're stable) purely to
+     * demonstrate cover-art loading — real content would point at game art /
+     * our own CDN. With no network every image falls back to a gradient
+     * placeholder and the screen still reads fine.
+     */
     static final String BUNDLED_JSON =
-        "{"
-        + "\"rails\":["
-        + "{\"title\":\"GOG\",\"cards\":["
-        + "{\"label\":\"GOG\",\"subtitle\":\"Sign in & browse your GOG library\",\"action\":\"gog\",\"icon\":\"bh_explore_gog\"}"
+        "{\"rails\":["
+
+        // ── Hero banner ────────────────────────────────────────────────
+        + "{\"type\":\"hero\",\"cards\":["
+        +   "{\"label\":\"BannerHub v1.6.0\",\"subtitle\":\"GOG integration, a new Explore tab & recording-safe audio\",\"badge\":\"WHAT'S NEW\",\"action\":\"article\","
+        +     "\"image\":\"https://picsum.photos/seed/bhhero/900/420\","
+        +     "\"body\":\"This release adds full GOG library integration, our own Explore surface, and a recording-compatible audio toggle so screen recordings keep their sound.\\n\\nOpen Banner Tools to explore the new options.\"}"
+        + "]},"
+
+        // ── News / changelog rail ──────────────────────────────────────
+        + "{\"title\":\"What's New\",\"type\":\"news\",\"cards\":["
+        +   "{\"label\":\"New Turnip R4 driver available\",\"date\":\"May 29\",\"badge\":\"DRIVER\",\"action\":\"article\","
+        +     "\"image\":\"https://picsum.photos/seed/turnip/600/340\","
+        +     "\"body\":\"A fresh Turnip R4 build is out with a One UI gralloc fix and a7xx performance work. Grab it from the in-app driver downloader.\"},"
+        +   "{\"label\":\"Dirt 3 now runs end-to-end\",\"date\":\"May 27\",\"badge\":\"COMPAT\",\"action\":\"article\","
+        +     "\"image\":\"https://picsum.photos/seed/dirt3/600/340\","
+        +     "\"body\":\"Dirt 3 launches cleanly with DXVK 2.4.1 + Proton 9 arm64ec. Pin DXVK 2.4.1 to avoid the Turnip timeline-semaphore regression in 2.5+.\"},"
+        +   "{\"label\":\"Join the community\",\"date\":\"\",\"badge\":\"DISCORD\",\"action\":\"url\",\"arg\":\"https://discord.gg/\","
+        +     "\"image\":\"https://picsum.photos/seed/discord/600/340\"}"
+        + "]},"
+
+        // ── Featured games rail (cover art) ────────────────────────────
+        + "{\"title\":\"Plays great on BannerHub\",\"type\":\"games\",\"cards\":["
+        +   "{\"label\":\"GTA V\",\"action\":\"article\",\"image\":\"https://picsum.photos/seed/gtav/300/430\",\"body\":\"Verified in airplane mode. DXVK 2.4.1, Proton 9 arm64ec, Turnip R4.\"},"
+        +   "{\"label\":\"DOOM\",\"action\":\"article\",\"image\":\"https://picsum.photos/seed/doom/300/430\",\"body\":\"Controller + audio confirmed with the proton10 arm64x xinput fix.\"},"
+        +   "{\"label\":\"Tomb Raider\",\"action\":\"article\",\"image\":\"https://picsum.photos/seed/tomb/300/430\",\"body\":\"Solid with Zink renderer; try Vegas FrameGen for higher frame rates.\"},"
+        +   "{\"label\":\"Genshin\",\"action\":\"article\",\"image\":\"https://picsum.photos/seed/genshin/300/430\",\"body\":\"Runs in the Genshin variant build.\"}"
+        + "]},"
+
+        // ── Stores rail (real bundled GOG logo + compact cards) ────────
+        + "{\"title\":\"Your stores\",\"type\":\"shortcuts\",\"cards\":["
+        +   "{\"label\":\"GOG\",\"subtitle\":\"Sign in & browse your library\",\"action\":\"gog\",\"icon\":\"bh_explore_gog\"},"
+        +   "{\"label\":\"Epic Games\",\"subtitle\":\"Coming soon\",\"action\":\"soon\"},"
+        +   "{\"label\":\"Steam\",\"subtitle\":\"Coming soon\",\"action\":\"soon\"}"
+        + "]},"
+
+        // ── Tips rail (compact) ────────────────────────────────────────
+        + "{\"title\":\"Tips & tricks\",\"type\":\"shortcuts\",\"cards\":["
+        +   "{\"label\":\"Recording-safe audio\",\"subtitle\":\"Banner Tools \\u2192 Audio\",\"action\":\"article\",\"body\":\"Enable the recording-compatible audio toggle so MediaProjection captures game sound instead of silence.\"},"
+        +   "{\"label\":\"Pick a renderer\",\"subtitle\":\"Zink works today\",\"action\":\"article\",\"body\":\"The per-container Renderer dropdown lets you choose the GL backend. Zink is the shipped, working option.\"},"
+        +   "{\"label\":\"Frame generation\",\"subtitle\":\"Vegas FrameGen\",\"action\":\"article\",\"body\":\"Vegas FrameGen (GameHub AI Frame Gen) boosts perceived frame rate on supported titles.\"}"
         + "]}"
+
         + "]}";
 
     private BhExploreManifest() { }
@@ -56,21 +106,37 @@ public final class BhExploreManifest {
          *  getIdentifier against the host app's res, e.g. our injected
          *  "bh_bt_gog"). Null → the screen draws an accent-colour placeholder. */
         public final String icon;
+        /** Optional network image URL (hero / cover / news thumbnail). */
+        public final String image;
+        /** Optional corner pill text, e.g. "NEW", "DRIVER". */
+        public final String badge;
+        /** Optional date/meta line (news cards). */
+        public final String date;
+        /** Optional article body shown by the "article" action's detail page. */
+        public final String body;
 
-        Card(String label, String subtitle, String action, String arg, String icon) {
+        Card(String label, String subtitle, String action, String arg,
+             String icon, String image, String badge, String date, String body) {
             this.label = label;
             this.subtitle = subtitle;
             this.action = action;
             this.arg = arg;
             this.icon = icon;
+            this.image = image;
+            this.badge = badge;
+            this.date = date;
+            this.body = body;
         }
     }
 
     public static final class Rail {
+        /** Render style: "hero" | "news" | "games" | "shortcuts" (default). */
+        public final String type;
         public final String title;
         public final List<Card> cards;
 
-        Rail(String title, List<Card> cards) {
+        Rail(String type, String title, List<Card> cards) {
+            this.type = type;
             this.title = title;
             this.cards = cards;
         }
@@ -102,6 +168,7 @@ public final class BhExploreManifest {
         for (int i = 0; i < railArr.length(); i++) {
             JSONObject rj = railArr.optJSONObject(i);
             if (rj == null) continue;
+            String type = rj.optString("type", "shortcuts");
             String title = rj.optString("title", "");
             List<Card> cards = new ArrayList<>();
             JSONArray cardArr = rj.optJSONArray("cards");
@@ -116,10 +183,14 @@ public final class BhExploreManifest {
                         cj.optString("subtitle", null),
                         action,
                         cj.optString("arg", null),
-                        cj.optString("icon", null)));
+                        cj.optString("icon", null),
+                        cj.optString("image", null),
+                        cj.optString("badge", null),
+                        cj.optString("date", null),
+                        cj.optString("body", null)));
                 }
             }
-            if (!cards.isEmpty()) rails.add(new Rail(title, cards));
+            if (!cards.isEmpty()) rails.add(new Rail(type, title, cards));
         }
         return rails;
     }

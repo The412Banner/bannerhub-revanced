@@ -131,3 +131,219 @@ Option **A** is my recommended starting point unless device testing reveals a lo
 5. Bump `base-apk-602` → `base-apk-604` in any build-script reference; update `Constants.kt`'s GAMEHUB_VERSION if it tracks versionCode (112 → 114).
 6. CI build, fix any patcher misses by inspecting decompile + iterating on a single anchor at a time.
 7. Device-test for login-redirect regressions; only if found, implement option C for NAV_INTERCEPTOR.
+
+## VJoy export/import (`ExportControlsPatch.kt`)
+
+New patch (`patches/.../gamehub/misc/exportcontrols/`) that hijacks the on-screen-controls cloud-share repository methods. Anchors below.
+
+### 6.0.4 ground truth (baksmali'd from the patched-Normal APK, 2026-05-21)
+
+| Anchor | 6.0.4 actual |
+|---|---|
+| Share repo class | `Lrqn;` (classes3.dex, sole class containing both vcontroller URL literals) |
+| Implements interface | `Lgqn;` |
+| Share method | `Lrqn;->i(Lsrn;Lci3;)Ljava/lang/Object;` — `const-string/jumbo "vcontroller/shareMap"` at line 10932 of rqn.smali |
+| Apply method | `Lrqn;->d(Lwpn;Lci3;)Ljava/lang/Object;` — `const-string/jumbo "vcontroller/getMapByShareCode"` at line 3717 |
+| Layout DTO | `Lsrn;` (R8-renamed `VJoyLayout`) — first param of share method |
+| Apply code DTO | `Lwpn;` — first param of apply method (NOT a bare String; it's a wrapper carrying the code) |
+| Continuation | `Lci3;` (R8-renamed `kotlin.coroutines.Continuation`) — second param of every suspend method |
+
+### Pre1 patch (`332ee89`) post-mortem
+
+The first cut shipped a predicate of `returnType == Ljava/lang/Object; && parameterTypes.size == 2 && parameterTypes[1] == Lkotlin/coroutines/Continuation; && bodyReferencesString(URL)`. Two of the four predicates were violated on 6.0.4:
+
+- `Lkotlin/coroutines/Continuation;` does not appear as a parameter type anywhere in the dex; R8 mangled it to `Lci3;`. The patch's `firstMethod {}` matched zero methods.
+- `Ljava/lang/String;` as `parameterTypes[0]` (for the apply method) was also wrong — actual first param is `Lwpn;`, a wrapper DTO around the share code.
+
+ReVanced Patcher's per-patch exception isolation swallowed the `NoSuchElementException` from `firstMethod {}`, the build artefact still produced (with the extension classes packed in via `gamehub.rve`), and the device test produced the stock cloud-share UX because nothing got injected. Lesson: **never anchor by Kotlin-stdlib type names** in this app — R8 keep-rules don't cover kotlin.coroutines / kotlin.jvm.functions; the URL-fragment body match is the only stable discriminator.
+
+### Pre2 fix
+
+Patch now matches solely on `(returnType == Object) && parameterTypes.size == 2 && bodyReferencesString(URL)`. Each URL fragment appears in exactly ONE method body across the whole dex tree, so the predicate is unique without needing the Continuation anchor.
+
+### Anchor 4 — Share/apply button label sgets (still NOT WIRED)
+
+The `ExportControlsResourcesPatch` adds two sentinel CVR entries (`bh_vjoy_export_label`, `bh_vjoy_import_label`) and the shared `Lxd3;->l1` resolver (injected by `VibrationMenuRowPatch`) is extended to handle them. The bytecode side of the relabel is **deferred** — see the "Hook 3" comment in `ExportControlsPatch.kt`. To complete: find the Composables that render the Share / Apply buttons (callers of `Lrqn;->i` and `Lrqn;->d`), then rewrite their label sget. Same Lell-via-Unsafe-allocate pattern as `BhMenuRowClick.appendLibraryPopupRow`.
+
+### `VJoyLayout` FQN does NOT survive R8
+
+The 600 master map asserted the @Serializable class would be kept by R8 keep-rules. **Empirically false on 6.0.4** — VJoyLayout is renamed to `Lsrn;`. `BhVjoyJson.decodeLayout` therefore can't use `Class.forName("com.xiaoji.egggame.common.ui.vjoy.model.VJoyLayout")` on 6.0.4. Pre2 caches the layout class on first encode call and reuses it for decode; consequence is that **import only works in app processes where at least one export has happened first**. Acceptable for the scaffold; revisit if a user-reported "fresh-process import fails" comes up.
+
+### Legacy recipes (kept for future re-derivation)
+
+### Anchor 1 — `VJOY_REPO_CLASS` (placeholder: `Lnyf;` from 6.0.1)
+
+Implementation of the `Lkyf;` share-API interface (6.0.1 letter). Per 600 master map §26.3:
+- Ctor: `<init>(Lj40;Lzi5;Lhp7;)V` — `(CoroutineScope, HttpClient, GameLibraryRepository)`.
+- Two suspend methods, one taking a `VJoyLayout`, the other taking a `String` share code.
+
+Re-derivation recipe:
+1. `grep -r "vcontroller/shareMap" smali_classes*/` — the unique class with this URL literal in `<clinit>` or in the method body is the repo (or its Ktor URL-builder helper invoked from the repo).
+2. The class itself implements the share interface. Confirm by checking `.implements Lkyf;` (or its 6.0.4 successor — verify the interface letter by finding the abstract interface with two suspend methods, layout-typed + String-typed).
+3. The patch does NOT actually need the class letter (it anchors by URL literal in `bodyReferencesString`), but documenting it here makes future audits easier.
+
+### Anchor 2 — Share-method JVM signature
+
+After Kotlin compile, the suspend `shareMap(layout)` becomes:
+```
+(LVJoyLayout-or-some-internal-DTO;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+```
+The patch matches on:
+- 2 parameters
+- Second parameter is exactly `Lkotlin/coroutines/Continuation;`
+- Return type is `Ljava/lang/Object;`
+- Body contains const-string `"vcontroller/shareMap"`
+
+Verify on the 6.0.4 smali that the matcher resolves to exactly one method. If multiple candidates fire (e.g. there's a wrapper that calls the impl), tighten by also requiring the body to invoke Ktor's `HttpClient.post` or by adding an `definingClass ==` predicate against the rederived `VJOY_REPO_CLASS`.
+
+### Anchor 3 — Apply-method JVM signature
+
+Same shape, signature:
+```
+(Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+```
+Anchor by const-string `"vcontroller/getMapByShareCode"`.
+
+### Anchor 4 — Share/apply button label sgets (NOT YET WIRED)
+
+The `ExportControlsResourcesPatch` adds two sentinel CVR entries (`bh_vjoy_export_label`, `bh_vjoy_import_label`) and the shared `Lxd3;->l1` resolver (injected by `VibrationMenuRowPatch`) is extended to handle them. The bytecode side of the relabel is **deferred** — see the "Hook 3" comment in `ExportControlsPatch.kt`. To complete:
+
+1. Find the Composables that render the "Share" button and the "Apply share code" button on the VJoy main / edit screens. They will both invoke the repo's share / apply methods (which we already anchored). Walk callers of those methods.
+2. For each rendering Composable, find the `sget-object L<X>;-><field>:Lxrl;` that loads the button's label (the `Lxrl;` is the Compose-resource wrapper). That's the rewrite site.
+3. Add an instruction-replace in `ExportControlsPatch.kt` that swaps each sget's reference to a new sget that loads an `Lell;` (sentinel-keyed resource descriptor) pointing at `bh_vjoy_export_label` / `bh_vjoy_import_label`. Use the same `Lell;`-via-Unsafe-allocate pattern `BhMenuRowClick.appendLibraryPopupRow` uses.
+
+Until anchor 4 is wired, the **buttons keep their stock labels** but the click behavior is hijacked (correct outcome, wrong label). Functional but not polished.
+
+### Anchor 5 — `VJoyLayout` FQN (low-risk)
+
+`com.xiaoji.egggame.common.ui.vjoy.model.VJoyLayout`. Kotlinx-`@Serializable` classes are kept by R8 keep-rules; the FQN should be stable across 6.0.x. If it has moved, fix in both:
+- `extensions/gamehub/.../exportcontrols/BhVjoyJson.java` — `VJOY_LAYOUT_FQN` const.
+- `patches/.../exportcontrols/ExportControlsPatch.kt` — `VJOY_LAYOUT_CLASS` const (not currently used by predicates; kept for documentation).
+
+### Verification checklist after first build
+
+1. `apktool d` the patched APK, grep `classes*.dex` for `BhVjoyShareHook` — confirm the static calls land at index 0 of the two repo methods.
+2. Device test: open VJoy edit screen → tap Share → confirm SAF file picker appears → save → confirm toast shows file path → re-open file with any text editor → confirm valid VJoyLayout JSON.
+3. Tap "Apply share code" → confirm SAF open picker appears → pick the exported file → confirm layout shows up in the local layout list.
+4. `logcat -s BhVjoyShareHook BhSafProxy BhVjoyJson` during steps 2–3 — any WARN/ERROR is a regression.
+
+## VJoy save-coroutine + DB registry anchors (pre11)
+
+The save side has been fully reverse-engineered as of pre11 (2026-05-24 device-tested):
+
+### Save coroutine — `Lm0n;` (file write)
+
+```
+<init>(Ljava/lang/String;Lcom/xiaoji/egggame/common/ui/vjoy/model/VJoyLayout;Lbi3;)V
+```
+
+Single-shot kotlinx-coroutines suspend block. Writes layout.json + assets/ + (optionally) preview.png to `vjoy_layouts/<layoutId>/`. Returns a `VJoyLayoutSaveReceipt` (R8-keep-listed FQN). Invoked via the public-suspend wrapper `Lo0n;->i(String, VJoyLayout, Lci3;) Object` which internally does `BuildersKt.withContext(Lf80;->a, new Lm0n;(id, layout, null), continuation)`.
+
+To call from a non-coroutine Java context (BhVjoyImporter.saveLayoutLocal), we **bypass `Lo0n;->i`** because its third param type is the abstract `Lci3;` which java.lang.reflect.Proxy can't satisfy. Instead call `Lw0o;->s0(Ldm3;Ldx6;Lbi3;) Object` (`BuildersKt.withContext`) directly — Bi3 is the interface, Proxy-able.
+
+### Continuation proxy shape
+
+`Lbi3;` interface (`kotlin.coroutines.Continuation`):
+- `getContext() Ldm3;` — return any non-null CoroutineContext. We use the IO dispatcher (which implements `Ldm3;` via Element).
+- `resumeWith(Object) V` — receives the kotlin.Result-wrapped value. The raw Object IS the Result (Result is inline-class erased).
+
+Our Proxy captures the result in a CompletableFuture from resumeWith(). saveLayoutLocal checks if the suspend returned the `COROUTINE_SUSPENDED` sentinel (detected by toString containing "COROUTINE_SUSPENDED") and blocks on the future if so.
+
+### `kotlinx.coroutines` static helpers (R8-renamed)
+
+| Purpose | 6.0.4 letter | Stock FQN |
+|---|---|---|
+| `BuildersKt.withContext` | `Lw0o;->s0(Ldm3;Ldx6;Lbi3;) Object` | `kotlinx.coroutines.BuildersKt.withContext(CoroutineContext, Function2, Continuation)` |
+| Dispatchers holder | `Lf80;` (static field `a:Ll14;` is IO) | `kotlinx.coroutines.Dispatchers.IO` |
+| Continuation interface | `Lbi3;` | `kotlin.coroutines.Continuation` |
+| ContinuationImpl (abstract) | `Lci3;` extends `Lk11;` | `kotlin.coroutines.jvm.internal.ContinuationImpl` |
+| CoroutineContext | `Ldm3;` | `kotlin.coroutines.CoroutineContext` |
+| Function2 | `Ldx6;` | `kotlin.jvm.functions.Function2` |
+
+### `kotlinx.serialization.json.Json` instance
+
+`kotlinx.serialization.json.Json.Default` does NOT have the polymorphic `InputMapping` SerializersModule needed for VJoyLayout — using it triggers "Class discriminator was missing". The host registers polymorphic InputMapping subtypes on a **custom** Json instance held by:
+
+```
+com.xiaoji.egggame.common.ui.vjoy.model.VJoyLayoutJson  (R8-kept FQN)
+  private static final Default:Lzeb;
+  private static final Export:Lzeb;     // pretty-printed
+  private static final Snapshot:Lzeb;
+  public static final INSTANCE:VJoyLayoutJson
+```
+
+`Lzeb;` = abstract `Json` class, `Lyeb;` = `Json.Default` concrete subclass. The host's configured Default lives at `VJoyLayoutJson.Default`. Resolve via `Class.forName(VJoyLayoutJson FQN).getDeclaredField("Default")` (private — needs setAccessible).
+
+`Json.decodeFromString` is renamed too — find by method shape: `(SerializationStrategy, String) -> Object` on the Json instance. See `BhVjoyJson.findDecodeMethod`.
+
+### Layout registry — `egggame.db.virtual_key_layout` (Room)
+
+After `Lm0n;` save completes, the host's Create flow ALSO inserts a row into the `virtual_key_layout` table in `egggame.db` (Room). My Layouts is backed by Room's Flow on this table — without the row, the layout is invisible regardless of disk state.
+
+32-column schema (full dump in pre11 commit message). Required values for an imported layout matching the visible-in-list shape:
+
+| Column | Value |
+|---|---|
+| user_id | `"99999"` |
+| folder_key | `<layoutId>` (matches layout.json's `"id"` field) |
+| folder_path | `"vjoy_layouts/<layoutId>/"` |
+| title_i18n_json | `{"default":"<layoutName>"}` |
+| title_search | `<layoutName>` |
+| layout_type | `"common"` (host has no separate field in VJoyLayout — set by user choice at Create) |
+| source / catalog / acquire | `"local" / "local" / "created"` |
+| source_key | `"local:<layoutId>"` |
+| apply_count | `0` |
+| publish_status | `"none"` |
+| last_upload_result / last_download_result | `"none" / "none"` |
+| index_mtime / created_at / updated_at | `System.currentTimeMillis()` |
+| index_hash | from `VJoyLayoutSaveReceipt.getConfigHash()` |
+| broken | `0` |
+
+### CRITICAL: DB must be opened in WAL mode
+
+Room runs egggame.db in WAL journal mode. Opening a second connection in default (journal) mode and writing **corrupts the DB** — verified pre10f: Room's next read crashed with `SQLITE_CORRUPT (code 11)`. Fix:
+
+```java
+SQLiteDatabase.OpenParams params = new SQLiteDatabase.OpenParams.Builder()
+    .setOpenFlags(SQLiteDatabase.OPEN_READWRITE)
+    .setJournalMode("WAL")
+    .setSynchronousMode("NORMAL")
+    .build();
+SQLiteDatabase db = SQLiteDatabase.openDatabase(dbFile, params);
+```
+
+### Suspend-method double-fire gate
+
+Smali hooks injected at the head of a suspend method fire TWICE per user-tap:
+1. Initial entry — args are the real values
+2. Coroutine resume — args may be null / state-machine reentry values
+
+Without a gate, both fires kick off SAF launches in `interceptApply`; the second hits "Import already in flight" and toasts a spurious "Import failed" right as the file picker appears. Fix: `AtomicBoolean` gate in BhVjoyShareHook (`IMPORT_IN_FLIGHT`).
+
+### CDN serves CORRUPTED ZIP bytes — JSON survives intact
+
+Xiaoji's CDN (tencent-cos) serves layout `.gtheme` archives with binary ZIP headers UTF-8-mangled (every byte ≥ 0x80 replaced with `0xEF 0xBF 0xBD`, the UTF-8 encoding of U+FFFD). `ZipInputStream` chokes with "invalid stored block lengths" on every payload; even native `unzip` rejects them.
+
+But the JSON content inside the broken container is itself valid UTF-8 and survives intact. `BhVjoyImporter.extractJsonPayload` brace-matches `{...}` directly in the byte stream, skipping ZIP entirely.
+
+For export: we save the body byte-for-byte (`.gtheme` is the host's native shareable format, corruption preserved — the host's own apply-by-share-code path consumes corrupted bytes the same way).
+
+### SAF ContentResolver corrupts binary on this device
+
+`ContentResolver.openInputStream(uri)` / `openOutputStream(uri, "w")` on Samsung One UI 7 (kernel 5.x) goes through a SAF document provider that DECODES bytes as UTF-8 and RE-ENCODES them — every byte ≥ 0x80 → `0xEF 0xBF 0xBD`. Verified by adding a "first 32 bytes" log after HttpURLConnection's getInputStream (bytes already corrupted on this path).
+
+Fix: open the SAF URI via `ContentResolver.openFileDescriptor(uri, "r"|"w")` and wrap with `FileInputStream(pfd.getFileDescriptor())` / `FileOutputStream(...)`. Raw fd, no provider transformation.
+
+### Pending — Compose-level Import button hijack (deferred)
+
+To skip the "Import Layout from File" textbox dialog entirely (user currently has to type any char + tap Confirm to launch SAF), need to find the Composable that:
+1. Renders the Import button (uses string key `features_vjoy_main_action_import`)
+2. Has an `onClick: () -> Unit` lambda
+3. That lambda dispatches a "show import dialog" command — probably `Lytm;->n(Lotm;)` or similar via the layouts-store ViewModel
+
+The label-holder lambdas (`Ljgl;`, `Lagl;`, `Lggl;`) are synthetic Function0 string-resource providers — not the click handlers. The click handlers are in DIFFERENT Compose-generated classes whose call sites we haven't enumerated yet.
+
+Approach for resuming:
+1. Probe instrumentation: hook `Lytm;->n(Lotm;)`, `Lytm;->o(Ltcn;)`, `Lytm;->p(Lhtm;)` with a stack-dump
+2. Tap Import button → see which dispatch method fires + what command type
+3. Match the command type to a "show dialog" intent → hook one level up to swap for our SAF launch

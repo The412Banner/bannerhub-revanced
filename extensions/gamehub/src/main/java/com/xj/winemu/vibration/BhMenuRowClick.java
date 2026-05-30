@@ -372,7 +372,65 @@ public final class BhMenuRowClick implements Function1<Object, Object> {
                 label = "Show Game ID";
             } else if ("string:bh_banner_tools_label".equals(key)) {
                 label = "Banner Tools";
+            } else if ("string:bh_vjoy_export_label".equals(key)) {
+                label = "Export to file";
+            } else if ("string:bh_vjoy_import_label".equals(key)) {
+                label = "Import from file";
             }
+            // VJoy share-flow stock-string OVERRIDES (not new entries; we
+            // hijack the host's own keys before its CVR lookup runs). The
+            // share button now exports to a file; relabel the user-visible
+            // strings to match. Import dialog left alone for now — file
+            // import end-to-end is a separate iteration.
+            else if ("string:features_vjoy_item_fun_share".equals(key)) {
+                label = "Export";                       // was "Share"
+            } else if ("string:features_vjoy_dialog_prepare_share_title".equals(key)) {
+                label = "Name Profile";                 // was "Publish to Cloud"
+            } else if ("string:features_vjoy_dialog_prepare_share_placeholder".equals(key)) {
+                label = "Profile name";                 // was "Share name"
+            }
+            // NOTE: the post-export "Cloud Backup Code" dialog
+            // (features_vjoy_dialog_share_code_*) is no longer relabeled or
+            // dismissed here — interceptShare (Lrqn;->i) THROWS to abort the
+            // cloud publish before that dialog is ever composed, so those
+            // resource keys never resolve. See BhVjoyShareHook.interceptShare.
+            // Import dialog. We hijack the "Apply share code" Confirm tap to
+            // launch a SAF file picker instead of looking up a cloud share
+            // code. Relabel the dialog so the user understands what's
+            // happening: the share-code text-field is still there (Compose-
+            // level hijack to skip it entirely is deferred), but the user
+            // can type any single character to enable Confirm, then tap to
+            // open the file picker.
+            else if ("string:features_vjoy_main_action_import".equals(key)) {
+                label = "Import Layout from File";  // was "Import Layout"
+            } else if ("string:features_vjoy_dialog_import_share_code_title".equals(key)) {
+                label = "Import Layout";
+                // The dialog-open action doesn't go through Ls9n;->A
+                // (verified by the pre15 dispatch-probe — no log fired
+                // between menu tap and dialog title resolution). So we
+                // hijack at COMPOSITION time: this resource ONLY resolves
+                // when the dialog is being built, so use it as the
+                // "dialog opening" signal and fire SAF immediately. SAF
+                // takes focus over the briefly-composed dialog; after the
+                // user picks/cancels we dismiss the leftover dialog via
+                // a programmatic BACK. IMPORT_IN_FLIGHT gates against the
+                // dozens of recompositions per dialog show.
+                try {
+                    com.xj.winemu.exportcontrols.BhVjoyShareHook.kickImportFromDialogOpen();
+                } catch (Throwable t) {
+                    Log.w(TAG, "kickImportFromDialogOpen threw", t);
+                }
+            } else if ("string:features_vjoy_dialog_import_share_code_placeholder".equals(key)) {
+                label = "Opening file picker…";
+            }
+            // NOTE: pre14 tried hooking the resolution of
+            // `share_code_cannot_empty` as a click-time sentinel for
+            // empty-Confirm — empirically the host pre-resolves all
+            // dialog strings at composition time, so the hook fires
+            // on dialog open (no-op for us) and NEVER fires on the
+            // user's actual Confirm tap. The fired-at-composition-time
+            // strings can't distinguish "user clicked Confirm" from
+            // "dialog just opened." Approach abandoned.
             if (label != null) {
                 Log.i(TAG, "maybeResolveCustomLabel key=" + key + " → '" + label + "'");
                 return label;

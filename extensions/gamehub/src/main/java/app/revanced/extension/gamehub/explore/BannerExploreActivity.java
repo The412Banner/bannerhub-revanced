@@ -499,6 +499,9 @@ public class BannerExploreActivity extends Activity {
         // Downloads — seed from the last count seen online so it survives going
         // offline; the placeholder only shows before the very first online fetch.
         String last = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_DL_COUNT, null);
+        // Guard against a cache poisoned by a shields.io error string (older
+        // builds saved whatever `message` held); show the placeholder instead.
+        if (last != null && !looksLikeDownloadCount(last)) last = null;
         TextView dl = chip(last != null ? "↓ " + last : "↓ …", DL_BG, URL_RELEASES);
         row.addView(dl);
         fetchDownloads(dl);
@@ -561,8 +564,18 @@ public class BannerExploreActivity extends Activity {
                     int n;
                     while ((n = in.read(buf)) != -1) bos.write(buf, 0, n);
                     String msg = new org.json.JSONObject(bos.toString("UTF-8"))
-                        .optString("message", "");
-                    if (msg.isEmpty() || msg.equalsIgnoreCase("invalid")) return;
+                        .optString("message", "").trim();
+                    // shields.io returns its OWN internal errors (rate-limit,
+                    // "Unable to select next GitHub token from pool", "invalid",
+                    // "inaccessible", etc.) in this same `message` field with an
+                    // HTTP 200. Only accept values that actually look like a
+                    // humanized download count; otherwise keep the cached /
+                    // placeholder text instead of rendering shields' error.
+                    if (!looksLikeDownloadCount(msg)) {
+                        android.util.Log.d("BhExplore",
+                            "downloads message not a count, ignoring: " + msg);
+                        return;
+                    }
                     // Remember it so a later offline open still shows this number.
                     getSharedPreferences(PREFS, MODE_PRIVATE).edit()
                         .putString(KEY_DL_COUNT, msg).apply();
@@ -579,6 +592,16 @@ public class BannerExploreActivity extends Activity {
                 }
             }
         }, "bh-downloads").start();
+    }
+
+    /** True iff a shields.io {@code message} looks like a humanized download
+     *  count — digits with optional {@code . ,} grouping and a single
+     *  k/M/G/B/T magnitude suffix (e.g. {@code "12"}, {@code "1,234"},
+     *  {@code "1.2k"}, {@code "3M"}). Rejects error strings shields.io serves
+     *  in the same field (e.g. "Unable to select next GitHub token from pool"),
+     *  which always contain spaces / non-suffix letters. */
+    private static boolean looksLikeDownloadCount(String s) {
+        return s != null && s.matches("\\d[\\d.,]*\\s?[kKmMgGbBtT]?");
     }
 
     /** Resolve a drawable resource NAME against the host package; 0 if absent. */

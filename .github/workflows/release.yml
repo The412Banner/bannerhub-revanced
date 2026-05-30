@@ -306,7 +306,7 @@ jobs:
             - **Privacy-hardened** — upstream telemetry/analytics channels stripped at the bytecode level (see the `PRIVACY.md` link above for the full list).
             - **PC-accurate controller vibration** — real XInput rumble routed into Android's VibratorManager with independent dual-motor support, configurable **per-game** (mode + intensity) via the **PC Vibration Settings** menu row. Preload-free — no `libevshim` / `LD_PRELOAD`.
             - **GOG integration** — sign in to GOG, browse your owned library, and download + install GOG games in-app; they're added to your GameHub library and launch like any other PC game. Reached from the Explore tab's GOG card or the Banner Tools → GOG tile.
-            - **BannerHub Explore screen** — the bottom-nav "Explore" tab opens a BannerHub-owned, fully-offline screen (bundled content, routes to BannerHub destinations) instead of the stock online discovery feed.
+            - **BannerHub Explore homepage** — the bottom-nav "Explore" tab opens a BannerHub-owned homepage instead of the stock online discovery feed: wordmark/logo hero, a "What's New" article that auto-syncs from the release notes, the GOG store card, and an in-app **update banner + installed-vs-latest version readout** with a settings cog. Content can refresh live via an external JSON override; still fully offline-capable.
             - **Recording-compatible audio** — optional toggle (Banner Tools → Audio) that routes PulseAudio through the mixer so screen recorders capture in-game sound.
             - **9 side-by-side variants** — different package names + launcher labels so multiple builds coexist on one device (`Original` replaces stock GameHub; the rest install alongside it).
             - **Optional Lite builds** — a ~34.5 MB-smaller counterpart of every variant.
@@ -321,19 +321,19 @@ jobs:
 
             ### What's new in ${{ needs.build.outputs.version }}
 
-            On top of `v1.5.1-604` (same keystore — installs in place):
+            On top of `v1.6.0-604` (same keystore — installs in place):
 
-            ### 🎮 GOG integration
+            ### 🧭 Redesigned Explore homepage
 
-            Sign in, browse your owned library, and download + install GOG games straight from BannerHub, no extra apps. Reach it from the new **Explore** tab's GOG card or the **Banner Tools → GOG** tile: log in with your GOG account, pick from your owned games, download + install, and the game is added to your GameHub library and launches like any other PC game. *Note: a freshly added GOG game shows up in your library after a GameHub restart.*
+            The **Explore** tab is now a full BannerHub-owned homepage instead of a single card — a wordmark/logo hero, a **What's New** article that auto-syncs from these release notes, and the GOG store card on the hero. Content can refresh **live via an external JSON override**, so news and highlights can change without shipping a new build. Still fully offline-capable, with a top badge row (📥 Downloads · Discord · Reddit) and a back button.
 
-            ### 🧭 BannerHub Explore screen
+            ### 🆕 In-app update check + version readout
 
-            The bottom-nav "Explore" tab now opens a BannerHub-owned, fully-offline screen instead of the stock online discovery feed. v1 surfaces a **GOG** card (with logo) that opens the GOG hub; content is bundled in the APK, so it works with no network and routes to BannerHub's own destinations.
+            Explore now shows your **installed version vs. the latest stable**, with an **amber update banner** when a newer release is out and a **⚙ settings cog** for Explore options. The version comes from a build-stamped manifest baked into the APK (not the host GameHub version), so the readout is accurate per BannerHub release.
 
-            ### 🎙️ Recording-compatible audio toggle
+            ### 🐛 GOG path fix
 
-            **Banner Tools → Audio** — fixes **silent screen recordings**. PulseAudio's AAudio MMAP fast-path bypassed the system mixer that screen recorders tap, so captures had no game audio; the toggle routes audio through the mixer (`pm=0`) so MediaProjection picks up in-game sound. Global setting, off by default.
+            Fixed a **doubled-directory bug** in GOG **"Set .exe"** and **"Copy to Downloads"** — the install path was being re-wrapped through the game's own directory, producing a broken nested path. Also now prompts for **storage permission** before copying on pre-Android-10 devices.
 
             ### Variants
 

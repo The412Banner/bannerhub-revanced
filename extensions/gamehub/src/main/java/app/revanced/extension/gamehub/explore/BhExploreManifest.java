@@ -171,9 +171,29 @@ public final class BhExploreManifest {
         "/sdcard/bh_explore.json",
     };
 
-    /** Returns the rails to render. Never null; never throws. */
+    /**
+     * Remote manifest published as a GitHub Release asset. {@code latest}
+     * resolves to the newest NON-prerelease (stable) release, so only stable
+     * cuts change the live content — prerelease/artifact-only builds don't.
+     * Fetched off the main thread by {@link #refreshFromNetwork(Context)} and
+     * cached locally so it's instant + offline-safe afterwards.
+     */
+    private static final String REMOTE_URL =
+        "https://github.com/The412Banner/bannerhub-revanced/releases/latest/download/bh_explore.json";
+    private static final String CACHE_NAME = "bh_explore_cache.json";
+
+    /**
+     * Synchronous load for first render — never touches the network. Order:
+     * external override → last-fetched remote cache → shipped asset → bundled.
+     * The async {@link #refreshFromNetwork(Context)} updates the cache in the
+     * background and the screen re-renders if it changed.
+     * Never null; never throws.
+     */
     public static List<Rail> load(Context ctx) {
         String json = readOverride(ctx);
+        if (json == null || json.trim().isEmpty()) {
+            json = readFile(cacheFile(ctx));
+        }
         if (json == null || json.trim().isEmpty()) {
             json = readAsset(ctx, "bh_explore.json");
         }
@@ -262,6 +282,64 @@ public final class BhExploreManifest {
             }
         } catch (Throwable ignored) {
             return null;
+        }
+    }
+
+    /**
+     * Background refresh: download {@link #REMOTE_URL}, validate it parses to a
+     * non-empty manifest, and if it differs from the cached copy, persist it and
+     * return the fresh rails (so the screen can re-render). Returns null on no
+     * change, no network, or any error — the caller keeps showing what it has.
+     * MUST be called off the main thread.
+     */
+    public static List<Rail> refreshFromNetwork(Context ctx) {
+        try {
+            String remote = httpGet(REMOTE_URL);
+            if (remote == null || remote.trim().isEmpty()) return null;
+            List<Rail> rails = parse(remote);          // reject garbage/empty
+            if (rails.isEmpty()) return null;
+            java.io.File cache = cacheFile(ctx);
+            String prev = readFile(cache);
+            if (remote.equals(prev)) return null;      // unchanged → no re-render
+            writeFile(cache, remote);
+            Log.i(TAG, "explore manifest updated from release asset");
+            return rails;
+        } catch (Throwable t) {
+            Log.d(TAG, "remote refresh skipped: " + t.getMessage());
+            return null;
+        }
+    }
+
+    private static java.io.File cacheFile(Context ctx) {
+        return new java.io.File(ctx.getCacheDir(), CACHE_NAME);
+    }
+
+    private static String httpGet(String url) throws Exception {
+        java.net.HttpURLConnection conn = null;
+        try {
+            conn = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+            conn.setConnectTimeout(8000);
+            conn.setReadTimeout(8000);
+            conn.setInstanceFollowRedirects(true);   // latest/download → asset CDN
+            conn.connect();
+            if (conn.getResponseCode() != java.net.HttpURLConnection.HTTP_OK) return null;
+            try (InputStream in = conn.getInputStream()) {
+                ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                byte[] buf = new byte[4096];
+                int n;
+                while ((n = in.read(buf)) != -1) bos.write(buf, 0, n);
+                return bos.toString("UTF-8");
+            }
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    private static void writeFile(java.io.File f, String content) {
+        try (java.io.FileOutputStream out = new java.io.FileOutputStream(f)) {
+            out.write(content.getBytes("UTF-8"));
+        } catch (Throwable t) {
+            Log.w(TAG, "cache write failed", t);
         }
     }
 

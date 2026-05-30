@@ -109,6 +109,10 @@ jobs:
           cp patches/build/libs/*.rvp shared/ 2>/dev/null || true
           mkdir -p shared/rve
           find extensions/extension/build/libs -name "*.rve" -exec cp {} shared/rve/ \; 2>/dev/null || true
+          # Live Explore manifest — attached as the bh_explore.json release asset
+          # so installed apps fetch the latest stable's What's New / features via
+          # releases/latest/download/bh_explore.json (see BhExploreManifest).
+          cp explore/bh_explore.json shared/ 2>/dev/null || true
 
       - name: Upload shared artifacts
         uses: actions/upload-artifact@v4
@@ -376,3 +380,4 @@ jobs:
             apks/BannerHub-V6-*.apk
             shared/*.rvp
             shared/rve/*.rve
+            shared/bh_explore.json

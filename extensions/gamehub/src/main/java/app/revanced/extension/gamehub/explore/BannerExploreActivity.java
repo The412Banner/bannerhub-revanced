@@ -47,6 +47,8 @@ public class BannerExploreActivity extends Activity {
     private static final int ACCENT      = 0xFF8B5CF6; // GOG-ish purple
     private static final int PLACEHOLDER = 0xFF26262B;
 
+    private LinearLayout column;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -56,10 +58,37 @@ public class BannerExploreActivity extends Activity {
         scroller.setFillViewport(true);
         scroller.setVerticalScrollBarEnabled(false);
 
-        LinearLayout column = new LinearLayout(this);
+        column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
         column.setPadding(dp(16), dp(18), dp(16), dp(28));
         scroller.addView(column, new ScrollView.LayoutParams(-1, -1));
+
+        // Instant render from the local sources (no network on this path).
+        renderRails(BhExploreManifest.load(this));
+
+        setContentView(scroller);
+        hideSystemBars();
+
+        // Then refresh from the latest stable Release asset in the background;
+        // re-render only if the content actually changed. Offline / no change /
+        // any error → we silently keep what's already on screen.
+        new Thread(new Runnable() {
+            @Override public void run() {
+                final List<BhExploreManifest.Rail> fresh =
+                    BhExploreManifest.refreshFromNetwork(getApplicationContext());
+                if (fresh == null || fresh.isEmpty()) return;
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        if (!isFinishing()) renderRails(fresh);
+                    }
+                });
+            }
+        }, "bh-explore-refresh").start();
+    }
+
+    /** (Re)build the whole list: the "Explore" header + every rail. */
+    private void renderRails(List<BhExploreManifest.Rail> rails) {
+        column.removeAllViews();
 
         TextView title = new TextView(this);
         title.setText("Explore");
@@ -69,17 +98,13 @@ public class BannerExploreActivity extends Activity {
         title.setPadding(dp(4), 0, 0, dp(16));
         column.addView(title);
 
-        List<BhExploreManifest.Rail> rails = BhExploreManifest.load(this);
-        if (rails.isEmpty()) {
+        if (rails == null || rails.isEmpty()) {
             column.addView(emptyState());
-        } else {
-            for (BhExploreManifest.Rail rail : rails) {
-                column.addView(buildRail(rail));
-            }
+            return;
         }
-
-        setContentView(scroller);
-        hideSystemBars();
+        for (BhExploreManifest.Rail rail : rails) {
+            column.addView(buildRail(rail));
+        }
     }
 
     @Override

@@ -53,6 +53,7 @@ public class GogGameDetailActivity extends Activity {
     private SharedPreferences prefs;
 
     private static final int REQUEST_FOLDER_PICKER = 200;
+    private static final int REQUEST_COPY_STORAGE = 201;
 
     private String gameId, title, imageUrl, description, developer, category;
     private int generation;
@@ -345,7 +346,8 @@ public class GogGameDetailActivity extends Activity {
         setExeBtn.setOnClickListener(v -> {
             String dir = prefs.getString("gog_dir_" + gameId, null);
             if (dir == null) return;
-            File installPath = GogInstallPath.getInstallDir(this, dir);
+            // gog_dir_ is stored as an absolute path; use it directly.
+            File installPath = new File(dir);
             new Thread(() -> {
                 List<String> candidates = GogDownloadManager.collectExeCandidates(installPath);
                 if (candidates.isEmpty()) {
@@ -373,16 +375,7 @@ public class GogGameDetailActivity extends Activity {
 
         // Copy to Downloads button
         copyBtn = makeBtn("Copy to Downloads", 0xFF333333);
-        copyBtn.setOnClickListener(v -> {
-            Toast.makeText(this, "Copying…", Toast.LENGTH_SHORT).show();
-            new Thread(() -> {
-                String dest = GogDownloadManager.copyToDownloads(this, gameId);
-                uiHandler.post(() -> {
-                    if (dest != null) Toast.makeText(this, "Copied to: " + dest, Toast.LENGTH_LONG).show();
-                    else Toast.makeText(this, "Copy failed — check storage permission", Toast.LENGTH_SHORT).show();
-                });
-            }).start();
-        });
+        copyBtn.setOnClickListener(v -> startCopyToDownloads());
         card.addView(copyBtn, btnLp());
 
         return card;
@@ -1050,6 +1043,50 @@ public class GogGameDetailActivity extends Activity {
         String[] parts = path.split("/");
         if (parts.length <= 3) return path;
         return "…/" + parts[parts.length - 2] + "/" + parts[parts.length - 1];
+    }
+
+    // ── Copy to Downloads ───────────────────────────────────────────────────
+    //
+    // Android 10+ writes via MediaStore.Downloads and needs no permission.
+    // Android 9 and below write directly to the public Downloads dir, which
+    // requires WRITE_EXTERNAL_STORAGE — request it on tap if not yet granted,
+    // then continue from onRequestPermissionsResult once the user allows it.
+
+    private void startCopyToDownloads() {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q
+                && checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(
+                    new String[]{android.Manifest.permission.WRITE_EXTERNAL_STORAGE},
+                    REQUEST_COPY_STORAGE);
+            return;
+        }
+        performCopyToDownloads();
+    }
+
+    private void performCopyToDownloads() {
+        Toast.makeText(this, "Copying…", Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            String dest = GogDownloadManager.copyToDownloads(this, gameId);
+            uiHandler.post(() -> {
+                if (dest != null) Toast.makeText(this, "Copied to: " + dest, Toast.LENGTH_LONG).show();
+                else Toast.makeText(this, "Copy failed — install files not found", Toast.LENGTH_SHORT).show();
+            });
+        }).start();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_COPY_STORAGE) {
+            if (grantResults.length > 0
+                    && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                performCopyToDownloads();
+            } else {
+                Toast.makeText(this, "Storage permission denied — cannot copy to Downloads",
+                        Toast.LENGTH_SHORT).show();
+            }
+        }
     }
 
     @Override

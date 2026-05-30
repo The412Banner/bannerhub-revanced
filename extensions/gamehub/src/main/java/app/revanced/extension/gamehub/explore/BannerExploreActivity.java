@@ -58,6 +58,9 @@ public class BannerExploreActivity extends Activity {
     private static final String URL_DL_COUNT =
         "https://img.shields.io/github/downloads/The412Banner/bannerhub-revanced/total.json";
 
+    private static final String PREFS = "bh_explore";
+    private static final String KEY_DL_COUNT = "dl_count"; // last value seen online
+
     private LinearLayout column;
 
     @Override
@@ -298,8 +301,10 @@ public class BannerExploreActivity extends Activity {
         row.setLayoutParams(rowLp);
         row.setPadding(dp(2), 0, 0, 0);
 
-        // Downloads — placeholder until the live count arrives.
-        TextView dl = chip("↓ …", DL_BG, URL_RELEASES);
+        // Downloads — seed from the last count seen online so it survives going
+        // offline; the placeholder only shows before the very first online fetch.
+        String last = getSharedPreferences(PREFS, MODE_PRIVATE).getString(KEY_DL_COUNT, null);
+        TextView dl = chip(last != null ? "↓ " + last : "↓ …", DL_BG, URL_RELEASES);
         row.addView(dl);
         fetchDownloads(dl);
 
@@ -363,6 +368,9 @@ public class BannerExploreActivity extends Activity {
                     String msg = new org.json.JSONObject(bos.toString("UTF-8"))
                         .optString("message", "");
                     if (msg.isEmpty() || msg.equalsIgnoreCase("invalid")) return;
+                    // Remember it so a later offline open still shows this number.
+                    getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+                        .putString(KEY_DL_COUNT, msg).apply();
                     final String text = "↓ " + msg;
                     runOnUiThread(new Runnable() {
                         @Override public void run() {

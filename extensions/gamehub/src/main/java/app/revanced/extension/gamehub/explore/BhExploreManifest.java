@@ -142,9 +142,24 @@ public final class BhExploreManifest {
         }
     }
 
+    /**
+     * External override paths, checked (in order) BEFORE the shipped asset and
+     * the bundled default. Drop a {@code bh_explore.json} at any of these and
+     * just reopen the Explore tab — no rebuild needed. Lets us iterate on
+     * content, rails, cards, images and article text with zero CI builds.
+     * Removed/invalid file → silently falls through to the shipped content.
+     */
+    private static final String[] OVERRIDES = {
+        "/sdcard/Download/bh_explore.json",
+        "/sdcard/bh_explore.json",
+    };
+
     /** Returns the rails to render. Never null; never throws. */
     public static List<Rail> load(Context ctx) {
-        String json = readAsset(ctx, "bh_explore.json");
+        String json = readOverride(ctx);
+        if (json == null || json.trim().isEmpty()) {
+            json = readAsset(ctx, "bh_explore.json");
+        }
         if (json == null || json.trim().isEmpty()) {
             json = BUNDLED_JSON;
         }
@@ -193,6 +208,44 @@ public final class BhExploreManifest {
             if (!cards.isEmpty()) rails.add(new Rail(type, title, cards));
         }
         return rails;
+    }
+
+    /**
+     * Reads a live-edit override JSON from external storage (or the app's own
+     * external files dir, which needs no runtime permission). First readable
+     * one wins. Any error → null (fall through to shipped content).
+     */
+    private static String readOverride(Context ctx) {
+        // App-private external dir first (no permission required to read).
+        try {
+            java.io.File dir = ctx.getExternalFilesDir(null);
+            if (dir != null) {
+                String s = readFile(new java.io.File(dir, "bh_explore.json"));
+                if (s != null) return s;
+            }
+        } catch (Throwable ignored) { }
+        for (String path : OVERRIDES) {
+            String s = readFile(new java.io.File(path));
+            if (s != null) return s;
+        }
+        return null;
+    }
+
+    private static String readFile(java.io.File f) {
+        try {
+            if (f == null || !f.isFile() || !f.canRead()) return null;
+            try (InputStream in = new java.io.FileInputStream(f)) {
+                ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                byte[] buf = new byte[4096];
+                int n;
+                while ((n = in.read(buf)) != -1) bos.write(buf, 0, n);
+                String s = bos.toString("UTF-8");
+                Log.i(TAG, "using override manifest: " + f.getAbsolutePath());
+                return s;
+            }
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     private static String readAsset(Context ctx, String name) {

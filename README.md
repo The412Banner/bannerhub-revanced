@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.6.0-604"><strong>📥 Latest stable: v1.6.0-604</strong></a>
+  <a href="https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.7.0-604"><strong>📥 Latest stable: v1.7.0-604</strong></a>
   ·
   <a href="#patches-applied">Patches</a>
   ·

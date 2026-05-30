@@ -1526,13 +1526,16 @@ public final class GogDownloadManager {
         String dirName = prefs.getString("gog_dir_" + gameId, null);
         if (dirName == null) return null;
 
-        File src = GogInstallPath.getInstallDir(ctx, dirName);
+        // gog_dir_ is stored as an absolute path; use it directly.
+        File src = new File(dirName);
         if (!src.exists()) return null;
+        // Folder name only — for the public Downloads destination subdir.
+        String folderName = src.getName();
 
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
             // Android 10+ — MediaStore.Downloads, no permission needed
             try {
-                String relPath = "Download/GOG Games/" + dirName;
+                String relPath = "Download/GOG Games/" + folderName;
                 copyDirMediaStore(ctx, src, relPath);
                 return relPath;
             } catch (Exception e) {
@@ -1543,7 +1546,7 @@ public final class GogDownloadManager {
             // Android 9 and below — direct File copy
             File dest = new File(
                     new File(Environment.getExternalStoragePublicDirectory(
-                            Environment.DIRECTORY_DOWNLOADS), "GOG Games"), dirName);
+                            Environment.DIRECTORY_DOWNLOADS), "GOG Games"), folderName);
             dest.mkdirs();
             try {
                 copyDir(src, dest);

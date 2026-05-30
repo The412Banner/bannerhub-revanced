@@ -1372,7 +1372,8 @@ public class GogGamesActivity extends Activity {
                     new android.widget.LinearLayout.LayoutParams(-2, -2);
             lp.topMargin = dp(10);
             setExeBtn.setOnClickListener(v -> {
-                java.io.File installPath = GogInstallPath.getInstallDir(this, dirName);
+                // gog_dir_ is stored as an absolute path; use it directly.
+                java.io.File installPath = new java.io.File(dirName);
                 new Thread(() -> {
                     java.util.List<String> candidates =
                             GogDownloadManager.collectExeCandidates(installPath);

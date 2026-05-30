@@ -20,6 +20,7 @@ private const val DRAWABLE_DIR = "res/drawable"
 // resource path (in the patch bundle) -> destination drawable file name
 private val DRAWABLES = mapOf(
     "explore/bh_explore_gog.png" to "bh_explore_gog.png",
+    "explore/bh_explore_logo.png" to "bh_explore_logo.png",
 )
 
 // Sentinel for classloader access — same trick as BannerToolsDrawablesPatch.

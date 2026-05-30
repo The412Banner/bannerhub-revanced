@@ -55,7 +55,7 @@ public final class BhExploreManifest {
         // ── Hero banner ────────────────────────────────────────────────
         + "{\"type\":\"hero\",\"cards\":["
         +   "{\"label\":\"BannerHub v1.6.0\",\"subtitle\":\"GOG integration, a new Explore tab & recording-safe audio\",\"badge\":\"WHAT'S NEW\",\"action\":\"article\","
-        +     "\"image\":\"https://picsum.photos/seed/bhhero/900/420\","
+        +     "\"icon\":\"bh_explore_logo\","
         +     "\"body\":\"This release adds full GOG library integration, our own Explore surface, and a recording-compatible audio toggle so screen recordings keep their sound.\\n\\nOpen Banner Tools to explore the new options.\"}"
         + "]},"
 

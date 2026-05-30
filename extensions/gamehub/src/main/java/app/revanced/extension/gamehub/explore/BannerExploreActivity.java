@@ -105,6 +105,71 @@ public class BannerExploreActivity extends Activity {
     private View buildHero(BhExploreManifest.Rail rail) {
         final BhExploreManifest.Card card = rail.cards.get(0);
 
+        // A bundled drawable (e.g. our BannerHub logo) → render it as a crisp,
+        // un-cropped emblem beside the text on a gradient. A network image →
+        // the photo-background-with-scrim style.
+        int logoId = resolveDrawable(card.icon);
+        return logoId != 0 ? buildLogoHero(card, logoId) : buildPhotoHero(card);
+    }
+
+    /** Logo emblem (FIT_CENTER, no crop) on the left + text on the right. */
+    private View buildLogoHero(final BhExploreManifest.Card card, int logoId) {
+        LinearLayout hero = new LinearLayout(this);
+        hero.setOrientation(LinearLayout.HORIZONTAL);
+        hero.setGravity(Gravity.CENTER_VERTICAL);
+        hero.setPadding(dp(16), dp(16), dp(18), dp(16));
+        LinearLayout.LayoutParams heroLp = new LinearLayout.LayoutParams(-1, dp(176));
+        heroLp.bottomMargin = dp(24);
+        hero.setLayoutParams(heroLp);
+
+        GradientDrawable bg = new GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            new int[]{ 0xFF231A3A, 0xFF120E1F });   // deep purple → near-black
+        bg.setCornerRadius(dp(18));
+        bg.setStroke(dp(1), 0xFF362A5A);
+        hero.setBackground(bg);
+        hero.setClipToOutline(true);
+
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(logoId);
+        logo.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams logoLp = new LinearLayout.LayoutParams(dp(120), dp(120));
+        logoLp.rightMargin = dp(16);
+        hero.addView(logo, logoLp);
+
+        LinearLayout textCol = new LinearLayout(this);
+        textCol.setOrientation(LinearLayout.VERTICAL);
+        hero.addView(textCol, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        if (notEmpty(card.badge)) textCol.addView(badge(card.badge));
+
+        TextView t = new TextView(this);
+        t.setText(card.label);
+        t.setTextColor(TEXT);
+        t.setTextSize(22);
+        t.setTypeface(Typeface.DEFAULT_BOLD);
+        LinearLayout.LayoutParams tLp = new LinearLayout.LayoutParams(-1, -2);
+        tLp.topMargin = dp(8);
+        textCol.addView(t, tLp);
+
+        if (notEmpty(card.subtitle)) {
+            TextView s = new TextView(this);
+            s.setText(card.subtitle);
+            s.setTextColor(0xFFD9D2EE);
+            s.setTextSize(13);
+            LinearLayout.LayoutParams sLp = new LinearLayout.LayoutParams(-1, -2);
+            sLp.topMargin = dp(4);
+            textCol.addView(s, sLp);
+        }
+
+        hero.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { dispatch(card); }
+        });
+        return hero;
+    }
+
+    /** Full-bleed network photo + bottom scrim + overlaid text. */
+    private View buildPhotoHero(final BhExploreManifest.Card card) {
         FrameLayout hero = new FrameLayout(this);
         LinearLayout.LayoutParams heroLp = new LinearLayout.LayoutParams(-1, dp(190));
         heroLp.bottomMargin = dp(24);
@@ -122,7 +187,6 @@ public class BannerExploreActivity extends Activity {
         roundClip(img, dp(18));
         BhImageLoader.load(img, card.image);
 
-        // Dark bottom-up scrim so text stays legible over any image.
         View scrim = new View(this);
         GradientDrawable scrimBg = new GradientDrawable(
             GradientDrawable.Orientation.TOP_BOTTOM,
@@ -161,6 +225,16 @@ public class BannerExploreActivity extends Activity {
             @Override public void onClick(View v) { dispatch(card); }
         });
         return hero;
+    }
+
+    /** Resolve a drawable resource NAME against the host package; 0 if absent. */
+    private int resolveDrawable(String name) {
+        if (!notEmpty(name)) return 0;
+        try {
+            return getResources().getIdentifier(name, "drawable", getPackageName());
+        } catch (Throwable t) {
+            return 0;
+        }
     }
 
     // ── Carousels (news / games / shortcuts) ──────────────────────────────────

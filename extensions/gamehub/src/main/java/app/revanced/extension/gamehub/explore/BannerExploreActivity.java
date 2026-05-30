@@ -47,6 +47,17 @@ public class BannerExploreActivity extends Activity {
     private static final int ACCENT      = 0xFF8B5CF6; // GOG-ish purple
     private static final int PLACEHOLDER = 0xFF26262B;
 
+    private static final int DISCORD_BG  = 0xFF5865F2; // Discord blurple
+    private static final int REDDIT_BG   = 0xFFFF4500; // Reddit orange
+    private static final int DL_BG       = 0xFF2F8F4E; // downloads green
+
+    private static final String URL_RELEASES =
+        "https://github.com/The412Banner/bannerhub-revanced/releases";
+    private static final String URL_DISCORD = "https://discord.gg/n8S4G2WZQ4";
+    private static final String URL_REDDIT = "https://www.reddit.com/user/The412Banner";
+    private static final String URL_DL_COUNT =
+        "https://img.shields.io/github/downloads/The412Banner/bannerhub-revanced/total.json";
+
     private LinearLayout column;
 
     @Override
@@ -86,16 +97,19 @@ public class BannerExploreActivity extends Activity {
         }, "bh-explore-refresh").start();
     }
 
-    /** (Re)build the whole list: the "Explore" header + every rail. */
+    /** (Re)build the whole list: back button, header, hero, the social/links
+     *  badge row, then the remaining rails. */
     private void renderRails(List<BhExploreManifest.Rail> rails) {
         column.removeAllViews();
+
+        column.addView(buildBackButton());
 
         TextView title = new TextView(this);
         title.setText("Explore");
         title.setTextColor(TEXT);
         title.setTextSize(28);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setPadding(dp(4), 0, 0, dp(16));
+        title.setPadding(dp(4), dp(6), 0, dp(16));
         column.addView(title);
 
         if (rails == null || rails.isEmpty()) {
@@ -104,7 +118,32 @@ public class BannerExploreActivity extends Activity {
         }
         for (BhExploreManifest.Rail rail : rails) {
             column.addView(buildRail(rail));
+            // Downloads / Discord / Reddit badges sit right under the hero.
+            if ("hero".equals(rail.type)) column.addView(buildBadgesRow());
         }
+    }
+
+    /** Small "← Back" chip at the very top — finishes the screen, returning to
+     *  GameHub (the tab the user came from). */
+    private View buildBackButton() {
+        TextView back = new TextView(this);
+        back.setText("←  Back");
+        back.setTextColor(TEXT);
+        back.setTextSize(14);
+        back.setTypeface(Typeface.DEFAULT_BOLD);
+        back.setPadding(dp(14), dp(8), dp(16), dp(8));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(CARD_BG);
+        bg.setCornerRadius(dp(20));
+        bg.setStroke(dp(1), CARD_STROKE);
+        back.setBackground(bg);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+        lp.bottomMargin = dp(6);
+        back.setLayoutParams(lp);
+        back.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { finish(); }
+        });
+        return back;
     }
 
     @Override
@@ -248,6 +287,95 @@ public class BannerExploreActivity extends Activity {
             @Override public void onClick(View v) { dispatch(card); }
         });
         return hero;
+    }
+
+    /** Row of small link badges under the hero: live Downloads · Discord · Reddit. */
+    private View buildBadgesRow() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
+        rowLp.bottomMargin = dp(22);
+        row.setLayoutParams(rowLp);
+        row.setPadding(dp(2), 0, 0, 0);
+
+        // Downloads — placeholder until the live count arrives.
+        TextView dl = chip("↓ …", DL_BG, URL_RELEASES);
+        row.addView(dl);
+        fetchDownloads(dl);
+
+        row.addView(chip("Discord", DISCORD_BG, URL_DISCORD));
+        row.addView(chip("Reddit", REDDIT_BG, URL_REDDIT));
+        return row;
+    }
+
+    /** A small rounded, brand-coloured, tappable badge. */
+    private TextView chip(String label, int bgColor, final String url) {
+        TextView c = new TextView(this);
+        c.setText(label);
+        c.setTextColor(0xFFFFFFFF);
+        c.setTextSize(12);
+        c.setTypeface(Typeface.DEFAULT_BOLD);
+        c.setPadding(dp(12), dp(7), dp(12), dp(7));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(bgColor);
+        bg.setCornerRadius(dp(16));
+        c.setBackground(bg);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+        lp.rightMargin = dp(8);
+        c.setLayoutParams(lp);
+        c.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { openUrl(url); }
+        });
+        return c;
+    }
+
+    private void openUrl(String url) {
+        try {
+            android.content.Intent i = new android.content.Intent(
+                android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url));
+            i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(i);
+        } catch (Throwable t) {
+            android.util.Log.w("BhExplore", "openUrl failed: " + url, t);
+        }
+    }
+
+    /** Fetch the live total-downloads count (shields.io JSON, same source as the
+     *  README badge) off the main thread and update the chip. Offline → the chip
+     *  just keeps its placeholder. */
+    private void fetchDownloads(final TextView chip) {
+        new Thread(new Runnable() {
+            @Override public void run() {
+                java.net.HttpURLConnection conn = null;
+                try {
+                    conn = (java.net.HttpURLConnection)
+                        new java.net.URL(URL_DL_COUNT).openConnection();
+                    conn.setConnectTimeout(8000);
+                    conn.setReadTimeout(8000);
+                    conn.setInstanceFollowRedirects(true);
+                    conn.connect();
+                    if (conn.getResponseCode() != 200) return;
+                    java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+                    java.io.InputStream in = conn.getInputStream();
+                    byte[] buf = new byte[2048];
+                    int n;
+                    while ((n = in.read(buf)) != -1) bos.write(buf, 0, n);
+                    String msg = new org.json.JSONObject(bos.toString("UTF-8"))
+                        .optString("message", "");
+                    if (msg.isEmpty() || msg.equalsIgnoreCase("invalid")) return;
+                    final String text = "↓ " + msg;
+                    runOnUiThread(new Runnable() {
+                        @Override public void run() {
+                            if (!isFinishing()) chip.setText(text);
+                        }
+                    });
+                } catch (Throwable t) {
+                    android.util.Log.d("BhExplore", "downloads fetch skipped: " + t.getMessage());
+                } finally {
+                    if (conn != null) conn.disconnect();
+                }
+            }
+        }, "bh-downloads").start();
     }
 
     /** Resolve a drawable resource NAME against the host package; 0 if absent. */

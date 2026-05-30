@@ -1,6 +1,7 @@
 package app.revanced.extension.gamehub.explore;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.util.Log;
 
 import org.json.JSONArray;
@@ -153,6 +154,88 @@ public final class BhExploreManifest {
         "https://github.com/The412Banner/bannerhub-revanced/releases/latest/download/bh_explore.json";
     private static final String CACHE_NAME = "bh_explore_cache.json";
 
+    // ── Version / update detection ────────────────────────────────────────────
+    // INSTALLED version = assets/bh_version.json, baked into the APK at build
+    // time by ExploreVersionAssetPatch (stamped by explore/stamp_version.py).
+    // LATEST version = the "version"/"build" root fields of the remote manifest
+    // (releases/latest/download/bh_explore.json), persisted to prefs so the
+    // banner survives going offline. We compare the integer "build" values —
+    // deliberately NOT getPackageInfo().versionName, which is the host GameHub
+    // version, not our BannerHub release tag.
+    private static final String VERSION_ASSET = "bh_version.json";
+    private static final String PREFS = "bh_explore";
+    private static final String KEY_LATEST_VER = "latest_ver";
+    private static final String KEY_LATEST_BUILD = "latest_build";
+
+    private static volatile String sInstalledVer;
+    private static volatile int sInstalledBuild = Integer.MIN_VALUE; // unread sentinel
+
+    /** Installed BannerHub version, e.g. "1.6.0-604" — null if the asset is
+     *  absent (e.g. the standalone preview harness). */
+    public static String installedVersion(Context ctx) {
+        ensureInstalled(ctx);
+        return sInstalledVer;
+    }
+
+    /** Installed build int (MAJOR*1e6+MINOR*1e3+PATCH), or -1 if unknown. */
+    public static int installedBuild(Context ctx) {
+        ensureInstalled(ctx);
+        return sInstalledBuild;
+    }
+
+    private static void ensureInstalled(Context ctx) {
+        if (sInstalledBuild != Integer.MIN_VALUE) return; // read once per process
+        sInstalledBuild = -1;
+        try {
+            String json = readAsset(ctx, VERSION_ASSET);
+            if (json != null) {
+                JSONObject o = new JSONObject(json);
+                sInstalledVer = emptyToNull(o.optString("version", null));
+                sInstalledBuild = o.optInt("build", -1);
+            }
+        } catch (Throwable ignored) { }
+    }
+
+    /** Latest published version (from the last seen remote manifest), or null. */
+    public static String latestVersion(Context ctx) {
+        return prefs(ctx).getString(KEY_LATEST_VER, null);
+    }
+
+    /** Latest published build int, or -1 if never fetched. */
+    public static int latestBuild(Context ctx) {
+        return prefs(ctx).getInt(KEY_LATEST_BUILD, -1);
+    }
+
+    /** True iff we know both versions and the latest build is newer. */
+    public static boolean updateAvailable(Context ctx) {
+        int installed = installedBuild(ctx);
+        int latest = latestBuild(ctx);
+        return installed > 0 && latest > 0 && latest > installed;
+    }
+
+    /** Persist the manifest root's version/build as the "latest" we've seen.
+     *  Only writes when a positive build is present, so version-less sources
+     *  (the bundled/offline fallback) never clobber a real fetched value. */
+    private static void captureMeta(Context ctx, String json) {
+        try {
+            JSONObject root = new JSONObject(json);
+            int build = root.optInt("build", -1);
+            if (build <= 0) return;
+            prefs(ctx).edit()
+                .putString(KEY_LATEST_VER, emptyToNull(root.optString("version", null)))
+                .putInt(KEY_LATEST_BUILD, build)
+                .apply();
+        } catch (Throwable ignored) { }
+    }
+
+    private static SharedPreferences prefs(Context ctx) {
+        return ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+    }
+
+    private static String emptyToNull(String s) {
+        return (s == null || s.isEmpty()) ? null : s;
+    }
+
     /**
      * Synchronous load for first render — never touches the network. Order:
      * external override → last-fetched remote cache → shipped asset → bundled.
@@ -171,6 +254,7 @@ public final class BhExploreManifest {
         if (json == null || json.trim().isEmpty()) {
             json = BUNDLED_JSON;
         }
+        captureMeta(ctx, json); // pick up "latest" from a cached/override manifest
         try {
             return parse(json);
         } catch (Throwable t) {
@@ -269,6 +353,7 @@ public final class BhExploreManifest {
             if (remote == null || remote.trim().isEmpty()) return null;
             List<Rail> rails = parse(remote);          // reject garbage/empty
             if (rails.isEmpty()) return null;
+            captureMeta(ctx, remote);                  // refresh "latest" even if rails unchanged
             java.io.File cache = cacheFile(ctx);
             String prev = readFile(cache);
             if (remote.equals(prev)) return null;      // unchanged → no re-render

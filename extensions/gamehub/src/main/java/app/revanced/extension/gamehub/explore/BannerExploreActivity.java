@@ -58,10 +58,16 @@ public class BannerExploreActivity extends Activity {
     private static final String URL_DL_COUNT =
         "https://img.shields.io/github/downloads/The412Banner/bannerhub-revanced/total.json";
 
+    private static final int UPDATE_BG     = 0xFF2E2710; // amber-tinted banner
+    private static final int UPDATE_STROKE = 0xFF6B5524;
+    private static final int UPDATE_ACCENT = 0xFFFFC857; // amber "Get" button / highlight
+
     private static final String PREFS = "bh_explore";
     private static final String KEY_DL_COUNT = "dl_count"; // last value seen online
+    private static final String KEY_UPDATE_ALERT_DISABLED = "update_alert_disabled";
 
     private LinearLayout column;
+    private List<BhExploreManifest.Rail> currentRails;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -90,10 +96,15 @@ public class BannerExploreActivity extends Activity {
             @Override public void run() {
                 final List<BhExploreManifest.Rail> fresh =
                     BhExploreManifest.refreshFromNetwork(getApplicationContext());
-                if (fresh == null || fresh.isEmpty()) return;
                 runOnUiThread(new Runnable() {
                     @Override public void run() {
-                        if (!isFinishing()) renderRails(fresh);
+                        if (isFinishing()) return;
+                        // Re-render with the freshest rails if they changed, else
+                        // re-render the current ones so a newly-learned "latest"
+                        // version shows the update banner / version readout.
+                        List<BhExploreManifest.Rail> toRender =
+                            (fresh != null && !fresh.isEmpty()) ? fresh : currentRails;
+                        if (toRender != null) renderRails(toRender);
                     }
                 });
             }
@@ -103,17 +114,23 @@ public class BannerExploreActivity extends Activity {
     /** (Re)build the whole list: back button, header, hero, the social/links
      *  badge row, then the remaining rails. */
     private void renderRails(List<BhExploreManifest.Rail> rails) {
+        currentRails = rails;
         column.removeAllViews();
 
-        column.addView(buildBackButton());
+        column.addView(buildTopBar());
 
         TextView title = new TextView(this);
         title.setText("Explore");
         title.setTextColor(TEXT);
         title.setTextSize(28);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setPadding(dp(4), dp(6), 0, dp(16));
+        title.setPadding(dp(4), dp(6), 0, dp(4));
         column.addView(title);
+
+        View versionLine = buildVersionLine();
+        if (versionLine != null) column.addView(versionLine);
+
+        if (showUpdateBanner()) column.addView(buildUpdateBanner());
 
         if (rails == null || rails.isEmpty()) {
             column.addView(emptyState());
@@ -147,6 +164,184 @@ public class BannerExploreActivity extends Activity {
             @Override public void onClick(View v) { finish(); }
         });
         return back;
+    }
+
+    /** Top row: "← Back" chip on the left, a settings ⚙ cog on the right. */
+    private View buildTopBar() {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams barLp = new LinearLayout.LayoutParams(-1, -2);
+        barLp.bottomMargin = dp(6);
+        bar.setLayoutParams(barLp);
+
+        bar.addView(buildBackButton());
+
+        View spacer = new View(this);
+        bar.addView(spacer, new LinearLayout.LayoutParams(0, dp(1), 1f));
+
+        bar.addView(buildSettingsCog());
+        return bar;
+    }
+
+    /** Small gear chip → opens the update-alert settings dialog. */
+    private View buildSettingsCog() {
+        TextView cog = new TextView(this);
+        cog.setText("⚙"); // ⚙
+        cog.setTextColor(TEXT);
+        cog.setTextSize(16);
+        cog.setTypeface(Typeface.DEFAULT_BOLD);
+        cog.setGravity(Gravity.CENTER);
+        cog.setPadding(dp(13), dp(8), dp(13), dp(8));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(CARD_BG);
+        bg.setCornerRadius(dp(20));
+        bg.setStroke(dp(1), CARD_STROKE);
+        cog.setBackground(bg);
+        cog.setContentDescription("Update settings");
+        cog.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { openUpdateSettings(); }
+        });
+        return cog;
+    }
+
+    /** Settings dialog: toggle update notifications + show installed/latest. */
+    private void openUpdateSettings() {
+        final android.content.SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
+        final boolean disabled = p.getBoolean(KEY_UPDATE_ALERT_DISABLED, false);
+
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(22);
+        box.setPadding(pad, dp(8), pad, 0);
+
+        final android.widget.CheckBox cb = new android.widget.CheckBox(this);
+        cb.setText("Notify me when an update is available");
+        cb.setTextColor(TEXT);
+        cb.setChecked(!disabled); // checked = notifications ON
+        box.addView(cb);
+
+        TextView info = new TextView(this);
+        info.setText(versionSummary());
+        info.setTextColor(TEXT_DIM);
+        info.setTextSize(12);
+        info.setPadding(dp(2), dp(10), 0, dp(4));
+        box.addView(info);
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("Updates")
+            .setView(box)
+            .setPositiveButton("Done", new android.content.DialogInterface.OnClickListener() {
+                @Override public void onClick(android.content.DialogInterface d, int which) {
+                    p.edit().putBoolean(KEY_UPDATE_ALERT_DISABLED, !cb.isChecked()).apply();
+                    if (currentRails != null) renderRails(currentRails); // reflect toggle
+                }
+            })
+            .show();
+    }
+
+    /** "Version 1.6.0-604 · up to date" / "· latest 1.7.0-604" — null if the
+     *  installed version asset isn't present (e.g. the preview harness). */
+    private View buildVersionLine() {
+        String installed = BhExploreManifest.installedVersion(this);
+        if (installed == null) return null;
+
+        boolean update = BhExploreManifest.updateAvailable(this);
+        String latest = BhExploreManifest.latestVersion(this);
+
+        TextView tv = new TextView(this);
+        String text = "Version " + installed;
+        if (update && latest != null) {
+            text += "  ·  latest " + latest;
+        } else if (BhExploreManifest.latestBuild(this) > 0) {
+            text += "  ·  up to date";
+        }
+        tv.setText(text);
+        tv.setTextColor(update ? UPDATE_ACCENT : TEXT_DIM);
+        tv.setTextSize(12);
+        tv.setPadding(dp(4), 0, 0, dp(14));
+        return tv;
+    }
+
+    /** Plain-text version summary for the settings dialog. */
+    private String versionSummary() {
+        String installed = BhExploreManifest.installedVersion(this);
+        String latest = BhExploreManifest.latestVersion(this);
+        StringBuilder sb = new StringBuilder();
+        sb.append("Installed: ").append(installed != null ? installed : "unknown");
+        if (latest != null) {
+            sb.append("\nLatest: ").append(latest);
+            sb.append(BhExploreManifest.updateAvailable(this)
+                ? "  (update available)" : "  (up to date)");
+        }
+        return sb.toString();
+    }
+
+    private boolean showUpdateBanner() {
+        boolean disabled = getSharedPreferences(PREFS, MODE_PRIVATE)
+            .getBoolean(KEY_UPDATE_ALERT_DISABLED, false);
+        return !disabled && BhExploreManifest.updateAvailable(this);
+    }
+
+    /** Dismiss-by-cog amber banner shown when a newer release is available. */
+    private View buildUpdateBanner() {
+        final String latest = BhExploreManifest.latestVersion(this);
+
+        LinearLayout banner = new LinearLayout(this);
+        banner.setOrientation(LinearLayout.HORIZONTAL);
+        banner.setGravity(Gravity.CENTER_VERTICAL);
+        banner.setPadding(dp(16), dp(13), dp(13), dp(13));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(UPDATE_BG);
+        bg.setCornerRadius(dp(14));
+        bg.setStroke(dp(1), UPDATE_STROKE);
+        banner.setBackground(bg);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.bottomMargin = dp(18);
+        banner.setLayoutParams(lp);
+
+        LinearLayout textCol = new LinearLayout(this);
+        textCol.setOrientation(LinearLayout.VERTICAL);
+
+        TextView t = new TextView(this);
+        t.setText("Update available");
+        t.setTextColor(UPDATE_ACCENT);
+        t.setTextSize(15);
+        t.setTypeface(Typeface.DEFAULT_BOLD);
+        textCol.addView(t);
+
+        TextView s = new TextView(this);
+        s.setText(latest != null
+            ? ("Version " + latest + " — tap to download")
+            : "Tap to download the latest version");
+        s.setTextColor(0xFFE7D9B0);
+        s.setTextSize(12);
+        LinearLayout.LayoutParams sLp = new LinearLayout.LayoutParams(-1, -2);
+        sLp.topMargin = dp(2);
+        textCol.addView(s, sLp);
+
+        banner.addView(textCol, new LinearLayout.LayoutParams(0, -2, 1f));
+
+        TextView btn = new TextView(this);
+        btn.setText("Get");
+        btn.setTextColor(0xFF1A1408);
+        btn.setTextSize(13);
+        btn.setTypeface(Typeface.DEFAULT_BOLD);
+        btn.setPadding(dp(18), dp(8), dp(18), dp(8));
+        GradientDrawable btnBg = new GradientDrawable();
+        btnBg.setColor(UPDATE_ACCENT);
+        btnBg.setCornerRadius(dp(18));
+        btn.setBackground(btnBg);
+        LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(-2, -2);
+        btnLp.leftMargin = dp(10);
+        banner.addView(btn, btnLp);
+
+        View.OnClickListener go = new View.OnClickListener() {
+            @Override public void onClick(View v) { openUrl(URL_RELEASES); }
+        };
+        banner.setOnClickListener(go);
+        btn.setOnClickListener(go);
+        return banner;
     }
 
     @Override

@@ -78,6 +78,16 @@ jobs:
       # BhVibrationController.ensureWinebusDurationPatchOnce). No native
       # shim is built or shipped; nothing is added to LD_PRELOAD.
 
+      - name: Stamp Explore version
+        # Writes the INSTALLED version into patches/.../explore/bh_version.json
+        # (bundled into the APK by ExploreVersionAssetPatch as assets/bh_version.json)
+        # AND the LATEST version into explore/bh_explore.json's root. Runs BEFORE
+        # the gradle build so the patch bundle picks up the freshly-stamped asset.
+        # Fail-safe (exit 0) if the version can't be resolved.
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: python3 explore/stamp_version.py
+
       - name: Build patches bundle
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

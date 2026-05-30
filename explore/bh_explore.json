@@ -1,5 +1,7 @@
 {
-  "_comment": "Live BannerHub Explore manifest. Uploaded as the 'bh_explore.json' asset on each STABLE release; the app fetches releases/latest/download/bh_explore.json, caches it, and falls back to the in-APK bundled copy offline. Edit this file (esp. the hero 'body' = What's New) when cutting a stable. Card actions: gog | url | article | soon. Rail types: hero | news | games | shortcuts.",
+  "_comment": "Live BannerHub Explore manifest. Uploaded as the 'bh_explore.json' asset on each STABLE release; the app fetches releases/latest/download/bh_explore.json, caches it, and falls back to the in-APK bundled copy offline. Edit this file (esp. the hero 'body' = What's New) when cutting a stable. Card actions: gog | url | article | soon. Rail types: hero | news | games | shortcuts. 'version'/'build' = the LATEST published version (stamped by stamp_version.py); the app compares it against the installed bh_version.json to show an update banner.",
+  "version": "1.6.0-604",
+  "build": 1006000,
   "rails": [
     {
       "type": "hero",

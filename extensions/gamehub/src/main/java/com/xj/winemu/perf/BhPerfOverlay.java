@@ -103,9 +103,30 @@ public final class BhPerfOverlay {
             // Already attached (onResume can fire repeatedly) → nothing to do.
             if (existing != null && existing.isAttached()) return;
 
-            Controller c = new Controller(activity);
-            if (c.attachToWindow()) {
-                sOverlays.put(activity, c);
+            final Controller c = new Controller(activity);
+            View decor = activity.getWindow() != null
+                    ? activity.getWindow().getDecorView() : null;
+            if (decor == null) {
+                android.util.Log.w(TAG, "attach: no decor view");
+                return;
+            }
+            // CRITICAL: a WindowManager sub-window needs the decor's window
+            // token, but on an activity's FIRST onResume the decor isn't added
+            // to the WindowManager yet (ActivityThread adds it AFTER onResume),
+            // so getWindowToken() is null and the add silently fails. Defer to
+            // after the current traversal, by which point the token is valid.
+            final Runnable doAttach = new Runnable() {
+                @Override public void run() {
+                    Controller cur = sOverlays.get(activity);
+                    if (cur != null && cur.isAttached()) return; // raced
+                    if (c.attachToWindow()) sOverlays.put(activity, c);
+                }
+            };
+            if (decor.getWindowToken() != null) {
+                doAttach.run();
+            } else {
+                android.util.Log.i(TAG, "attach: token not ready, deferring");
+                decor.post(doAttach);
             }
         } catch (Throwable t) {
             android.util.Log.w(TAG, "attach failed", t);
@@ -160,7 +181,10 @@ public final class BhPerfOverlay {
                 IBinder token = act.getWindow() != null
                         && act.getWindow().getDecorView() != null
                         ? act.getWindow().getDecorView().getWindowToken() : null;
-                if (token == null) return false; // decor not attached yet
+                if (token == null) {
+                    android.util.Log.w(TAG, "attachToWindow: window token still null");
+                    return false; // decor not attached yet
+                }
 
                 container = new LinearLayout(act);
                 container.setOrientation(LinearLayout.HORIZONTAL);
@@ -193,6 +217,7 @@ public final class BhPerfOverlay {
 
                 wm.addView(container, params);
                 attached = true;
+                android.util.Log.i(TAG, "overlay window attached (y=" + params.y + ")");
                 return true;
             } catch (Throwable t) {
                 android.util.Log.w(TAG, "attachToWindow failed", t);

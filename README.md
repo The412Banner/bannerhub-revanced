@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.7.0-604"><strong>📥 Latest stable: v1.7.0-604</strong></a>
+  <a href="https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.8.0-604"><strong>📥 Latest stable: v1.8.0-604</strong></a>
   ·
   <a href="#patches-applied">Patches</a>
   ·
@@ -51,7 +51,7 @@
 ## Table of contents
 
 1. [AI Disclaimer](#ai-disclaimer)
-2. [What's new in v1.7.0-604](#whats-new-in-v170-604)
+2. [What's new in v1.8.0-604](#whats-new-in-v180-604)
 3. [What this is](#what-this-is)
 4. [Source](#source)
 5. [Variants](#variants)
@@ -73,27 +73,19 @@ This project has no source code — XiaoJi GameHub is closed-source and ships on
 
 Before any **stable release** is published, every change is **manually debugged and tested by me across multiple devices — both rooted and unrooted**. Debugging uses `logcat` output (captured with the [`getlog` Magisk helper](https://github.com/The412Banner/logcat-bridge) on rooted devices, plain `adb logcat` on unrooted) plus the in-app debug log files that the `Debug logging` patch produces. No release is cut until the change has been verified end-to-end on hardware.
 
-## What's new in v1.7.0-604
+## What's new in v1.8.0-604
 
-A redesigned Explore homepage with an in-app update check, plus a GOG path fix, on top of `v1.6.0-604`. Drop-in update (stable keystore unchanged — installs in place).
+A new **in-game performance overlay** with root-gated CPU/GPU toggles, on top of `v1.7.0-604`. Drop-in update (stable keystore unchanged — installs in place).
 
-### 🧭 Redesigned Explore homepage
+### ⚡ In-game performance overlay (root)
 
-The bottom-nav **Explore** tab is now a full **BannerHub-owned homepage** instead of a single card. A wordmark/logo hero, a **What's New** article that **auto-syncs from these release notes**, cover-art framing, the GOG store card on the hero, and a top badge row (📥 Downloads · Discord · Reddit) with a back button. Content can refresh **live via an external JSON override** (`bh_explore.json`, fetched from the latest release), so news and highlights can change **without shipping a new build**. Still fully offline-capable, and **fail-safe** — anything wrong falls through to the stock screen.
+On-the-fly performance tuning without leaving your game. A draggable edge **pill** slides out a panel with root-gated toggles — **CPU governor → performance** (pins the governor while you play) and **Adreno GPU min-clock boost** (raises the kgsl minimum frequency so the GPU stops downclocking under load). The overlay is **off by default** and the whole feature is **root-gated** — non-rooted devices (and anyone who doesn't enable it) see nothing. Turn it on from **Banner Tools → In-game Overlay**, with a separate **Root** tile to grant/verify su. Includes a **pill opacity slider** and it **auto-reverts** the CPU/GPU changes when you exit the game.
 
-### 🆕 In-app update check + version readout
+### Carryover from `v1.7.0-604` and earlier
 
-Explore now shows your **installed version vs. the latest stable**, with an **amber update banner** when a newer release is out and a **⚙ settings cog** for Explore options. The installed version comes from a build-stamped manifest baked into the APK (`assets/bh_version.json`) — not the host GameHub version — so the readout is accurate per BannerHub release, and the "latest" check reads the `bh_explore.json` asset attached to the newest GitHub release.
+Everything from v1.7.0 ships forward unchanged — the **redesigned Explore homepage** (BannerHub-owned, wordmark/logo hero, What's New article that auto-syncs from these release notes, GOG store card, live `bh_explore.json` override, fully offline-capable), the **in-app update check + installed-vs-latest version readout** (amber update banner + ⚙ settings cog, installed version from the baked `assets/bh_version.json`), and the **GOG path fix** for "Set .exe" / "Copy to Downloads" (absolute `gog_dir_` used directly + storage-permission prompt on pre-Android-10). From v1.6.0: **GOG integration** (sign in, browse your owned library, download + install in-app; reached from the Explore GOG card or the **Banner Tools → GOG** tile) and the **Recording-compatible audio** toggle (**Banner Tools → Audio**, `pm=0` mixer route that fixes silent screen recordings). From v1.5.x: the synthetic 32-bit ID rewrite that lets imported / Epic / GOG games launch from external front-ends (Beacon / ES-DE / Daijishou), the **Banner Tools** consolidated menu, the Show Game ID menu row + View All Games dialog, and the proper menu row icons (TideGear PR #6). The full per-game-settings isolation rework (GPU Spoof / Renderer / Vibration each strict in their own `bh_<feature>_prefs`, explicit Save/Cancel, `:wine`-boundary id bridging), the per-game **GPU Spoof** dialog, the per-game **Legacy renderer** toggle, the re-anchored winebus duration patch, and the **offline component picker** carry over too. Preload-free vibration (no `libevshim`/`LD_PRELOAD`), the 9 Lite builds (~34.5 MB smaller per variant — see [`bannerhub-v6-lite.md`](bannerhub-v6-lite.md)), the privacy-hardening stack + public [`PRIVACY.md`](PRIVACY.md), the always-visible PC Game Settings row in Explorer view, the stable keystore, and the BannerHub v6 visual rebrand also ship forward. Each Lite uses the **same package name** as its full counterpart, so a Lite APK **installs over (replaces)** the matching full variant — pick one per package.
 
-### 🐛 GOG path fix
-
-Fixed a **doubled-directory bug** in GOG **"Set .exe"** and **"Copy to Downloads"** — the install path was being re-wrapped through the game's own directory (`gog_dir_` → `getInstallDir`), producing a broken nested path. The absolute `gog_dir_` path is now used directly, and the flow prompts for **storage permission** before copying on pre-Android-10 devices.
-
-### Carryover from `v1.6.0-604` and earlier
-
-Everything from v1.6.0 ships forward unchanged — **GOG integration** (sign in, browse your owned library, download + install in-app; reached from the Explore GOG card or the **Banner Tools → GOG** tile), the **BannerHub Explore screen** hijack (now the homepage above), and the **Recording-compatible audio** toggle (**Banner Tools → Audio**, `pm=0` mixer route that fixes silent screen recordings). From v1.5.x: the synthetic 32-bit ID rewrite that lets imported / Epic / GOG games launch from external front-ends (Beacon / ES-DE / Daijishou), the **Banner Tools** consolidated menu, the Show Game ID menu row + View All Games dialog, and the proper menu row icons (TideGear PR #6). The full per-game-settings isolation rework (GPU Spoof / Renderer / Vibration each strict in their own `bh_<feature>_prefs`, explicit Save/Cancel, `:wine`-boundary id bridging), the per-game **GPU Spoof** dialog, the per-game **Legacy renderer** toggle, the re-anchored winebus duration patch, and the **offline component picker** carry over too. Preload-free vibration (no `libevshim`/`LD_PRELOAD`), the 9 Lite builds (~34.5 MB smaller per variant — see [`bannerhub-v6-lite.md`](bannerhub-v6-lite.md)), the privacy-hardening stack + public [`PRIVACY.md`](PRIVACY.md), the always-visible PC Game Settings row in Explorer view, the stable keystore, and the BannerHub v6 visual rebrand also ship forward. Each Lite uses the **same package name** as its full counterpart, so a Lite APK **installs over (replaces)** the matching full variant — pick one per package.
-
-> 📜 Past-release notes for `v1.6.0-604`, `v1.5.1-604`, `v1.5.0-604`, `v1.4.0-604`, `v1.3.0-604`, `v1.2.0-604`, `v1.1.0-604`, `v1.0.0-604`, `v1.0.0-602`, `v1.0.1-601`, `v1.0.0-601`, and `v1.0.1-600` are preserved on their respective [release pages](https://github.com/The412Banner/bannerhub-revanced/releases). The README keeps only the latest release in this section to stay focused on what's current.
+> 📜 Past-release notes for `v1.7.0-604`, `v1.6.0-604`, `v1.5.1-604`, `v1.5.0-604`, `v1.4.0-604`, `v1.3.0-604`, `v1.2.0-604`, `v1.1.0-604`, `v1.0.0-604`, `v1.0.0-602`, `v1.0.1-601`, `v1.0.0-601`, and `v1.0.1-600` are preserved on their respective [release pages](https://github.com/The412Banner/bannerhub-revanced/releases). The README keeps only the latest release in this section to stay focused on what's current.
 
 ---
 

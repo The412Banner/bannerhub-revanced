@@ -308,6 +308,7 @@ jobs:
             - **GOG integration** — sign in to GOG, browse your owned library, and download + install GOG games in-app; they're added to your GameHub library and launch like any other PC game. Reached from the Explore tab's GOG card or the Banner Tools → GOG tile.
             - **BannerHub Explore homepage** — the bottom-nav "Explore" tab opens a BannerHub-owned homepage instead of the stock online discovery feed: wordmark/logo hero, a "What's New" article that auto-syncs from the release notes, the GOG store card, and an in-app **update banner + installed-vs-latest version readout** with a settings cog. Content can refresh live via an external JSON override; still fully offline-capable.
             - **Recording-compatible audio** — optional toggle (Banner Tools → Audio) that routes PulseAudio through the mixer so screen recorders capture in-game sound.
+            - **In-game performance overlay** *(root)* — a draggable edge pill → slide-out panel for live CPU-governor + Adreno min-clock toggles while gaming; off by default, root-gated, auto-reverts on exit. Toggle from Banner Tools → In-game Overlay.
             - **9 side-by-side variants** — different package names + launcher labels so multiple builds coexist on one device (`Original` replaces stock GameHub; the rest install alongside it).
             - **Optional Lite builds** — a ~34.5 MB-smaller counterpart of every variant.
             - **Muted UI sounds** — menu/button click sounds silenced; in-game audio untouched.
@@ -321,19 +322,20 @@ jobs:
 
             ### What's new in ${{ needs.build.outputs.version }}
 
-            On top of `v1.6.0-604` (same keystore — installs in place):
+            On top of `v1.7.0-604` (same keystore — installs in place):
 
-            ### 🧭 Redesigned Explore homepage
+            ### ⚡ In-game performance overlay (root)
 
-            The **Explore** tab is now a full BannerHub-owned homepage instead of a single card — a wordmark/logo hero, a **What's New** article that auto-syncs from these release notes, and the GOG store card on the hero. Content can refresh **live via an external JSON override**, so news and highlights can change without shipping a new build. Still fully offline-capable, with a top badge row (📥 Downloads · Discord · Reddit) and a back button.
+            A new in-game overlay for on-the-fly performance tuning without leaving your game. A draggable edge **pill** slides out a panel with root-gated toggles:
 
-            ### 🆕 In-app update check + version readout
+            - **CPU governor → performance** — pins the CPU governor while you play.
+            - **Adreno GPU min-clock boost** — raises the kgsl minimum frequency so the GPU stops downclocking under load.
 
-            Explore now shows your **installed version vs. the latest stable**, with an **amber update banner** when a newer release is out and a **⚙ settings cog** for Explore options. The version comes from a build-stamped manifest baked into the APK (not the host GameHub version), so the readout is accurate per BannerHub release.
+            The overlay is **off by default** and the whole feature is **root-gated** — non-rooted devices (and anyone who doesn't enable it) see nothing. Turn it on from **Banner Tools → In-game Overlay**, with a separate **Root** tile to grant/verify su. Includes a **pill opacity slider** so you can make it as subtle as you like, and it **auto-reverts** the CPU/GPU changes when you exit the game.
 
-            ### 🐛 GOG path fix
+            ### Carryover from `v1.7.0-604` and earlier
 
-            Fixed a **doubled-directory bug** in GOG **"Set .exe"** and **"Copy to Downloads"** — the install path was being re-wrapped through the game's own directory, producing a broken nested path. Also now prompts for **storage permission** before copying on pre-Android-10 devices.
+            Everything from v1.7.0 ships forward unchanged — the **redesigned Explore homepage** (wordmark/logo hero, auto-synced What's New, GOG store card), the **in-app update check + installed-vs-latest version readout** with the amber update banner and settings cog, and the **GOG path fix** for "Set .exe" / "Copy to Downloads". GOG integration, the Banner Tools menu, recording-compatible audio, per-game GPU Spoof / Legacy renderer / PC Vibration isolation, the offline component picker, the privacy-hardening stack, the 9 Lite builds, the stable keystore, and the BannerHub v6 rebrand all carry over too.
 
             ### Variants
 

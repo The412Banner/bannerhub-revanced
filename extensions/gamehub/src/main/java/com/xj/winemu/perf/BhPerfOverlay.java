@@ -246,8 +246,14 @@ public final class BhPerfOverlay {
             bg.setCornerRadii(new float[]{dp(10), dp(10), 0, 0, 0, 0, dp(10), dp(10)});
             pill.setBackground(bg);
             pill.setLayoutParams(new LinearLayout.LayoutParams(w, h));
+            pill.setAlpha(opacityFraction());
             pill.setOnTouchListener(new PillTouch());
             container.addView(pill);
+        }
+
+        /** Stored pill opacity as an alpha fraction (0.05..1.0). */
+        private float opacityFraction() {
+            return BhPerfController.get().getPillOpacity(act) / 100f;
         }
 
         // panel -------------------------------------------------------------
@@ -297,6 +303,10 @@ public final class BhPerfOverlay {
 
             panel.addView(divider());
 
+            panel.addView(buildOpacityRow());
+
+            panel.addView(divider());
+
             rootLine = new TextView(act);
             rootLine.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
             rootLine.setPadding(0, dp(8), 0, 0);
@@ -320,6 +330,53 @@ public final class BhPerfOverlay {
             d.setLayoutParams(lp);
             d.setBackgroundColor(0x14FFFFFF);
             return d;
+        }
+
+        // pill-opacity slider ----------------------------------------------
+        private View buildOpacityRow() {
+            LinearLayout col = new LinearLayout(act);
+            col.setOrientation(LinearLayout.VERTICAL);
+            int padV = dp(6);
+            col.setPadding(0, padV, 0, padV);
+
+            final TextView label = new TextView(act);
+            int pct = BhPerfController.get().getPillOpacity(act);
+            label.setText("Pill opacity — " + pct + "%");
+            label.setTextColor(COL_TEXT);
+            label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+            col.addView(label);
+
+            TextView hint = new TextView(act);
+            hint.setText("Fade the pill so it doesn't block your view");
+            hint.setTextColor(COL_SUBTEXT);
+            hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+            col.addView(hint);
+
+            final android.widget.SeekBar bar = new android.widget.SeekBar(act);
+            // Map slider 0..(100-MIN) onto opacity MIN..100 so the pill can be
+            // faded to nearly invisible but never fully disappears.
+            final int min = BhPerfController.PILL_OPACITY_MIN;
+            bar.setMax(100 - min);
+            bar.setProgress(pct - min);
+            LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            blp.topMargin = dp(4);
+            bar.setLayoutParams(blp);
+            bar.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+                @Override public void onProgressChanged(
+                        android.widget.SeekBar sb, int progress, boolean fromUser) {
+                    int p = progress + min;
+                    label.setText("Pill opacity — " + p + "%");
+                    if (pill != null) pill.setAlpha(p / 100f);
+                }
+                @Override public void onStartTrackingTouch(android.widget.SeekBar sb) { }
+                @Override public void onStopTrackingTouch(android.widget.SeekBar sb) {
+                    BhPerfController.get().setPillOpacity(act, sb.getProgress() + min);
+                }
+            });
+            col.addView(bar);
+            return col;
         }
 
         // root gating -------------------------------------------------------
@@ -383,6 +440,9 @@ public final class BhPerfOverlay {
         private void setExpanded(boolean exp) {
             expanded = exp;
             panel.setVisibility(exp ? View.VISIBLE : View.GONE);
+            // Full-opacity pill while open (easy to tap closed); restore the
+            // user's faded opacity when collapsed.
+            if (pill != null) pill.setAlpha(exp ? 1f : opacityFraction());
             if (exp) refreshRootUi();
             // WRAP_CONTENT window must re-measure to grow/shrink with the panel.
             try {

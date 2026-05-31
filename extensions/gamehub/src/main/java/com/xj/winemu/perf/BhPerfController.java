@@ -36,9 +36,15 @@ public final class BhPerfController {
     public static final String KEY_ROOT_GRANTED = "root_granted";
     public static final String KEY_PILL_Y = "pill_y";
     /** Master on/off for whether the in-game overlay pill attaches at all.
-     *  Default true so the shipped overlay keeps working out of the box;
-     *  the Banner Tools → In-game Performance Overlay tile flips it. */
+     *  Default OFF — the user opts in via Banner Tools → In-game Performance
+     *  Overlay (which itself stays greyed until root is granted). */
     public static final String KEY_OVERLAY_ENABLED = "overlay_enabled";
+    /** Pill opacity as a percent 5..100 (applied as alpha 0.05..1.0 so the
+     *  pill can be made nearly invisible while gaming but never fully vanishes
+     *  and become impossible to find). Default 100 = fully opaque. */
+    public static final String KEY_PILL_OPACITY = "pill_opacity";
+    public static final int PILL_OPACITY_MIN = 5;
+    public static final int PILL_OPACITY_DEFAULT = 100;
 
     // sysfs paths
     private static final String CPU_GOV_GLOB =
@@ -100,19 +106,41 @@ public final class BhPerfController {
         }
     }
 
-    // ── overlay master enable (persisted, default ON) ───────────────────────
+    // ── overlay master enable (persisted, default OFF) ──────────────────────
 
     public boolean isOverlayEnabled(Context ctx) {
         try {
-            return prefs(ctx).getBoolean(KEY_OVERLAY_ENABLED, true);
+            return prefs(ctx).getBoolean(KEY_OVERLAY_ENABLED, false);
         } catch (Throwable t) {
-            return true;
+            return false;
         }
     }
 
     public void setOverlayEnabled(Context ctx, boolean enabled) {
         try {
             prefs(ctx).edit().putBoolean(KEY_OVERLAY_ENABLED, enabled).apply();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    // ── pill opacity (persisted percent 5..100) ─────────────────────────────
+
+    public int getPillOpacity(Context ctx) {
+        try {
+            int v = prefs(ctx).getInt(KEY_PILL_OPACITY, PILL_OPACITY_DEFAULT);
+            if (v < PILL_OPACITY_MIN) v = PILL_OPACITY_MIN;
+            if (v > 100) v = 100;
+            return v;
+        } catch (Throwable t) {
+            return PILL_OPACITY_DEFAULT;
+        }
+    }
+
+    public void setPillOpacity(Context ctx, int percent) {
+        if (percent < PILL_OPACITY_MIN) percent = PILL_OPACITY_MIN;
+        if (percent > 100) percent = 100;
+        try {
+            prefs(ctx).edit().putInt(KEY_PILL_OPACITY, percent).apply();
         } catch (Throwable ignored) {
         }
     }

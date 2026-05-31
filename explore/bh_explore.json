@@ -26,13 +26,7 @@
           "subtitle": "Sign in & browse your library",
           "action": "gog",
           "icon": "bh_explore_gog"
-        }
-      ]
-    },
-    {
-      "title": "BannerHub",
-      "type": "shortcuts",
-      "cards": [
+        },
         {
           "label": "Banner Tools",
           "subtitle": "Overlay, root & per-game tools",

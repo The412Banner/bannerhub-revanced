@@ -121,6 +121,11 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
                 .setNegativeButton(android.R.string.cancel, null)
                 .create();
 
+            // Overlay tile requires root (it controls the root-gated in-game
+            // performance overlay), so it's greyed until root is granted.
+            final boolean rootGranted =
+                com.xj.winemu.perf.BhPerfController.get().isRootGranted(host);
+
             // Wire per-tile clicks now that we have the dialog reference;
             // tiles are in dispatch-index order so which == dispatch case.
             for (int i = 0; i < tiles.size(); i++) {
@@ -131,6 +136,16 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
                     tile.setAlpha(0.4f);
                     tile.setOnClickListener(v ->
                         Toast.makeText(host, "Open from a game", Toast.LENGTH_SHORT).show());
+                } else if (which == 6 && !rootGranted) {
+                    // Overlay tile, no root yet — grey out and send the user to
+                    // the Root tile to grant first.
+                    tile.setAlpha(0.4f);
+                    tile.setOnClickListener(v -> {
+                        Toast.makeText(host, "Grant root access first",
+                            Toast.LENGTH_SHORT).show();
+                        dispatch(host, 7); // open the Root dialog
+                        dialog.dismiss();
+                    });
                 } else {
                     tile.setOnClickListener(v -> {
                         dispatch(host, which);

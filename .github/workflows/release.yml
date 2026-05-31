@@ -327,6 +327,7 @@ jobs:
             - **GOG integration** — sign in to GOG, browse your owned library, and download + install GOG games in-app; they're added to your GameHub library and launch like any other PC game. Reached from the Explore tab's GOG card or the Banner Tools → GOG tile.
             - **BannerHub Explore homepage** — the bottom-nav "Explore" tab opens a BannerHub-owned homepage instead of the stock online discovery feed: wordmark/logo hero, a "What's New" article that auto-syncs from the release notes, the GOG store card, and an in-app **update banner + installed-vs-latest version readout** with a settings cog. Content can refresh live via an external JSON override; still fully offline-capable.
             - **Recording-compatible audio** — optional toggle (Banner Tools → Audio) that routes PulseAudio through the mixer so screen recorders capture in-game sound.
+            - **In-game performance overlay** *(root)* — a draggable edge pill → slide-out panel for live CPU-governor + Adreno min-clock toggles while gaming; off by default, root-gated, auto-reverts on exit. Toggle from Banner Tools → In-game Overlay.
             - **9 side-by-side variants** — different package names + launcher labels so multiple builds coexist on one device (`Original` replaces stock GameHub; the rest install alongside it).
             - **Optional Lite builds** — a ~34.5 MB-smaller counterpart of every variant.
             - **Muted UI sounds** — menu/button click sounds silenced; in-game audio untouched.
@@ -340,37 +341,40 @@ jobs:
 
             ### What's new in ${{ needs.build.outputs.version }}
 
-            On top of `v1.6.0-604` (same keystore — installs in place):
+            On top of `v1.7.0-604` (same keystore — installs in place):
 
-            ### 🧭 Redesigned Explore homepage
+            ### ⚡ In-game performance overlay (root)
 
-            The **Explore** tab is now a full BannerHub-owned homepage instead of a single card — a wordmark/logo hero, a **What's New** article that auto-syncs from these release notes, and the GOG store card on the hero. Content can refresh **live via an external JSON override**, so news and highlights can change without shipping a new build. Still fully offline-capable, with a top badge row (📥 Downloads · Discord · Reddit) and a back button.
+            A new in-game overlay for on-the-fly performance tuning without leaving your game. A draggable edge **pill** slides out a panel with root-gated toggles:
 
-            ### 🆕 In-app update check + version readout
+            - **CPU governor → performance** — pins the CPU governor while you play.
+            - **Adreno GPU min-clock boost** — raises the kgsl minimum frequency so the GPU stops downclocking under load.
 
-            Explore now shows your **installed version vs. the latest stable**, with an **amber update banner** when a newer release is out and a **⚙ settings cog** for Explore options. The version comes from a build-stamped manifest baked into the APK (not the host GameHub version), so the readout is accurate per BannerHub release.
+            The overlay is **off by default** and the whole feature is **root-gated** — non-rooted devices (and anyone who doesn't enable it) see nothing. Turn it on from **Banner Tools → In-game Overlay**, with a separate **Root** tile to grant/verify su. Includes a **pill opacity slider** so you can make it as subtle as you like, and it **auto-reverts** the CPU/GPU changes when you exit the game.
 
-            ### 🐛 GOG path fix
+            ### 🛠️ Banner Tools now in the Explorer screen
 
-            Fixed a **doubled-directory bug** in GOG **"Set .exe"** and **"Copy to Downloads"** — the install path was being re-wrapped through the game's own directory, producing a broken nested path. Also now prompts for **storage permission** before copying on pre-Android-10 devices.
+            The **Banner Tools** option now lives in the **Explorer** tab/screen. Its settings are **per-game options only** — you open Banner Tools from a game in the Explorer view and the changes you make apply to that game alone, not app-wide.
 
             ### Variants
 
-            This is the **Lite** parallel branch (`feature/lite-variant-tier1`). It produces 9 Lite APKs — a Lite counterpart of each of the 9 full variants built by `gamehub-604-build`. Every Lite APK strips a verified-dead duplicate 20 MB font, the Aliyun carrier-login native lib, the Haima cloud-gaming stack, and the avif-coil AVIF/HEIC image-codec stack (~34.5 MB smaller on disk, ≈32%: 114.5 → 78.3 MB). Removed features: cloud gaming (non-functional under the BannerHub catalog redirect anyway) and the bundled AVIF/HEIC decoder — modern Android still renders HEIF/AVIF via the platform decoder, JPEG/PNG/WebP unaffected. Each Lite APK uses the **same package name** as its full counterpart, so installing a Lite APK **replaces** the matching full variant (they do not coexist); only the launcher label differs (full label + " Lite"). These Lite APKs are normally built artifact-only and manually attached to the `gamehub-604-build` release alongside the 9 full APKs.
+            Each variant has its own package name + launcher label, so the variants install **side-by-side** with each other. `Original` replaces an installed GameHub; the rest install alongside it.
 
-            | Variant | APK | Package | Launcher label |
-            | --- | --- | --- | --- |
-            | Normal-Lite | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Normal-Lite.apk` | `banner.hub` | BannerHub v6 Lite |
-            | Normal-GHL-Lite | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Normal-GHL-Lite.apk` | `gamehub.lite` | BannerHub v6 Lite |
-            | PuBG-Lite | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-PuBG-Lite.apk` | `com.tencent.ig` | BannerHub v6 PuBG Lite |
-            | AnTuTu-Lite | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-AnTuTu-Lite.apk` | `com.antutu.ABenchMark` | BannerHub v6 AnTuTu Lite |
-            | alt-AnTuTu-Lite | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-alt-AnTuTu-Lite.apk` | `com.antutu.benchmark.full` | BannerHub v6 AnTuTu Lite |
-            | PuBG-CrossFire-Lite | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-PuBG-CrossFire-Lite.apk` | `com.tencent.tmgp.cf` | BannerHub v6 PuBG CrossFire Lite |
-            | Ludashi-Lite | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Ludashi-Lite.apk` | `com.ludashi.aibench` | BannerHub v6 Ludashi Lite |
-            | Genshin-Lite | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Genshin-Lite.apk` | `com.miHoYo.GenshinImpact` | BannerHub v6 Genshin Lite |
-            | Original-Lite | `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-Original-Lite.apk` | `com.xiaoji.egggame` | BannerHub v6 Lite |
+            **Full vs Lite:** a Lite APK shares its full counterpart's package name and cert — installing Lite **replaces** the matching full build (and vice versa). They do **not** coexist; pick one per row.
 
-            Filenames follow `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-{variant}-Lite.apk`. The version string is `BannerHub v6` (product) + our semver + `-604` (the GameHub base, `6.0.4`) — e.g. `${{ needs.build.outputs.version }}`.
+            | Variant | Package | Full APK / Lite APK |
+            | --- | --- | --- |
+            | Normal | `banner.hub` | `…-Normal.apk` / `…-Normal-Lite.apk` |
+            | Normal-GHL | `gamehub.lite` | `…-Normal-GHL.apk` / `…-Normal-GHL-Lite.apk` |
+            | PuBG | `com.tencent.ig` | `…-PuBG.apk` / `…-PuBG-Lite.apk` |
+            | AnTuTu | `com.antutu.ABenchMark` | `…-AnTuTu.apk` / `…-AnTuTu-Lite.apk` |
+            | alt-AnTuTu | `com.antutu.benchmark.full` | `…-alt-AnTuTu.apk` / `…-alt-AnTuTu-Lite.apk` |
+            | PuBG-CrossFire | `com.tencent.tmgp.cf` | `…-PuBG-CrossFire.apk` / `…-PuBG-CrossFire-Lite.apk` |
+            | Ludashi | `com.ludashi.aibench` | `…-Ludashi.apk` / `…-Ludashi-Lite.apk` |
+            | Genshin | `com.miHoYo.GenshinImpact` | `…-Genshin.apk` / `…-Genshin-Lite.apk` |
+            | Original | `com.xiaoji.egggame` | `…-Original.apk` / `…-Original-Lite.apk` |
+
+            Filenames follow `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-{variant}[-Lite].apk`. The version string is `BannerHub v6` (product) + our semver + `-604` (the GameHub base, `6.0.4`) — e.g. `${{ needs.build.outputs.version }}`.
 
             ### Install notes
 

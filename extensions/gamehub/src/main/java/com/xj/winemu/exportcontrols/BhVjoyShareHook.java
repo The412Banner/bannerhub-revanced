@@ -109,10 +109,20 @@ public final class BhVjoyShareHook {
         //     caller check-casts the result to Lo55 (Unit isn't Lo55).
         //   - pre28a returned null → stock publish ran → cloud-tab
         //     navigation (user-reported regression).
-        //   - pre28b (this): throw → clean failure, no publish, no
-        //     dialog, no navigation, temp file cleaned up by the host.
+        //   - pre28b: throw IOException("bh_export_local_only") → clean
+        //     failure, but the host's catch formats a "Share failed: %1$s"
+        //     toast from e.getMessage(), so the user saw
+        //     "Share failed: bh_export_local_only" on top of the local-save
+        //     success toast.
+        //   - this: throw CancellationException instead. The host's suspend
+        //     try/catch chain treats coroutine cancellation as a silent abort
+        //     (standard Kotlin pattern: catch (e: CancellationException) {
+        //     throw e } before the generic toast catch), so no "Share failed"
+        //     toast fires. The cloud publish is still aborted — Lnrn;->h's
+        //     catchall_b4 deletes the host temp .gtheme and re-throws
+        //     regardless of the exception type.
         if (dto == null) return null; // resume/edge — let host proceed
-        throw new java.io.IOException("bh_export_local_only");
+        throw new java.util.concurrent.CancellationException("bh_export_local_only");
     }
 
     /**

@@ -336,6 +336,76 @@ val vibrationMenuRowPatch = bytecodePatch(
         )
 
         // ─────────────────────────────────────────────────────────────────────
+        // Hooks 5-7: extend the resolver short-circuit to Lxd3's non-Compose
+        // and format-args resource getters.
+        //
+        // The l1 hook above only catches the Compose stringResource path. But
+        // the host fetches its "Share failed: %1$s" toast string (shown by the
+        // share coroutine's catch after interceptShare throws) via Lxd3;->Q0 —
+        // a suspend getString that BYPASSES l1, so the BhMenuRowClick override
+        // of features_vjoy_main_toast_share_failed never fires through l1
+        // alone. Three sibling methods take the same Lell descriptor as l1
+        // (verified against the 6.0.4 base APK's Lxd3 smali):
+        //   m1(Lell;[Ljava/lang/Object;Lv83;I)Ljava/lang/String;  Compose + args
+        //   P0(Lell;Lbi3;)Ljava/lang/Object;                       suspend
+        //   Q0(Lell;[Ljava/lang/Object;Lbi3;)Ljava/lang/Object;    suspend + args
+        //
+        // Same head-block as l1, but calling maybeResolveCustomLabelNoKick:
+        // these non-composition paths must NOT fire kickImportFromDialogOpen
+        // (a stray lookup of the import-dialog-title key would launch SAF
+        // behind the user's back). p0 is the Lell descriptor in all three
+        // (static methods); the returned String satisfies both Ljava/lang/
+        // String; and Ljava/lang/Object; returns (String is an Object).
+        // ─────────────────────────────────────────────────────────────────────
+        val m1Resolver = firstMethod {
+            definingClass == "Lxd3;" && name == "m1" &&
+                parameterTypes == listOf("Lell;", "[Ljava/lang/Object;", "Lv83;", "I") &&
+                returnType == "Ljava/lang/String;"
+        }
+        m1Resolver.addInstructions(
+            0,
+            """
+                invoke-static {p0}, $CLICK_HANDLER->maybeResolveCustomLabelNoKick(Ljava/lang/Object;)Ljava/lang/String;
+                move-result-object v0
+                if-eqz v0, :bh_resolve_m1_fallthrough
+                return-object v0
+                :bh_resolve_m1_fallthrough
+            """.trimIndent(),
+        )
+
+        val p0Resolver = firstMethod {
+            definingClass == "Lxd3;" && name == "P0" &&
+                parameterTypes == listOf("Lell;", "Lbi3;") &&
+                returnType == "Ljava/lang/Object;"
+        }
+        p0Resolver.addInstructions(
+            0,
+            """
+                invoke-static {p0}, $CLICK_HANDLER->maybeResolveCustomLabelNoKick(Ljava/lang/Object;)Ljava/lang/String;
+                move-result-object v0
+                if-eqz v0, :bh_resolve_p0_fallthrough
+                return-object v0
+                :bh_resolve_p0_fallthrough
+            """.trimIndent(),
+        )
+
+        val q0Resolver = firstMethod {
+            definingClass == "Lxd3;" && name == "Q0" &&
+                parameterTypes == listOf("Lell;", "[Ljava/lang/Object;", "Lbi3;") &&
+                returnType == "Ljava/lang/Object;"
+        }
+        q0Resolver.addInstructions(
+            0,
+            """
+                invoke-static {p0}, $CLICK_HANDLER->maybeResolveCustomLabelNoKick(Ljava/lang/Object;)Ljava/lang/String;
+                move-result-object v0
+                if-eqz v0, :bh_resolve_q0_fallthrough
+                return-object v0
+                :bh_resolve_q0_fallthrough
+            """.trimIndent(),
+        )
+
+        // ─────────────────────────────────────────────────────────────────────
         // Probe 4: joc.invoke() — diagnostic
         //
         // joc is a `Function0`-implementing synthetic with `invoke()Object;`.

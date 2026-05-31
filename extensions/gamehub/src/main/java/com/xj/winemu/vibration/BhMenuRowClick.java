@@ -354,6 +354,25 @@ public final class BhMenuRowClick implements Function1<Object, Object> {
      * otherwise so the stock resolver path runs unchanged.
      */
     public static String maybeResolveCustomLabel(Object ell) {
+        return resolveCustomLabel(ell, true);
+    }
+
+    /**
+     * Same as {@link #maybeResolveCustomLabel} but with the
+     * {@code kickImportFromDialogOpen} side effect suppressed. Used by the
+     * non-Compose / suspend resolver hooks (Lxd3;->m1/P0/Q0): those paths
+     * surface resource strings OUTSIDE composition (e.g. the host's
+     * "Share failed: %1$s" toast format string, fetched from the share
+     * coroutine's catch via Q0), so we want our label overrides to apply
+     * there too — but we must NOT let a stray non-Compose lookup of the
+     * import-dialog-title key launch a SAF file picker behind the user's
+     * back.
+     */
+    public static String maybeResolveCustomLabelNoKick(Object ell) {
+        return resolveCustomLabel(ell, false);
+    }
+
+    private static String resolveCustomLabel(Object ell, boolean fireSideEffects) {
         try {
             Field aField = Class.forName("tdi").getDeclaredField("a");
             aField.setAccessible(true);
@@ -387,6 +406,18 @@ public final class BhMenuRowClick implements Function1<Object, Object> {
             } else if ("string:features_vjoy_dialog_prepare_share_placeholder".equals(key)) {
                 label = "Profile name";                 // was "Share name"
             }
+            // Suppress the host's "Share failed: %1$s" toast. After
+            // interceptShare throws to abort the cloud publish, the share
+            // coroutine's catch formats this string and toasts it — jarring
+            // noise on top of the local-export success toast. The host fetches
+            // this key via a NON-Compose resource path (Lxd3;->Q0), so this
+            // override only takes effect because m1/P0/Q0 are hooked to call
+            // maybeResolveCustomLabelNoKick (VibrationMenuRowPatch); the l1
+            // Compose hook alone never sees it. Overriding to "" makes
+            // String.format("", e) collapse to empty and Android skips the toast.
+            else if ("string:features_vjoy_main_toast_share_failed".equals(key)) {
+                label = "";
+            }
             // NOTE: the post-export "Cloud Backup Code" dialog
             // (features_vjoy_dialog_share_code_*) is no longer relabeled or
             // dismissed here — interceptShare (Lrqn;->i) THROWS to abort the
@@ -413,10 +444,12 @@ public final class BhMenuRowClick implements Function1<Object, Object> {
                 // user picks/cancels we dismiss the leftover dialog via
                 // a programmatic BACK. IMPORT_IN_FLIGHT gates against the
                 // dozens of recompositions per dialog show.
-                try {
-                    com.xj.winemu.exportcontrols.BhVjoyShareHook.kickImportFromDialogOpen();
-                } catch (Throwable t) {
-                    Log.w(TAG, "kickImportFromDialogOpen threw", t);
+                if (fireSideEffects) {
+                    try {
+                        com.xj.winemu.exportcontrols.BhVjoyShareHook.kickImportFromDialogOpen();
+                    } catch (Throwable t) {
+                        Log.w(TAG, "kickImportFromDialogOpen threw", t);
+                    }
                 }
             } else if ("string:features_vjoy_dialog_import_share_code_placeholder".equals(key)) {
                 label = "Opening file picker…";

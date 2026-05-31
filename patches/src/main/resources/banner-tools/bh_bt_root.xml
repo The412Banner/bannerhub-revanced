@@ -1,0 +1,18 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="56dp"
+    android:height="56dp"
+    android:viewportWidth="56"
+    android:viewportHeight="56">
+    <!-- dark rounded-square tile background -->
+    <path
+        android:fillColor="#2A2E38"
+        android:pathData="M8,0 L48,0 A8,8 0 0 1 56,8 L56,48 A8,8 0 0 1 48,56 L8,56 A8,8 0 0 1 0,48 L0,8 A8,8 0 0 1 8,0 Z" />
+    <!-- shield -->
+    <path
+        android:fillColor="#FFC107"
+        android:pathData="M28,11 L42,17 L42,29 C42,38 36,44 28,47 C20,44 14,38 14,29 L14,17 Z" />
+    <!-- keyhole -->
+    <path
+        android:fillColor="#2A2E38"
+        android:pathData="M28,22 A4,4 0 0 1 30,29.5 L32,37 L24,37 L26,29.5 A4,4 0 0 1 28,22 Z" />
+</vector>

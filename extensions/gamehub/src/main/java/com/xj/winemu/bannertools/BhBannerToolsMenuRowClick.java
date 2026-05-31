@@ -10,6 +10,7 @@ import android.view.View;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.xj.winemu.common.BhMenuGameId;
 
@@ -56,6 +57,8 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
         "Game ID",
         "Audio",
         "GOG",
+        "Overlay",
+        "Root",
     };
     private static final String[] TILE_DRAWABLES = new String[] {
         "bh_bt_vibration",
@@ -64,7 +67,17 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
         "bh_bt_game_id",
         "bh_bt_audio",
         "bh_bt_gog",
+        "bh_bt_overlay",
+        "bh_bt_root",
     };
+
+    // Tile indices that act on the CURRENT GAME (need a gameId in scope).
+    // When Banner Tools is opened from the Explore page (no game), these are
+    // greyed + non-interactive; the global tiles (Audio, GOG, Overlay, Root)
+    // stay usable. Keep in sync with dispatch(int) ordering.
+    private static boolean isPerGameTile(int i) {
+        return i == 0 || i == 1 || i == 2 || i == 3; // Vibration/GPU Spoof/Renderer/Game ID
+    }
 
     @Override
     public Object invoke(Object ignoredFromCompose) {
@@ -74,14 +87,30 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
                 Log.w(TAG, "no top Activity resolvable; cannot show dialog");
                 return kotlin.Unit.INSTANCE;
             }
-            host.runOnUiThread(() -> showDialog(host));
+            host.runOnUiThread(() -> showDialog(host, false));
         } catch (Throwable t) {
             Log.w(TAG, "menu click failed", t);
         }
         return kotlin.Unit.INSTANCE;
     }
 
-    private static void showDialog(Activity host) {
+    /** Entry point for the Explore page's Banner Tools card. No game is in
+     *  scope there, so the per-game tiles are greyed; the global tiles
+     *  (Audio, GOG, Overlay, Root) stay usable. */
+    public static void openFromExplore() {
+        try {
+            Activity host = resolveTopActivity();
+            if (host == null) {
+                Log.w(TAG, "no top Activity resolvable; cannot show dialog");
+                return;
+            }
+            host.runOnUiThread(() -> showDialog(host, true));
+        } catch (Throwable t) {
+            Log.w(TAG, "openFromExplore failed", t);
+        }
+    }
+
+    private static void showDialog(Activity host, boolean fromExplore) {
         try {
             java.util.List<View> tiles = new java.util.ArrayList<>();
             LinearLayout content = buildTilesView(host, tiles);
@@ -92,14 +121,37 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
                 .setNegativeButton(android.R.string.cancel, null)
                 .create();
 
+            // Overlay tile requires root (it controls the root-gated in-game
+            // performance overlay), so it's greyed until root is granted.
+            final boolean rootGranted =
+                com.xj.winemu.perf.BhPerfController.get().isRootGranted(host);
+
             // Wire per-tile clicks now that we have the dialog reference;
             // tiles are in dispatch-index order so which == dispatch case.
             for (int i = 0; i < tiles.size(); i++) {
                 final int which = i;
-                tiles.get(i).setOnClickListener(v -> {
-                    dispatch(which);
-                    dialog.dismiss();
-                });
+                final View tile = tiles.get(i);
+                if (fromExplore && isPerGameTile(which)) {
+                    // No game in scope — grey out and explain on tap.
+                    tile.setAlpha(0.4f);
+                    tile.setOnClickListener(v ->
+                        Toast.makeText(host, "Open from a game", Toast.LENGTH_SHORT).show());
+                } else if (which == 6 && !rootGranted) {
+                    // Overlay tile, no root yet — grey out and send the user to
+                    // the Root tile to grant first.
+                    tile.setAlpha(0.4f);
+                    tile.setOnClickListener(v -> {
+                        Toast.makeText(host, "Grant root access first",
+                            Toast.LENGTH_SHORT).show();
+                        dispatch(host, 7); // open the Root dialog
+                        dialog.dismiss();
+                    });
+                } else {
+                    tile.setOnClickListener(v -> {
+                        dispatch(host, which);
+                        dialog.dismiss();
+                    });
+                }
             }
 
             dialog.show();
@@ -219,7 +271,7 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
         return Math.round(density * dp);
     }
 
-    private static void dispatch(int which) {
+    private static void dispatch(Activity host, int which) {
         try {
             switch (which) {
                 case 0:
@@ -242,6 +294,12 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
                     // (not a dialog like the others); BhGogMenuRowClick.invoke
                     // walks to the top Activity and startActivity(GogMainActivity).
                     new com.xj.winemu.gog.BhGogMenuRowClick().invoke(null);
+                    break;
+                case 6:
+                    com.xj.winemu.perf.BhPerfMenus.showOverlayToggleDialog(host);
+                    break;
+                case 7:
+                    com.xj.winemu.perf.BhPerfMenus.showRootDialog(host);
                     break;
                 default:
                     Log.w(TAG, "unknown dialog item index " + which);

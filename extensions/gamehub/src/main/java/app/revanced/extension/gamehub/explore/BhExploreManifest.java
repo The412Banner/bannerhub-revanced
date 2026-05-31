@@ -244,13 +244,28 @@ public final class BhExploreManifest {
      * Never null; never throws.
      */
     public static List<Rail> load(Context ctx) {
+        // 1. External override always wins (on-device live-edit / testing).
         String json = readOverride(ctx);
+        // 2. Otherwise pick the NEWER of the baked asset vs the network cache,
+        //    compared by manifest root "build". The baked asset is stamped with
+        //    THIS build's number, so a freshly-shipped feature (e.g. the Banner
+        //    Tools card) wins over a stale cached manifest fetched from an older
+        //    stable on a prior online visit — that stale cache was previously
+        //    able to shadow our bundled rails indefinitely. A genuinely newer
+        //    live update (higher build) still wins.
         if (json == null || json.trim().isEmpty()) {
-            json = readFile(cacheFile(ctx));
+            String asset = readAsset(ctx, "bh_explore.json");
+            String cache = readFile(cacheFile(ctx));
+            if (cache != null && !cache.trim().isEmpty()
+                    && buildOf(cache) > buildOf(asset)) {
+                json = cache;
+            } else if (asset != null && !asset.trim().isEmpty()) {
+                json = asset;
+            } else if (cache != null && !cache.trim().isEmpty()) {
+                json = cache;
+            }
         }
-        if (json == null || json.trim().isEmpty()) {
-            json = readAsset(ctx, "bh_explore.json");
-        }
+        // 3. Last resort: the in-APK hardcoded default.
         if (json == null || json.trim().isEmpty()) {
             json = BUNDLED_JSON;
         }
@@ -353,6 +368,12 @@ public final class BhExploreManifest {
             if (remote == null || remote.trim().isEmpty()) return null;
             List<Rail> rails = parse(remote);          // reject garbage/empty
             if (rails.isEmpty()) return null;
+            // Ignore a remote manifest older than what we shipped — the live
+            // release asset tracks the latest STABLE, which can be behind a
+            // prerelease/newer build. Without this, an older stable would
+            // overwrite the cache and (pre the build-gated load order) shadow
+            // our newer bundled rails. Compare root "build" vs installed.
+            if (buildOf(remote) < installedBuild(ctx)) return null;
             captureMeta(ctx, remote);                  // refresh "latest" even if rails unchanged
             java.io.File cache = cacheFile(ctx);
             String prev = readFile(cache);
@@ -368,6 +389,18 @@ public final class BhExploreManifest {
 
     private static java.io.File cacheFile(Context ctx) {
         return new java.io.File(ctx.getCacheDir(), CACHE_NAME);
+    }
+
+    /** Manifest root "build" int (monotonic MAJOR*1e6+MINOR*1e3+PATCH), or 0 if
+     *  absent/unparseable. Used to rank baked-asset vs cache vs remote so an
+     *  older manifest can't shadow a newer build's content. */
+    private static int buildOf(String json) {
+        if (json == null || json.trim().isEmpty()) return 0;
+        try {
+            return new JSONObject(json).optInt("build", 0);
+        } catch (Throwable t) {
+            return 0;
+        }
     }
 
     private static String httpGet(String url) throws Exception {

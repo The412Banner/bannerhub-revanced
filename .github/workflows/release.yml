@@ -333,6 +333,10 @@ jobs:
 
             The overlay is **off by default** and the whole feature is **root-gated** — non-rooted devices (and anyone who doesn't enable it) see nothing. Turn it on from **Banner Tools → In-game Overlay**, with a separate **Root** tile to grant/verify su. Includes a **pill opacity slider** so you can make it as subtle as you like, and it **auto-reverts** the CPU/GPU changes when you exit the game.
 
+            ### 🛠️ Banner Tools now in the Explorer screen
+
+            The **Banner Tools** option now lives in the **Explorer** tab/screen. Its settings are **per-game options only** — you open Banner Tools from a game in the Explorer view and the changes you make apply to that game alone, not app-wide.
+
             ### Carryover from `v1.7.0-604` and earlier
 
             Everything from v1.7.0 ships forward unchanged — the **redesigned Explore homepage** (wordmark/logo hero, auto-synced What's New, GOG store card), the **in-app update check + installed-vs-latest version readout** with the amber update banner and settings cog, and the **GOG path fix** for "Set .exe" / "Copy to Downloads". GOG integration, the Banner Tools menu, recording-compatible audio, per-game GPU Spoof / Legacy renderer / PC Vibration isolation, the offline component picker, the privacy-hardening stack, the 9 Lite builds, the stable keystore, and the BannerHub v6 rebrand all carry over too.

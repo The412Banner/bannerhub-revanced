@@ -28,6 +28,18 @@
           "icon": "bh_explore_gog"
         }
       ]
+    },
+    {
+      "title": "BannerHub",
+      "type": "shortcuts",
+      "cards": [
+        {
+          "label": "Banner Tools",
+          "subtitle": "Overlay, root & per-game tools",
+          "action": "bannertools",
+          "icon": "bh_bt_overlay"
+        }
+      ]
     }
   ]
 }

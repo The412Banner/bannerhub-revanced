@@ -12,10 +12,11 @@ import android.widget.Toast;
  * see GOG_LIBRARY_TAB_DESIGN §42).
  *
  * Actions:
- *   "gog"     → GogMainActivity (login / owned-library hub)
- *   "url"     → ACTION_VIEW the card's {@code arg} link
- *   "article" → BannerExploreArticleActivity, fed the card's title/body/image
- *   "soon"    → "Coming soon" toast (placeholder cards)
+ *   "gog"         → GogMainActivity (login / owned-library hub)
+ *   "url"         → ACTION_VIEW the card's {@code arg} link
+ *   "article"     → BannerExploreArticleActivity, fed the card's title/body/image
+ *   "bannertools" → Banner Tools dialog (from-Explore: per-game tiles greyed)
+ *   "soon"        → "Coming soon" toast (placeholder cards)
  * Unknown actions also show the "coming soon" toast (forward-compatible: a
  * future bundled/remote manifest can add cards before the handler ships).
  */
@@ -34,6 +35,13 @@ public final class BhExploreActions {
             switch (card.action) {
                 case "gog":
                     openActivity(host, GOG_HUB);
+                    break;
+                case "bannertools":
+                    // Opens the same Banner Tools dialog as the per-game menus,
+                    // but flagged as "from Explore" so the per-game tiles
+                    // (Vibration/GPU Spoof/Renderer/Game ID) grey out while the
+                    // global tiles (Audio, GOG, Overlay, Root) stay usable.
+                    com.xj.winemu.bannertools.BhBannerToolsMenuRowClick.openFromExplore();
                     break;
                 case "url":
                     if (card.arg != null && !card.arg.isEmpty()) {

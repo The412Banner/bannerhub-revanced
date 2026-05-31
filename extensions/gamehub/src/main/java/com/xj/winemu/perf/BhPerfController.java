@@ -35,6 +35,10 @@ public final class BhPerfController {
     public static final String PREFS = "bh_perf_overlay";
     public static final String KEY_ROOT_GRANTED = "root_granted";
     public static final String KEY_PILL_Y = "pill_y";
+    /** Master on/off for whether the in-game overlay pill attaches at all.
+     *  Default true so the shipped overlay keeps working out of the box;
+     *  the Banner Tools → In-game Performance Overlay tile flips it. */
+    public static final String KEY_OVERLAY_ENABLED = "overlay_enabled";
 
     // sysfs paths
     private static final String CPU_GOV_GLOB =
@@ -94,6 +98,36 @@ public final class BhPerfController {
             prefs(ctx).edit().putBoolean(KEY_ROOT_GRANTED, granted).apply();
         } catch (Throwable ignored) {
         }
+    }
+
+    // ── overlay master enable (persisted, default ON) ───────────────────────
+
+    public boolean isOverlayEnabled(Context ctx) {
+        try {
+            return prefs(ctx).getBoolean(KEY_OVERLAY_ENABLED, true);
+        } catch (Throwable t) {
+            return true;
+        }
+    }
+
+    public void setOverlayEnabled(Context ctx, boolean enabled) {
+        try {
+            prefs(ctx).edit().putBoolean(KEY_OVERLAY_ENABLED, enabled).apply();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** Revoke cached root: revert any active boost to hardware defaults FIRST
+     *  (never leave the device pinned with the toggles about to grey out),
+     *  then clear the granted flag. Reports completion on the reply Handler. */
+    public void revokeRoot(final Context ctx, final Handler reply,
+                           final ResultCallback cb) {
+        revertAll(reply, new ResultCallback() {
+            @Override public void onResult(boolean ok) {
+                setRootGranted(ctx, false);
+                if (cb != null) cb.onResult(ok);
+            }
+        });
     }
 
     public int getPillY(Context ctx, int def) {

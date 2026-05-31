@@ -68,8 +68,20 @@ public final class BhPerfOverlay {
         try {
             ViewGroup root = rootView(activity);
             if (root == null) return;
+            boolean alreadyAttached = root.findViewWithTag(TAG_KEY_OBJ) != null;
+            // Master toggle (Banner Tools → In-game Performance Overlay). When
+            // OFF, ensure no pill is present and bail; when toggled back ON,
+            // the next onResume re-attaches. This is the "live" behaviour:
+            // flipping it then returning to the game adds/removes the pill.
+            if (!BhPerfController.get().isOverlayEnabled(activity)) {
+                if (alreadyAttached) {
+                    View v = root.findViewWithTag(TAG_KEY_OBJ);
+                    if (v != null) root.removeView(v);
+                }
+                return;
+            }
             // Avoid double-attach if onCreate AND onResume both fire.
-            if (root.findViewWithTag(TAG_KEY_OBJ) != null) return;
+            if (alreadyAttached) return;
             View overlay = new Controller(activity).build();
             overlay.setTag(TAG_KEY_OBJ);
             root.addView(overlay);

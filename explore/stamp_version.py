@@ -88,7 +88,8 @@ def main():
         print(f"[stampver] could not write version asset ({e})")
 
     # 2) Latest-version fields on the remote manifest root (preserves all other
-    #    keys; gen_whatsnew.py later edits only the hero body).
+    #    keys, incl. the hero body that gen_whatsnew.py already refreshed in the
+    #    preceding release.yml step).
     try:
         manifest = json.load(open(MANIFEST, encoding="utf-8"))
         manifest["version"] = ver

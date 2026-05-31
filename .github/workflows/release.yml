@@ -78,12 +78,24 @@ jobs:
       # BhVibrationController.ensureWinebusDurationPatchOnce). No native
       # shim is built or shipped; nothing is added to LD_PRELOAD.
 
+      - name: Sync Explore What's New from release notes
+        # Regenerates explore/bh_explore.json's hero "What's New" block from the
+        # README "What's new in <ver>" section, so the in-app What's New matches
+        # the release notes without hand-editing two places.
+        # MUST run BEFORE "Stamp Explore version": that step mirrors the manifest
+        # into patches/.../bh_explore.json (the baked-into-APK asset), so the body
+        # has to be fresh first — otherwise the APK ships the new version/build
+        # number with the PREVIOUS release's body. Fail-safe: leaves the manifest
+        # untouched (exit 0) if the notes format changes.
+        run: python3 explore/gen_whatsnew.py
+
       - name: Stamp Explore version
         # Writes the INSTALLED version into patches/.../explore/bh_version.json
         # (bundled into the APK by ExploreVersionAssetPatch as assets/bh_version.json)
-        # AND the LATEST version into explore/bh_explore.json's root. Runs BEFORE
-        # the gradle build so the patch bundle picks up the freshly-stamped asset.
-        # Fail-safe (exit 0) if the version can't be resolved.
+        # AND the LATEST version into explore/bh_explore.json's root, then mirrors
+        # the (already What's-New-synced) manifest into the baked APK asset. Runs
+        # BEFORE the gradle build so the patch bundle picks up the freshly-stamped
+        # asset. Fail-safe (exit 0) if the version can't be resolved.
         env:
           VERSION: ${{ steps.ver.outputs.version }}
         run: python3 explore/stamp_version.py
@@ -108,13 +120,6 @@ jobs:
             --pattern "GameHub_6.0.4.apk" \
             --repo ${{ github.repository }} \
             --output GameHub_6.0.4.apk
-
-      - name: Sync Explore What's New from release notes
-        # Regenerates explore/bh_explore.json's hero "What's New" block from the
-        # README "What's new in <ver>" section, so the in-app What's New matches
-        # the release notes without hand-editing two places. Fail-safe: leaves
-        # the manifest untouched (exit 0) if the notes format changes.
-        run: python3 explore/gen_whatsnew.py
 
       - name: Stage shared artifacts
         run: |

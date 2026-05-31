@@ -100,6 +100,20 @@ def main():
     except (OSError, ValueError) as e:
         print(f"[stampver] could not stamp manifest ({e})")
 
+    # 3) Mirror the stamped manifest into the patch bundle resources so
+    #    ExploreManifestAssetPatch bakes assets/bh_explore.json with the same
+    #    version/build + shipped rails as the canonical/release manifest.
+    try:
+        with open(MANIFEST, encoding="utf-8") as f:
+            data = json.load(f)
+        os.makedirs(os.path.dirname(MANIFEST_BAKED), exist_ok=True)
+        with open(MANIFEST_BAKED, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        print(f"[stampver] mirrored manifest -> {MANIFEST_BAKED}")
+    except (OSError, ValueError) as e:
+        print(f"[stampver] could not mirror manifest ({e})")
+
     return 0
 
 

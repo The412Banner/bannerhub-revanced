@@ -1,46 +1,63 @@
 package com.xj.winemu.perf;
 
 import android.app.Activity;
-import android.graphics.Color;
+import android.graphics.PixelFormat;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Handler;
+import android.os.IBinder;
 import android.os.Looper;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.WeakHashMap;
+
 /**
  * BhPerfOverlay — Banner-owned in-game overlay for the two root performance
- * toggles. Classic Android Views (no Compose), attached to the running
- * WineActivity's decor view so it floats over the Wine game surface.
+ * toggles. Classic Android Views (no Compose).
  *
- * UX: an edge pill ("⚡") parked on the right edge. Tap it to slide out a
- * compact panel with two switch rows (Sustained Performance Mode, Max Adreno
- * Clocks) plus a root-status line. Tap the pill again or outside the panel to
- * collapse. The pill is draggable vertically and remembers its Y in prefs.
+ * UX: an edge pill ("⚡") parked on the right edge over the Wine game surface.
+ * Tap it to slide out a compact panel with two switch rows (Sustained
+ * Performance Mode, Max Adreno Clocks) plus a root-status line. Tap the pill
+ * again, or anywhere outside, to collapse. The pill is draggable vertically and
+ * remembers its Y in prefs.
+ *
+ * WINDOW STRATEGY — WHY NOT A DECOR-VIEW CHILD: WineActivity OVERRIDES
+ * dispatchTouchEvent and routes touches into the game's input pipeline, so a
+ * View added as a child of its decor view renders but never receives taps/drags
+ * (confirmed by decompile: WineActivity.dispatchTouchEvent is a real override).
+ * Instead we add the overlay as its OWN sub-window via WindowManager, attached
+ * to the activity's window token. A separate window gets its own input channel
+ * straight from the system, independent of WineActivity's dispatch override, so
+ * the pill/panel receive touches. FLAG_NOT_TOUCH_MODAL + WRAP_CONTENT sizing
+ * means only the pill/panel area is touchable; the rest of the screen still
+ * reaches the game. No SYSTEM_ALERT_WINDOW permission needed — it's an
+ * application sub-window bound to the host's window token.
  *
  * Root-gated: until root is granted the two rows are greyed (50% alpha,
- * non-interactive) and a "Grant root" affordance is shown; granting runs
- * {@code su -c id} once and caches the result.
+ * non-interactive) and a "Grant root" affordance is shown.
  *
- * AUTO-REVERT: this class does not itself watch the lifecycle — the patch hooks
- * WineActivity.onDestroy to call {@link #revertAndDetach(Activity)}, which tells
- * {@link BhPerfController} to restore both hardware defaults.
+ * AUTO-REVERT: the patch hooks WineActivity.onDestroy to call
+ * {@link #revertAndDetach(Activity)}, which restores both hardware defaults and
+ * removes the window.
+ *
+ * Master toggle: {@link BhPerfController#isOverlayEnabled} (Banner Tools →
+ * In-game Performance Overlay) gates whether attach adds the window at all.
  *
  * Entry points (called from smali patches):
- *   - attach(Activity)            : WineActivity.onCreate / onResume tail
+ *   - attach(Activity)            : WineActivity.onResume tail
  *   - revertAndDetach(Activity)   : WineActivity.onDestroy
  */
 public final class BhPerfOverlay {
 
     private static final String TAG = "BhPerf";
-    private static final int TAG_KEY = 0x7e9f0001; // marker tag to avoid double-attach
 
     // colors
     private static final int COL_PANEL_BG   = 0xF21A1D24; // ~95% dark
@@ -52,6 +69,11 @@ public final class BhPerfOverlay {
     private static final int COL_KNOB       = 0xFFEFEFEF;
 
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
+
+    // One overlay window per running WineActivity. WeakHashMap so a destroyed
+    // activity we somehow miss can't leak.
+    private static final WeakHashMap<Activity, Controller> sOverlays =
+            new WeakHashMap<>();
 
     private BhPerfOverlay() {}
 
@@ -66,25 +88,25 @@ public final class BhPerfOverlay {
             return;
         }
         try {
-            ViewGroup root = rootView(activity);
-            if (root == null) return;
-            boolean alreadyAttached = root.findViewWithTag(TAG_KEY_OBJ) != null;
-            // Master toggle (Banner Tools → In-game Performance Overlay). When
-            // OFF, ensure no pill is present and bail; when toggled back ON,
-            // the next onResume re-attaches. This is the "live" behaviour:
-            // flipping it then returning to the game adds/removes the pill.
-            if (!BhPerfController.get().isOverlayEnabled(activity)) {
-                if (alreadyAttached) {
-                    View v = root.findViewWithTag(TAG_KEY_OBJ);
-                    if (v != null) root.removeView(v);
+            boolean enabled = BhPerfController.get().isOverlayEnabled(activity);
+            Controller existing = sOverlays.get(activity);
+
+            // Master toggle OFF → ensure no window is present and bail. Toggling
+            // back ON re-attaches on the next onResume (the "live" behaviour).
+            if (!enabled) {
+                if (existing != null) {
+                    existing.detach();
+                    sOverlays.remove(activity);
                 }
                 return;
             }
-            // Avoid double-attach if onCreate AND onResume both fire.
-            if (alreadyAttached) return;
-            View overlay = new Controller(activity).build();
-            overlay.setTag(TAG_KEY_OBJ);
-            root.addView(overlay);
+            // Already attached (onResume can fire repeatedly) → nothing to do.
+            if (existing != null && existing.isAttached()) return;
+
+            Controller c = new Controller(activity);
+            if (c.attachToWindow()) {
+                sOverlays.put(activity, c);
+            }
         } catch (Throwable t) {
             android.util.Log.w(TAG, "attach failed", t);
         }
@@ -101,10 +123,8 @@ public final class BhPerfOverlay {
         Runnable detach = new Runnable() {
             @Override public void run() {
                 try {
-                    ViewGroup root = rootView(activity);
-                    if (root == null) return;
-                    View v = root.findViewWithTag(TAG_KEY_OBJ);
-                    if (v != null) root.removeView(v);
+                    Controller c = sOverlays.remove(activity);
+                    if (c != null) c.detach();
                 } catch (Throwable ignored) {}
             }
         };
@@ -112,23 +132,17 @@ public final class BhPerfOverlay {
         else activity.runOnUiThread(detach);
     }
 
-    // A stable Object tag (findViewWithTag matches by equals()).
-    private static final Object TAG_KEY_OBJ = "bh_perf_overlay_root";
-
-    private static ViewGroup rootView(Activity a) {
-        View dv = a.getWindow() != null ? a.getWindow().getDecorView() : null;
-        if (dv instanceof ViewGroup) return (ViewGroup) dv;
-        return null;
-    }
-
     // ── overlay controller ──────────────────────────────────────────────────
 
     private static final class Controller {
         private final Activity act;
-        private FrameLayout container;   // full-screen transparent host
-        private LinearLayout panel;      // the slide-out panel
+        private WindowManager wm;
+        private WindowManager.LayoutParams params;
+        private LinearLayout container;  // horizontal: [panel][pill]
+        private LinearLayout panel;      // the slide-out panel (GONE when collapsed)
         private TextView pill;           // the edge tab
         private boolean expanded = false;
+        private boolean attached = false;
 
         // toggle rows
         private ToggleRow rowSustained;
@@ -137,21 +151,61 @@ public final class BhPerfOverlay {
 
         Controller(Activity a) { this.act = a; }
 
-        View build() {
-            container = new FrameLayout(act);
-            container.setLayoutParams(new ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT));
-            // Let touches outside our widgets pass through to the game: the
-            // container itself is not clickable; only pill/panel consume taps.
-            container.setClickable(false);
+        boolean isAttached() { return attached; }
 
-            buildPanel();
-            buildPill();
+        boolean attachToWindow() {
+            try {
+                wm = act.getWindowManager();
+                if (wm == null) return false;
+                IBinder token = act.getWindow() != null
+                        && act.getWindow().getDecorView() != null
+                        ? act.getWindow().getDecorView().getWindowToken() : null;
+                if (token == null) return false; // decor not attached yet
 
-            // Tap-outside-to-collapse: a transparent catcher behind the panel,
-            // only present while expanded.
-            return container;
+                container = new LinearLayout(act);
+                container.setOrientation(LinearLayout.HORIZONTAL);
+                container.setGravity(Gravity.CENTER_VERTICAL);
+
+                buildPanel();   // added first → sits LEFT of the pill
+                buildPill();    // added second → right edge
+
+                // Collapse when a touch lands outside our window (the game area).
+                container.setOnTouchListener(new View.OnTouchListener() {
+                    @Override public boolean onTouch(View v, MotionEvent e) {
+                        if (e.getActionMasked() == MotionEvent.ACTION_OUTSIDE && expanded) {
+                            setExpanded(false);
+                        }
+                        return false; // never consume; children handle their own
+                    }
+                });
+
+                params = new WindowManager.LayoutParams(
+                        WindowManager.LayoutParams.WRAP_CONTENT,
+                        WindowManager.LayoutParams.WRAP_CONTENT,
+                        WindowManager.LayoutParams.TYPE_APPLICATION_PANEL,
+                        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                                | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+                                | WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+                        PixelFormat.TRANSLUCENT);
+                params.gravity = Gravity.TOP | Gravity.END;
+                params.token = token;
+                params.y = BhPerfController.get().getPillY(act, dp(120));
+
+                wm.addView(container, params);
+                attached = true;
+                return true;
+            } catch (Throwable t) {
+                android.util.Log.w(TAG, "attachToWindow failed", t);
+                return false;
+            }
+        }
+
+        void detach() {
+            if (!attached) return;
+            attached = false;
+            try {
+                if (wm != null && container != null) wm.removeView(container);
+            } catch (Throwable ignored) {}
         }
 
         // pill --------------------------------------------------------------
@@ -166,13 +220,8 @@ public final class BhPerfOverlay {
             bg.setColor(COL_PILL_BG);
             bg.setCornerRadii(new float[]{dp(10), dp(10), 0, 0, 0, 0, dp(10), dp(10)});
             pill.setBackground(bg);
-
-            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(w, h);
-            lp.gravity = Gravity.END | Gravity.TOP;
-            lp.topMargin = BhPerfController.get().getPillY(act, dp(120));
-            pill.setLayoutParams(lp);
-
-            pill.setOnTouchListener(new PillTouch(lp));
+            pill.setLayoutParams(new LinearLayout.LayoutParams(w, h));
+            pill.setOnTouchListener(new PillTouch());
             container.addView(pill);
         }
 
@@ -182,18 +231,15 @@ public final class BhPerfOverlay {
             panel.setOrientation(LinearLayout.VERTICAL);
             GradientDrawable bg = new GradientDrawable();
             bg.setColor(COL_PANEL_BG);
-            bg.setCornerRadii(new float[]{dp(14), dp(14), 0, 0, 0, 0, dp(14), dp(14)});
+            bg.setCornerRadius(dp(14));
             panel.setBackground(bg);
             panel.setPadding(dp(16), dp(14), dp(16), dp(14));
 
-            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                     dp(248), ViewGroup.LayoutParams.WRAP_CONTENT);
-            lp.gravity = Gravity.END | Gravity.TOP;
-            lp.topMargin = dp(96);
-            lp.rightMargin = dp(34); // sit left of the pill
+            lp.rightMargin = dp(6);
             panel.setLayoutParams(lp);
 
-            // header
             TextView header = new TextView(act);
             header.setText("BANNER PERFORMANCE");
             header.setTextColor(COL_ACCENT);
@@ -313,39 +359,44 @@ public final class BhPerfOverlay {
             expanded = exp;
             panel.setVisibility(exp ? View.VISIBLE : View.GONE);
             if (exp) refreshRootUi();
+            // WRAP_CONTENT window must re-measure to grow/shrink with the panel.
+            try {
+                if (wm != null && container != null && attached) {
+                    wm.updateViewLayout(container, params);
+                }
+            } catch (Throwable ignored) {}
         }
 
-        // pill drag + tap ---------------------------------------------------
+        // pill drag (move the window) + tap (expand) -------------------------
         private final class PillTouch implements View.OnTouchListener {
-            private final FrameLayout.LayoutParams lp;
             private float downRawY;
-            private int downMargin;
+            private int downY;
             private boolean dragged;
-            PillTouch(FrameLayout.LayoutParams lp) { this.lp = lp; }
 
             @Override public boolean onTouch(View v, MotionEvent e) {
                 switch (e.getActionMasked()) {
                     case MotionEvent.ACTION_DOWN:
                         downRawY = e.getRawY();
-                        downMargin = lp.topMargin;
+                        downY = params.y;
                         dragged = false;
                         return true;
                     case MotionEvent.ACTION_MOVE: {
                         int dy = (int) (e.getRawY() - downRawY);
                         if (Math.abs(dy) > dp(6)) dragged = true;
-                        int ny = downMargin + dy;
+                        int ny = downY + dy;
                         if (ny < 0) ny = 0;
-                        int max = container.getHeight() - v.getHeight();
+                        int max = act.getResources().getDisplayMetrics().heightPixels
+                                - container.getHeight();
                         if (max > 0 && ny > max) ny = max;
-                        lp.topMargin = ny;
-                        v.setLayoutParams(lp);
+                        params.y = ny;
+                        try {
+                            if (wm != null && attached) wm.updateViewLayout(container, params);
+                        } catch (Throwable ignored) {}
                         return true;
                     }
                     case MotionEvent.ACTION_UP:
                         if (dragged) {
-                            BhPerfController.get().setPillY(act, lp.topMargin);
-                            // keep panel aligned roughly with pill next open
-                            alignPanelTo(lp.topMargin);
+                            BhPerfController.get().setPillY(act, params.y);
                         } else {
                             setExpanded(!expanded);
                         }
@@ -354,15 +405,6 @@ public final class BhPerfOverlay {
                         return false;
                 }
             }
-        }
-
-        private void alignPanelTo(int pillTop) {
-            try {
-                FrameLayout.LayoutParams plp = (FrameLayout.LayoutParams) panel.getLayoutParams();
-                int want = pillTop - dp(40);
-                plp.topMargin = Math.max(dp(8), want);
-                panel.setLayoutParams(plp);
-            } catch (Throwable ignored) {}
         }
 
         private int dp(int v) { return BhPerfOverlay.dp(act, v); }

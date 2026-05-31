@@ -6,6 +6,7 @@ import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
 import app.revanced.patches.gamehub.GAMEHUB_VERSION
 import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
+import app.revanced.patches.gamehub.vibration.vibrationMenuRowPatch
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
@@ -25,60 +26,6 @@ import com.android.tools.smali.dexlib2.iface.reference.StringReference
 // the shared Lxd3;->l1 resolver (injected by VibrationMenuRowPatch).
 //
 // =============================================================================
-// 6.0.4 R8-mangled class letter map for the share repository — TO BE FILLED IN
-// from a fresh apktool decompile of GameHub_6.0.4.apk.
-//
-// The 600 master map (gamehub_reports/GAMEHUB_600_MASTER_MAP.md §26.3) lists
-// these letters AS OF 6.0.1. Every 6.0.x bump reshuffles them. The 6.0.4 letter
-// delta vs 6.0.2 was a complete reshuffle (see GH604_LETTER_MAP.md header). So
-// these constants below are CURRENTLY PLACEHOLDERS and WILL NOT MATCH 6.0.4
-// until verified — DO NOT BUILD against the live APK until they're replaced.
-//
-// Structural anchors / re-derivation recipes for each constant:
-//
-//   VJOY_REPO_CLASS — Implementation of `Lkyf;` (the share-API interface).
-//     6.0.1 letter:  `Lnyf;`
-//     6.0.4 letter:  TODO  (re-derive from smali)
-//     Recipe:
-//       1. Find the class that implements `Lkyf;` (or its 6.0.4 successor).
-//          The interface itself is identifiable by: 2 abstract suspend
-//          methods, one taking a layout-typed param + Continuation, the
-//          other taking a String code + Continuation.
-//       2. Its <init> takes (CoroutineScope, HttpClient, GameLibraryRepository)
-//          — i.e. `(Lj40;Lzi5;Lhp7;)V` on 6.0.1 (any of those three letters
-//          may have moved by 6.0.4 — match by FIELD TYPES not letters).
-//       3. Body of its `shareMap`-implementation calls Ktor `HttpClient.post`
-//          and references the URL literal `vcontroller/shareMap` (full path
-//          `/vcontroller/shareMap` — see 600 master map §26.4).
-//       4. Body of its `getByShareCode`-implementation references the URL
-//          literal `vcontroller/getMapByShareCode`.
-//
-//   VJOY_LAYOUT_CLASS — The kotlinx-@Serializable VJoyLayout DTO.
-//     FQN (R8-kept): `com.xiaoji.egggame.common.ui.vjoy.model.VJoyLayout`
-//     Smali form:    `Lcom/xiaoji/egggame/common/ui/vjoy/model/VJoyLayout;`
-//     Verify on first run: should have:
-//       - synthetic `Companion` inner class with `serializer()L...;`
-//       - 6 instance fields: formatVersion (opt), id, name, b.i (opt),
-//         meta (opt), controls (opt)
-//     If the FQN moved in 6.0.4 (unlikely — kotlinx-serializable classes are
-//     kept by R8), fix here AND in BhVjoyJson.java#VJOY_LAYOUT_FQN.
-//
-//   SHARE_METHOD_NAME / APPLY_METHOD_NAME — The R8-mangled method names on
-//     VJOY_REPO_CLASS for shareMap / getByShareCode. R8 often picks short
-//     single-letter names like `a`, `b`, etc. They are NOT stable across
-//     versions; derive by finding the URL-literal-bearing methods (recipe
-//     above). To avoid hardcoding letters, the patch matches by URL literal
-//     in the method body — see SHARE_URL_FRAGMENT / APPLY_URL_FRAGMENT below.
-//
-// =============================================================================
-
-// PLACEHOLDER: must be re-derived from 6.0.4 smali. See recipe above.
-@Suppress("unused")
-private const val VJOY_REPO_CLASS = "Lnyf;" // TODO 6.0.4 — verify/replace
-
-// R8-kept; stable. Re-verify on first run.
-private const val VJOY_LAYOUT_CLASS =
-    "Lcom/xiaoji/egggame/common/ui/vjoy/model/VJoyLayout;"
 
 // URL fragments that uniquely identify the two repo methods, regardless of
 // how R8 mangled their names. These come from the master-map endpoint list
@@ -108,6 +55,13 @@ val exportControlsPatch = bytecodePatch(
         sharedGamehubExtensionPatch,
         exportControlsManifestPatch,
         exportControlsResourcesPatch,
+        // Installs the Lxd3;->l1 resolver hook that both the "Export to file"/
+        // "Import from file" relabels AND the composition-time import trigger
+        // (BhVjoyShareHook.kickImportFromDialogOpen, via
+        // BhMenuRowClick.maybeResolveCustomLabel) ride on. Without this
+        // dependency the resolver is absent under selective patching, so the
+        // relabels and the import trigger silently no-op.
+        vibrationMenuRowPatch,
     )
 
     apply {

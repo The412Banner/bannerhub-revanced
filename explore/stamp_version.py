@@ -37,6 +37,11 @@ README = os.path.join(REPO, "README.md")
 MANIFEST = os.path.join(HERE, "bh_explore.json")
 VERSION_ASSET = os.path.join(
     REPO, "patches", "src", "main", "resources", "explore", "bh_version.json")
+# Baked-into-APK copy of the manifest (assets/bh_explore.json via
+# ExploreManifestAssetPatch). Kept identical to the stamped MANIFEST so the
+# offline fallback carries this build's version/build and shipped rails.
+MANIFEST_BAKED = os.path.join(
+    REPO, "patches", "src", "main", "resources", "explore", "bh_explore.json")
 
 
 def version_to_build(ver):

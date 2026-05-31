@@ -1,0 +1,101 @@
+name: Reattach release assets
+
+# Utility: re-download the already-built APK artifacts from the full + Lite
+# release runs and re-attach them to a release in a clean, deterministic order
+# (9 full A->Z, then 9 Lite A->Z, then bh_explore.json, then the .rvp/.rve
+# bundles). Fixes the interleaved/partial asset list that results from the
+# two-run + manual-attach release flow when the phone-side `gh release upload`
+# stalls. Runs entirely on GitHub's network, so it's fast and reliable.
+#
+# Safe ordering: downloads + verifies ALL artifacts BEFORE deleting any
+# existing asset, so a mid-run failure can never leave the release emptier
+# than it started.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v1.7.0-604)'
+        required: true
+      full_run_id:
+        description: 'Run ID of the full (stable) release build'
+        required: true
+      lite_run_id:
+        description: 'Run ID of the Lite release build'
+        required: true
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  reattach:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download full APK artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh run download ${{ inputs.full_run_id }} -R ${{ github.repository }} -p 'apk-*' -D dl/full
+
+      - name: Download Lite APK artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh run download ${{ inputs.lite_run_id }} -R ${{ github.repository }} -p 'apk-*' -D dl/lite
+
+      - name: Download shared bundle (rvp / rve / bh_explore.json)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh run download ${{ inputs.full_run_id }} -R ${{ github.repository }} -n shared -D dl/shared
+
+      - name: Collect + verify the asset set
+        id: collect
+        run: |
+          set -e
+          mkdir -p staged
+          # Full APKs: everything NOT ending in -Lite.apk
+          find dl/full -name '*.apk' ! -name '*-Lite.apk' -exec cp {} staged/ \;
+          # Lite APKs
+          find dl/lite -name '*-Lite.apk' -exec cp {} staged/ \;
+          # Side bundles (NOT the base GameHub APK or revanced-cli.jar)
+          find dl/shared -name '*.rvp' -exec cp {} staged/ \; || true
+          find dl/shared -name '*.rve' -exec cp {} staged/ \; || true
+          [ -f dl/shared/bh_explore.json ] && cp dl/shared/bh_explore.json staged/ || true
+          echo "---- staged ----"; ls -1 staged
+          full=$(find staged -name '*.apk' ! -name '*-Lite.apk' | wc -l)
+          lite=$(find staged -name '*-Lite.apk' | wc -l)
+          echo "full=$full lite=$lite"
+          if [ "$full" -ne 9 ] || [ "$lite" -ne 9 ]; then
+            echo "::error::expected 9 full + 9 Lite APKs, got full=$full lite=$lite — aborting before deleting anything"
+            exit 1
+          fi
+
+      - name: Delete existing release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          for a in $(gh release view ${{ inputs.tag }} -R ${{ github.repository }} --json assets -q '.assets[].name'); do
+            echo "deleting $a"
+            gh release delete-asset ${{ inputs.tag }} "$a" -R ${{ github.repository }} -y
+          done
+
+      - name: Re-upload in clean order
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          upload() { echo "+ $1"; gh release upload ${{ inputs.tag }} "$1" -R ${{ github.repository }}; }
+          # 1) full APKs A->Z
+          for f in $(find staged -name '*.apk' ! -name '*-Lite.apk' | sort); do upload "$f"; done
+          # 2) Lite APKs A->Z
+          for f in $(find staged -name '*-Lite.apk' | sort); do upload "$f"; done
+          # 3) live Explore manifest
+          [ -f staged/bh_explore.json ] && upload staged/bh_explore.json || true
+          # 4) patch bundles last
+          for f in $(find staged -name '*.rvp' | sort); do upload "$f"; done
+          for f in $(find staged -name '*.rve' | sort); do upload "$f"; done
+
+      - name: Final inventory
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release view ${{ inputs.tag }} -R ${{ github.repository }} --json assets -q '.assets[].name'

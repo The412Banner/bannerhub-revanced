@@ -30,6 +30,8 @@ private val DRAWABLE_NAMES = listOf(
     "bh_bt_game_id",
     "bh_bt_audio",
     "bh_bt_gog",
+    "bh_bt_overlay",
+    "bh_bt_root",
 )
 
 // Sentinel for classloader access — same trick as ChangeAppIconPatch's
@@ -42,8 +44,8 @@ private object BannerToolsDrawableResources
 val bannerToolsDrawablesPatch = resourcePatch(
     name = "Banner Tools drawables",
     description = "Adds the bh_bt_* vector drawables (vibration, gpu_spoof, " +
-        "renderer, game_id, audio, gog) to res/drawable. Rendered by the " +
-        "Banner Tools dialog's tile grid.",
+        "renderer, game_id, audio, gog, overlay, root) to res/drawable. " +
+        "Rendered by the Banner Tools dialog's tile grid.",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
 

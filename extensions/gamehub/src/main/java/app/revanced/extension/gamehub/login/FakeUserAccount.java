@@ -26,7 +26,7 @@ public final class FakeUserAccount {
     private static final String FAKE_USER_ID = "99999";
 
     /** R8-mangled class name of the user-account data class. Update on base APK bump. */
-    private static final String USER_ACCOUNT_CLASS = "rpm";
+    private static final String USER_ACCOUNT_CLASS = "h2l"; // 6.0.7 (was rpm); 27-field, = AUTH_INTERFACE.b() return
 
     private static volatile Object cached;
 

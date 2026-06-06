@@ -75,12 +75,16 @@ import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 // 6.0.4 (r8-map-id 6a5cde6143fc...57b) — every anchor reshuffled from 6.0.2;
 // see gamehub_reports/GH604_LETTER_MAP.md for the full delta and structural
 // verification per anchor.
-private const val AUTH_IMPL              = "Ljt0;"
-private const val AUTH_INTERFACE         = "Ldt0;"
-private const val AUTH_TOKEN             = "Lwpm;"
-private const val GAME_LIB_REPO          = "Lvu7;"
-private const val GAME_LIB_REPO_USERID_METHOD = "e"
-private const val NAVIGATOR              = "Lgme;"
+// 6.0.7 (r8-map-id 4551753f...) — full reshuffle from 6.0.4; re-derived against
+// ~/gh607-apktool-d using the structural anchors above. Method names on the auth
+// interface (a/b/c/d/e/f/g/h) are preserved; only class letters + the userid
+// method (e→g) and the second navigator gate (r→s) changed.
+private const val AUTH_IMPL              = "Lfw0;"
+private const val AUTH_INTERFACE         = "Lcw0;"
+private const val AUTH_TOKEN             = "Ln2l;"
+private const val GAME_LIB_REPO          = "Lam7;"
+private const val GAME_LIB_REPO_USERID_METHOD = "g"
+private const val NAVIGATOR              = "Lg8d;"
 // NAV_INTERCEPTOR in 6.0.4 is Liod;, but its a(...) body no longer holds the
 // auth check inline — it dispatches to coroutine continuation Lhod;->invokeSuspend
 // where the iget+invoke+if-nez pattern actually lives. The apply block below
@@ -215,7 +219,7 @@ val bypassLoginPatch = bytecodePatch(
         // patches above: even if AUTH_IMPL.h() weren't reached for some
         // reason, this gate still passes.
         // -----------------------------------------------------------------
-        for (methodName in listOf("i", "r")) {
+        for (methodName in listOf("i", "s")) {
             firstMethod {
                 definingClass == NAVIGATOR && name == methodName
             }.apply {

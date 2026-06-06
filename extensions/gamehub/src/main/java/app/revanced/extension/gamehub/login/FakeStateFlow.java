@@ -44,9 +44,11 @@ import java.lang.reflect.Constructor;
  */
 public final class FakeStateFlow {
 
-    private static final String STATE_FLOW_IMPL_CLASS       = "akk";
-    private static final String STATE_FLOW_WRAPPER_CLASS    = "ozh";
-    private static final String STATE_FLOW_HOLDER_INTERFACE = "dge";
+    // 6.0.7: wrapper o4g (implements Lodi; = StateFlow iface h()/e() return, ctor (Lp3d;)V);
+    // holder interface p3d; impl qdi (implements Lp3d;, ctor (Object)V).
+    private static final String STATE_FLOW_IMPL_CLASS       = "qdi";
+    private static final String STATE_FLOW_WRAPPER_CLASS    = "o4g";
+    private static final String STATE_FLOW_HOLDER_INTERFACE = "p3d";
 
     private static volatile Constructor<?> implCtor;
     private static volatile Constructor<?> wrapperCtor;

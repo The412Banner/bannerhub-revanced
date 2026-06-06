@@ -28,7 +28,7 @@ public final class FakeAuthToken {
     private static final String FAKE_USER_ID = "99999";
 
     /** R8-mangled class name of the auth-token wrapper. Update on base APK bump. */
-    private static final String AUTH_TOKEN_CLASS = "wpm";
+    private static final String AUTH_TOKEN_CLASS = "n2l"; // 6.0.7 (was wpm); 10-field S,S,S,S,Long,Long,J,Z,J,J
 
     private static volatile Object cached;
 

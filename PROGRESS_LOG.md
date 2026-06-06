@@ -41,6 +41,34 @@ spoof DXVK plumbing, PC-accurate vibration, Local game-id assignment, Show PC Ga
 hijack, Debug logging, GOG library card (collection-empty), Mute UI sounds (`.wav`→`.m4a` asset retarget).
 Full anchor notes in memory `project_bannerhub_v6_607_port`. Artifact-only dry runs until the patch set is green.
 
+### Banner Tools menu row (2026-06-06) — STARTED (5th cascade; the hard one)
+
+After fp7, `"Banner Tools menu row"` is the only remaining menu-row cascade still red. Unlike the capture
+patch (head-only `captureGameId` injection) this patch does **register-level row injection** at all 3 sites
+AND its Java extension (`BhBannerToolsMenuRowClick`, 497 lines) reflectively **constructs** GameHub's row
+objects — so both the patcher fingerprints/inject-points AND the extension's hardcoded class/field names need
+the 6.0.7 remap, and the 6.0.7 row-assembly mechanism itself changed at 2 of 3 sites.
+
+**Scope (from the decompile work already done for the capture patch):**
+- **Site 1 — More Menu** `Lx57;->a`→`Lc37;->a(Lf17;ILev6;Ljh7;Leh3;I)V`. Patch finds the LAST
+  `Lx9d;->add(Object)Z` and injects `appendBannerToolsRowTo(v4)` after it. TODO: confirm `Lc37;->a` still
+  collects rows via an `Lx9d`-style `add()` list builder (and in which register — `v4` is hardcoded), or
+  re-derive. Row ctor `Liae(Lo05,String,Lpw6)`→`Ltyc(Ln55,String,Lgv6)`.
+- **Site 2 — tile popup** `Lted;->f`→`Ly7c;->f(Lz7c;Lgv6;Lev6;ZLfyc;Leh3;I)V`. Patch keys off
+  `Lqs2;->H([Object)List` (asList) + its `move-result` register → **GONE in 6.0.7** (y7c.f has NO
+  List-returning invoke; rows = 5× `Lg6c;-><init>(String,Ln55,String,Lev6)` added some other way). Must
+  find the new row-collection point + register. Row class `Lscd`→`Lg6c`.
+- **Site 3 — list popup** `Lpzc;->j0`→`Levb;->b0(Loza;…11)List`. Patch keys off `Lx9d;->i()Lx9d;` finalize
+  + trailing `return-object` → **no 6.0.7 equivalent** (`Lx9d;->i()` gone). Must find the new finalize/return
+  shape. Row class `Lz4e(Lell,Lnw6,int)`→? ; label base `tdi`→`shg`, StringResource `Lell`→`Ldwj`.
+- **Java extension `BhBannerToolsMenuRowClick`** `Class.forName` remap: `iae→tyc`, `o05→n55`, `pw6→gv6`,
+  `zz4`(icon holder, field `v`)→?, `scd→g6c`, `nw6→ev6`, `z4e`(list-popup row)→?, `ell→dwj`, `tdi→shg`.
+  Constructor SIGNATURES changed (e.g. `Lscd(String,Lo05,String,Lnw6)`→`Lg6c(String,Ln55,String,Lev6)` —
+  verify arg order/types per site). Label still Unsafe-allocated then field `a`(key)+`b`(items) set on base `shg`.
+
+Multi-iteration like the original VibrationMenuRowPatch build. Artifact-only dry runs; same
+inner-`returnType`-anchor caveat as the capture site-3 fix applies. — *in progress.*
+
 ### fp4 (2026-06-06) — Per-game menu id capture (shared) + Vibration resolver refingerprinted
 
 Commits **`fe7b601`** (refingerprint) → **`923c0d6`** (diag) → **`052fa35`** (site-3 fix) → **`e04384c`** (cleanup)

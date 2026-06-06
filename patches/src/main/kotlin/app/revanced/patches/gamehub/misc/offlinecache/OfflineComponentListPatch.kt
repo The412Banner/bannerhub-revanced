@@ -39,7 +39,10 @@ import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 // reflective original is used) so the picker can never be broken.
 // ============================================================================
 
-private const val GOF_CLASS = "Lgof;"
+// 6.0.7: gof reshuffled Lgof;->Li6e; (verified: a(Li6e;,ComponentType,I,Lkq3;,I)Object
+// is the page=200 dispatcher to b(IIILkq3;)Object; c(Lkq3;)Object has .locals 11).
+// ComponentType stays unobfuscated; method names a/c + shapes unchanged.
+private const val GOF_CLASS = "Li6e;"
 private const val COMPONENT_TYPE =
     "Lcom/xiaoji/egggame/common/winemu/bean/ComponentType;"
 private const val LIST =

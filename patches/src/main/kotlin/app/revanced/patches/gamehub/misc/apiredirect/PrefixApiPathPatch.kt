@@ -16,12 +16,16 @@ import app.revanced.patches.gamehub.GAMEHUB_VERSION
 //   6.0.0 → Lzdb;->b(Lqx9;Ljava/lang/String;)V
 //   6.0.1 → Lohb;->b(Lj1a;Ljava/lang/String;)V
 //   6.0.2 → Lvob;->b(Lm7a;Ljava/lang/String;)V
-//   6.0.4 → Lcpb;->b(Ln7a;Ljava/lang/String;)V  (string-trim helper now Lbml;->s1)
+//   6.0.4 → Lcpb;->b(Ln7a;Ljava/lang/String;)V  (string-trim helper Lbml;->s1)
+//   6.0.7 → Lzua;->a(Lgn9;Ljava/lang/String;)V  (method b->a; trim now Lcxj;->G1; 38 call sites)
 // Structural anchor: a static method `(L<2-3-letter>;Ljava/lang/String;)V`
 // whose body starts with `iget-object` from the builder's URL field then
 // calls a string-trim helper. Body shape is byte-stable across versions.
-private const val URL_HELPER_CLASS  = "Lcpb;"
-private const val URL_BUILDER_TYPE  = "Ln7a;"
+// Re-derive via: const-string "simulator/v2/getComponentList" in i6e.smali →
+// the immediately-following `invoke-static {builder, path}, L?;->?(L?;String)V`.
+private const val URL_HELPER_CLASS  = "Lzua;"
+private const val URL_BUILDER_TYPE  = "Lgn9;"
+private const val URL_HELPER_METHOD = "a" // was "b" in 6.0.0–6.0.4
 
 // V6PathPrefix.prefix(String) returns "v6/" + path for relative paths and
 // passes full-URL paths (http://, https://) through unchanged. Implementing
@@ -50,7 +54,7 @@ val prefixApiPathPatch = bytecodePatch(
         // register juggling beyond the move-result.
         firstMethod {
             definingClass == URL_HELPER_CLASS &&
-                name == "b" &&
+                name == URL_HELPER_METHOD &&
                 parameterTypes == listOf(URL_BUILDER_TYPE, "Ljava/lang/String;") &&
                 returnType == "V"
         }.apply {

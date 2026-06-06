@@ -48,9 +48,11 @@ build — no alt-package rebrand). All apply-only menu-row results above (captur
 Renderer / Show Game ID / Banner Tools) await on-device render confirmation on this variant. Pull the
 GHL-Normal APK from the dry-run artifacts (or cut a labeled pre-build) for install + logcat.
 
-### Banner Tools menu row (2026-06-06) — ✅ APPLIES on 6.0.7 (fp8, commit `00926a2`)
+### Banner Tools menu row (2026-06-06) — ✅✅ DEVICE-CONFIRMED on GHL Normal (fp8, commit `00926a2`)
 
-**RESOLVED (patch-apply):** `"Banner Tools menu row" succeeded` on fp8 ([run 27071031101](https://github.com/The412Banner/bannerhub-revanced/actions/runs/27071031101)) — **36 applied / 13 failed**, up from fp7's 35/14. This was the last menu-row cascade; **all 5** now apply (capture + Vibration/GPU Spoof/Renderer/Show Game ID/Banner Tools). ⚠️ Device-render still UNVERIFIED — apply-success only proves the fingerprints + inject points resolve; the row actually rendering + the dialog dispatching needs an on-device test (the row-injection at all 3 sites is byte-level).
+**RESOLVED + DEVICE-CONFIRMED.** `"Banner Tools menu row" succeeded` on fp8 ([run 27071031101](https://github.com/The412Banner/bannerhub-revanced/actions/runs/27071031101)) — **36 applied / 13 failed**, up from fp7's 35/14. This was the last menu-row cascade; **all 5** now apply (capture + Vibration/GPU Spoof/Renderer/Show Game ID/Banner Tools).
+
+**On-device (GHL Normal, 2 screenshots 2026-06-06 15:05–15:06):** (1) the **Banner Tools** row renders at the bottom of the library-tile popup (after native rows Add to Desktop / Remove from Library / Edit Cover / Keys & Layout), with its icon — so **Site 2 (tile popup `Ly7c;->f`) row injection works AND the label resolved to "Banner Tools"** (proves the `Lok8;->c0` resolver hook + `maybeResolveCustomLabel` with base class `shg`). (2) Tapping it opens the **Banner Tools dialog** with all sub-entries (Vibration, GPU Spoof, Renderer, Game ID, Audio, GOG, Overlay [greyed/root-gated], Root, Cancel) — so the click handler `BhBannerToolsMenuRowClick` + per-feature dispatch work. End-to-end confirmed for the tile-popup entry point. (Site 1 More Menu + Site 3 list popup not separately screenshotted, but share the resolver/capture/click infra.)
 
 **Final 6.0.7 inject-point map (verified in dex):**
 - Site 1 More Menu `Lc37;->a`: list builder `Lx9d`→**`Lj3c`** (kotlin ListBuilder, `Lm4`→AbstractList implements `java.util.List` ✓). Inject after last `Lj3c;->add(Object)Z`; builder register **derived** from the add's instance reg (v3 in 6.0.7, was hardcoded v4). Row ctor `Liae(Lo05,String,Lpw6)`→**`Ltyc(Ln55,String,Lgv6)`**.

@@ -3,7 +3,6 @@ package app.revanced.patches.gamehub.misc.sound
 import app.revanced.patcher.patch.PatchException
 import app.revanced.patcher.patch.resourcePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
-import app.revanced.patches.gamehub.GAMEHUB_VERSION
 import java.io.File
 
 // Compose loads UI sound effects via the Resources API from the unpacked
@@ -20,7 +19,13 @@ val muteUiSoundsPatch = resourcePatch(
         "with a 50ms silent PCM clip so all click / focus / launch sounds play silently. " +
         "Filenames are preserved so every Compose audio lookup still resolves.",
 ) {
-    compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
+    // 6.0.7 ships a NATIVE "mute UI sounds" toggle in default settings, and
+    // re-encoded the bundled UI sounds .wav→.m4a (so the .wav substitution
+    // below no longer matches → "No .wav files" failure). Pin compatibility to
+    // 6.0.4 so the patcher SKIPS this patch (version-incompatible, not a
+    // failure) on the 6.0.7 build, while the file is kept for older targets.
+    // NOTE: intentionally NOT GAMEHUB_VERSION (which is 6.0.7) — see above.
+    compatibleWith(GAMEHUB_PACKAGE("6.0.4"))
 
     apply {
         // The patch is a top-level val, not a class, so we can't write

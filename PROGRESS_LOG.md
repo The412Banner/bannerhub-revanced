@@ -63,7 +63,9 @@ GHL-Normal APK from the dry-run artifacts (or cut a labeled pre-build) for insta
 
 **Extension `BhBannerToolsMenuRowClick` forName remap (every class/ctor verified in raw dex):** `iae→tyc`, `scd→g6c`, `z4e→stc`, icon `o05→n55`, onClick `pw6→gv6`(Function1, `invoke(Object)`), `nw6→ev6`(Function0, `invoke()`), `ell→dwj`, `tdi→shg`; icon-holder `zz4→v45` (static field `v`→`l`, wrapper `Lxrl→Lu3k`, `getValue()`→Ln55). `Lstc;-><init>(Ldwj;Lev6;I)V` is `synthetic` but reflectable via `getDeclaredConstructor`.
 
-**607 menu-row family now COMPLETE.** Remaining 13 reds are unrelated roots (GPU spoof DXVK plumbing, PC-accurate vibration, privacy cluster, Local game-id, Show PC Game Settings row, Explore tab hijack, Debug logging, GOG library card, Mute UI sounds .m4a retarget).
+**607 menu-row family now COMPLETE.** Remaining reds are unrelated roots (GPU spoof DXVK plumbing, PC-accurate vibration, privacy cluster, Local game-id, Show PC Game Settings row, Explore tab hijack, Debug logging, GOG library card).
+
+**`Mute UI sounds` — DROPPED from 6.0.7 (2026-06-06).** 6.0.7 ships a native "mute UI sounds" toggle in default settings, and re-encoded the bundled UI sounds `.wav`→`.m4a` (so the `.wav` substitution would never match). Per user, the patch is kept in the tree but its `compatibleWith` is pinned to **6.0.4** (`GAMEHUB_PACKAGE("6.0.4")`, not `GAMEHUB_VERSION`) so the patcher **skips** it on the 6.0.7 build (version-incompatible = skipped, not a SEVERE failure). No longer counted among the remaining failures.
 
 ----
 

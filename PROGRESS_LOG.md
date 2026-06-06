@@ -67,6 +67,18 @@ GHL-Normal APK from the dry-run artifacts (or cut a labeled pre-build) for insta
 
 **`Mute UI sounds` — DROPPED from 6.0.7 (2026-06-06).** 6.0.7 ships a native "mute UI sounds" toggle in default settings, and re-encoded the bundled UI sounds `.wav`→`.m4a` (so the `.wav` substitution would never match). Per user, the patch is kept in the tree but its `compatibleWith` is pinned to **6.0.4** (`GAMEHUB_PACKAGE("6.0.4")`, not `GAMEHUB_VERSION`) so the patcher **skips** it on the 6.0.7 build (version-incompatible = skipped, not a SEVERE failure). No longer counted among the remaining failures.
 
+### Privacy cluster (2026-06-06) — 3 of 5 done (fp9, commit `8e1e529`, 37/9)
+
+fp9 ([run 27071646431](https://github.com/The412Banner/bannerhub-revanced/actions/runs/27071646431)) — **37 applied / 9 failed** (was 36/13). Key 6.0.7 discovery: **the app class was renamed `Lcom/xiaoji/egggame/BaseAndroidApp;` → `Lcom/xiaoji/egggame/AndroidApp;`** (relevant to any patch anchored on it).
+
+- ✅ **Disable Mob Push tracking** — fixed by the app-class rename. Mob init now lives in `AndroidApp.b()` (`MobSDK.init` + `submitPolicyGrantResult` + `MobPush.addPushReceiverInMain`); structural helper #2 resolves to `Lns8;->D(Landroid/content/Context;)V` (was `Lnt5;->N`). Manifest layer (`com.mob.`/`cn.fly.` prefix disable) unchanged. **Succeeded.**
+- 🚫 **Disable Firebase Crashlytics** — MOOT on 6.0.7, gated out (`compatibleWith` → 6.0.4, skipped). No `FirebaseCrashlytics.getInstance()`/`setCrashlyticsCollectionEnabled` calls remain; `AndroidApp.a()` self-guards (logs "FirebaseCrashlytics component is not present." via `Lk7l;->r`, doesn't throw); Firebase collection defaults false. **Proven safe: the 6.0.7 build already launches on-device with this patch unapplied** (login etc. device-confirmed), so the original launch-crash it fixed no longer occurs.
+- 🚫 **Disable OTA updates** — MOOT, gated out. The `https://www.xiaoji.com/firmware/update/x1` phone-home URL is gone entirely from 6.0.7 (firmware-update feature removed). JieLi-lib cleanup dependency skipped alongside.
+
+**Remaining privacy (2):** Disable heartbeat + Stub analytics events — both need 6.0.7 **Result-framework** (`Lg50(Lf50, Throwable)`, replaced 6.0.4's `Lo55/Ln55`) wrapper re-derivation, AND device validation (a wrong wrapper applies cleanly but crashes at runtime; apply-only CI can't catch it). Findings so far: heartbeat write coroutines = `Lk3n;->invokeSuspend` (start+update, both strings in one method) + `Lg3n;->invokeSuspend` (end), all stub to `Unit.INSTANCE`; getUserPlayTimeList = `Lcb7;->c(Lkq3;)` (needs success-wrapper). Analytics events URL survives in `Lzy5;->a(Ljava/util/Collection;Lkq3;)` (was `Lcx5;->a`); device-perf event URL in `Lb34`; callers `yy5`/`myg` (Lyw5/Lxnm wrapper casts to re-derive).
+
+**Remaining reds after fp9 (9):** Disable heartbeat, Stub analytics events, GPU spoof DXVK plumbing, PC-accurate vibration, Local game-id assignment, Show PC Game Settings row, Explore tab hijack, GOG library card (permanent), Debug logging.
+
 ----
 
 ### Banner Tools menu row (2026-06-06) — STARTED (5th cascade; the hard one)

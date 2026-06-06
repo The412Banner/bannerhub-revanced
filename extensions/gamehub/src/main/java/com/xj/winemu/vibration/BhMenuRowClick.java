@@ -355,7 +355,9 @@ public final class BhMenuRowClick implements Function1<Object, Object> {
      */
     public static String maybeResolveCustomLabel(Object ell) {
         try {
-            Field aField = Class.forName("tdi").getDeclaredField("a");
+            // 6.0.7: CMP resource base class renamed tdi → shg; field `a`
+            // (the "string:<key>" id holder) is unchanged.
+            Field aField = Class.forName("shg").getDeclaredField("a");
             aField.setAccessible(true);
             Object key = aField.get(ell);
             if (key == null) return null;

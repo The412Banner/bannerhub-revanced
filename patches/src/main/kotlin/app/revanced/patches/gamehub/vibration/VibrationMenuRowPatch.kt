@@ -309,9 +309,16 @@ val vibrationMenuRowPatch = bytecodePatch(
         //   if-nez v0, :short_circuit_return  (return v0)
         //   ... original code runs unchanged ...
         // ─────────────────────────────────────────────────────────────────────
+        // 6.0.7: the CMP stringResource resolver moved Lxd3;->l1 → Lok8;->c0,
+        // StringResource param Lell → Ldwj, Composer Lv83 → Leh3. Verified as
+        // the only String-returning (StringResource,Composer,int) method whose
+        // body matches the 6.0.4 l1 shape (getClass() head, ->v(e,composer)
+        // helper, new-instance(I) loader). The runtime side (BhMenuRowClick.
+        // maybeResolveCustomLabel) reflects the key off the resource base
+        // class, renamed tdi → shg (field `a` unchanged).
         val resolverMethod = firstMethod {
-            definingClass == "Lxd3;" && name == "l1" &&
-                parameterTypes == listOf("Lell;", "Lv83;", "I") &&
+            definingClass == "Lok8;" && name == "c0" &&
+                parameterTypes == listOf("Ldwj;", "Leh3;", "I") &&
                 returnType == "Ljava/lang/String;"
         }
         // Avoid addInstructionsWithLabels + ExternalLabel — pre15 hit
@@ -336,32 +343,16 @@ val vibrationMenuRowPatch = bytecodePatch(
         )
 
         // ─────────────────────────────────────────────────────────────────────
-        // Probe 4: joc.invoke() — diagnostic
+        // (Removed for 6.0.7) Probe 4: Ljoc;->invoke() diagnostic.
         //
-        // joc is a `Function0`-implementing synthetic with `invoke()Object;`.
-        // It reads Lpjl;->{a, b, c, d, e} (library popup labels) and
-        // constructs Lb5d(actionId, label). 4 distinct constructors and ~30
-        // return-paths suggest it's used as a multi-variant row builder.
-        //
-        // We probe by logging at the start of invoke(). On the next device
-        // test, opening the library tile popup should print probeJocInvoke
-        // calls — telling us (a) whether joc IS the popup's row builder,
-        // (b) what actionId values come in (so we know which branch to
-        // extend if we add a "PC Vibration" row variant).
-        //
-        // Probe is one smali line and touches no working registers — pure
-        // diagnostic, removable in the next iteration.
+        // This was a pure Log.i probe (BhMenuRowClick.probeJocInvoke) used in
+        // 2026-05 to discover the 6.0.4 library-popup row builder. The menu
+        // structure is now understood, so the probe carries no functional
+        // value — and Ljoc; is a 6.0.4-specific synthetic with no stable
+        // 6.0.7 anchor. Refingerprinting it would only add a fragile failure
+        // point to this patch, so the probe is dropped rather than ported.
+        // The probeJocInvoke() helper remains in BhMenuRowClick (harmless,
+        // now unreferenced).
         // ─────────────────────────────────────────────────────────────────────
-        val jocInvoke = firstMethod {
-            definingClass == "Ljoc;" && name == "invoke" &&
-                parameterTypes.isEmpty() &&
-                returnType == "Ljava/lang/Object;"
-        }
-        jocInvoke.addInstructions(
-            0,
-            """
-                invoke-static {p0}, $CLICK_HANDLER->probeJocInvoke(Ljava/lang/Object;)V
-            """.trimIndent(),
-        )
     }
 }

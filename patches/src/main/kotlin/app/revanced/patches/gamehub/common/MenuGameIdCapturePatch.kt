@@ -44,67 +44,71 @@ val menuGameIdCapturePatch = bytecodePatch(
             "invoke-static/range {p0 .. p0}, " +
                 "$GAMEID->captureGameId(Ljava/lang/Object;)V"
 
-        // Game-details More Menu — Lx57;->a(Lf37;Lpo7;Lv83;I)V
+        // Game-details More Menu — 6.0.7: Lc37;->a(Lf17;ILev6;Ljh7;Leh3;I)V
+        // (6.0.4 was Lx57;->a(Lf37;Lpo7;Lv83;I)V). The builder gained params
+        // and moved class in the 6.0.7 Steam restructure, but still takes
+        // GameDetailArgs (Lf17, ex-Lf37) as p0 and builds rows via the Ltyc
+        // row-data ctor (ex-Liae): (Ln55 icon, String label, Lgv6 onClick).
+        // The param signature alone is shared by 3 methods (su/c37/v90); the
+        // Ltyc;-><init> anchor disambiguates to the real builder (c37). The
+        // 6.0.4 Lwhl;->S label sget anchor is dropped (label classes moved).
         val menuMethod = firstMethod {
-            parameterTypes == listOf("Lf37;", "Lpo7;", "Lv83;", "I") &&
+            parameterTypes == listOf("Lf17;", "I", "Lev6;", "Ljh7;", "Leh3;", "I") &&
                 returnType == "V" &&
                 (implementation?.instructions?.any { ins ->
                     ins.opcode == Opcode.INVOKE_DIRECT &&
                         (ins as? ReferenceInstruction)?.reference
                             ?.let { it is MethodReference &&
-                                    it.definingClass == "Liae;" &&
+                                    it.definingClass == "Ltyc;" &&
                                     it.name == "<init>" &&
                                     it.parameterTypes.toList() == listOf(
-                                        "Lo05;", "Ljava/lang/String;", "Lpw6;"
+                                        "Ln55;", "Ljava/lang/String;", "Lgv6;"
                                     )
                             } == true
-                } ?: false) &&
-                (implementation?.instructions?.any { ins ->
-                    ins.opcode == Opcode.SGET_OBJECT &&
-                        (ins as? ReferenceInstruction)?.reference?.toString()
-                            ?.contains("Lwhl;->S:Lxrl;") == true
                 } ?: false)
         }
         menuMethod.addInstructions(0, capture)
 
-        // Library-tile popup — Lted;->f(Lued;Lpw6;Lnw6;ZLt9e;Lv83;I)V
+        // Library-tile popup — 6.0.7: Ly7c;->f(Lz7c;Lgv6;Lev6;ZLfyc;Leh3;I)V
+        // (6.0.4 was Lted;->f(Lued;Lpw6;Lnw6;ZLt9e;Lv83;I)V — same method name
+        // f, same 7-param shape). p0=Lz7c menu data (ex-Lued). Rows are now
+        // built via Lg6c;-><init>(String;Ln55;String;Lev6) (ex-Lscd) — 5 rows.
+        // The 6.0.4 Lqs2;->H asList anchor is dropped (rows are no longer
+        // collected via a [Object]->List call); the Lg6c ctor count >=4 is
+        // unique to this method (the same 7-param sig also matches on2/w16,
+        // which build 0 Lg6c rows).
         val libraryMenuMethod = firstMethod {
-            parameterTypes == listOf("Lued;", "Lpw6;", "Lnw6;", "Z", "Lt9e;", "Lv83;", "I") &&
+            parameterTypes == listOf("Lz7c;", "Lgv6;", "Lev6;", "Z", "Lfyc;", "Leh3;", "I") &&
                 returnType == "V" &&
                 (implementation?.instructions?.count { ins ->
                     ins.opcode == Opcode.INVOKE_DIRECT &&
                         (ins as? ReferenceInstruction)?.getReference<MethodReference>()
-                            ?.let { it.definingClass == "Lscd;" && it.name == "<init>" } == true
-                } ?: 0) >= 4 &&
+                            ?.let { it.definingClass == "Lg6c;" && it.name == "<init>" } == true
+                } ?: 0) >= 4
+        }
+        libraryMenuMethod.addInstructions(0, capture)
+
+        // Library-LIST popup — 6.0.7: Levb;->b0(Loza;Z…11 params)List; (static,
+        // p0=Loza menu data, ex-Laub). 6.0.4 was Lpzc;->j0(Laub;Z…)List;. This
+        // is the 3rd entry point only PC Vibration has a row in; without
+        // capture here it fell back to the global sniff. The 11-param
+        // signature is globally UNIQUE (only this one method in the whole apk
+        // has the L,Z,9×L → List shape), so it pins the method on its own; the
+        // 6.0.4 Lx9d;->i() finalize anchor (no 6.0.7 equivalent) is replaced
+        // with the resolver call (Lok8;->c0, ex-Lxd3;->l1 — invoked 9× here to
+        // resolve the row labels) as a robustness secondary anchor.
+        val pzcMethod = firstMethod {
+            parameterTypes == listOf(
+                "Loza;", "Z", "Ldtb;", "Ldtb;", "Lpg8;", "Lpg8;",
+                "Lx6b;", "Lny;", "Ljq2;", "Lctb;", "Ldtb;"
+            ) &&
+                returnType == "Ljava/util/List;" &&
                 (implementation?.instructions?.any { ins ->
                     ins.opcode == Opcode.INVOKE_STATIC &&
                         (ins as? ReferenceInstruction)?.getReference<MethodReference>()
                             ?.let {
-                                it.definingClass == "Lqs2;" && it.name == "H" &&
-                                    it.parameterTypes.toList() == listOf("[Ljava/lang/Object;") &&
-                                    it.returnType == "Ljava/util/List;"
-                            } == true
-                } ?: false)
-        }
-        libraryMenuMethod.addInstructions(0, capture)
-
-        // Library-LIST popup — Lpzc;->j0(Laub;Z…)Ljava/util/List; (static,
-        // p0=Laub which holds a kept-name GameInfo). This is the 3rd entry
-        // point only PC Vibration has a row in; without capture here it fell
-        // back to the global sniff. (GPU Spoof/Renderer rows aren't here
-        // yet — Task: add them — but capturing now makes that free.)
-        val pzcMethod = firstMethod {
-            parameterTypes == listOf(
-                "Laub;", "Z", "Llvc;", "Llvc;", "Lmob;", "Lmob;",
-                "Lz9;", "Ljn9;", "Lmvc;", "Lmvc;", "Ljvc;"
-            ) &&
-                returnType == "Ljava/util/List;" &&
-                (implementation?.instructions?.any { ins ->
-                    ins.opcode == Opcode.INVOKE_VIRTUAL &&
-                        (ins as? ReferenceInstruction)?.getReference<MethodReference>()
-                            ?.let {
-                                it.definingClass == "Lx9d;" && it.name == "i" &&
-                                    it.returnType == "Lx9d;"
+                                it.definingClass == "Lok8;" && it.name == "c0" &&
+                                    it.returnType == "Ljava/lang/String;"
                             } == true
                 } ?: false)
         }

@@ -350,29 +350,31 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
             if (!(menuList instanceof java.util.List)) return;
             java.util.List list = (java.util.List) menuList;
 
-            Class<?> iaeCls = Class.forName("iae");
-            Class<?> o05Cls = Class.forName("o05");
-            Class<?> pw6Cls = Class.forName("pw6");
+            // 6.0.7 remap: row Liae→Ltyc, icon Lo05→Ln55, onClick(Function1)
+            // Lpw6→Lgv6, icon-holder Lzz4→Lv45 (field v→l), wrapper Lxrl→Lu3k.
+            Class<?> tycCls = Class.forName("tyc");
+            Class<?> n55Cls = Class.forName("n55");
+            Class<?> gv6Cls = Class.forName("gv6");
 
-            Class<?> zz4Cls = Class.forName("zz4");
-            // zz4.v = "settings" icon (same icon other 3 rows use). Field
-            // is an Lxrl wrapper whose getValue() returns the Lo05 icon.
-            Field iconHolderField = zz4Cls.getDeclaredField("v");
+            Class<?> v45Cls = Class.forName("v45");
+            // v45.l = a menu icon; static field is an Lu3k wrapper whose
+            // getValue() returns the Ln55 icon (same pattern as 6.0.4 zz4.v).
+            Field iconHolderField = v45Cls.getDeclaredField("l");
             iconHolderField.setAccessible(true);
             Object xrlWrapper = iconHolderField.get(null);
             if (xrlWrapper == null) {
-                Log.w(TAG, "zz4.v is null; cannot resolve icon");
+                Log.w(TAG, "v45.l is null; cannot resolve icon");
                 return;
             }
             Object iconValue = xrlWrapper.getClass().getMethod("getValue").invoke(xrlWrapper);
-            if (!o05Cls.isInstance(iconValue)) {
-                Log.w(TAG, "zz4.v.getValue() did not return Lo05");
+            if (!n55Cls.isInstance(iconValue)) {
+                Log.w(TAG, "v45.l.getValue() did not return Ln55");
                 return;
             }
 
-            Object click = newFunction1Proxy(pw6Cls);
+            Object click = newFunction1Proxy(gv6Cls);
             java.lang.reflect.Constructor<?> ctor =
-                iaeCls.getDeclaredConstructor(o05Cls, String.class, pw6Cls);
+                tycCls.getDeclaredConstructor(n55Cls, String.class, gv6Cls);
             ctor.setAccessible(true);
             list.add(ctor.newInstance(iconValue, ROW_LABEL, click));
         } catch (Throwable t) {
@@ -387,21 +389,23 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
             java.util.ArrayList<Object> augmented =
                 new java.util.ArrayList<>((java.util.List<?>) original);
 
-            Class<?> scdCls = Class.forName("scd");
-            Class<?> o05Cls = Class.forName("o05");
-            Class<?> nw6Cls = Class.forName("nw6");
-            Class<?> zz4Cls = Class.forName("zz4");
+            // 6.0.7 remap: tile row Lscd→Lg6c (ctor String,icon,String,onClick),
+            // icon Lo05→Ln55, onClick(Function0) Lnw6→Lev6, holder Lzz4→Lv45(v→l).
+            Class<?> g6cCls = Class.forName("g6c");
+            Class<?> n55Cls = Class.forName("n55");
+            Class<?> ev6Cls = Class.forName("ev6");
+            Class<?> v45Cls = Class.forName("v45");
 
-            Field iconField = zz4Cls.getDeclaredField("v");
+            Field iconField = v45Cls.getDeclaredField("l");
             iconField.setAccessible(true);
             Object xrlWrapper = iconField.get(null);
             if (xrlWrapper == null) return safeReturn(original);
             Object iconValue = xrlWrapper.getClass().getMethod("getValue").invoke(xrlWrapper);
-            if (!o05Cls.isInstance(iconValue)) return safeReturn(original);
+            if (!n55Cls.isInstance(iconValue)) return safeReturn(original);
 
-            Object click = newFunction0Proxy(nw6Cls);
+            Object click = newFunction0Proxy(ev6Cls);
             java.lang.reflect.Constructor<?> ctor =
-                scdCls.getDeclaredConstructor(String.class, o05Cls, String.class, nw6Cls);
+                g6cCls.getDeclaredConstructor(String.class, n55Cls, String.class, ev6Cls);
             ctor.setAccessible(true);
             augmented.add(ctor.newInstance(ACTION_ID, iconValue, ROW_LABEL, click));
             return augmented;
@@ -423,12 +427,15 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
             java.util.ArrayList<Object> augmented =
                 new java.util.ArrayList<>((java.util.List<?>) original);
 
-            Class<?> z4eCls = Class.forName("z4e");
-            Class<?> ellCls = Class.forName("ell");
-            Class<?> tdiCls = Class.forName("tdi");
-            Class<?> nw6Cls = Class.forName("nw6");
+            // 6.0.7 remap: list-popup row Lz4e→Lstc (ctor Ldwj,Lev6,int),
+            // StringResource Lell→Ldwj, resource base Ltdi→Lshg, onClick
+            // (Function0) Lnw6→Lev6.
+            Class<?> z4eCls = Class.forName("stc");
+            Class<?> ellCls = Class.forName("dwj");
+            Class<?> tdiCls = Class.forName("shg");
+            Class<?> nw6Cls = Class.forName("ev6");
 
-            // Lell is an empty Kotlin subclass of Ltdi — allocate via
+            // Ldwj is an empty Kotlin subclass of Lshg — allocate via
             // Unsafe (skips ctor) and reflect-set inherited fields. Same
             // technique as the 4 per-feature handlers.
             Class<?> unsafeCls = Class.forName("sun.misc.Unsafe");

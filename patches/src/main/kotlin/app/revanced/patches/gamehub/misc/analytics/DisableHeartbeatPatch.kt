@@ -9,36 +9,34 @@ import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.reference.StringReference
 
 // =============================================================================
-// Pure-stub neutralization of XiaoJi's WineGameUsageTracker. Zero network egress
-// for playtime telemetry AND zero on-device tracking overhead. UX trade-off: the
-// in-app playtime / recently-played UI will render empty.
+// Pure-stub neutralization of XiaoJi's WineGameUsageTracker server-heartbeat.
+// Zero network egress for the AUTOMATIC playtime telemetry (start / 30s-tick
+// update / end), the privacy-critical surface.
 //
-// Companion to (replaces) the shelved Path-1 local-tracker variant preserved at
-// tag archive/plan8c-local-tracker-pre3 — that version kept the UI populated by
-// recording sessions to SharedPreferences, at the cost of per-tick JSON encode
-// + disk write + reflection bookkeeping that impacted in-game perf. This patch
-// throws the feature away in exchange for zero per-tick cost.
-//
-// Surface (anchors valid for GameHub 6.0.4; will need re-derivation on minor
-// base bumps — anchor strings stay stable across R8 reshuffles, the class
-// letters do not):
-//
-//   - Lfeo;->invokeSuspend  body contains "heartbeat/game/start"
-//   - Lheo;->invokeSuspend  body contains "heartbeat/game/update"   (30s tick)
-//   - Laeo;->invokeSuspend  body contains "heartbeat/game/end"
-//   - Lse7;->c              body contains "heartbeat/game/getUserPlayTimeList"
-//
+// ANCHORING (6.0.7): anchored PURELY on the stable URL-path string + the
+// SuspendLambda method name "invokeSuspend" — NOT on R8 class letters (those
+// reshuffle every minor version). 6.0.7 letters, for reference:
+//   - "heartbeat/game/start"  -> Lk3n;->invokeSuspend  (this method ALSO contains
+//                                "heartbeat/game/update" — one lambda drives both
+//                                the start request and the 30s update tick, so a
+//                                single Unit-return short-circuits both)
+//   - "heartbeat/game/end"    -> Lg3n;->invokeSuspend
 // invokeSuspend bodies are SuspendLambda continuations — returning Unit.INSTANCE
-// short-circuits the coroutine state machine cleanly. getUserPlayTimeList
-// returns Lo55 (sealed wrapper); we return Ln55(empty ArrayList) so the UI's
-// iterator runs zero passes instead of crashing.
+// (universal, never obfuscated) short-circuits the coroutine state machine at
+// state 0, before any network call.
+//
+// SCOPE NOTE (6.0.7): the 6.0.4 patch also stubbed getUserPlayTimeList (a READ
+// GET) by returning an empty success wrapper (Ln55(ArrayList) of the Lo55 sealed
+// result). 6.0.7 replaced that result model — getUserPlayTimeList (Lcb7;->c)
+// now returns a deserialized HTTP type, and the error type Lg50 extends
+// RuntimeException (not a value wrapper), so fabricating an empty success is
+// both non-trivial and crash-risky (a wrong wrapper APPLIES but crashes at
+// runtime; apply-only CI can't catch it). That read is user-initiated (only
+// when viewing the playtime UI), not automatic egress, so it is intentionally
+// LEFT ACTIVE here. Re-add a getUserPlayTimeList stub only with the real 6.0.7
+// success type + an on-device test.
 // =============================================================================
 
-private const val LFEO = "Lfeo;"
-private const val LHEO = "Lheo;"
-private const val LAEO = "Laeo;"
-private const val LSE7 = "Lse7;"
-private const val LN55 = "Ln55;"
 private const val UNIT = "Lkotlin/Unit;"
 
 private val unitReturn = """
@@ -46,61 +44,34 @@ private val unitReturn = """
     return-object v0
 """.trimIndent()
 
-private val emptyListWrapped = """
-    new-instance v0, Ljava/util/ArrayList;
-    invoke-direct {v0}, Ljava/util/ArrayList;-><init>()V
-    new-instance v1, $LN55
-    invoke-direct {v1, v0}, $LN55-><init>(Ljava/lang/Object;)V
-    return-object v1
-""".trimIndent()
-
 @Suppress("unused")
 val disableHeartbeatPatch = bytecodePatch(
     name = "Disable heartbeat",
-    description = "Disables XiaoJi's WineGameUsageTracker server-heartbeat " +
-        "(heartbeat/game/{start,update,end}) and the getUserPlayTimeList GET. " +
-        "All four methods return-early so no network call is made and no per-tick " +
-        "work runs. Trade-off: in-app playtime UI will be empty (no on-device " +
-        "tracker; see archive/plan8c-local-tracker-pre3 tag for the variant that " +
-        "kept the UI populated at the cost of per-tick disk + reflection work).",
+    description = "Disables XiaoJi's WineGameUsageTracker automatic server-heartbeat " +
+        "(heartbeat/game/{start,update,end}) so no playtime telemetry is sent and no " +
+        "per-tick work runs. Anchored on the stable URL-path strings, not class letters. " +
+        "On 6.0.7 the user-initiated getUserPlayTimeList read is left active (its result " +
+        "wrapper changed and is crash-risky to fabricate); the automatic egress is stopped.",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
 
     apply {
+        // start + 30s update tick (same SuspendLambda in 6.0.7 — Lk3n)
         firstMethod {
             name == "invokeSuspend" &&
-                definingClass == LFEO &&
                 implementation?.instructions?.any { ins ->
                     (ins as? ReferenceInstruction)?.reference
                         ?.let { it is StringReference && it.string == "heartbeat/game/start" } == true
                 } == true
         }.addInstructions(0, unitReturn)
 
+        // end (Lg3n)
         firstMethod {
             name == "invokeSuspend" &&
-                definingClass == LHEO &&
-                implementation?.instructions?.any { ins ->
-                    (ins as? ReferenceInstruction)?.reference
-                        ?.let { it is StringReference && it.string == "heartbeat/game/update" } == true
-                } == true
-        }.addInstructions(0, unitReturn)
-
-        firstMethod {
-            name == "invokeSuspend" &&
-                definingClass == LAEO &&
                 implementation?.instructions?.any { ins ->
                     (ins as? ReferenceInstruction)?.reference
                         ?.let { it is StringReference && it.string == "heartbeat/game/end" } == true
                 } == true
         }.addInstructions(0, unitReturn)
-
-        firstMethod {
-            name == "c" &&
-                definingClass == LSE7 &&
-                implementation?.instructions?.any { ins ->
-                    (ins as? ReferenceInstruction)?.reference
-                        ?.let { it is StringReference && it.string == "heartbeat/game/getUserPlayTimeList" } == true
-                } == true
-        }.addInstructions(0, emptyListWrapped)
     }
 }

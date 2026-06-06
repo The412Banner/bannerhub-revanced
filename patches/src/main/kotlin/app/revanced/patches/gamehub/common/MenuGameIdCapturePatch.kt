@@ -52,7 +52,7 @@ val menuGameIdCapturePatch = bytecodePatch(
         // The param signature alone is shared by 3 methods (su/c37/v90); the
         // Ltyc;-><init> anchor disambiguates to the real builder (c37). The
         // 6.0.4 Lwhl;->S label sget anchor is dropped (label classes moved).
-        val menuMethod = runCatching { firstMethod {
+        val menuMethod = firstMethod {
             parameterTypes == listOf("Lf17;", "I", "Lev6;", "Ljh7;", "Leh3;", "I") &&
                 returnType == "V" &&
                 (implementation?.instructions?.any { ins ->
@@ -66,7 +66,7 @@ val menuGameIdCapturePatch = bytecodePatch(
                                     )
                             } == true
                 } ?: false)
-        } }.getOrElse { throw RuntimeException("BH-CAPTURE-SITE1-MOREMENU-NOMATCH", it) }
+        }
         menuMethod.addInstructions(0, capture)
 
         // Library-tile popup — 6.0.7: Ly7c;->f(Lz7c;Lgv6;Lev6;ZLfyc;Leh3;I)V
@@ -77,7 +77,7 @@ val menuGameIdCapturePatch = bytecodePatch(
         // collected via a [Object]->List call); the Lg6c ctor count >=4 is
         // unique to this method (the same 7-param sig also matches on2/w16,
         // which build 0 Lg6c rows).
-        val libraryMenuMethod = runCatching { firstMethod {
+        val libraryMenuMethod = firstMethod {
             parameterTypes == listOf("Lz7c;", "Lgv6;", "Lev6;", "Z", "Lfyc;", "Leh3;", "I") &&
                 returnType == "V" &&
                 (implementation?.instructions?.count { ins ->
@@ -85,7 +85,7 @@ val menuGameIdCapturePatch = bytecodePatch(
                         (ins as? ReferenceInstruction)?.getReference<MethodReference>()
                             ?.let { it.definingClass == "Lg6c;" && it.name == "<init>" } == true
                 } ?: 0) >= 4
-        } }.getOrElse { throw RuntimeException("BH-CAPTURE-SITE2-TILEPOPUP-NOMATCH", it) }
+        }
         libraryMenuMethod.addInstructions(0, capture)
 
         // Library-LIST popup — 6.0.7: Levb;->b0(Loza;Z…11 params)List; (static,
@@ -97,13 +97,21 @@ val menuGameIdCapturePatch = bytecodePatch(
         // 6.0.4 Lx9d;->i() finalize anchor (no 6.0.7 equivalent) is replaced
         // with the resolver call (Lok8;->c0, ex-Lxd3;->l1 — invoked 9× here to
         // resolve the row labels) as a robustness secondary anchor.
-        val pzcMethod = runCatching { firstMethod {
+        // NOTE: do NOT add an inner instruction anchor that compares a
+        // referenced method's returnType (e.g. a Lok8;->c0 call's
+        // `it.returnType == "Ljava/lang/String;"`). On the 6.0.7 patcher that
+        // inner MethodReference.returnType comparison silently evaluates false
+        // (CharSequence-vs-String), which made firstMethod return null here
+        // (fp4/fp5). Method-level `returnType == "..."` (below) is fine. The
+        // 11-param (L,Z,9xL)->List signature is globally unique (1 method in
+        // the whole apk), so it pins Levb;->b0 on its own.
+        val pzcMethod = firstMethod {
             parameterTypes == listOf(
                 "Loza;", "Z", "Ldtb;", "Ldtb;", "Lpg8;", "Lpg8;",
                 "Lx6b;", "Lny;", "Ljq2;", "Lctb;", "Ldtb;"
             ) &&
                 returnType == "Ljava/util/List;"
-        } }.getOrElse { throw RuntimeException("BH-CAPTURE-SITE3-LISTPOPUP-NOMATCH", it) }
+        }
         pzcMethod.addInstructions(0, capture)
     }
 }

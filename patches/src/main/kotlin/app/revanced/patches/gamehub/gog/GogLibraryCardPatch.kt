@@ -7,7 +7,6 @@ import app.revanced.patcher.extensions.getInstruction
 import app.revanced.patcher.firstMethod
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
-import app.revanced.patches.gamehub.GAMEHUB_VERSION
 import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 import app.revanced.util.getReference
 import com.android.tools.smali.dexlib2.Opcode
@@ -54,7 +53,9 @@ val gogLibraryCardPatch = bytecodePatch(
         "on existing installs too. (Name kept stable to preserve any " +
         "letter-map / dependency wiring.)",
 ) {
-    compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
+    // Pinned to 6.0.4 (skipped on 6.0.7): redundant with the working Explore
+    // "Your stores" GOG card; the native library-grid card is dropped on 607.
+    compatibleWith(GAMEHUB_PACKAGE("6.0.4"))
     dependsOn(sharedGamehubExtensionPatch)
 
     apply {

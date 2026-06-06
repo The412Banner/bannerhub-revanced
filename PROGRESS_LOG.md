@@ -41,6 +41,13 @@ spoof DXVK plumbing, PC-accurate vibration, Local game-id assignment, Show PC Ga
 hijack, Debug logging, GOG library card (collection-empty), Mute UI sounds (`.wav`→`.m4a` asset retarget).
 Full anchor notes in memory `project_bannerhub_v6_607_port`. Artifact-only dry runs until the patch set is green.
 
+### Device-test variant (2026-06-06)
+
+User device-tests the 6.0.7 port on the **GHL Normal** variant (GameHub Lite, `gamehub.lite` pkg, "Normal"
+build — no alt-package rebrand). All apply-only menu-row results above (capture / Vibration / GPU Spoof /
+Renderer / Show Game ID / Banner Tools) await on-device render confirmation on this variant. Pull the
+GHL-Normal APK from the dry-run artifacts (or cut a labeled pre-build) for install + logcat.
+
 ### Banner Tools menu row (2026-06-06) — ✅ APPLIES on 6.0.7 (fp8, commit `00926a2`)
 
 **RESOLVED (patch-apply):** `"Banner Tools menu row" succeeded` on fp8 ([run 27071031101](https://github.com/The412Banner/bannerhub-revanced/actions/runs/27071031101)) — **36 applied / 13 failed**, up from fp7's 35/14. This was the last menu-row cascade; **all 5** now apply (capture + Vibration/GPU Spoof/Renderer/Show Game ID/Banner Tools). ⚠️ Device-render still UNVERIFIED — apply-success only proves the fingerprints + inject points resolve; the row actually rendering + the dialog dispatching needs an on-device test (the row-injection at all 3 sites is byte-level).

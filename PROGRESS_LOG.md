@@ -95,7 +95,15 @@ fp9 `8e1e529` (37/9) did Mob + the 2 gates; **fp10 ([run 27071955053](https://gi
 
 NOTE: this Claude session runs in Termux on the SAME device under test — switching focus to GameHub can background/kill the session, so live-test captures run DETACHED on the root side (to /sdcard) and progress is committed before each record/test run.
 
-**Remaining reds after fp10 (7) — none are privacy:** GPU spoof DXVK plumbing, PC-accurate vibration, Local game-id assignment, Show PC Game Settings row, Explore tab hijack, GOG library card (permanent), Debug logging.
+### Ported 2 Lite-variant privacy/strip patches → 607 (2026-06-06, fp12 commit `590584f`, 42/7)
+
+Audited the 5 Lite-variant strip patches for 6.0.7 relevance: xiaoji's own 141MB→76MB shrink already did **Strip duplicate font** (dead `core/font/misans_vf.ttf` GONE) and **Strip AVIF/HEIC codecs** (libheif/libaom/libdav1d/libcoder GONE) → those 2 are now MOOT on 6.0.7. The other 3 targets are still present, so ported the 2 worth having on the full build:
+- ✅ **Disable Aliyun NumberAuth** (privacy) — neutralises Alibaba/Aliyun carrier one-tap phone-login SDK (`com.mobile.auth.gatewayauth.*`, the components the Mob patch correctly left alone; collects phone#/carrier/device fingerprint). 6.0.7 still ships `libpns-2.14.17-…alijtca_plus.so` + the SDK; loadLibrary site moved class `k7e`→`dwc` but the patch anchors STRUCTURALLY (`"pns-"` const-string + `System.loadLibrary`) so no refingerprint. Stub-then-strip. Dead weight under the login bypass. **fp12: succeeded.**
+- ✅ **Strip cloud gaming** (size + partial privacy) — removes the Haima HMCP stack (~21.5MB: 4 Haima WebRTC/IJK libs + `features.cloud` Compose assets [33 files], all present in 6.0.7) and the Haima CN SDK. Anchors on stable vendor class names (`tv.haima.ijk…IjkMediaPlayer.loadLibrariesOnce`, `org.hmwebrtc.NativeLibrary$DefaultLoader.load`) — both verified present. Stub-then-strip. Non-functional under the catalog redirect. **fp12: succeeded.**
+
+Both were `use = false` (opt-in) on `feature/lite-variant-tier1`; flipped to `use = true` for the full 607 privacy build. (`StripAdIdPermissions` was already on 607 + applying.) Device-verify pending.
+
+**Remaining reds after fp12 (7) — none are privacy:** GPU spoof DXVK plumbing, PC-accurate vibration, Local game-id assignment, Show PC Game Settings row, Explore tab hijack, GOG library card (permanent), Debug logging.
 
 ----
 

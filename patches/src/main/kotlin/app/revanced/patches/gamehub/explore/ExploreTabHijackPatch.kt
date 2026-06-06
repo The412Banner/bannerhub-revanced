@@ -51,7 +51,13 @@ import com.android.tools.smali.dexlib2.iface.reference.StringReference
 // =========================================================================
 
 private const val CLICK = "Lcom/xj/winemu/explore/BhExploreTabClick;"
-private const val TAB_ENUM = "Lyw9;"
+// 6.0.4 → 6.0.7 (R8 reshuffle): tab-select VM `w1a`→`ai9`, dispatch `q`→`u`,
+// tab enum `Lyw9;`→`Lhd9;` (re-verified in ~/gh607-apktool-d: hd9 ordinals
+// HOME(0)=Explore/PLAY/LEADERBOARD/LIBRARY/PROFILE — identical to 604). The
+// patch is structure-anchored (param-type + "main_menu"), so only this enum
+// letter is hardcoded; `parameterTypes==[Lhd9;]` + V + "main_menu" matches ONLY
+// `ai9.u` (ctor has 10 params; sibling `w` takes `Lbh9;`; `syb.r` is a composable).
+private const val TAB_ENUM = "Lhd9;"
 private const val ANCHOR_STRING = "main_menu"
 
 @Suppress("unused")

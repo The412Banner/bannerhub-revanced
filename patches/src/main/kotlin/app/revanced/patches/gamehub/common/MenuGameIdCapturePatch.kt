@@ -102,15 +102,7 @@ val menuGameIdCapturePatch = bytecodePatch(
                 "Loza;", "Z", "Ldtb;", "Ldtb;", "Lpg8;", "Lpg8;",
                 "Lx6b;", "Lny;", "Ljq2;", "Lctb;", "Ldtb;"
             ) &&
-                returnType == "Ljava/util/List;" &&
-                (implementation?.instructions?.any { ins ->
-                    ins.opcode == Opcode.INVOKE_STATIC &&
-                        (ins as? ReferenceInstruction)?.getReference<MethodReference>()
-                            ?.let {
-                                it.definingClass == "Lok8;" && it.name == "c0" &&
-                                    it.returnType == "Ljava/lang/String;"
-                            } == true
-                } ?: false)
+                returnType == "Ljava/util/List;"
         } }.getOrElse { throw RuntimeException("BH-CAPTURE-SITE3-LISTPOPUP-NOMATCH", it) }
         pzcMethod.addInstructions(0, capture)
     }

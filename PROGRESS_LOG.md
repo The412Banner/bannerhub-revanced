@@ -41,6 +41,35 @@ spoof DXVK plumbing, PC-accurate vibration, Local game-id assignment, Show PC Ga
 hijack, Debug logging, GOG library card (collection-empty), Mute UI sounds (`.wav`→`.m4a` asset retarget).
 Full anchor notes in memory `project_bannerhub_v6_607_port`. Artifact-only dry runs until the patch set is green.
 
+### fp4 (2026-06-06) — Per-game menu id capture (shared) + Vibration resolver refingerprinted
+
+Commits **`fe7b601`** (refingerprint) → **`923c0d6`** (diag) → **`052fa35`** (site-3 fix) → **`e04384c`** (cleanup)
+on `gamehub-607-build`. **✅ RESOLVED at fp6 ([run 27070341532](https://github.com/The412Banner/bannerhub-revanced/actions/runs/27070341532)):** `"Per-game menu id capture (shared)"` + `"PC Vibration Settings menu row"` + `"GPU Spoof menu row"` + `"Renderer menu row"` + `"Show Game ID menu row"` all **succeeded** (fp7 `e04384c` [run 27070444005] = clean re-verify after removing diagnostic instrumentation — **35 applied / 14 failed**, up from fp3's 29/20). Capture root + 4 of its 5 cascades now apply.
+
+**Debug arc (fp4→fp6):** fp4 ([27069897058](https://github.com/The412Banner/bannerhub-revanced/actions/runs/27069897058)) — capture still failed with a generic `Required value was null` (cascaded to all 6 rows). Ruled out dependencies (only dep = trivial `sharedGamehubExtensionPatch` dex-loader; the vibration-label dep succeeded). Verified all 5 method mappings byte-exact + present in the **raw dex of the md5-matched CI apk** + the `firstMethod{parameterTypes==…}` pattern is proven (PrefixApiPath uses it, passes) — a contradiction. Instrumented each `firstMethod` with a labeled exception (commit `923c0d6`); fp5 diag ([27070244591](https://github.com/The412Banner/bannerhub-revanced/actions/runs/27070244591)) pinpointed **`BH-CAPTURE-SITE3-LISTPOPUP-NOMATCH`** — sites 1+2 matched, site 3 alone returned null.
+
+**🔑 Root cause + reusable lesson:** site 3 was the ONLY predicate with an inner anchor comparing a **referenced** method's return type — `(Lok8;->c0 call).returnType == "Ljava/lang/String;"`. On this patcher that `MethodReference.returnType == "<String literal>"` comparison **silently evaluates false** (CharSequence-vs-String `.equals`), so the whole predicate was unsatisfiable → `firstMethod` null. Method-LEVEL `returnType == "V"` / `"Ljava/util/List;"` (sites 1/2 and the method-level check) is fine; and inner `it.parameterTypes.toList() == listOf(...)` is fine. **Rule: never anchor on a referenced instruction's `returnType`; use definingClass + name (+ params via `.toList()`).** Fix (commit `052fa35`): dropped the redundant `Lok8;->c0` anchor — the 11-param `(L,Z,9×L)→List` signature is globally unique (1 method in the whole apk) so it pins `Levb;->b0` alone.
+
+**Still red after fp6 (NOT part of this task — own passes):** `Banner Tools menu row` (the 5th cascade — carries the SAME 3 site fingerprints PLUS byte-level row-injection logic that 6.0.7 changed: the `Lqs2;->H` asList move-result / `Lscd`→`Lg6c` / `Lz4e` row builders), plus unrelated roots `GPU spoof DXVK plumbing` and `PC-accurate vibration`.
+
+Targeted the highest-leverage root: `menuGameIdCapturePatch` ("Per-game menu id capture (shared)") gates the whole menu-row family (Vibration → GPU Spoof / Renderer / Banner Tools / Show Game ID all `dependsOn` it; the 4 leaf rows also `dependsOn vibrationMenuRowPatch`'s single shared `l1` resolver hook). Re-derived every obfuscated name by pinning each target via **version-stable anchors** (string literals + framework types) in the 6.0.4 smali, then reading the new R8 names off the matched 6.0.7 method.
+
+**6.0.4 → 6.0.7 map (all verified to resolve to exactly one method in `~/gh607-apktool-d`):**
+
+| Site | 6.0.4 | 6.0.7 | How pinned |
+|---|---|---|---|
+| CMP stringResource resolver | `Lxd3;->l1(Lell;Lv83;I)String` | `Lok8;->c0(Ldwj;Leh3;I)String` | only String-returning `(StringResource,Composer,int)` matching l1's body shape (getClass head, `->v(e,composer)` helper, `new-instance(I)` loader). `Ldwj` = empty StringResource subclass of base `Lshg`; `Leh3` = Composer interface (2125 refs) |
+| 1 — More Menu builder | `Lx57;->a(Lf37;Lpo7;Lv83;I)V` | `Lc37;->a(Lf17;ILev6;Ljh7;Leh3;I)V` | `Lf37`=GameDetailArgs found in 607 as `Lf17` via `"GameDetailArgs(gameId="` literal; builder gained params + moved class (Steam restructure killed its old `steamGameUpdateTipsBuildId_`/version strings) but still takes GameDetailArgs p0. Row ctor `Liae(Lo05,String,Lpw6)` → `Ltyc(Ln55,String,Lgv6)` (×12, unique to c37 vs the 2 other sig-sharers su/v90) |
+| 2 — Library-tile popup | `Lted;->f(Lued;Lpw6;Lnw6;ZLt9e;Lv83;I)V` | `Ly7c;->f(Lz7c;Lgv6;Lev6;ZLfyc;Leh3;I)V` | `Ly7c` found via the surviving action-key literals `local_detail_menu_settings/_remove/_add_desktop/_edit_cover`. Row ctor `Lscd` → `Lg6c` (×5); 6.0.4 `Lqs2;->H` asList anchor **gone** in 6.0.7 → replaced with `Lg6c;-><init>` count≥4 (unique vs sig-sharers on2/w16 which build 0) |
+| 3 — Library-list popup | `Lpzc;->j0(Laub;Z…11)List` | `Levb;->b0(Loza;Z…11)List` | the `(L,Z,9×L)→List` shape is **globally unique** (1 match in whole apk); `Lx9d;->i()` finalize anchor (no 6.0.7 equiv) → resolver-call `Lok8;->c0` anchor (invoked 9× here, was 7× as `l1` in 6.0.4) |
+| resource base class (runtime reflect) | `tdi` (field `a`) | `shg` (field `a`) | both `abstract` with `a:String` (key) + `b:Set` (items) — identical layout, field name unchanged |
+
+**Vibration patch** active fingerprints only = the `l1`→`c0` resolver (above) + the disabled-`if(false)` standalone injections (inert, BannerTools owns those sites). **Dropped** the `Ljoc;->invoke()` diagnostic probe entirely — it was a pure `Log.i` (BhMenuRowClick.probeJocInvoke), `joc` is a 6.0.4-specific synthetic with no stable 6.0.7 anchor, so porting it would only add a fragile failure point. Helper left unreferenced.
+
+**Extension change:** `BhMenuRowClick.maybeResolveCustomLabel` reflects the resource key off `Class.forName("tdi")` → `"shg"` (field `a` unchanged). `BhMenuGameId.captureGameId` needs **no** change — it's toString-regex based (`ServerGameId(value=…)` / `gameId=…`), and GameDetailArgs' toString format is unchanged, so it survives the renames for all 3 p0 types.
+
+**Note:** local `:patches:compileKotlin` not possible here — the `app.revanced.patches` Gradle plugin lives in the `revanced/gamehub-patches` GitHub Packages registry the local token can't read; CI is the verification path (as with fp1–fp3). BannerToolsMenuRowPatch (separate cascade member) carries the SAME 3 site fingerprints **plus** byte-level row-injection logic (the `Lqs2;->H` move-result / `Lscd`/`Lz4e` row builders) that 6.0.7 changed — it still needs its own pass next.
+
 ## 2026-05-29 — GOG in-session refresh root-caused (§41) + always-available entry-point scoping (profile-row paused)
 
 **Branch:** `feature/gog-explore-tab`. Two threads after pre22.

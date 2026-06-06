@@ -83,7 +83,14 @@ fp9 `8e1e529` (37/9) did Mob + the 2 gates; **fp10 ([run 27071955053](https://gi
 - Heartbeat: `Lk3n;->invokeSuspend` and `Lg3n;->invokeSuspend` both begin with `sget-object v0, Lkotlin/Unit;->INSTANCE … return-object v0` (original body now dead code).
 - Mob: `submitPolicyGrantResult` + `addPushReceiverInMain` = 0 occurrences in `AndroidApp`, `submitPolicyGrantResult` = 0 in `Lns8;`, `MobSDK;->init` kept (1). Manifest: all 8 `com.mob.*` components carry `android:enabled="false"`; 6.0.7 has no `com.mob` `<provider>` (no ContentProvider auto-init to worry about). The `com.mobile.auth.*` (Aliyun) components are correctly untouched (don't match the `com.mob.` prefix).
 
-Runtime/network verification (tcpdump + playtime-UI check on GHL Normal) still pending on the user side — see verification plan; static confirms the bytecode is correct, the device test confirms behavior.
+**LIVE runtime verification (GHL Normal `gamehub.lite` v6.0.7 vc118, fp10 APK md5 `017ebfcf`, via root bridge `getlog`, 2026-06-06 15:58):**
+- ✅✅ **Stub analytics PROVEN at runtime.** On app launch, XiaoJi's `EventsReporter` batched 3 events (`app_launch` ×2 + `user_game_event` carrying `device_id=70f87445…`, `game_id=63362`, `user_id=99999`) and tried to POST them — the log shows `okhttp3 … java.net.ConnectException: Failed to connect to /127.0.0.1:80 … ECONNREFUSED`. The exact telemetry payload (device fingerprint + game id) was BLOCKED at the loopback redirect. **Zero `vgabc.com` egress** in the full log; the only external connections from `gamehub.lite` were to Cloudflare (BannerHub catalog API).
+- ✅ **Disable Mob Push** — no `MobSDK`/`MobPush` init or push activity in logs.
+- ✅ **App stable** — no FATAL/ANR; app running normally (Bypass-login synthetic `userId=99999` in effect).
+- ⚠️ **Crashlytics FINDING:** static analysis said the Crashlytics patch was moot (no `getInstance` call), but the live log shows **Firebase auto-initialises Crashlytics 20.0.3 via its ContentProvider** (`Initializing Firebase Crashlytics … new session …`), independent of that call. So gating it was incomplete — Crashlytics IS running (no upload observed in the startup window, but it's live). TODO: rewrite the Crashlytics patch from gated-moot → a manifest meta-data disable (`firebase_crashlytics_collection_enabled=false`, + Analytics deactivation) which is the correct 6.0.7 approach.
+- ⏳ **Disable heartbeat** — runtime test pending a real game launch (heartbeat fires on game start/30s-tick/end, not app launch); static-verified (Unit returns at `Lk3n`/`Lg3n`). Capture in progress to `/sdcard/bh_heartbeat_test.log`.
+
+NOTE: this Claude session runs in Termux on the SAME device under test — switching focus to GameHub can background/kill the session, so live-test captures run DETACHED on the root side (to /sdcard) and progress is committed before each record/test run.
 
 **Remaining reds after fp10 (7) — none are privacy:** GPU spoof DXVK plumbing, PC-accurate vibration, Local game-id assignment, Show PC Game Settings row, Explore tab hijack, GOG library card (permanent), Debug logging.
 

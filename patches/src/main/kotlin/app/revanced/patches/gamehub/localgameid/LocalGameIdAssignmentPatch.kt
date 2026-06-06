@@ -19,12 +19,14 @@ import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 // existing ExternalLauncher patch.
 //
 // Hook target:
-//   Lcom/xiaoji/egggame/BaseAndroidApp;->onCreate()V
+//   Lcom/xiaoji/egggame/AndroidApp;->onCreate()V
 //
 // Stability:
-//   The BaseAndroidApp class name is fully qualified, non-mangled, and is
-//   GameHub's Application subclass — confirmed stable across the 5.x→6.x
-//   line by DisableMobPushPatch which anchors the same class structurally.
+//   This is GameHub's Application subclass — fully qualified and non-mangled.
+//   In 6.0.7 (vc118) it was renamed from `BaseAndroidApp` to `AndroidApp`
+//   (the inheritance layer was collapsed; see DisableMobPushPatch, which was
+//   re-anchored on the same rename). The class name remains structurally
+//   stable within a version line.
 //
 // Inject position:
 //   Index 0 (top of onCreate). The scanner pushes work to a daemon thread
@@ -43,7 +45,9 @@ import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 //   install with no library yet), the scan no-ops.
 // =============================================================================
 
-private const val BASE_ANDROID_APP_SMALI = "Lcom/xiaoji/egggame/BaseAndroidApp;"
+// 6.0.4 (vc114) and earlier: Lcom/xiaoji/egggame/BaseAndroidApp;
+// 6.0.7 (vc118) onward:      Lcom/xiaoji/egggame/AndroidApp; (Base* layer removed)
+private const val ANDROID_APP_SMALI = "Lcom/xiaoji/egggame/AndroidApp;"
 
 @Suppress("unused")
 val localGameIdAssignmentPatch = bytecodePatch(
@@ -65,19 +69,19 @@ val localGameIdAssignmentPatch = bytecodePatch(
         // `firstMethod` iterates across both concrete method *definitions* and
         // method *references* embedded in invoke instructions elsewhere in the
         // dex. The pre1 build hit `SEVERE: classDef is null` because the first
-        // match was a reference (some subclass's invoke-super onto BaseAndroidApp.onCreate)
+        // match was a reference (some subclass's invoke-super onto AndroidApp.onCreate)
         // rather than the concrete method, and addInstructions can't write
         // into a reference. Require `implementation != null` to filter the
         // predicate down to the real implementation — same trick the Mob
         // patch uses via `implementation?.instructions?.any { ... }`.
-        // BaseAndroidApp.onCreate declares `.registers 55`, so p0 (this)
-        // resolves to v54 — out of range for invoke-static's 4-bit register
+        // AndroidApp.onCreate declares `.locals 54` (+ p0 = 55 registers), so
+        // p0 (this) resolves to v54 — out of range for invoke-static's 4-bit register
         // operand (max v15). Move p0 into v0 first via `move-object/from16`
         // (which IS encoded for high regs), then pass v0 to invoke-static.
         // This is the same pattern ExternalLauncherPatch uses on
         // DeepLinkActivity.onCreate.
         firstMethod {
-            definingClass == BASE_ANDROID_APP_SMALI &&
+            definingClass == ANDROID_APP_SMALI &&
                 name == "onCreate" &&
                 implementation != null
         }.addInstructions(

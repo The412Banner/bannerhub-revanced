@@ -41,6 +41,21 @@ spoof DXVK plumbing, PC-accurate vibration, Local game-id assignment, Show PC Ga
 hijack, Debug logging, GOG library card (collection-empty), Mute UI sounds (`.wav`→`.m4a` asset retarget).
 Full anchor notes in memory `project_bannerhub_v6_607_port`. Artifact-only dry runs until the patch set is green.
 
+### Banner Tools menu row (2026-06-06) — ✅ APPLIES on 6.0.7 (fp8, commit `00926a2`)
+
+**RESOLVED (patch-apply):** `"Banner Tools menu row" succeeded` on fp8 ([run 27071031101](https://github.com/The412Banner/bannerhub-revanced/actions/runs/27071031101)) — **36 applied / 13 failed**, up from fp7's 35/14. This was the last menu-row cascade; **all 5** now apply (capture + Vibration/GPU Spoof/Renderer/Show Game ID/Banner Tools). ⚠️ Device-render still UNVERIFIED — apply-success only proves the fingerprints + inject points resolve; the row actually rendering + the dialog dispatching needs an on-device test (the row-injection at all 3 sites is byte-level).
+
+**Final 6.0.7 inject-point map (verified in dex):**
+- Site 1 More Menu `Lc37;->a`: list builder `Lx9d`→**`Lj3c`** (kotlin ListBuilder, `Lm4`→AbstractList implements `java.util.List` ✓). Inject after last `Lj3c;->add(Object)Z`; builder register **derived** from the add's instance reg (v3 in 6.0.7, was hardcoded v4). Row ctor `Liae(Lo05,String,Lpw6)`→**`Ltyc(Ln55,String,Lgv6)`**.
+- Site 2 tile popup `Ly7c;->f`: `Lqs2;->H([Object)List` asList **GONE** → rows assemble via `filled-new-array {…},[Lg6c;` → **`Llp0;->R([Object)ArrayList`**; inject after that R() move-result (register derivation unchanged). Row `Lscd`→**`Lg6c(String,Ln55,String,Lev6)`**.
+- Site 3 list popup `Levb;->b0`: finalize virtual `Lx9d;->i()Lx9d;` **GONE** → static **`Lny2;->C(Ljava/util/List;)Lj3c;`** (builder created via `Lny2;->I()`); inject before the `return-object` after it. Row `Lz4e(Lell,Lnw6,int)`→**`Lstc(Ldwj,Lev6,int)`**.
+
+**Extension `BhBannerToolsMenuRowClick` forName remap (every class/ctor verified in raw dex):** `iae→tyc`, `scd→g6c`, `z4e→stc`, icon `o05→n55`, onClick `pw6→gv6`(Function1, `invoke(Object)`), `nw6→ev6`(Function0, `invoke()`), `ell→dwj`, `tdi→shg`; icon-holder `zz4→v45` (static field `v`→`l`, wrapper `Lxrl→Lu3k`, `getValue()`→Ln55). `Lstc;-><init>(Ldwj;Lev6;I)V` is `synthetic` but reflectable via `getDeclaredConstructor`.
+
+**607 menu-row family now COMPLETE.** Remaining 13 reds are unrelated roots (GPU spoof DXVK plumbing, PC-accurate vibration, privacy cluster, Local game-id, Show PC Game Settings row, Explore tab hijack, Debug logging, GOG library card, Mute UI sounds .m4a retarget).
+
+----
+
 ### Banner Tools menu row (2026-06-06) — STARTED (5th cascade; the hard one)
 
 After fp7, `"Banner Tools menu row"` is the only remaining menu-row cascade still red. Unlike the capture

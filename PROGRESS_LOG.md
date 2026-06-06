@@ -19,7 +19,7 @@ fingerprint based; only those whose target code changed break.
 |---|---|---|
 | fp1 ([27068312462](https://github.com/The412Banner/bannerhub-revanced/actions/runs/27068312462)) | 25 / 24 | baseline after version flip; 17 root + 7 cascade. Cascades trace to 2 roots (Per-game menu id capture → 6 menu rows; Redirect catalog → Prefix API). |
 | fp2 ([27068884039](https://github.com/The412Banner/bannerhub-revanced/actions/runs/27068884039)) | 27 / 22 | **Bypass login + Redirect catalog API fixed.** Prefix API surfaced as its own break (was masked as a cascade). |
-| fp3 ([27069203380](https://github.com/The412Banner/bannerhub-revanced/actions/runs/27069203380)) | _pending_ | component-picker fixes (offline list + prefix path). |
+| fp3 ([27069203380](https://github.com/The412Banner/bannerhub-revanced/actions/runs/27069203380)) | **29 / 20** | **Offline component picker + Prefix API path both applied.** 20 remain (Per-game-menu-id root + its 6 cascades + 13 direct). Awaiting device re-test of the DXVK/VKD3D/Box64/FEXCore/driver pickers. |
 
 **Patches fixed so far (with 6.0.7 R8 re-derivation):**
 - **Redirect catalog API** (commit **`359c4b0`**): env enum `Lesj;`→`Lnnh;` (unique class holding

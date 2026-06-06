@@ -1,5 +1,46 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-06-06 — 🚀 GameHub 6.0.7 (vc118) port begun on `gamehub-607-build`
+
+Upstream shipped **GameHub 6.0.7** (vc118, 75.97 MB — a −46% size pass; full decompile/map in
+`gamehub_reports/GAMEHUB_607_MASTER_MAP.md`). Porting the v6 patch set off 6.0.4.
+
+**Base setup:** base APK uploaded as release **`base-apk-607`** (`GameHub_6.0.7.apk`, md5 `62a84f75…`,
+75,970,858 B). Branch **`gamehub-607-build`** cut from `origin/gamehub-604-build` (`b84b8f3`) and made the
+repo **default branch**. CI repointed: `release.yml` fetches/patches `GameHub_6.0.7.apk` from `base-apk-607`
+(commit **`4274d4b`**, 5 refs). `Constants.kt` `GAMEHUB_VERSION` flipped 6.0.4→6.0.7 (commit **`211930e`**) so
+patches execute instead of being skipped as version-incompatible.
+
+**Dry-run methodology:** `workflow_dispatch` on `release.yml` (artifact-only, `stable=false`), then parse the
+Normal-variant "Apply patches" log for `INFO:"X" succeeded` vs `SEVERE:"X" failed`. Patches are R8-letter /
+fingerprint based; only those whose target code changed break.
+
+| Dry run | Applied / Failed | Notes |
+|---|---|---|
+| fp1 ([27068312462](https://github.com/The412Banner/bannerhub-revanced/actions/runs/27068312462)) | 25 / 24 | baseline after version flip; 17 root + 7 cascade. Cascades trace to 2 roots (Per-game menu id capture → 6 menu rows; Redirect catalog → Prefix API). |
+| fp2 ([27068884039](https://github.com/The412Banner/bannerhub-revanced/actions/runs/27068884039)) | 27 / 22 | **Bypass login + Redirect catalog API fixed.** Prefix API surfaced as its own break (was masked as a cascade). |
+| fp3 ([27069203380](https://github.com/The412Banner/bannerhub-revanced/actions/runs/27069203380)) | _pending_ | component-picker fixes (offline list + prefix path). |
+
+**Patches fixed so far (with 6.0.7 R8 re-derivation):**
+- **Redirect catalog API** (commit **`359c4b0`**): env enum `Lesj;`→`Lnnh;` (unique class holding
+  `landscape-api-cn/oversea.vgabc.com` in `<clinit>`). Clears Prefix-API cascade.
+- **Bypass login** (commit **`e6c8a88`**): full auth-chain reshuffle — method names a..h preserved, only class
+  letters + userid (`e`→`g`) + 2nd nav gate (`r`→`s`) changed: `AUTH_IMPL Ljt0;→Lfw0;`, `AUTH_INTERFACE
+  Ldt0;→Lcw0;`, `AUTH_TOKEN Lwpm;→Ln2l;`, `GAME_LIB_REPO Lvu7;→Lam7;`, `NAVIGATOR Lgme;→Lg8d;`, login route
+  `Lsa0;→Lfb0;` (AuthLoginAll). Java extensions updated: FakeStateFlow `akk/ozh/dge→qdi/o4g/p3d`, FakeAuthToken
+  `wpm→n2l`, FakeUserAccount `rpm→h2l`. **Device-confirmed: login bypass works on the GHL Normal variant.**
+- **Offline component picker + Prefix API path** (commit **`016abf5`**): device report — DXVK/VKD3D/Box64/
+  FEXCore/GPU-driver picker lists empty. Offline picker `gof Lgof;→Li6e;` (`a(Li6e;,ComponentType,I,Lkq3;,I)`
+  page=200 dispatcher; `c(Lkq3;)` `.locals 11`; ComponentType stays unobfuscated). Prefix chokepoint
+  `Lcpb;->b(Ln7a;,String)`→`Lzua;->a(Lgn9;,String)` (method `b`→`a`, 38 call sites; found via const
+  `simulator/v2/getComponentList` in `i6e`).
+
+**Remaining root failures to refingerprint** (after fp3): Per-game menu id capture (shared) [unblocks 6 menu-row
+cascades], privacy cluster (Disable Firebase Crashlytics / Mob Push / heartbeat / OTA / Stub analytics), GPU
+spoof DXVK plumbing, PC-accurate vibration, Local game-id assignment, Show PC Game Settings row, Explore tab
+hijack, Debug logging, GOG library card (collection-empty), Mute UI sounds (`.wav`→`.m4a` asset retarget).
+Full anchor notes in memory `project_bannerhub_v6_607_port`. Artifact-only dry runs until the patch set is green.
+
 ## 2026-05-29 — GOG in-session refresh root-caused (§41) + always-available entry-point scoping (profile-row paused)
 
 **Branch:** `feature/gog-explore-tab`. Two threads after pre22.

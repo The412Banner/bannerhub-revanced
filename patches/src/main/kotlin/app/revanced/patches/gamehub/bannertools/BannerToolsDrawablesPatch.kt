@@ -25,7 +25,7 @@ private const val DRAWABLE_DIR = "res/drawable"
 
 private val DRAWABLE_NAMES = listOf(
     "bh_bt_vibration",
-    "bh_bt_gpu_spoof",
+    // bh_bt_gpu_spoof dropped on 6.0.7 (base app has native GPU spoof)
     "bh_bt_renderer",
     "bh_bt_game_id",
     "bh_bt_audio",

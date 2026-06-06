@@ -4,7 +4,6 @@ import app.revanced.patcher.extensions.addInstructions
 import app.revanced.patcher.firstMethod
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
-import app.revanced.patches.gamehub.GAMEHUB_VERSION
 import app.revanced.patches.gamehub.common.menuGameIdCapturePatch
 import app.revanced.patches.gamehub.vibration.vibrationMenuRowPatch
 import app.revanced.util.getReference
@@ -44,7 +43,9 @@ val gpuSpoofMenuRowPatch = bytecodePatch(
         "it launches BhGpuSpoofSettingsActivity scoped to the active game. " +
         "Injects after the existing rows so stock behaviour is preserved.",
 ) {
-    compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
+    // Pinned to 6.0.4 (skipped on 6.0.7): the 6.0.7 base app ships a native
+    // GPU-spoof feature, so BannerHub's redundant. Version-incompatible = skipped, not failed.
+    compatibleWith(GAMEHUB_PACKAGE("6.0.4"))
     // vibrationMenuRowPatch owns the SINGLE Lxd3;->l1 resolver head-block
     // (BhMenuRowClick.maybeResolveCustomLabel) that resolves our Injection-3
     // sentinel key — depending on it guarantees that one hook is applied

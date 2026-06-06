@@ -4,7 +4,6 @@ import app.revanced.patcher.extensions.addInstructions
 import app.revanced.patcher.firstMethod
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
-import app.revanced.patches.gamehub.GAMEHUB_VERSION
 import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 import app.revanced.util.getReference
 import com.android.tools.smali.dexlib2.Opcode
@@ -55,7 +54,9 @@ val gpuSpoofPatch = bytecodePatch(
         "the Wine env builder's conditional DXVK block, so the spoof always " +
         "applies. No-ops when the game's spoof mode is Off.",
 ) {
-    compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
+    // Pinned to 6.0.4 (skipped on 6.0.7): the 6.0.7 base app ships a native
+    // GPU-spoof feature, so BannerHub's redundant. Version-incompatible = skipped, not failed.
+    compatibleWith(GAMEHUB_PACKAGE("6.0.4"))
 
     dependsOn(sharedGamehubExtensionPatch, gpuSpoofManifestPatch)
 

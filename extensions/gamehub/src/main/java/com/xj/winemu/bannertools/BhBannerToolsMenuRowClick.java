@@ -50,9 +50,12 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
     // Tile spec: short label + drawable name resolved at runtime via
     // Resources.getIdentifier() (R class belongs to the foreign GameHub pkg).
     // Order maps 1:1 onto dispatch(int).
+    // NOTE: "GPU Spoof" dropped on 6.0.7 — the base GameHub app now ships a
+    // native GPU-spoof feature, so BannerHub's redundant tile + patches are
+    // gated off on 607 (GpuSpoof{Patch,ManifestPatch,MenuRowPatch} pinned to
+    // 6.0.4). Keep this array in lock-step with dispatch(int).
     private static final String[] TILE_LABELS = new String[] {
         "Vibration",
-        "GPU Spoof",
         "Renderer",
         "Game ID",
         "Audio",
@@ -62,7 +65,6 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
     };
     private static final String[] TILE_DRAWABLES = new String[] {
         "bh_bt_vibration",
-        "bh_bt_gpu_spoof",
         "bh_bt_renderer",
         "bh_bt_game_id",
         "bh_bt_audio",
@@ -76,7 +78,7 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
     // greyed + non-interactive; the global tiles (Audio, GOG, Overlay, Root)
     // stay usable. Keep in sync with dispatch(int) ordering.
     private static boolean isPerGameTile(int i) {
-        return i == 0 || i == 1 || i == 2 || i == 3; // Vibration/GPU Spoof/Renderer/Game ID
+        return i == 0 || i == 1 || i == 2; // Vibration/Renderer/Game ID
     }
 
     @Override
@@ -136,14 +138,14 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
                     tile.setAlpha(0.4f);
                     tile.setOnClickListener(v ->
                         Toast.makeText(host, "Open from a game", Toast.LENGTH_SHORT).show());
-                } else if (which == 6 && !rootGranted) {
+                } else if (which == 5 && !rootGranted) {
                     // Overlay tile, no root yet — grey out and send the user to
                     // the Root tile to grant first.
                     tile.setAlpha(0.4f);
                     tile.setOnClickListener(v -> {
                         Toast.makeText(host, "Grant root access first",
                             Toast.LENGTH_SHORT).show();
-                        dispatch(host, 7); // open the Root dialog
+                        dispatch(host, 6); // open the Root dialog
                         dialog.dismiss();
                     });
                 } else {
@@ -278,27 +280,24 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
                     new com.xj.winemu.vibration.BhMenuRowClick().invoke(null);
                     break;
                 case 1:
-                    new com.xj.winemu.gpuspoof.BhGpuSpoofMenuRowClick().invoke(null);
-                    break;
-                case 2:
                     new com.xj.winemu.renderer.BhRendererMenuRowClick().invoke(null);
                     break;
-                case 3:
+                case 2:
                     new com.xj.winemu.gameid.BhGameIdDisplayMenuRowClick().invoke(null);
                     break;
-                case 4:
+                case 3:
                     new com.xj.winemu.audio.BhAudioMenuRowClick().invoke(null);
                     break;
-                case 5:
+                case 4:
                     // GOG tile opens the GOG login/library hub Activity
                     // (not a dialog like the others); BhGogMenuRowClick.invoke
                     // walks to the top Activity and startActivity(GogMainActivity).
                     new com.xj.winemu.gog.BhGogMenuRowClick().invoke(null);
                     break;
-                case 6:
+                case 5:
                     com.xj.winemu.perf.BhPerfMenus.showOverlayToggleDialog(host);
                     break;
-                case 7:
+                case 6:
                     com.xj.winemu.perf.BhPerfMenus.showRootDialog(host);
                     break;
                 default:

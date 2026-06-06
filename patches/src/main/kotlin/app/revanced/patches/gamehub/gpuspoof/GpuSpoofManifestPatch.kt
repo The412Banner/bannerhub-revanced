@@ -2,7 +2,6 @@ package app.revanced.patches.gamehub.gpuspoof
 
 import app.revanced.patcher.patch.resourcePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
-import app.revanced.patches.gamehub.GAMEHUB_VERSION
 import app.revanced.util.getNode
 import org.w3c.dom.Element
 
@@ -16,7 +15,9 @@ val gpuSpoofManifestPatch = resourcePatch(
         "per-game GPU-identity dialog can be launched by explicit-Intent. " +
         "Internal-only (android:exported=\"false\"); no <intent-filter>.",
 ) {
-    compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
+    // Pinned to 6.0.4 (skipped on 6.0.7): the 6.0.7 base app ships a native
+    // GPU-spoof feature, so BannerHub's redundant. Version-incompatible = skipped, not failed.
+    compatibleWith(GAMEHUB_PACKAGE("6.0.4"))
 
     apply {
         document("AndroidManifest.xml").use { dom ->

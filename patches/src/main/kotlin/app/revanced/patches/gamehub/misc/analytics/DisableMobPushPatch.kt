@@ -113,14 +113,14 @@ val disableMobPushPatch = bytecodePatch(
     dependsOn(disableMobPushManifestPatch)
 
     apply {
-        // 1. BaseAndroidApp init helper. The actual Mob calls live in an
-        //    initializer method (`a()V` in 6.0.4) called from onCreate, NOT
-        //    in onCreate itself — onCreate just delegates. Anchor structurally
-        //    on "method on BaseAndroidApp that contains the submitPolicyGrantResult
-        //    invoke" so the helper name doesn't matter (it changes across
-        //    minor versions).
+        // 1. App-class init helper. The actual Mob calls live in an initializer
+        //    method (`a()V` in 6.0.4, `b()V` in 6.0.7) called from onCreate, NOT
+        //    in onCreate itself — onCreate just delegates. Anchor structurally on
+        //    "method on the app class that contains the submitPolicyGrantResult
+        //    invoke" so the helper name doesn't matter. 6.0.7 renamed the app
+        //    class Lcom/xiaoji/egggame/BaseAndroidApp; → Lcom/xiaoji/egggame/AndroidApp;.
         firstMethod {
-            definingClass == "Lcom/xiaoji/egggame/BaseAndroidApp;" &&
+            definingClass == "Lcom/xiaoji/egggame/AndroidApp;" &&
                 implementation?.instructions?.any { ins ->
                     ins.opcode == Opcode.INVOKE_STATIC &&
                         (ins as? ReferenceInstruction)?.reference?.toString()
@@ -142,13 +142,13 @@ val disableMobPushPatch = bytecodePatch(
             removeInstruction(policyGrantIdx)
         }
 
-        // 2. Helper method on the R8-mangled config class (currently `Lnt5;->N`
-        //    in 6.0.4 — name changes every minor version).
+        // 2. Helper method on the R8-mangled config class (`Lnt5;->N` in 6.0.4,
+        //    `Lns8;->D` in 6.0.7 — name changes every minor version).
         //    Structural anchor: a method whose only parameter is
-        //    Landroid/content/Context, returns V, lives outside BaseAndroidApp,
+        //    Landroid/content/Context, returns V, lives outside the app class,
         //    and contains a submitPolicyGrantResult invoke.
         firstMethod {
-            definingClass != "Lcom/xiaoji/egggame/BaseAndroidApp;" &&
+            definingClass != "Lcom/xiaoji/egggame/AndroidApp;" &&
                 returnType == "V" &&
                 parameters.size == 1 &&
                 parameters[0].toString() == "Landroid/content/Context;" &&

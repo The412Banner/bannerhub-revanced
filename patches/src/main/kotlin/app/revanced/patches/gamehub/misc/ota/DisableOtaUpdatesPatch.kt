@@ -6,7 +6,6 @@ import app.revanced.patcher.firstMethod
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patcher.patch.resourcePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
-import app.revanced.patches.gamehub.GAMEHUB_VERSION
 import app.revanced.util.indexOfFirstInstructionOrThrow
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
@@ -61,7 +60,14 @@ val disableOtaUpdatesPatch = bytecodePatch(
         "Also strips the JieLi gamepad-firmware native libs (libJieLiUsbOta.so, " +
         "libjl_ota_auth.so) which are dead weight on phone installs.",
 ) {
-    compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
+    // 6.0.7: the OTA phone-home URL (https://www.xiaoji.com/firmware/update/x1)
+    // is GONE entirely — the firmware-update check was removed from the build,
+    // so the const-string anchor finds nothing and there is nothing to neutralise
+    // (the 6.0.7 build runs fine on-device with this patch UNapplied). Pin
+    // compatibility to 6.0.4 → patcher skips it on 6.0.7 (skipped, not a failure).
+    // The JieLi-lib cleanup dependency is skipped alongside it (those libs are
+    // dead weight at worst; not worth keeping the patch alive). Kept for ≤6.0.4.
+    compatibleWith(GAMEHUB_PACKAGE("6.0.4"))
     dependsOn(otaCleanupResourcePatch)
 
     apply {

@@ -4,7 +4,6 @@ import app.revanced.patcher.extensions.removeInstruction
 import app.revanced.patcher.firstMethod
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
-import app.revanced.patches.gamehub.GAMEHUB_VERSION
 import app.revanced.util.indexOfFirstInstructionOrThrow
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
@@ -14,7 +13,15 @@ val disableCrashlyticsPatch = bytecodePatch(
     name = "Disable Firebase Crashlytics",
     description = "Skips Firebase Crashlytics initialization in Application.onCreate to fix crash on launch.",
 ) {
-    compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
+    // 6.0.7: the app class (BaseAndroidApp→AndroidApp) no longer calls
+    // FirebaseCrashlytics.getInstance()/setCrashlyticsCollectionEnabled at all —
+    // AndroidApp.a() self-guards ("FirebaseCrashlytics component is not present."
+    // is logged, not thrown), and Firebase collection defaults to false in 6.0.7.
+    // The original launch crash (getInstance NPE after extension merge) does not
+    // occur — the 6.0.7 build launches fine on-device with this patch UNapplied.
+    // So there's nothing to strip. Pin compatibility to 6.0.4 → patcher skips it
+    // on 6.0.7 (version-incompatible = skipped, not a failure). Kept for ≤6.0.4.
+    compatibleWith(GAMEHUB_PACKAGE("6.0.4"))
 
     apply {
         // BaseAndroidApp.onCreate() calls FirebaseCrashlytics.getInstance() which throws NPE

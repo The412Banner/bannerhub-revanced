@@ -78,6 +78,13 @@ fp9 `8e1e529` (37/9) did Mob + the 2 gates; **fp10 ([run 27071955053](https://gi
 - 🚫 **Disable Firebase Crashlytics** — MOOT on 6.0.7, gated out (`compatibleWith` → 6.0.4, skipped). No `FirebaseCrashlytics.getInstance()`/`setCrashlyticsCollectionEnabled` calls remain; `AndroidApp.a()` self-guards (logs "FirebaseCrashlytics component is not present." via `Lk7l;->r`, doesn't throw); Firebase collection defaults false. **Proven safe: the 6.0.7 build already launches on-device with this patch unapplied** (login etc. device-confirmed), so the original launch-crash it fixed no longer occurs.
 - 🚫 **Disable OTA updates** — MOOT, gated out. The `https://www.xiaoji.com/firmware/update/x1` phone-home URL is gone entirely from 6.0.7 (firmware-update feature removed). JieLi-lib cleanup dependency skipped alongside.
 
+**Static verification (fp10 patched `apk-Normal-GHL`, apktool-decompiled 2026-06-06):** every privacy injection confirmed landed in the output APK —
+- Analytics: `Lzy5;->a` — all 3 env `/events` URLs each immediately followed by `const-string v13, "http://127.0.0.1"` (same reg v13); `Lb34;->invokeSuspend` — all 3 env device-perf URLs each followed by `const-string v3, "http://127.0.0.1"`.
+- Heartbeat: `Lk3n;->invokeSuspend` and `Lg3n;->invokeSuspend` both begin with `sget-object v0, Lkotlin/Unit;->INSTANCE … return-object v0` (original body now dead code).
+- Mob: `submitPolicyGrantResult` + `addPushReceiverInMain` = 0 occurrences in `AndroidApp`, `submitPolicyGrantResult` = 0 in `Lns8;`, `MobSDK;->init` kept (1). Manifest: all 8 `com.mob.*` components carry `android:enabled="false"`; 6.0.7 has no `com.mob` `<provider>` (no ContentProvider auto-init to worry about). The `com.mobile.auth.*` (Aliyun) components are correctly untouched (don't match the `com.mob.` prefix).
+
+Runtime/network verification (tcpdump + playtime-UI check on GHL Normal) still pending on the user side — see verification plan; static confirms the bytecode is correct, the device test confirms behavior.
+
 **Remaining reds after fp10 (7) — none are privacy:** GPU spoof DXVK plumbing, PC-accurate vibration, Local game-id assignment, Show PC Game Settings row, Explore tab hijack, GOG library card (permanent), Debug logging.
 
 ----

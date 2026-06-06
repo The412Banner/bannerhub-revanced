@@ -109,6 +109,8 @@ Both were `use = false` (opt-in) on `feature/lite-variant-tier1`; flipped to `us
 
 **Remaining reds after fp12 (7) — none are privacy:** GPU spoof DXVK plumbing, PC-accurate vibration, Local game-id assignment, Show PC Game Settings row, Explore tab hijack, GOG library card (permanent), Debug logging.
 
+**Effort triage + recommended order (2026-06-06):** GPU spoof DXVK plumbing = 2 fingerprints, no native → 🟢 lightest; GOG library card = 2 fp, no native but a logic bug ("collection empty") not just refingerprint; Local game-id = 3 fp; Show PC Game Settings row = 2 fp + resource; Explore tab hijack = Compose-nav seam (medium-high); Debug logging = 5 fp (heavier than it sounds); **PC-accurate vibration = 5 fp + native `winebus.so` runtime binary patcher = 🔴 HEAVIEST** (NOT the best start despite highest value). **Recommended sequence: GPU spoof DXVK plumbing FIRST** (lightest, felt feature, menu row already device-confirmed so finishing the behavior completes it end-to-end, validates the 607 feature-patch refingerprint approach) → Local game-id / Show PC Game Settings → save PC-accurate vibration + Explore hijack for last.
+
 ----
 
 ### Banner Tools menu row (2026-06-06) — STARTED (5th cascade; the hard one)

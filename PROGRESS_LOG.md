@@ -145,6 +145,12 @@ The "heaviest" red turned out to be 4 bytecode hooks (the winebus.so patcher is 
 
 **fp19 ([run 27078091158](https://github.com/The412Banner/bannerhub-revanced/actions/runs/27078091158)) = 45 applied / 0 failed.** 🎯 **ALL BannerHub v6 patches now apply on GameHub 6.0.7 (vc118).** ⚠️ device-verify rumble end-to-end (sustained hold via the winebus patch, dual-motor dispatch, instant release) — especially that imagefs ships winebus.so on 6.0.7 and the disk-patch finds + rewrites it from `WineActivity.onCreate`.
 
+### 🐞 GOG download crash on 6.0.7 — FIXED (fp20, commit `a081e42`) — found during device-verify
+
+Device-verify pass (fp19 Normal-GHL on `gamehub.lite` via `getlog` root bridge) caught a real crash (NOT a fingerprint issue) when downloading a GOG game: `SecurityException: Starting FGS with type dataSync … targetSDK=36 requires [FOREGROUND_SERVICE_DATA_SYNC]` at `BhDownloadService.onStartCommand:249` → `Force finishing GogGamesActivity`, process SIGKILL. Root cause: our `BhDownloadService` runs as a `dataSync` foreground service; the **6.0.4 base manifest declared `FOREGROUND_SERVICE_DATA_SYNC`** (service rode on it) but **6.0.7 dropped it** — base now only has `FOREGROUND_SERVICE_SPECIAL_USE` (GameHub moved its own FGS dataSync→specialUse, the `PcEmulatorAutoUnzipService` swap noted in the master map). Fix: `GogManifestPatch` now declares `FOREGROUND_SERVICE_DATA_SYNC` itself (idempotent — no-op on bases that already have it). **fp20 ([run 27078466807](https://github.com/The412Banner/bannerhub-revanced/actions/runs/27078466807)) green, `aapt` confirms the perm is in the patched manifest.** ⚠️ device-retest the GOG download.
+
+**Device-verify results so far (fp19/fp20 on `gamehub.lite`, via getlog):** ✅ app launch clean (no crash); ✅ **Explore tab hijack** (`BannerExploreActivity` Displayed +45ms, focused/visible); ✅ **Show PC Game Settings row** (visible on a Steam game AND a local-imported game, no Compose group-balance crash); ✅ **Debug logging** logcat channel live (tag `GH600-DEBUG`; ⚠️ the file backup channel is broken — hardcoded `com.xiaoji.egggame` path → ENOENT/EACCES on the `gamehub.lite` variant, pre-existing extension limitation not a 607 regression); ✅ bonus **Bypass login** (FakeAuthToken/FakeUserAccount synthetic userId 99999). ⏳ pending: Local game-id (needs a sentinel-id import), Debug import probes (needs import), PC-accurate vibration (needs controller+game).
+
 ## 6.0.7 port — patch-apply phase COMPLETE (2026-06-06)
 
 All 45 patches green (fp19). Outstanding before a stable 6.0.7 cut:

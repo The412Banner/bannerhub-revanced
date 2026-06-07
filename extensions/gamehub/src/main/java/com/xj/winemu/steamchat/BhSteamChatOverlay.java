@@ -65,6 +65,9 @@ public final class BhSteamChatOverlay {
     private static final ExecutorService IMG_IO = Executors.newFixedThreadPool(2);
     private static final java.util.regex.Pattern URL_RE =
             java.util.regex.Pattern.compile("https?://[^\\s\\]\\[\"']+");
+    // SteamID64 for individual accounts: 17 digits beginning 7656119… .
+    private static final java.util.regex.Pattern STEAMID64_RE =
+            java.util.regex.Pattern.compile("\"steamId\"\\s*:\\s*\"?(7656\\d{13})\"?");
 
     private static final WeakHashMap<Activity, Controller> sOverlays = new WeakHashMap<>();
 
@@ -273,6 +276,8 @@ public final class BhSteamChatOverlay {
         private boolean offlineCollapsed = true;
         // friendSteamId → unread count, from friends.conversation_summaries
         private final java.util.HashMap<Long, Integer> unreadByFriend = new java.util.HashMap<>();
+        // Local user's SteamID64 (for mark_conversation_read); 0 until resolved.
+        private volatile long localSteamId = 0;
 
         private void setExpanded(boolean exp) {
             expanded = exp;
@@ -362,8 +367,34 @@ public final class BhSteamChatOverlay {
                     String payload = "{\"steamId\":" + steamId + ",\"limit\":30}";
                     final String json = BhSteamBridge.request("friends.message_history", payload, 8000);
                     post(new Runnable() { public void run() { renderHistory(json, name); } });
+                    // Opening a conversation marks it read → clears the unread badge.
+                    markConversationRead(steamId);
                 }
             });
+        }
+
+        /** Tell Steam we've read this conversation (clears its unread count), then
+         *  drop the local badge. Worker-thread. MarkConversationReadRequest takes
+         *  steamId(self) + friendSteamId(peer); fall back to the peer for self if
+         *  our own SteamID can't be resolved. */
+        private void markConversationRead(final long friendSteamId) {
+            try {
+                long me = ensureLocalSteamId();
+                long self = me != 0 ? me : friendSteamId;
+                BhSteamBridge.request("friends.mark_conversation_read",
+                        "{\"steamId\":" + self + ",\"friendSteamId\":" + friendSteamId + "}", 6000);
+            } catch (Throwable ignored) {}
+            post(new Runnable() { public void run() { unreadByFriend.remove(friendSteamId); } });
+        }
+
+        /** Local user's SteamID64 via auth.bootstrap_snapshot, cached. Worker-thread. */
+        private long ensureLocalSteamId() {
+            if (localSteamId != 0) return localSteamId;
+            try {
+                long id = extractSteamId64(BhSteamBridge.request("auth.bootstrap_snapshot", "{}", 6000));
+                if (id != 0) localSteamId = id;
+            } catch (Throwable ignored) {}
+            return localSteamId;
         }
 
         // ── render (UI thread) ──────────────────────────────────────────────────
@@ -888,6 +919,15 @@ public final class BhSteamChatOverlay {
     private static String firstNonEmpty(String... vals) {
         for (String v : vals) if (v != null && !v.isEmpty() && !v.equals("null")) return v;
         return "";
+    }
+
+    /** Pull the first SteamID64 out of an auth.bootstrap_snapshot response (the
+     *  local user's id), accepting either a numeric or string-quoted value. */
+    private static long extractSteamId64(String json) {
+        if (json == null) return 0;
+        java.util.regex.Matcher m = STEAMID64_RE.matcher(json);
+        if (m.find()) { try { return Long.parseLong(m.group(1)); } catch (Throwable t) { return 0; } }
+        return 0;
     }
 
     /**

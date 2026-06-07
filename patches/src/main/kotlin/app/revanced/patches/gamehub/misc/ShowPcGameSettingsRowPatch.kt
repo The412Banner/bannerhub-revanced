@@ -65,10 +65,15 @@ import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 //     (6.0.7: Llsj;->c0). Confirm it is sget-object'd inside the menu method.
 // =============================================================================
 
-private const val PC_SETTINGS_LABEL_CLASS = "Llsj;"   // 6.0.4: Lmil;
-private const val PC_SETTINGS_LABEL_FIELD = "c0"      // 6.0.4: U  (kqj StringResource idx 0x14)
-private const val LABEL_WRAPPER = "Lu3k;"             // 6.0.4: Lxrl;
-private const val ROW_DATA = "Ltyc;"                  // 6.0.4: Liae;  (More-Menu row item)
+// 6.0.8 verified (~/gh608-apktool-d): label class Llsj;->Lssj; (field c0 stable),
+// wrapper Lu3k;->Lb4k;, resource lambda kqj->rqj (rqj(0x14)=features_game_pc_settings,
+// wrapped in Lb4k;, sput Lssj;->c0). Menu method Lc37;->La37; sig
+// (Le17;ILdv6;Lhh7;Leh3;I)V, row ctor Ltyc;->Lwyc;(Lm55;,String,Lfv6;).
+// a37.a sgets Lssj;->c0:Lb4k; exactly once (confirmed).
+private const val PC_SETTINGS_LABEL_CLASS = "Lssj;"   // 6.0.7: Llsj;  6.0.4: Lmil;
+private const val PC_SETTINGS_LABEL_FIELD = "c0"      // 6.0.4: U  (rqj StringResource idx 0x14)
+private const val LABEL_WRAPPER = "Lb4k;"             // 6.0.7: Lu3k;  6.0.4: Lxrl;
+private const val ROW_DATA = "Lwyc;"                  // 6.0.7: Ltyc;  6.0.4: Liae;  (More-Menu row item)
 
 private const val MAX_BACKWARD_SCAN = 40
 
@@ -89,7 +94,7 @@ val showPcGameSettingsRowPatch = bytecodePatch(
         // the presence of the More-Menu row-item constructor (ROW_DATA), which
         // is unique to this method among any signature sig-sharers.
         val menuMethod = firstMethod {
-            parameterTypes == listOf("Lf17;", "I", "Lev6;", "Ljh7;", "Leh3;", "I") &&
+            parameterTypes == listOf("Le17;", "I", "Ldv6;", "Lhh7;", "Leh3;", "I") &&
                 returnType == "V" &&
                 (implementation?.instructions?.any { ins ->
                     ins.opcode == Opcode.INVOKE_DIRECT &&
@@ -98,7 +103,7 @@ val showPcGameSettingsRowPatch = bytecodePatch(
                                     it.definingClass == ROW_DATA &&
                                     it.name == "<init>" &&
                                     it.parameterTypes.toList() == listOf(
-                                        "Ln55;", "Ljava/lang/String;", "Lgv6;"
+                                        "Lm55;", "Ljava/lang/String;", "Lfv6;"
                                     )
                             } == true
                 } ?: false)

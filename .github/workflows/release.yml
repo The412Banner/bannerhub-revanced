@@ -327,11 +327,28 @@ jobs:
 
             ### What's new in ${{ needs.build.outputs.version }}
 
-            First BannerHub v6 build on the **GameHub 6.0.7** base (versionCode 118) — XiaoJi's −46 % size pass. Same keystore as the 6.0.4 line, so it installs in place.
+            First BannerHub v6 build on the **GameHub 6.0.7** base (versionCode 118). Same keystore as the 6.0.4 line, so it installs in place over the `-604` series.
 
-            - **Rebased onto GameHub 6.0.7** — every BannerHub v6 patch was re-fingerprinted against the 6.0.7 bytecode (R8 reshuffle, the `:wine` process folded into main, `com.winemu.openapi.Config` removal, the Compose menu rewrite) and **device-verified** end-to-end.
-            - **Smaller** — the full 6.0.7 build is ~46 MB, already smaller than the old 6.0.4 **Lite** (which is why there's no separate Lite anymore; see above).
-            - The full feature set carries over: GOG integration, BannerHub Explore homepage, PC-accurate controller vibration, in-game performance overlay (root), recording-compatible audio, and the privacy hardening. (GPU spoof and the legacy-renderer toggle are 6.0.4-only — 6.0.7 ships a native GPU spoof, and its rewritten Vulkan X-server is incompatible with the old GLES2 renderer lib.)
+            ### 🧱 Rebased onto GameHub 6.0.7
+
+            Every BannerHub v6 patch was re-fingerprinted against the 6.0.7 bytecode (R8 reshuffle, the `:wine` process folded into the main process, `com.winemu.openapi.Config` removed, the Compose menu rewrite) and **device-verified** end-to-end.
+
+            ### 🪶 Smaller — and no separate Lite
+
+            The full 6.0.7 build is ~47 MB — already smaller than the old 6.0.4 **Lite**. XiaoJi's own −46 % size pass, plus the privacy/size strips folded into every variant, mean a distinct Lite would strip nothing extra, so the Lite concept is absorbed.
+
+            ### ⚠️ GPU Spoof and the Legacy renderer toggle were removed
+
+            Two per-game tiles from the 6.0.4 line are **gone on 6.0.7**:
+
+            - **GPU Spoof** — 6.0.7 ships its own **native GPU spoof**, so the BannerHub patch is redundant.
+            - **Legacy renderer (GLES2) toggle** — 6.0.7's rewritten Vulkan X-server is **incompatible** with the old GLES2 `libxserver.so` / `libwinemu.so` pair (device-confirmed `SIGABRT`), so the renderer patches stay pinned to 6.0.4.
+
+            The Banner Tools grid on 6.0.7 is now **Vibration · Game ID · Audio · GOG · Overlay · Root**.
+
+            ### ✅ Everything else carries over
+
+            GOG integration, the BannerHub Explore homepage (update banner + installed-vs-latest readout), PC-accurate controller vibration, the in-game performance overlay (root), recording-compatible audio, the offline component picker, and the full privacy-hardening stack all ship forward unchanged.
 
             ### Variants
 

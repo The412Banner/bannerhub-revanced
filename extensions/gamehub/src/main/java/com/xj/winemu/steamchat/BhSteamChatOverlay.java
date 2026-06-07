@@ -475,6 +475,7 @@ public final class BhSteamChatOverlay {
             try {
                 JSONArray arr = asArray(json, "messages", "items", "data", "history", "value");
                 if (arr == null) { setStatus("Chat with " + name); addRaw(json); addComposer(openFriendId); return; }
+                Boolean prevFromMe = null;   // group consecutive messages by sender
                 for (int i = 0; i < arr.length(); i++) {
                     JSONObject m = arr.optJSONObject(i);
                     if (m == null) continue;
@@ -485,6 +486,15 @@ public final class BhSteamChatOverlay {
                     // so every bubble fell through to "incoming" = left.)
                     boolean fromMe = "Outgoing".equalsIgnoreCase(m.optString("direction", ""))
                             || m.optBoolean("fromLocalUser", m.optBoolean("isOutgoing", false));
+                    // Name + timestamp header, shown once per sender run (like the
+                    // native screen): friend's displayName / "You", time from the
+                    // unsigned-32 epoch-seconds `timestamp`.
+                    if (prevFromMe == null || prevFromMe.booleanValue() != fromMe) {
+                        String who = fromMe ? "You"
+                                : firstNonEmpty(m.optString("displayName"), name, "Friend");
+                        listCol.addView(senderHeader(who, m.optLong("timestamp", 0), fromMe));
+                    }
+                    prevFromMe = fromMe;
                     // rawMessage carries BBCode (incl. [img …]) for image detection;
                     // plainMessage is the display-ready text the native UI shows.
                     String rawMessage = firstNonEmpty(m.optString("rawMessage"), m.optString("message"),
@@ -606,6 +616,39 @@ public final class BhSteamChatOverlay {
                     });
                 }
             });
+        }
+
+        /**
+         * Name + timestamp line above a sender run, aligned to that sender's side:
+         * friend name (blue) on the left, "You" (green) on the right — same idea as
+         * GameHub's native chat screen.
+         */
+        private View senderHeader(String who, long tsEpochSecs, boolean fromMe) {
+            TextView h = new TextView(act);
+            String t = formatTime(tsEpochSecs);
+            h.setText(t.isEmpty() ? who : who + "  ·  " + t);
+            h.setTextColor(fromMe ? COL_INGAME : COL_ACCENT);
+            h.setTypeface(Typeface.DEFAULT_BOLD);
+            h.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.topMargin = dp(8);
+            h.setLayoutParams(lp);
+            h.setGravity(fromMe ? Gravity.END : Gravity.START);
+            h.setPadding(dp(2), 0, dp(2), dp(1));
+            return h;
+        }
+
+        /** Format an unsigned-32 Unix-epoch-seconds timestamp as the device's clock
+         *  (12/24h per system setting); "" when absent. */
+        private String formatTime(long tsEpochSecs) {
+            if (tsEpochSecs <= 0) return "";
+            // Tolerate millis too, in case a future source sends them.
+            long ms = tsEpochSecs < 100000000000L ? tsEpochSecs * 1000L : tsEpochSecs;
+            try {
+                return android.text.format.DateFormat.getTimeFormat(act)
+                        .format(new java.util.Date(ms));
+            } catch (Throwable t) { return ""; }
         }
 
         /**

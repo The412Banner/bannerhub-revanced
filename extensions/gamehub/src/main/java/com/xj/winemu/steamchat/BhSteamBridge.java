@@ -2,11 +2,13 @@ package com.xj.winemu.steamchat;
 
 import android.util.Log;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -51,6 +53,10 @@ public final class BhSteamBridge {
     private static Object sEmptyContext;    // Proxy CoroutineContext (empty)
     private static Class<?> sContinuationClass;
     private static ClassLoader sLoader;
+    private static Object sUnit;             // kotlin.Unit.INSTANCE (emit() return), or null
+
+    /** Callback for {@link #listen}: receives each event's payload JSON for the topic. */
+    public interface EventListener { void onEvent(String payloadJson); }
 
     private BhSteamBridge() {}
 
@@ -239,5 +245,135 @@ public final class BhSteamBridge {
             Log.w(TAG, "request " + topic + " threw: " + c);
             return null;
         }
+    }
+
+    /**
+     * Live event subscription. {@code listenJson(topic)} returns a kotlin Flow
+     * ({@code vg6}) of {@code SteamBridgeEvent} filtered to the topic; we collect
+     * it by driving {@code Flow.collect(FlowCollector, Continuation)} reflectively
+     * (both interfaces R8-renamed → found structurally). The collector Proxy
+     * extracts {@code payloadJson} and hands it to {@code listener} on the flow's
+     * emitter thread. Because our Continuation reports an EMPTY CoroutineContext
+     * (no dispatcher), resumptions run Unconfined-style on the emitter thread, so
+     * events keep arriving without a coroutine runtime of our own.
+     *
+     * @return an opaque handle for {@link #unlisten}, or null if it couldn't start.
+     */
+    public static Object listen(final String topic, final EventListener listener) {
+        if (!isAvailable() || listener == null) { sLastError = "listen: bridge unavailable"; return null; }
+        try {
+            Method listenJson = sClient.getClass().getMethod("listenJson", String.class);
+            final Object flow = listenJson.invoke(sClient, topic);
+            if (flow == null) { sLastError = "listen: listenJson null"; return null; }
+
+            // Flow.collect(collector, continuation): the one 2-arg method whose
+            // 2nd param is the Continuation type and 1st is an interface.
+            Method collect = null;
+            for (Method m : flow.getClass().getMethods()) {
+                Class<?>[] p = m.getParameterTypes();
+                if (p.length == 2 && p[1] == sContinuationClass && p[0].isInterface()) { collect = m; break; }
+            }
+            if (collect == null) { sLastError = "listen: no collect()"; return null; }
+            final Class<?> collectorItf = collect.getParameterTypes()[0];
+            if (sUnit == null) sUnit = resolveUnit();
+
+            final AtomicBoolean cancelled = new AtomicBoolean(false);
+
+            final Object collector = Proxy.newProxyInstance(sLoader, new Class<?>[]{collectorItf},
+                    new InvocationHandler() {
+                        @Override public Object invoke(Object proxy, Method method, Object[] args) {
+                            // emit(value, Continuation): the 2-arg method.
+                            if (method.getParameterTypes().length == 2) {
+                                if (cancelled.get()) throw new RuntimeException("bh-unsubscribe");
+                                Object ev = (args != null && args.length > 0) ? args[0] : null;
+                                String json = eventToJson(ev);
+                                if (json != null) { try { listener.onEvent(json); } catch (Throwable ignored) {} }
+                                return sUnit; // != COROUTINE_SUSPENDED → upstream continues
+                            }
+                            switch (method.getName()) {
+                                case "toString": return "BhFlowCollector(" + topic + ")";
+                                case "hashCode": return System.identityHashCode(proxy);
+                                case "equals":   return proxy == (args != null ? args[0] : null);
+                                default:          return null;
+                            }
+                        }
+                    });
+
+            final Object completion = Proxy.newProxyInstance(sLoader, new Class<?>[]{sContinuationClass},
+                    new InvocationHandler() {
+                        @Override public Object invoke(Object proxy, Method method, Object[] args) {
+                            switch (method.getName()) {
+                                case "getContext": return sEmptyContext;
+                                case "resumeWith": return null;   // flow ended/cancelled — nothing to do
+                                case "toString":   return "BhFlowCompletion(" + topic + ")";
+                                case "hashCode":   return System.identityHashCode(proxy);
+                                case "equals":     return proxy == (args != null ? args[0] : null);
+                                default:            return null;
+                            }
+                        }
+                    });
+
+            final Method collectF = collect;
+            Thread t = new Thread(new Runnable() {
+                public void run() {
+                    try { collectF.invoke(flow, collector, completion); }
+                    catch (Throwable err) { Log.i(TAG, "listen " + topic + " ended: " + err); }
+                }
+            }, "bh-steam-listen");
+            t.setDaemon(true);
+            t.start();
+            Log.i(TAG, "listening on " + topic);
+            return cancelled;
+        } catch (Throwable t) {
+            Throwable c = (t.getCause() != null) ? t.getCause() : t;
+            sLastError = "listen: " + c.getClass().getSimpleName() + ": " + c.getMessage();
+            Log.w(TAG, "listen " + topic + " failed", t);
+            return null;
+        }
+    }
+
+    /** Stop a {@link #listen} subscription (effective on the next emitted event). */
+    public static void unlisten(Object handle) {
+        if (handle instanceof AtomicBoolean) ((AtomicBoolean) handle).set(true);
+    }
+
+    private static Object resolveUnit() {
+        try {
+            Class<?> u = Class.forName("kotlin.Unit", false, sLoader);
+            Field inst = u.getField("INSTANCE");
+            return inst.get(null);
+        } catch (Throwable t) {
+            return null; // returning null from emit() is also accepted by the flow machinery
+        }
+    }
+
+    /** Pull the JSON payload out of a SteamBridgeEvent (or a bare JSON string). */
+    private static String eventToJson(Object ev) {
+        if (ev == null) return null;
+        if (ev instanceof String) return (String) ev;
+        for (String n : new String[]{"getPayloadJson", "component2", "getPayload"}) {
+            try {
+                Object v = ev.getClass().getMethod(n).invoke(ev);
+                if (v instanceof String) return (String) v;
+            } catch (Throwable ignored) {}
+        }
+        // R8 may have renamed the accessors — find a no-arg String getter that
+        // returns something JSON-shaped.
+        try {
+            for (Method m : ev.getClass().getMethods()) {
+                if (m.getParameterTypes().length == 0 && m.getReturnType() == String.class) {
+                    Object v = m.invoke(ev);
+                    if (v instanceof String) { String s = ((String) v).trim(); if (s.startsWith("{") || s.startsWith("[")) return s; }
+                }
+            }
+            for (Field f : ev.getClass().getDeclaredFields()) {
+                if (f.getType() == String.class) {
+                    f.setAccessible(true);
+                    Object v = f.get(ev);
+                    if (v instanceof String) { String s = ((String) v).trim(); if (s.startsWith("{") || s.startsWith("[")) return s; }
+                }
+            }
+        } catch (Throwable ignored) {}
+        return null;
     }
 }

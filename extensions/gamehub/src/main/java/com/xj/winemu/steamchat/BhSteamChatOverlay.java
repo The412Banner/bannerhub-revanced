@@ -132,6 +132,7 @@ public final class BhSteamChatOverlay {
         private boolean expanded = false;
         private boolean attached = false;
         private long openFriendId = 0;   // 0 = showing friends list
+        private Object chatSub;          // live steam:chat-message subscription handle
 
         Controller(Activity a) { this.act = a; }
 
@@ -175,6 +176,8 @@ public final class BhSteamChatOverlay {
         void detach() {
             if (!attached) return;
             attached = false;
+            try { BhSteamBridge.unlisten(chatSub); } catch (Throwable ignored) {}
+            chatSub = null;
             try { if (wm != null && container != null) wm.removeView(container); } catch (Throwable ignored) {}
         }
 
@@ -259,7 +262,31 @@ public final class BhSteamChatOverlay {
             // Take key/IME focus only while the panel is open, so the composer's
             // EditText can receive text; collapse hands input back to the game.
             setWindowFocusable(exp);
+            if (exp) ensureChatSubscription();
             if (exp && listCol.getChildCount() == 0) loadFriends();
+        }
+
+        /** Subscribe once to live chat messages; reload the open thread when one arrives for it. */
+        private void ensureChatSubscription() {
+            if (chatSub != null) return;
+            chatSub = BhSteamBridge.listen("steam:chat-message", new BhSteamBridge.EventListener() {
+                public void onEvent(final String payloadJson) {
+                    long who = 0;
+                    try {
+                        JSONObject o = new JSONObject(payloadJson);
+                        who = o.optLong("friendSteamId", o.optLong("steamId", o.optLong("senderSteamId", 0)));
+                    } catch (Throwable ignored) {}
+                    final long from = who;
+                    post(new Runnable() {
+                        public void run() {
+                            // Only refresh if this message belongs to the conversation on screen.
+                            if (expanded && openFriendId != 0 && (from == 0 || from == openFriendId)) {
+                                loadHistory(openFriendId, currentTitle);
+                            }
+                        }
+                    });
+                }
+            });
         }
 
         /** Toggle FLAG_NOT_FOCUSABLE on the live overlay window. */

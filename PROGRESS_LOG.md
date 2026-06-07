@@ -157,8 +157,16 @@ Device-verify pass (fp19 Normal-GHL on `gamehub.lite` via `getlog` root bridge) 
 - ✅ **GOG download + add to library** (fp20) — Gun Slugs downloaded, added, and shows in library after restart (the §40/§41 restart-to-show behavior holds on 6.0.7).
 - ✅ **Local game-id assignment** — LOGGED PROOF: after adding the GOG game (lands with sentinel `server_game_id=0`) and restarting, fresh proc 27880 logged `BhLocalGameId: assigned synthetic server_game_id to 1 row(s)` (700ms after start, on the daemon thread). Full chain confirmed.
 - ✅ bonus **Bypass login** — FakeAuthToken/FakeUserAccount synthetic userId 99999.
-- ⏳ **PC-accurate vibration** — pending (needs a controller + a Windows game with XInput rumble).
+- ✅ **PC-accurate vibration** — in-game with a controller: rumble works and **SUSTAINS** (no ~1s cutoff). Sustain is the definitive proof — it's impossible without the winebus.so disk-patch firing (SDL2 `rumble_expiration` would otherwise cut it), so it confirms (a) Hook 4's retarget to `WineActivity.onCreate` fired, (b) winebus.so exists in the 607 imagefs and got rewritten on disk, (c) `BhVibrationController` active in logcat (`mode=1 intensity=100`), no crash.
 - ⏳ **Debug import probes** — optional; won't fire on a GOG install (they hook the PC-emulator save path `am7.v`/`za.w`, not the GOG library-write path). Needs a PC game import. The patch is already proven live via the logcat channel.
+
+## 🏁🏁 6.0.7 PORT — DEVICE-VERIFIED COMPLETE (2026-06-06)
+
+All 45 patches apply (fp19) AND the full feature set is device-verified on `gamehub.lite` v6.0.7 vc118 (fp19/fp20, via getlog root bridge): Explore hijack, Show PC Game Settings row, Local game-id (logged), Debug logging (logcat), GOG download+library (after the fp20 FGS fix), Bypass login, and PC-accurate vibration (sustained rumble). 1 device-found bug (GOG FGS crash) found AND fixed in the same pass. Remaining before a stable cut are NON-patch chores:
+1. **`release.yml` 604→607 string cleanup** (~15 refs in the release-notes body/version suffix).
+2. **Debuggable-on-stable decision** (Debug logging marks 607 debuggable, carried from 604).
+3. Minor: the Debug-logging file-backup path is hardcoded `com.xiaoji.egggame` (logcat channel works; file backup EACCES on renamed variants) — FIX-LATER, derive path from runtime package.
+4. Optional: exercise the Debug import probes with a PC (not GOG) game import.
 
 ## 6.0.7 port — patch-apply phase COMPLETE (2026-06-06)
 

@@ -22,11 +22,11 @@ import kotlin.jvm.functions.Function1;
 
 /**
  * Onclick handler for the consolidated "Banner Tools" row injected at the
- * 3 per-game menu sites. Click pops an {@link AlertDialog} whose 4 items
+ * 3 per-game menu sites. Click pops an {@link AlertDialog} whose tiles
  * dispatch into the existing per-feature handlers — so all settings
- * activities (BhVibrationSettingsActivity / BhGpuSpoofSettingsActivity /
- * BhRendererSettingsActivity) and the game-id dialog stay in their
- * current modules and code paths.
+ * activities (BhVibrationSettingsActivity / BhAudioSettingsActivity, etc.)
+ * and the game-id dialog stay in their current modules and code paths.
+ * (Renderer + GPU Spoof tiles are dropped on 6.0.7 — see TILE_LABELS.)
  *
  * <p>Sibling of {@link com.xj.winemu.vibration.BhMenuRowClick} and the
  * other 3 per-feature row handlers — same reflection strategy against the
@@ -53,10 +53,13 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
     // NOTE: "GPU Spoof" dropped on 6.0.7 — the base GameHub app now ships a
     // native GPU-spoof feature, so BannerHub's redundant tile + patches are
     // gated off on 607 (GpuSpoof{Patch,ManifestPatch,MenuRowPatch} pinned to
-    // 6.0.4). Keep this array in lock-step with dispatch(int).
+    // 6.0.4). "Renderer" likewise dropped on 6.0.7: the Legacy GLES2 path needs
+    // the 6.0.2 libxserver, which is binary-incompatible with 6.0.7's rewritten
+    // XServer (device-confirmed SIGABRT), so the renderer patches are pinned to
+    // 6.0.4 and the tile would just dead-launch an unregistered activity. Keep
+    // this array in lock-step with dispatch(int).
     private static final String[] TILE_LABELS = new String[] {
         "Vibration",
-        "Renderer",
         "Game ID",
         "Audio",
         "GOG",
@@ -65,7 +68,6 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
     };
     private static final String[] TILE_DRAWABLES = new String[] {
         "bh_bt_vibration",
-        "bh_bt_renderer",
         "bh_bt_game_id",
         "bh_bt_audio",
         "bh_bt_gog",
@@ -78,7 +80,7 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
     // greyed + non-interactive; the global tiles (Audio, GOG, Overlay, Root)
     // stay usable. Keep in sync with dispatch(int) ordering.
     private static boolean isPerGameTile(int i) {
-        return i == 0 || i == 1 || i == 2; // Vibration/Renderer/Game ID
+        return i == 0 || i == 1; // Vibration/Game ID
     }
 
     @Override
@@ -138,14 +140,14 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
                     tile.setAlpha(0.4f);
                     tile.setOnClickListener(v ->
                         Toast.makeText(host, "Open from a game", Toast.LENGTH_SHORT).show());
-                } else if (which == 5 && !rootGranted) {
+                } else if (which == 4 && !rootGranted) {
                     // Overlay tile, no root yet — grey out and send the user to
                     // the Root tile to grant first.
                     tile.setAlpha(0.4f);
                     tile.setOnClickListener(v -> {
                         Toast.makeText(host, "Grant root access first",
                             Toast.LENGTH_SHORT).show();
-                        dispatch(host, 6); // open the Root dialog
+                        dispatch(host, 5); // open the Root dialog
                         dialog.dismiss();
                     });
                 } else {
@@ -280,24 +282,21 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
                     new com.xj.winemu.vibration.BhMenuRowClick().invoke(null);
                     break;
                 case 1:
-                    new com.xj.winemu.renderer.BhRendererMenuRowClick().invoke(null);
-                    break;
-                case 2:
                     new com.xj.winemu.gameid.BhGameIdDisplayMenuRowClick().invoke(null);
                     break;
-                case 3:
+                case 2:
                     new com.xj.winemu.audio.BhAudioMenuRowClick().invoke(null);
                     break;
-                case 4:
+                case 3:
                     // GOG tile opens the GOG login/library hub Activity
                     // (not a dialog like the others); BhGogMenuRowClick.invoke
                     // walks to the top Activity and startActivity(GogMainActivity).
                     new com.xj.winemu.gog.BhGogMenuRowClick().invoke(null);
                     break;
-                case 5:
+                case 4:
                     com.xj.winemu.perf.BhPerfMenus.showOverlayToggleDialog(host);
                     break;
-                case 6:
+                case 5:
                     com.xj.winemu.perf.BhPerfMenus.showRootDialog(host);
                     break;
                 default:

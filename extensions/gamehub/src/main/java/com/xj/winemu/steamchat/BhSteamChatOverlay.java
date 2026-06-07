@@ -310,7 +310,10 @@ public final class BhSteamChatOverlay {
                     f.optString("personaName"), "Friend " + steamId);
             boolean online = f.optBoolean("isOnline", false);
             boolean inGame = f.optBoolean("isInGame", false);
-            String game = f.optString("gameName", "");
+            // org.json's optString returns the literal "null" for a JSONObject.NULL
+            // value, so guard explicitly or the in-game label reads "In-Game · null".
+            String game = f.isNull("gameName") ? "" : f.optString("gameName", "");
+            if ("null".equalsIgnoreCase(game)) game = "";
 
             LinearLayout row = new LinearLayout(act);
             row.setOrientation(LinearLayout.HORIZONTAL);

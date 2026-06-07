@@ -325,7 +325,7 @@ jobs:
 
             </details>
 
-            ### What's new in ${{ needs.build.outputs.version }}
+            ## What's new in ${{ needs.build.outputs.version }}
 
             First BannerHub v6 build on the **GameHub 6.0.7** base (versionCode 118). Same keystore as the 6.0.4 line, so it installs in place over the `-604` series.
 

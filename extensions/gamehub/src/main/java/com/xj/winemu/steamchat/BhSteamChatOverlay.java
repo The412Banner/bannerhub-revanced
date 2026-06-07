@@ -56,6 +56,8 @@ public final class BhSteamChatOverlay {
     private static final int COL_OFFLINE  = 0xFF6A707C;
     private static final int COL_TEXT     = 0xFFEFEFEF;
     private static final int COL_SUBTEXT  = 0xFF9AA0AC;
+    private static final int COL_BUBBLE_THEM = 0xFF2A2E38; // incoming bubble (dark)
+    private static final int COL_BUBBLE_ME   = 0xFF24506E; // outgoing bubble (Steam blue)
 
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final ExecutorService IO = Executors.newSingleThreadExecutor();
@@ -481,14 +483,17 @@ public final class BhSteamChatOverlay {
                     boolean fromMe = m.optBoolean("fromLocalUser", m.optBoolean("isOutgoing", false));
                     String imgUrl = extractImageUrl(text);
                     if (imgUrl != null) {
-                        listCol.addView(imageRow(imgUrl, fromMe));
+                        // Image inside an aligned, sender-tinted bubble.
+                        listCol.addView(bubbleRow(fromMe, imageRow(imgUrl, fromMe)));
                     } else {
                         TextView mv = new TextView(act);
-                        mv.setText((fromMe ? "You: " : "") + stripBBCode(text));
-                        mv.setTextColor(fromMe ? COL_SUBTEXT : COL_TEXT);
+                        mv.setText(stripBBCode(text));
+                        mv.setTextColor(COL_TEXT);
                         mv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-                        mv.setPadding(0, dp(4), 0, dp(4));
-                        listCol.addView(mv);
+                        // Cap width so long lines wrap into the bubble instead of
+                        // stretching the whole panel; alignment + tint convey "who".
+                        mv.setMaxWidth(dp(200));
+                        listCol.addView(bubbleRow(fromMe, mv));
                     }
                 }
                 setStatus("Chat with " + name + " · " + arr.length() + " messages");
@@ -592,6 +597,31 @@ public final class BhSteamChatOverlay {
                     });
                 }
             });
+        }
+
+        /**
+         * Wrap a message view in a sender-attributed bubble: incoming bubbles are
+         * dark and left-aligned, outgoing are Steam-blue and right-aligned, so
+         * alignment + colour alone tell the user who said what.
+         */
+        private View bubbleRow(boolean fromMe, View content) {
+            LinearLayout bubble = new LinearLayout(act);
+            bubble.setOrientation(LinearLayout.VERTICAL);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(fromMe ? COL_BUBBLE_ME : COL_BUBBLE_THEM);
+            bg.setCornerRadius(dp(12));
+            bubble.setBackground(bg);
+            bubble.setPadding(dp(10), dp(7), dp(10), dp(7));
+            bubble.addView(content);
+
+            LinearLayout row = new LinearLayout(act);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setLayoutParams(new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            row.setGravity(fromMe ? Gravity.END : Gravity.START);
+            row.setPadding(0, dp(3), 0, dp(3));
+            row.addView(bubble);
+            return row;
         }
 
         /** Render a chat image: async-download the bitmap into an ImageView; tap opens full-res in browser. */

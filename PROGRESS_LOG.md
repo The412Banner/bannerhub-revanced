@@ -149,7 +149,16 @@ The "heaviest" red turned out to be 4 bytecode hooks (the winebus.so patcher is 
 
 Device-verify pass (fp19 Normal-GHL on `gamehub.lite` via `getlog` root bridge) caught a real crash (NOT a fingerprint issue) when downloading a GOG game: `SecurityException: Starting FGS with type dataSync … targetSDK=36 requires [FOREGROUND_SERVICE_DATA_SYNC]` at `BhDownloadService.onStartCommand:249` → `Force finishing GogGamesActivity`, process SIGKILL. Root cause: our `BhDownloadService` runs as a `dataSync` foreground service; the **6.0.4 base manifest declared `FOREGROUND_SERVICE_DATA_SYNC`** (service rode on it) but **6.0.7 dropped it** — base now only has `FOREGROUND_SERVICE_SPECIAL_USE` (GameHub moved its own FGS dataSync→specialUse, the `PcEmulatorAutoUnzipService` swap noted in the master map). Fix: `GogManifestPatch` now declares `FOREGROUND_SERVICE_DATA_SYNC` itself (idempotent — no-op on bases that already have it). **fp20 ([run 27078466807](https://github.com/The412Banner/bannerhub-revanced/actions/runs/27078466807)) green, `aapt` confirms the perm is in the patched manifest.** ⚠️ device-retest the GOG download.
 
-**Device-verify results so far (fp19/fp20 on `gamehub.lite`, via getlog):** ✅ app launch clean (no crash); ✅ **Explore tab hijack** (`BannerExploreActivity` Displayed +45ms, focused/visible); ✅ **Show PC Game Settings row** (visible on a Steam game AND a local-imported game, no Compose group-balance crash); ✅ **Debug logging** logcat channel live (tag `GH600-DEBUG`; ⚠️ the file backup channel is broken — hardcoded `com.xiaoji.egggame` path → ENOENT/EACCES on the `gamehub.lite` variant, pre-existing extension limitation not a 607 regression); ✅ bonus **Bypass login** (FakeAuthToken/FakeUserAccount synthetic userId 99999). ⏳ pending: Local game-id (needs a sentinel-id import), Debug import probes (needs import), PC-accurate vibration (needs controller+game).
+**Device-verify results (fp19/fp20 on `gamehub.lite`, via getlog root bridge):**
+- ✅ app launch clean (no crash).
+- ✅ **Explore tab hijack** — `BannerExploreActivity` Displayed +45ms, focused/visible.
+- ✅ **Show PC Game Settings row** — visible on a Steam game AND a local-imported game, no Compose group-balance crash.
+- ✅ **Debug logging** logcat channel live (tag `GH600-DEBUG`). ⚠️ the file backup channel is broken — hardcoded `com.xiaoji.egggame` path → ENOENT/EACCES on the `gamehub.lite` variant; pre-existing extension limitation, not a 607 regression (FIX-LATER: derive the path from the runtime package).
+- ✅ **GOG download + add to library** (fp20) — Gun Slugs downloaded, added, and shows in library after restart (the §40/§41 restart-to-show behavior holds on 6.0.7).
+- ✅ **Local game-id assignment** — LOGGED PROOF: after adding the GOG game (lands with sentinel `server_game_id=0`) and restarting, fresh proc 27880 logged `BhLocalGameId: assigned synthetic server_game_id to 1 row(s)` (700ms after start, on the daemon thread). Full chain confirmed.
+- ✅ bonus **Bypass login** — FakeAuthToken/FakeUserAccount synthetic userId 99999.
+- ⏳ **PC-accurate vibration** — pending (needs a controller + a Windows game with XInput rumble).
+- ⏳ **Debug import probes** — optional; won't fire on a GOG install (they hook the PC-emulator save path `am7.v`/`za.w`, not the GOG library-write path). Needs a PC game import. The patch is already proven live via the logcat channel.
 
 ## 6.0.7 port — patch-apply phase COMPLETE (2026-06-06)
 

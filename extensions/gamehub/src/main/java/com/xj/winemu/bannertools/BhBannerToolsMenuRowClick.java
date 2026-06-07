@@ -350,11 +350,11 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
 
             // 6.0.7 remap: row Liae→Ltyc, icon Lo05→Ln55, onClick(Function1)
             // Lpw6→Lgv6, icon-holder Lzz4→Lv45 (field v→l), wrapper Lxrl→Lu3k.
-            Class<?> tycCls = Class.forName("tyc");
-            Class<?> n55Cls = Class.forName("n55");
-            Class<?> gv6Cls = Class.forName("gv6");
+            Class<?> tycCls = Class.forName("wyc");
+            Class<?> n55Cls = Class.forName("m55");
+            Class<?> gv6Cls = Class.forName("fv6");
 
-            Class<?> v45Cls = Class.forName("v45");
+            Class<?> v45Cls = Class.forName("f45");
             // v45.l = a menu icon; static field is an Lu3k wrapper whose
             // getValue() returns the Ln55 icon (same pattern as 6.0.4 zz4.v).
             Field iconHolderField = v45Cls.getDeclaredField("l");
@@ -389,10 +389,10 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
 
             // 6.0.7 remap: tile row Lscd→Lg6c (ctor String,icon,String,onClick),
             // icon Lo05→Ln55, onClick(Function0) Lnw6→Lev6, holder Lzz4→Lv45(v→l).
-            Class<?> g6cCls = Class.forName("g6c");
-            Class<?> n55Cls = Class.forName("n55");
-            Class<?> ev6Cls = Class.forName("ev6");
-            Class<?> v45Cls = Class.forName("v45");
+            Class<?> g6cCls = Class.forName("j6c");
+            Class<?> n55Cls = Class.forName("m55");
+            Class<?> ev6Cls = Class.forName("dv6");
+            Class<?> v45Cls = Class.forName("f45");
 
             Field iconField = v45Cls.getDeclaredField("l");
             iconField.setAccessible(true);
@@ -428,10 +428,10 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
             // 6.0.7 remap: list-popup row Lz4e→Lstc (ctor Ldwj,Lev6,int),
             // StringResource Lell→Ldwj, resource base Ltdi→Lshg, onClick
             // (Function0) Lnw6→Lev6.
-            Class<?> z4eCls = Class.forName("stc");
-            Class<?> ellCls = Class.forName("dwj");
-            Class<?> tdiCls = Class.forName("shg");
-            Class<?> nw6Cls = Class.forName("ev6");
+            Class<?> z4eCls = Class.forName("vtc");
+            Class<?> ellCls = Class.forName("kwj");
+            Class<?> tdiCls = Class.forName("vhg");
+            Class<?> nw6Cls = Class.forName("dv6");
 
             // Ldwj is an empty Kotlin subclass of Lshg — allocate via
             // Unsafe (skips ctor) and reflect-set inherited fields. Same

@@ -68,6 +68,25 @@ public final class BhSteamBridge {
         return cl != null ? cl : ClassLoader.getSystemClassLoader();
     }
 
+    /** A SingleInstanceFactory caches its created singleton in an instance field;
+     *  return that field's value if it's an instance of {@code want} (the cached
+     *  SteamBridgeClient). Scans the factory class + superclasses; tolerant of
+     *  obfuscated field names. */
+    private static Object instanceHeldBy(Object factory, Class<?> want) {
+        if (factory == null) return null;
+        for (Class<?> c = factory.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+            for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                if (java.lang.reflect.Modifier.isStatic(f.getModifiers())) continue;
+                try {
+                    f.setAccessible(true);
+                    Object v = f.get(factory);
+                    if (want.isInstance(v)) return v;
+                } catch (Throwable ignored) {}
+            }
+        }
+        return null;
+    }
+
     private static synchronized void resolve() {
         sResolved = true;
         String step = "init";
@@ -86,45 +105,28 @@ public final class BhSteamBridge {
             Object koin = globalCtx.getMethod("get").invoke(globalInstance);
             if (koin == null) throw new IllegalStateException("GlobalContext.get() returned null");
 
-            step = "getKotlinClass";
-            Class<?> jvmMap = Class.forName("kotlin.jvm.JvmClassMappingKt", false, sLoader);
-            Object kClass = jvmMap.getMethod("getKotlinClass", Class.class).invoke(null, sbcClass);
+            // Koin.get(KClass,..) is unusable here: the app shades kotlin so its
+            // KClass type ("doa") differs from the kept kotlin.jvm.internal
+            // .ClassReference that getKotlinClass yields (device-confirmed
+            // "argument 1 has type doa, got ClassReference"). Instead, pull the
+            // singleton straight out of Koin's instance registry by Java type —
+            // org.koin.core.* names + getInstanceRegistry()/getInstances() are kept.
+            step = "getInstanceRegistry";
+            Object instanceRegistry = koin.getClass().getMethod("getInstanceRegistry").invoke(koin);
+            step = "getInstances";
+            Object instancesObj = instanceRegistry.getClass().getMethod("getInstances").invoke(instanceRegistry);
+            if (!(instancesObj instanceof java.util.Map))
+                throw new IllegalStateException("getInstances() did not return a Map");
+            java.util.Map<?, ?> instances = (java.util.Map<?, ?>) instancesObj;
 
-            step = "find Koin.get(KClass)";
-            // R8 renames kotlin.reflect.KClass, but org.koin.core.qualifier.Qualifier
-            // is KEPT — so match get(KClass, Qualifier, Function0) by its 2nd param,
-            // then fall back to isInstance(ourKClass) on the 1st param.
-            Method koinGet = null;
-            for (Method m : koin.getClass().getMethods()) {
-                if (!m.getName().equals("get")) continue;
-                Class<?>[] p = m.getParameterTypes();
-                if (p.length == 3 && p[1].getName().equals("org.koin.core.qualifier.Qualifier")) { koinGet = m; break; }
+            step = "scan registry for SteamBridgeClient";
+            for (Object factory : instances.values()) {
+                Object inst = instanceHeldBy(factory, sbcClass);
+                if (inst != null) { sClient = inst; break; }
             }
-            if (koinGet == null) for (Method m : koin.getClass().getMethods()) {
-                if (!m.getName().equals("get")) continue;
-                Class<?>[] p = m.getParameterTypes();
-                if (p.length >= 1 && p[0].isInstance(kClass)) { koinGet = m; break; }
-            }
-            if (koinGet == null) {
-                StringBuilder sb = new StringBuilder("kClassType=")
-                        .append(kClass == null ? "null" : kClass.getClass().getName())
-                        .append(" gets=[");
-                for (Method m : koin.getClass().getMethods()) {
-                    if (!m.getName().equals("get")) continue;
-                    Class<?>[] p = m.getParameterTypes();
-                    sb.append(p.length).append(":");
-                    for (Class<?> c2 : p) sb.append(c2.getSimpleName()).append(",");
-                    sb.append(p.length > 0 && p[0].isInstance(kClass) ? "<inst> " : " ");
-                }
-                throw new NoSuchMethodException(sb.append("]").toString());
-            }
-
-            step = "Koin.get kClass=" + (kClass == null ? "null" : kClass.getClass().getSimpleName())
-                    + " p0=" + koinGet.getParameterTypes()[0].getSimpleName();
-            Object[] getArgs = new Object[koinGet.getParameterTypes().length];
-            getArgs[0] = kClass; // remaining (qualifier, parameters) null
-            sClient = koinGet.invoke(koin, getArgs);
-            if (sClient == null) throw new IllegalStateException("Koin returned null SteamBridgeClient");
+            if (sClient == null) throw new IllegalStateException(
+                    "SteamBridgeClient not created among " + instances.size()
+                    + " Koin singletons — sign into Steam in GameHub first");
 
             step = "find executeRaw";
             // executeRaw is the only (String,String,…,Continuation) method.

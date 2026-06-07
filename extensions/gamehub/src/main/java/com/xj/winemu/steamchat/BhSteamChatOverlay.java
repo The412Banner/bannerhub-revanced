@@ -275,12 +275,19 @@ public final class BhSteamChatOverlay {
 
         private void showNotReady() {
             listCol.removeAllViews();
-            setStatus("Steam not connected — sign in to Steam in GameHub first.");
+            setStatus("Bridge: " + BhSteamBridge.getStatus());
+            TextView hint = new TextView(act);
+            hint.setText("Steam SDK bridge could not resolve. Sign into Steam in "
+                    + "GameHub if you haven't; otherwise this is a reflection mismatch "
+                    + "(see status above).");
+            hint.setTextColor(COL_SUBTEXT);
+            hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+            listCol.addView(hint);
         }
 
         private void renderFriends(String json) {
             listCol.removeAllViews();
-            if (json == null) { setStatus("No response (not signed in, or request failed)."); return; }
+            if (json == null) { setStatus("friends.list → null · bridge: " + BhSteamBridge.getStatus()); return; }
             try {
                 JSONArray arr = asArray(json, "friends", "items", "data", "list", "value");
                 if (arr == null) { setStatus("Unexpected response."); addRaw(json); return; }

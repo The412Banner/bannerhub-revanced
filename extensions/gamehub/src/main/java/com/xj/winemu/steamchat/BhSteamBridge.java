@@ -37,6 +37,7 @@ public final class BhSteamBridge {
 
     private static volatile boolean sResolved = false;
     private static volatile boolean sUsable = false;
+    private static volatile String sStatus = "not resolved";
 
     private static Object sClient;          // SteamBridgeClient instance
     private static Method sExecuteRaw;      // executeRaw-<mangled>(String,String,kri,r65,Continuation)
@@ -54,67 +55,77 @@ public final class BhSteamBridge {
         return sUsable;
     }
 
+    /** Human-readable resolve outcome (shown on the overlay so we don't depend
+     *  on logcat, which scrolls out fast under Wine's log volume). */
+    public static String getStatus() { return sStatus; }
+
     private static synchronized void resolve() {
         sResolved = true;
+        String step = "init";
         try {
-            sLoader = BhSteamBridge.class.getClassLoader();
+            sLoader = hostLoader();
 
-            Class<?> sbcClass = Class.forName(SBC_CLASS, false, hostLoader());
+            step = "Class.forName SteamBridgeClient";
+            Class<?> sbcClass = Class.forName(SBC_CLASS, false, sLoader);
             sLoader = sbcClass.getClassLoader();
 
-            // --- Koin: GlobalContext.get() -> Koin ; Koin.get(KClass,null,null) ---
+            step = "Class.forName GlobalContext";
             Class<?> globalCtx = Class.forName("org.koin.core.context.GlobalContext", false, sLoader);
+            step = "GlobalContext.INSTANCE";
             Object globalInstance = globalCtx.getField("INSTANCE").get(null);
-            Method koinGet = globalCtx.getMethod("get");
-            Object koin = koinGet.invoke(globalInstance);
+            step = "GlobalContext.get()";
+            Object koin = globalCtx.getMethod("get").invoke(globalInstance);
+            if (koin == null) throw new IllegalStateException("GlobalContext.get() returned null");
 
+            step = "getKotlinClass";
             Class<?> jvmMap = Class.forName("kotlin.jvm.JvmClassMappingKt", false, sLoader);
             Object kClass = jvmMap.getMethod("getKotlinClass", Class.class).invoke(null, sbcClass);
 
+            step = "find Koin.get(KClass)";
             Method koinGetByClass = null;
             for (Method m : koin.getClass().getMethods()) {
                 if (!m.getName().equals("get")) continue;
                 Class<?>[] p = m.getParameterTypes();
-                if (p.length >= 1 && p[0].getName().equals("kotlin.reflect.KClass")) {
-                    koinGetByClass = m;
-                    break;
-                }
+                if (p.length >= 1 && p[0].getName().equals("kotlin.reflect.KClass")) { koinGetByClass = m; break; }
             }
-            if (koinGetByClass == null) throw new NoSuchMethodException("Koin.get(KClass,...)");
+            if (koinGetByClass == null) throw new NoSuchMethodException("Koin.get(KClass,...) on " + koin.getClass().getName());
+
+            step = "Koin.get(SteamBridgeClient)";
             Object[] getArgs = new Object[koinGetByClass.getParameterTypes().length];
             getArgs[0] = kClass; // remaining (qualifier, parameters) left null
             sClient = koinGetByClass.invoke(koin, getArgs);
             if (sClient == null) throw new IllegalStateException("Koin returned null SteamBridgeClient");
 
-            // --- find executeRaw-<mangled>(String,String,kri,r65,Continuation) ---
+            step = "find executeRaw";
             sContinuationClass = Class.forName("kotlin.coroutines.Continuation", false, sLoader);
             for (Method m : sbcClass.getDeclaredMethods()) {
                 if (!m.getName().startsWith("executeRaw")) continue;
                 Class<?>[] p = m.getParameterTypes();
-                if (p.length == 5
-                        && p[0] == String.class
-                        && p[1] == String.class
-                        && p[4] == sContinuationClass) {
+                if (p.length == 5 && p[0] == String.class && p[1] == String.class && p[4] == sContinuationClass) {
                     m.setAccessible(true);
                     sExecuteRaw = m;
-                    Class<?> kriClass = p[2];                 // the timeout/scope enum
-                    Object[] consts = kriClass.getEnumConstants();
+                    Object[] consts = p[2].getEnumConstants();   // kri enum default
                     sKriDefault = (consts != null && consts.length > 0) ? consts[0] : null;
                     break;
                 }
             }
-            if (sExecuteRaw == null) throw new NoSuchMethodException("SteamBridgeClient.executeRaw");
+            if (sExecuteRaw == null) throw new NoSuchMethodException("SteamBridgeClient.executeRaw(String,String,?,?,Continuation)");
 
+            step = "coroutine intrinsics";
             sEmptyContext = Class.forName("kotlin.coroutines.EmptyCoroutineContext", false, sLoader)
                     .getField("INSTANCE").get(null);
             sSuspended = Class.forName("kotlin.coroutines.intrinsics.IntrinsicsKt", false, sLoader)
                     .getMethod("getCOROUTINE_SUSPENDED").invoke(null);
 
             sUsable = true;
-            Log.i(TAG, "bridge resolved (executeRaw=" + sExecuteRaw.getName() + ")");
+            sStatus = "ok (" + sExecuteRaw.getName() + ")";
+            Log.i(TAG, "bridge resolved: " + sStatus);
         } catch (Throwable t) {
             sUsable = false;
-            Log.w(TAG, "bridge resolve failed: " + t);
+            Throwable c = (t.getCause() != null) ? t.getCause() : t;
+            sStatus = "FAILED @ " + step + ": " + c.getClass().getSimpleName()
+                    + (c.getMessage() != null ? " " + c.getMessage() : "");
+            Log.w(TAG, "bridge resolve " + sStatus, t);
         }
     }
 

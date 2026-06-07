@@ -58,6 +58,7 @@ public final class BhSteamChatOverlay {
     private static final int COL_SUBTEXT  = 0xFF9AA0AC;
     private static final int COL_BUBBLE_THEM = 0xFF2A2E38; // incoming bubble (dark)
     private static final int COL_BUBBLE_ME   = 0xFF24506E; // outgoing bubble (Steam blue)
+    private static final int COL_FAILED      = 0xFFE05B5B; // failed-send label
 
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final ExecutorService IO = Executors.newSingleThreadExecutor();
@@ -270,6 +271,8 @@ public final class BhSteamChatOverlay {
         private String currentTitle = "";
         private String lastFriendsJson;
         private boolean offlineCollapsed = true;
+        // friendSteamId → unread count, from friends.conversation_summaries
+        private final java.util.HashMap<Long, Integer> unreadByFriend = new java.util.HashMap<>();
 
         private void setExpanded(boolean exp) {
             expanded = exp;
@@ -324,9 +327,29 @@ public final class BhSteamChatOverlay {
                 public void run() {
                     if (!BhSteamBridge.isAvailable()) { post(new Runnable(){ public void run(){ showNotReady(); } }); return; }
                     final String json = BhSteamBridge.request("friends.list", "{}", 8000);
-                    post(new Runnable() { public void run() { renderFriends(json); } });
+                    // Unread counts live in the conversation summaries, not the
+                    // friend objects (SteamFriendDto has no unread field).
+                    final String convJson = BhSteamBridge.request("friends.conversation_summaries", "{}", 8000);
+                    post(new Runnable() { public void run() { parseUnread(convJson); renderFriends(json); } });
                 }
             });
+        }
+
+        /** Build the friendSteamId→unreadCount map from a conversation_summaries response. */
+        private void parseUnread(String convJson) {
+            unreadByFriend.clear();
+            if (convJson == null) return;
+            try {
+                JSONArray arr = asArray(convJson, "conversations", "summaries", "items", "data", "value");
+                if (arr == null) return;
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject c = arr.optJSONObject(i);
+                    if (c == null) continue;
+                    long id = c.optLong("friendSteamId", 0);
+                    int n = c.optInt("unreadCount", 0);
+                    if (id != 0 && n > 0) unreadByFriend.put(id, n);
+                }
+            } catch (Throwable ignored) {}
         }
 
         private void loadHistory(final long steamId, final String name) {
@@ -424,20 +447,14 @@ public final class BhSteamChatOverlay {
             String game = f.isNull("gameName") ? "" : f.optString("gameName", "");
             if ("null".equalsIgnoreCase(game)) game = "";
 
+            String avatarUrl = f.isNull("avatarUrl") ? "" : f.optString("avatarUrl", "");
+
             LinearLayout row = new LinearLayout(act);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
             row.setPadding(0, dp(7), 0, dp(7));
 
-            View dot = new View(act);
-            GradientDrawable d = new GradientDrawable();
-            d.setShape(GradientDrawable.OVAL);
-            d.setColor(inGame ? COL_INGAME : online ? COL_ONLINE : COL_OFFLINE);
-            dot.setBackground(d);
-            LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(9), dp(9));
-            dlp.rightMargin = dp(10);
-            dot.setLayoutParams(dlp);
-            row.addView(dot);
+            row.addView(avatarWithPresence(avatarUrl, 34, online, inGame));
 
             LinearLayout col = new LinearLayout(act);
             col.setOrientation(LinearLayout.VERTICAL);
@@ -455,6 +472,9 @@ public final class BhSteamChatOverlay {
             st.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
             col.addView(st);
             row.addView(col);
+
+            Integer unread = unreadByFriend.get(steamId);
+            if (unread != null && unread > 0) row.addView(unreadBadge(unread));
 
             if (steamId != 0) {
                 row.setOnClickListener(new View.OnClickListener() {
@@ -492,7 +512,8 @@ public final class BhSteamChatOverlay {
                     if (prevFromMe == null || prevFromMe.booleanValue() != fromMe) {
                         String who = fromMe ? "You"
                                 : firstNonEmpty(m.optString("displayName"), name, "Friend");
-                        listCol.addView(senderHeader(who, m.optLong("timestamp", 0), fromMe));
+                        String av = m.isNull("avatarUrl") ? "" : m.optString("avatarUrl", "");
+                        listCol.addView(senderHeader(who, m.optLong("timestamp", 0), fromMe, av));
                     }
                     prevFromMe = fromMe;
                     // rawMessage carries BBCode (incl. [img …]) for image detection;
@@ -513,6 +534,15 @@ public final class BhSteamChatOverlay {
                         // stretching the whole panel; alignment + tint convey "who".
                         mv.setMaxWidth(dp(200));
                         listCol.addView(bubbleRow(fromMe, mv));
+                    }
+                    // Delivery state for our own messages (sendState enum:
+                    // Sending / Sent / Failed). Only surface the non-final states.
+                    if (fromMe) {
+                        String ss = m.optString("sendState", "");
+                        if (ss.equalsIgnoreCase("Sending") || ss.equalsIgnoreCase("pending"))
+                            listCol.addView(sendStatusLabel("Sending…", false));
+                        else if (ss.equalsIgnoreCase("Failed"))
+                            listCol.addView(sendStatusLabel("Failed to send", true));
                     }
                 }
                 setStatus("Chat with " + name + " · " + arr.length() + " messages");
@@ -623,20 +653,30 @@ public final class BhSteamChatOverlay {
          * friend name (blue) on the left, "You" (green) on the right — same idea as
          * GameHub's native chat screen.
          */
-        private View senderHeader(String who, long tsEpochSecs, boolean fromMe) {
+        private View senderHeader(String who, long tsEpochSecs, boolean fromMe, String avatarUrl) {
             TextView h = new TextView(act);
             String t = formatTime(tsEpochSecs);
             h.setText(t.isEmpty() ? who : who + "  ·  " + t);
             h.setTextColor(fromMe ? COL_INGAME : COL_ACCENT);
             h.setTypeface(Typeface.DEFAULT_BOLD);
             h.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+
+            LinearLayout rowH = new LinearLayout(act);
+            rowH.setOrientation(LinearLayout.HORIZONTAL);
+            rowH.setGravity(Gravity.CENTER_VERTICAL | (fromMe ? Gravity.END : Gravity.START));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
             lp.topMargin = dp(8);
-            h.setLayoutParams(lp);
-            h.setGravity(fromMe ? Gravity.END : Gravity.START);
-            h.setPadding(dp(2), 0, dp(2), dp(1));
-            return h;
+            rowH.setLayoutParams(lp);
+            rowH.setPadding(dp(2), 0, dp(2), dp(1));
+
+            // Avatar sits on the speaker's outer edge: left of name (them) / right (you).
+            android.widget.ImageView av = circleAvatar(avatarUrl, 18);
+            android.view.View gap = new android.view.View(act);
+            gap.setLayoutParams(new LinearLayout.LayoutParams(dp(6), dp(1)));
+            if (fromMe) { rowH.addView(h); rowH.addView(gap); rowH.addView(av); }
+            else        { rowH.addView(av); rowH.addView(gap); rowH.addView(h); }
+            return rowH;
         }
 
         /** Format an unsigned-32 Unix-epoch-seconds timestamp as the device's clock
@@ -649,6 +689,90 @@ public final class BhSteamChatOverlay {
                 return android.text.format.DateFormat.getTimeFormat(act)
                         .format(new java.util.Date(ms));
             } catch (Throwable t) { return ""; }
+        }
+
+        /** A circular avatar that lazy-loads {@code url}; shows a neutral circle until then. */
+        private android.widget.ImageView circleAvatar(String url, int sizeDp) {
+            final android.widget.ImageView iv = new android.widget.ImageView(act);
+            int s = dp(sizeDp);
+            iv.setLayoutParams(new LinearLayout.LayoutParams(s, s));
+            iv.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+            GradientDrawable ph = new GradientDrawable();
+            ph.setShape(GradientDrawable.OVAL);
+            ph.setColor(COL_PILL_BG);
+            iv.setBackground(ph);
+            iv.setClipToOutline(true);
+            iv.setOutlineProvider(new android.view.ViewOutlineProvider() {
+                public void getOutline(android.view.View v, android.graphics.Outline o) {
+                    o.setOval(0, 0, v.getWidth(), v.getHeight());
+                }
+            });
+            if (url != null && url.startsWith("http")) {
+                final String u = url;
+                IMG_IO.execute(new Runnable() { public void run() {
+                    final android.graphics.Bitmap b = fetchBitmap(u);
+                    if (b != null) post(new Runnable() { public void run() { iv.setImageBitmap(b); } });
+                }});
+            }
+            return iv;
+        }
+
+        /** Avatar with a presence dot (online/in-game/offline) in the bottom-right. */
+        private android.widget.FrameLayout avatarWithPresence(String url, int sizeDp, boolean online, boolean inGame) {
+            android.widget.FrameLayout fl = new android.widget.FrameLayout(act);
+            int s = dp(sizeDp);
+            LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(s, s);
+            flp.rightMargin = dp(10);
+            fl.setLayoutParams(flp);
+            fl.addView(circleAvatar(url, sizeDp));
+
+            android.view.View dot = new android.view.View(act);
+            int ds = dp(10);
+            GradientDrawable d = new GradientDrawable();
+            d.setShape(GradientDrawable.OVAL);
+            d.setColor(inGame ? COL_INGAME : online ? COL_ONLINE : COL_OFFLINE);
+            d.setStroke(dp(2), COL_PANEL_BG);  // ring so it reads against the avatar
+            dot.setBackground(d);
+            android.widget.FrameLayout.LayoutParams dlp = new android.widget.FrameLayout.LayoutParams(ds, ds);
+            dlp.gravity = Gravity.BOTTOM | Gravity.END;
+            dot.setLayoutParams(dlp);
+            fl.addView(dot);
+            return fl;
+        }
+
+        /** Pill badge with the unread-message count for a friend row. */
+        private TextView unreadBadge(int n) {
+            TextView b = new TextView(act);
+            b.setText(n > 99 ? "99+" : String.valueOf(n));
+            b.setTextColor(0xFF0E141B);
+            b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+            b.setTypeface(Typeface.DEFAULT_BOLD);
+            b.setGravity(Gravity.CENTER);
+            b.setPadding(dp(6), dp(1), dp(6), dp(1));
+            b.setMinWidth(dp(20));
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(COL_ACCENT);
+            bg.setCornerRadius(dp(10));
+            b.setBackground(bg);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.leftMargin = dp(8);
+            b.setLayoutParams(lp);
+            return b;
+        }
+
+        /** Right-aligned delivery-status line under one of our own messages. */
+        private TextView sendStatusLabel(String text, boolean failed) {
+            TextView t = new TextView(act);
+            t.setText(text);
+            t.setTextColor(failed ? COL_FAILED : COL_SUBTEXT);
+            t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            t.setLayoutParams(lp);
+            t.setGravity(Gravity.END);
+            t.setPadding(dp(2), 0, dp(4), dp(2));
+            return t;
         }
 
         /**

@@ -52,12 +52,15 @@ import com.android.tools.smali.dexlib2.iface.reference.StringReference
 
 private const val CLICK = "Lcom/xj/winemu/explore/BhExploreTabClick;"
 // 6.0.4 → 6.0.7 (R8 reshuffle): tab-select VM `w1a`→`ai9`, dispatch `q`→`u`,
-// tab enum `Lyw9;`→`Lhd9;` (re-verified in ~/gh607-apktool-d: hd9 ordinals
-// HOME(0)=Explore/PLAY/LEADERBOARD/LIBRARY/PROFILE — identical to 604). The
-// patch is structure-anchored (param-type + "main_menu"), so only this enum
-// letter is hardcoded; `parameterTypes==[Lhd9;]` + V + "main_menu" matches ONLY
-// `ai9.u` (ctor has 10 params; sibling `w` takes `Lbh9;`; `syb.r` is a composable).
-private const val TAB_ENUM = "Lhd9;"
+// tab enum `Lyw9;`→`Lhd9;` (hd9 ordinals HOME(0)=Explore/PLAY/LEADERBOARD/
+// LIBRARY/PROFILE — identical to 604).
+// 6.0.7 → 6.0.8: VM `ai9`→`di9`, dispatch stays `u`, tab enum `Lhd9;`→`Lkd9;`
+// (verified ~/gh608-apktool-d: kd9 = enum with 5 values a–e; di9.u(Lkd9;)V is
+// the UNIQUE apk-wide method matching param-type Lkd9; + V + "main_menu";
+// sibling di9.w takes Leh9; (plain class), di9.q takes interface Lxh9;).
+// The patch is structure-anchored (param-type + "main_menu"), so only this enum
+// letter is hardcoded.
+private const val TAB_ENUM = "Lkd9;"
 private const val ANCHOR_STRING = "main_menu"
 
 @Suppress("unused")

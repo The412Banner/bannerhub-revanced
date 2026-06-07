@@ -41,8 +41,11 @@ import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 
 // 6.0.7: gof reshuffled Lgof;->Li6e; (verified: a(Li6e;,ComponentType,I,Lkq3;,I)Object
 // is the page=200 dispatcher to b(IIILkq3;)Object; c(Lkq3;)Object has .locals 11).
+// 6.0.8: Li6e;->Ll6e; (verified ~/gh608-apktool-d/smali_classes3/l6e.smali:
+// a(Ll6e;,ComponentType,I,Lkq3;,I)Object page=200 (0xc8) → b(IIILkq3;)Object;
+// c(Lkq3;)Object present; ComponentType param still the stable anchor).
 // ComponentType stays unobfuscated; method names a/c + shapes unchanged.
-private const val GOF_CLASS = "Li6e;"
+private const val GOF_CLASS = "Ll6e;"
 private const val COMPONENT_TYPE =
     "Lcom/xiaoji/egggame/common/winemu/bean/ComponentType;"
 private const val LIST =

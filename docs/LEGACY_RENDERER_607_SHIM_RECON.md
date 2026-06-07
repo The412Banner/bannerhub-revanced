@@ -165,8 +165,7 @@ the wrapper as `libxserver.so` and keep bundling the legacy pair. Days, not week
 in the command-list translation, which is well-understood.
 
 **Next steps, in order:**
-1. Enumerate the legacy lib's full 11-entry `RegisterNatives` table (names + signatures)
-   by intercepting it offline, to lock the forward map. *(Static; no device.)*
+1. ~~Enumerate the legacy lib's full 11-entry `RegisterNatives` table.~~ **DONE — see Appendix A.**
 2. Build the wrapper `libxserver.so` (interception harness + 40-entry table + stubs).
 3. Repoint the per-game legacy swap to load the wrapper instead of the raw legacy lib,
    un-pin from `6.0.4`, build artifact-only.
@@ -182,3 +181,42 @@ Vulkan. Worth it if those titles matter; the cost is the §6 runtime unknown.
 *Recon by static analysis of the on-disk 6.0.7 decompile + the bundled 6.0.2 legacy
 pair. Companion: `docs/LEGACY_RENDERER_TOGGLE_PLAN.md` (the 6.0.4 implementation),
 auto-memory `project_bannerhub_revanced_legacy_gles2_renderer.md`.*
+
+---
+
+## Appendix A — Legacy lib `RegisterNatives` table (binary-recovered)
+
+Recovered statically from `libxserver_legacy.so` (md5 `e8eb8948…`) by locating the
+`JNINativeMethod` array directly in `.data` (the lib uses **dynamic** registration —
+0 `Java_*` exports; the array is at `.data+0x8`, **11 entries, 24-byte stride**, ending
+at `.data+0x110`). Registered onto class **`com/winemu/core/server/XServer`**
+(`JNI_OnLoad` @ `0x8888c`). `fn` = address of the native function in `.text`.
+
+| # | name | signature | fn (.text) | 6.0.7 disposition |
+|---|------|-----------|-----------|-------------------|
+| 1 | `startUI` | `()V` | `0x88944` | **forward** |
+| 2 | `start` | `(Ljava/lang/String;[Ljava/lang/String;)Z` | `0x88964` | **forward** |
+| 3 | `setShmPath` | `(Ljava/lang/String;)V` | `0x88c10` | **forward** |
+| 4 | `surfaceChanged` | `(Landroid/view/Surface;)V` | `0x88c7c` | **forward** |
+| 5 | `sendWindowChange` | `(IIILjava/lang/String;)V` | `0x88cb4` | **forward** |
+| 6 | `sendMouseEvent` | `(FFIZZ)V` | `0x88d64` | **forward** |
+| 7 | `sendTouchEvent` | `(IIII)V` | `0x88f58` | **forward** |
+| 8 | `sendKeyEvent` | `(IIZ)Z` | `0x89070` | **forward** |
+| 9 | `sendTextEvent` | `([B)V` | `0x890b4` | **forward** |
+| 10 | `setRenderingEnabled` | `(Z)V` | `0x891e8` | **deleted in 6.0.7** → don't register against the class; reuse this fn-ptr to back 6.0.7's `setGpuPassthroughEnabled(Z)` (forced-true = the proven 6.0.4 behaviour) |
+| 11 | `setSurfaceFormat` | `(I)V` | `0x89200` | **deleted in 6.0.7** → don't register; the wrapper **calls this fn-ptr itself** with a sane default (6.0.7 never calls it) |
+
+**Forward map for the wrapper:** 9 of the 11 map 1:1 (name + signature) onto the 6.0.7
+`XServer` class — register those straight through to the harvested fn-ptrs. The remaining
+2 are exactly the methods 6.0.7 deleted (the crash triggers): keep their fn-ptrs but
+**never name them against the 6.0.7 class** — instead drive `setRenderingEnabled` via the
+new `setGpuPassthroughEnabled` entry, and invoke `setSurfaceFormat` internally from the
+wrapper's `surfaceChanged`/`start`.
+
+This locks the entire forward half of the 40-entry wrapper table. The only entries still
+needing bodies are the **29 `effects*` stubs**, `stop`, and the `setGpuPassthroughEnabled`
+shim — none of which depend on device data.
+
+*Recovered offline 2026-06-07; reproducible with `docs/` script notes (ELF `.data` scan
+for the `{char* name; char* sig; void* fn}` triple — reloc-format-agnostic, since the lib
+ships packed/RELR relocations that store link-time VAs in-slot).*

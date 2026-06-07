@@ -41,8 +41,11 @@ import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 
 // 6.0.7: More-Menu row data Liae→Ltyc; list builder (kotlin ListBuilder,
 // implements java.util.List) Lx9d→Lj3c.
-private const val ROW_DATA      = "Ltyc;"
-private const val LIST_BUILDER  = "Lj3c;"
+// 6.0.8 (shared keystone More-Menu map): ROW_DATA Ltyc;->Lwyc;, LIST_BUILDER
+// Lj3c;->Lm3c; (a37.a calls Lm3c;->add; Lny2;->C returns Lm3c;). Llp0;->R and
+// Lny2;->C class+method UNCHANGED on 608 (patch doesn't check their return types).
+private const val ROW_DATA      = "Lwyc;"
+private const val LIST_BUILDER  = "Lm3c;"
 private const val CLICK_HANDLER =
     "Lcom/xj/winemu/bannertools/BhBannerToolsMenuRowClick;"
 
@@ -71,7 +74,7 @@ val bannerToolsMenuRowPatch = bytecodePatch(
         // String,Lgv6); 6.0.4 Lwhl;->S label sget anchor dropped). The Ltyc
         // ctor anchor uniquely picks c37 (param sig is shared by su/v90 too).
         val menuMethod = firstMethod {
-            parameterTypes == listOf("Lf17;", "I", "Lev6;", "Ljh7;", "Leh3;", "I") &&
+            parameterTypes == listOf("Le17;", "I", "Ldv6;", "Lhh7;", "Leh3;", "I") &&
                 returnType == "V" &&
                 (implementation?.instructions?.any { ins ->
                     ins.opcode == Opcode.INVOKE_DIRECT &&
@@ -80,7 +83,7 @@ val bannerToolsMenuRowPatch = bytecodePatch(
                                     it.definingClass == ROW_DATA &&
                                     it.name == "<init>" &&
                                     it.parameterTypes.toList() == listOf(
-                                        "Ln55;", "Ljava/lang/String;", "Lgv6;"
+                                        "Lm55;", "Ljava/lang/String;", "Lfv6;"
                                     )
                             } == true
                 } ?: false)
@@ -119,12 +122,12 @@ val bannerToolsMenuRowPatch = bytecodePatch(
         // ArrayList. We inject right after that R() call (same shape as the
         // old Lqs2;->H site: move-result-object holds the row list).
         val libraryMenuMethod = firstMethod {
-            parameterTypes == listOf("Lz7c;", "Lgv6;", "Lev6;", "Z", "Lfyc;", "Leh3;", "I") &&
+            parameterTypes == listOf("Lc8c;", "Lfv6;", "Ldv6;", "Z", "Liyc;", "Leh3;", "I") &&
                 returnType == "V" &&
                 (implementation?.instructions?.count { ins ->
                     ins.opcode == Opcode.INVOKE_DIRECT &&
                         (ins as? ReferenceInstruction)?.getReference<MethodReference>()
-                            ?.let { it.definingClass == "Lg6c;" && it.name == "<init>" } == true
+                            ?.let { it.definingClass == "Lj6c;" && it.name == "<init>" } == true
                 } ?: 0) >= 4 &&
                 (implementation?.instructions?.any { ins ->
                     ins.opcode == Opcode.INVOKE_STATIC &&
@@ -176,8 +179,8 @@ val bannerToolsMenuRowPatch = bytecodePatch(
         // followed by move-result-object + return-object.
         val pzcMethod = firstMethod {
             parameterTypes == listOf(
-                "Loza;", "Z", "Ldtb;", "Ldtb;", "Lpg8;", "Lpg8;",
-                "Lx6b;", "Lny;", "Ljq2;", "Lctb;", "Ldtb;"
+                "Lsza;", "Z", "Lgtb;", "Lgtb;", "Lrg8;", "Lrg8;",
+                "La7b;", "Lny;", "Ljq2;", "Lftb;", "Lgtb;"
             ) &&
                 returnType == "Ljava/util/List;"
         }

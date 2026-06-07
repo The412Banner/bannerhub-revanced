@@ -316,9 +316,14 @@ val vibrationMenuRowPatch = bytecodePatch(
         // helper, new-instance(I) loader). The runtime side (BhMenuRowClick.
         // maybeResolveCustomLabel) reflects the key off the resource base
         // class, renamed tdi → shg (field `a` unchanged).
+        // 6.0.8: resolver Lok8;->c0 → Lqk8;->c0(Lkwj;,Leh3;,I)String (method c0 +
+        // Composer Leh3; stable; StringResource Ldwj;→Lkwj;). Verified UNIQUE
+        // (L?;Leh3;I)String method; body matches the resolver shape (getClass()
+        // head, Ljy8;->v(SR,Composer) helper, new-instance Lyvj;(I) loader).
+        // Lkwj; extends resource base Lvhg; (runtime side in BhMenuRowClick).
         val resolverMethod = firstMethod {
-            definingClass == "Lok8;" && name == "c0" &&
-                parameterTypes == listOf("Ldwj;", "Leh3;", "I") &&
+            definingClass == "Lqk8;" && name == "c0" &&
+                parameterTypes == listOf("Lkwj;", "Leh3;", "I") &&
                 returnType == "Ljava/lang/String;"
         }
         // Avoid addInstructionsWithLabels + ExternalLabel — pre15 hit

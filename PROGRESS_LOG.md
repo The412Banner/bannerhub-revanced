@@ -135,6 +135,23 @@ Dev-only diagnostic patch (marks APK `android:debuggable=true` + injects `DebugT
 
 **Remaining reds after fp18 (1):** PC-accurate vibration (5 fp + native `winebus.so` binary patcher 🔴 heaviest) — the last one.
 
+### PC-accurate vibration (2026-06-06) — ✅ PORTED (fp19, commit `db7abe1`, **45/0 — ALL GREEN**)
+
+The "heaviest" red turned out to be 4 bytecode hooks (the winebus.so patcher is RUNTIME, in the `BhVibrationController` extension via Hook 4 — not a patch-time native patcher). Traced the whole 6.0.7 rumble path from the one stable anchor: `GamepadServerManager.onRumble(III)V` (still `@Keep`) → `Lfc8;->G(III)V` (device-manager fan-out) → per-device `Lpz7;` (abstract base, fields a:I/b:I = low/high cache, abstract h(II)V + g()V). In `Lfc8;->G`: non-zero (low,high) → `Lpz7;->h(II)V`; (0,0) → `Lpz7;->g()V`.
+- **Hook 1 (dispatcher):** `GamepadServerManager.onRumble` — STABLE, unchanged (own `:bh_rumble_fallthrough` label, so the `:cond_4`→`:cond_0` shift is irrelevant).
+- **Hook 2 (per-controller):** `Lab8;->g(II)V` → **`Lnz7;->h(II)V`**. `Lnz7` = the concrete multi-motor Physical subclass of `Lpz7` (h(II)V `.locals 3` `const v0,0xffff`; the sibling `oz7` is the single `android.os.Vibrator` device — matched by content). **Device-id field `f:I` confirmed = `getAndroidDeviceId()`** (the `GamePad$Companion` ctor wires `getAndroidDeviceId()→p4→f`; `b()I` returns the OTHER int `c`, the winemu index — so `f`, not `c`, is right).
+- **Hook 3 (stop):** `Lab8;->f()V` → **`Lnz7;->g()V`** (multi-motor stop, `.locals 1`).
+- **Hook 4 (winebus disk-patch trigger):** RETARGETED. The dedicated env-vars builder (`Lbg5;->a(...)V .locals 35`) was dissolved on 6.0.7 — the LD_PRELOAD env is now assembled inside a merged WineActivity class (`bqn;->t0`) with no clean Context field. Moved the `ensureWinebusDurationPatchOnce(ctx)` call to **`WineActivity.onCreate(Bundle)`** (stable non-obfuscated `AppCompatActivity` = a Context, runs at game launch before the Wine process maps winebus.so; the AtomicBoolean gate makes an at-onCreate call self-deduplicating). onCreate is `.locals 19` so p0 is high-reg → `move-object/from16 v0, p0`. A strictly more robust anchor than the obfuscated env builder.
+
+**fp19 ([run 27078091158](https://github.com/The412Banner/bannerhub-revanced/actions/runs/27078091158)) = 45 applied / 0 failed.** 🎯 **ALL BannerHub v6 patches now apply on GameHub 6.0.7 (vc118).** ⚠️ device-verify rumble end-to-end (sustained hold via the winebus patch, dual-motor dispatch, instant release) — especially that imagefs ships winebus.so on 6.0.7 and the disk-patch finds + rewrites it from `WineActivity.onCreate`.
+
+## 6.0.7 port — patch-apply phase COMPLETE (2026-06-06)
+
+All 45 patches green (fp19). Outstanding before a stable 6.0.7 cut:
+1. **Device-verifies owed** (apply-proven, not yet runtime-confirmed): Local game-id (fp16), Show PC Game Settings row (fp17), Debug logging probes fire (fp18), PC-accurate vibration rumble (fp19), Explore tab hijack (refingerprinted earlier).
+2. **`release.yml` 604→607 string cleanup** (~15 refs: release-notes body, `-604` version suffix, vc114, branch URLs, What's-new bullets) — flagged since branch setup.
+3. **Debuggable-on-stable decision** — Debug logging marks 607 releases `android:debuggable=true` (carried over from 604); revisit if unwanted for a shipped privacy build.
+
 ----
 
 ### Banner Tools menu row (2026-06-06) — STARTED (5th cascade; the hard one)

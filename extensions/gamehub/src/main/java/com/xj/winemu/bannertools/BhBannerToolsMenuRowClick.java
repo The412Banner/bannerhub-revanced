@@ -65,6 +65,7 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
         "GOG",
         "Overlay",
         "Root",
+        "Steam Chat",
     };
     private static final String[] TILE_DRAWABLES = new String[] {
         "bh_bt_vibration",
@@ -73,6 +74,7 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
         "bh_bt_gog",
         "bh_bt_overlay",
         "bh_bt_root",
+        "bh_bt_steam_chat",
     };
 
     // Tile indices that act on the CURRENT GAME (need a gameId in scope).
@@ -298,6 +300,9 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
                     break;
                 case 5:
                     com.xj.winemu.perf.BhPerfMenus.showRootDialog(host);
+                    break;
+                case 6:
+                    com.xj.winemu.steamchat.BhSteamChatMenus.showToggleDialog(host);
                     break;
                 default:
                     Log.w(TAG, "unknown dialog item index " + which);

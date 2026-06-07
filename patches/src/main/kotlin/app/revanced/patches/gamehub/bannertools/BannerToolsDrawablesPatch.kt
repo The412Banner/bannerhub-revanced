@@ -32,6 +32,7 @@ private val DRAWABLE_NAMES = listOf(
     "bh_bt_gog",
     "bh_bt_overlay",
     "bh_bt_root",
+    "bh_bt_steam_chat",
 )
 
 // Sentinel for classloader access — same trick as ChangeAppIconPatch's

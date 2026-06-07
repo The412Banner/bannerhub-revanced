@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="56dp"
+    android:height="56dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+
+    <!-- Dark rounded background, rx=112 (matches the other Banner Tools tiles). -->
+    <path
+        android:pathData="M112,0 H400 A112,112 0 0 1 512,112 V400 A112,112 0 0 1 400,512 H112 A112,112 0 0 1 0,400 V112 A112,112 0 0 1 112,0 Z"
+        android:fillColor="#1A1C1E"/>
+
+    <!-- Chat bubble body (rounded rect with tail), Steam blue. -->
+    <path
+        android:pathData="M140,116 h232 a44,44 0 0 1 44,44 v140 a44,44 0 0 1 -44,44 h-150 l-70,58 v-58 h-12 a44,44 0 0 1 -44,-44 v-140 a44,44 0 0 1 44,-44 z"
+        android:fillColor="#66C0F4"/>
+
+    <!-- Three dots (message). -->
+    <path
+        android:pathData="M196,230 m-22,0 a22,22 0 1 0 44,0 a22,22 0 1 0 -44,0 z"
+        android:fillColor="#1B2838"/>
+    <path
+        android:pathData="M256,230 m-22,0 a22,22 0 1 0 44,0 a22,22 0 1 0 -44,0 z"
+        android:fillColor="#1B2838"/>
+    <path
+        android:pathData="M316,230 m-22,0 a22,22 0 1 0 44,0 a22,22 0 1 0 -44,0 z"
+        android:fillColor="#1B2838"/>
+
+    <!-- Online presence dot (green), top-right corner. -->
+    <path
+        android:pathData="M396,116 m-30,0 a30,30 0 1 0 60,0 a30,30 0 1 0 -60,0 z"
+        android:fillColor="#57CBDE"/>
+</vector>

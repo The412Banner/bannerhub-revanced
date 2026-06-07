@@ -177,7 +177,10 @@ public final class BhExploreManifest {
         return sInstalledVer;
     }
 
-    /** Installed build int (MAJOR*1e6+MINOR*1e3+PATCH), or -1 if unknown. */
+    /** Installed build int (BASE*1e6 + MAJOR*1e4 + MINOR*1e2 + PATCH — the
+     *  GameHub base is folded above the semver so a reset semver on a newer
+     *  base still outranks the old base; see stamp_version.py), or -1 if
+     *  unknown. Compared only by strict {@code latest > installed}. */
     public static int installedBuild(Context ctx) {
         ensureInstalled(ctx);
         return sInstalledBuild;

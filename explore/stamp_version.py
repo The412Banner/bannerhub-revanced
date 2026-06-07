@@ -45,12 +45,30 @@ MANIFEST_BAKED = os.path.join(
 
 
 def version_to_build(ver):
-    """1.6.0-604 → 1006000. Returns 0 if there's no leading MAJOR.MINOR.PATCH."""
-    m = re.match(r"v?(\d+)\.(\d+)\.(\d+)", ver or "")
+    """1.0.0-607 → 607010000.
+
+    The GameHub base (the `-6XX` suffix) is folded ABOVE the semver so a
+    fresh-reset semver on a newer base still outranks the old base's builds —
+    e.g. 1.0.0-607 (607010000) > 1.8.0-604 (604010800). That keeps the Explore
+    "update available" banner firing across a base bump + version reset, since
+    the banner is a strict `latest > installed` int compare.
+
+      layout : base*1_000_000 + major*10_000 + minor*100 + patch
+      assumes: base <= 999 (3-digit GameHub suffix), major/minor/patch < 100
+      ceiling: 999_999_999 — safely inside a signed 32-bit int (the build is
+               read as Java optInt), unlike base*1e8 which would overflow.
+
+    Already-shipped builds used the old `major*1e6 + minor*1e3 + patch` scheme
+    with no base (e.g. 1.8.0-604 baked 1_008_000); every new base*1e6 value is
+    far above those, so a 607 release still reads as newer to an installed 604
+    app. No suffix (bare MAJOR.MINOR.PATCH) → base 0. Returns 0 if there's no
+    leading MAJOR.MINOR.PATCH."""
+    m = re.match(r"v?(\d+)\.(\d+)\.(\d+)(?:-(\d+))?", ver or "")
     if not m:
         return 0
-    major, minor, patch = (int(x) for x in m.groups())
-    return major * 1_000_000 + minor * 1_000 + patch
+    major, minor, patch = (int(x) for x in m.group(1, 2, 3))
+    base = int(m.group(4)) if m.group(4) else 0
+    return base * 1_000_000 + major * 10_000 + minor * 100 + patch
 
 
 def resolve_version():

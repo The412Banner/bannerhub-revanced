@@ -91,23 +91,36 @@ public final class BhSteamBridge {
             Object kClass = jvmMap.getMethod("getKotlinClass", Class.class).invoke(null, sbcClass);
 
             step = "find Koin.get(KClass)";
-            // R8 renames kotlin.reflect.KClass — match the resolver by whether our
-            // KClass object is an INSTANCE of the first param type, not by name.
+            // R8 renames kotlin.reflect.KClass, but org.koin.core.qualifier.Qualifier
+            // is KEPT — so match get(KClass, Qualifier, Function0) by its 2nd param,
+            // then fall back to isInstance(ourKClass) on the 1st param.
             Method koinGet = null;
             for (Method m : koin.getClass().getMethods()) {
                 if (!m.getName().equals("get")) continue;
                 Class<?>[] p = m.getParameterTypes();
-                if (p.length == 3 && p[0].isInstance(kClass)) { koinGet = m; break; }
+                if (p.length == 3 && p[1].getName().equals("org.koin.core.qualifier.Qualifier")) { koinGet = m; break; }
             }
             if (koinGet == null) for (Method m : koin.getClass().getMethods()) {
                 if (!m.getName().equals("get")) continue;
                 Class<?>[] p = m.getParameterTypes();
                 if (p.length >= 1 && p[0].isInstance(kClass)) { koinGet = m; break; }
             }
-            if (koinGet == null) throw new NoSuchMethodException(
-                    "Koin.get(KClass,..) on " + koin.getClass().getName());
+            if (koinGet == null) {
+                StringBuilder sb = new StringBuilder("kClassType=")
+                        .append(kClass == null ? "null" : kClass.getClass().getName())
+                        .append(" gets=[");
+                for (Method m : koin.getClass().getMethods()) {
+                    if (!m.getName().equals("get")) continue;
+                    Class<?>[] p = m.getParameterTypes();
+                    sb.append(p.length).append(":");
+                    for (Class<?> c2 : p) sb.append(c2.getSimpleName()).append(",");
+                    sb.append(p.length > 0 && p[0].isInstance(kClass) ? "<inst> " : " ");
+                }
+                throw new NoSuchMethodException(sb.append("]").toString());
+            }
 
-            step = "Koin.get(SteamBridgeClient)";
+            step = "Koin.get kClass=" + (kClass == null ? "null" : kClass.getClass().getSimpleName())
+                    + " p0=" + koinGet.getParameterTypes()[0].getSimpleName();
             Object[] getArgs = new Object[koinGet.getParameterTypes().length];
             getArgs[0] = kClass; // remaining (qualifier, parameters) null
             sClient = koinGet.invoke(koin, getArgs);

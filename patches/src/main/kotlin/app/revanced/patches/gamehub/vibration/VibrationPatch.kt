@@ -28,6 +28,11 @@ import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 //                   6.0.2 Lza8;  6.0.4 Lab8; (dispatch g(II)V, stop f()V)
 //                   6.0.7 Lnz7; — methods shifted: dispatch g(II)V → h(II)V,
 //                   stop f()V → g()V; the device-id field is still `f:I`.
+//                   6.0.8 Lpz7; (base Lpz7;→Lrz7;) — verified
+//                   ~/gh608-apktool-d/smali_classes3/pz7.smali: extends abstract
+//                   Lrz7; (abstract g()V + h(II)V); h(II)V .locals 3 + const
+//                   0xffff; g()V .locals 1; field f:I (device id); field k:Lb4k;
+//                   (motor mgr). Sibling qz7 (no f:I) is the single-Vibrator decoy.
 // WINE_ACTIVITY   — the Wine session Activity. Hook 4 (the winebus disk-patch
 //                   trigger) used to anchor the Wine env-vars builder
 //                   (6.0.2 Ldg5;, 6.0.4 Lbg5;->a(...)V .locals 35). In 6.0.7
@@ -37,7 +42,7 @@ import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 //                   a stable, non-obfuscated AppCompatActivity (= a Context)
 //                   whose onCreate runs at game launch, before the Wine
 //                   process maps winebus.so — a strictly more robust anchor.
-private const val PHYSICAL_CLASS = "Lnz7;"   // 6.0.4: Lab8;
+private const val PHYSICAL_CLASS = "Lpz7;"   // 6.0.7: Lnz7;  6.0.4: Lab8;
 private const val WINE_ACTIVITY =
     "Lcom/xiaoji/egggame/features/winemu/WineActivity;"
 

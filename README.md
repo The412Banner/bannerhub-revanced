@@ -5,7 +5,7 @@
 <h1 align="center">BannerHub v6 for ReVanced</h1>
 
 <p align="center">
-  Pre-built APKs and the patch bundle that produces them — built on top of <a href="https://gamehub.xiaoji.com/">XiaoJi GameHub</a> 6.0.7 (<code>com.xiaoji.egggame</code>).
+  Pre-built APKs and the patch bundle that produces them — built on top of <a href="https://gamehub.xiaoji.com/">XiaoJi GameHub</a> 6.0.8 (<code>com.xiaoji.egggame</code>).
 </p>
 
 <p align="center">
@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.0.0-607"><strong>📥 Latest stable: v1.0.0-607</strong></a>
+  <a href="https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.0.0-608"><strong>📥 Latest stable: v1.0.0-608</strong></a>
   ·
   <a href="#patches-applied">Patches</a>
   ·
@@ -44,14 +44,14 @@
 >
 > **USE AT YOUR OWN RISK.**
 
-**What it does** — removes the login requirement, redirects the catalog API to the BannerHub Cloudflare Worker, ships **preload-free** PC-accurate XInput rumble for Wine games (with a per-game settings dialog injected into both popup menus), adds in-app **GOG** sign-in / library / download-install reachable from a new BannerHub-owned **Explore** tab, mutes the UI feedback sounds (with an optional recording-compatible audio toggle), and rebrands the launcher icon + in-app artwork as BannerHub v6. Nine APK variants install side-by-side on the same device. (On the 6.0.7 base there's **no separate Lite** — XiaoJi's own −46% size pass already makes the full build smaller than the old 6.0.4 Lite, so the Lite concept is absorbed. See [What's new](#whats-new-in-v100-607).)
+**What it does** — removes the login requirement, redirects the catalog API to the BannerHub Cloudflare Worker, ships **preload-free** PC-accurate XInput rumble for Wine games (with a per-game settings dialog injected into both popup menus), adds in-app **GOG** sign-in / library / download-install reachable from a new BannerHub-owned **Explore** tab, mutes the UI feedback sounds (with an optional recording-compatible audio toggle), and rebrands the launcher icon + in-app artwork as BannerHub v6. Nine APK variants install side-by-side on the same device. (On the 6.0.8 base there's **no separate Lite** — XiaoJi's own −46% size pass already makes the full build smaller than the old 6.0.4 Lite, so the Lite concept is absorbed. See [What's new](#whats-new-in-v100-608).)
 
-> ✅ **In-place updates** — BannerHub releases are signed with a stable test keystore ([`keystore/README.md`](keystore/README.md)) so every stable installs on top of the previous one with no uninstall. The 6.0.7 line **shares the same keystore as the 6.0.4 line**, so `v1.0.0-607` installs straight over your existing BannerHub v6 — no uninstall needed when moving from the `-604` series. **One-time migration only applies if you're still on `v1.0.0-604` or older** (those used per-run ephemeral keys): uninstall once, then install. From there on, regular Android updates flow normally.
+> ✅ **In-place updates** — BannerHub releases are signed with a stable test keystore ([`keystore/README.md`](keystore/README.md)) so every stable installs on top of the previous one with no uninstall. The 6.0.8 line **shares the same keystore as the 6.0.7 and 6.0.4 lines**, so `v1.0.0-608` installs straight over your existing BannerHub v6 — no uninstall needed when moving from the `-607` or `-604` series. **One-time migration only applies if you're still on `v1.0.0-604` or older** (those used per-run ephemeral keys): uninstall once, then install. From there on, regular Android updates flow normally.
 
 ## Table of contents
 
 1. [AI Disclaimer](#ai-disclaimer)
-2. [What's new in v1.0.0-607](#whats-new-in-v100-607)
+2. [What's new in v1.0.0-608](#whats-new-in-v100-608)
 3. [What this is](#what-this-is)
 4. [Source](#source)
 5. [Variants](#variants)
@@ -73,32 +73,23 @@ This project has no source code — XiaoJi GameHub is closed-source and ships on
 
 Before any **stable release** is published, every change is **manually debugged and tested by me across multiple devices — both rooted and unrooted**. Debugging uses `logcat` output (captured with the [`getlog` Magisk helper](https://github.com/The412Banner/logcat-bridge) on rooted devices, plain `adb logcat` on unrooted) plus the in-app debug log files that the `Debug logging` patch produces. No release is cut until the change has been verified end-to-end on hardware.
 
-## What's new in v1.0.0-607
+## What's new in v1.0.0-608
 
-First BannerHub v6 stable on the **GameHub 6.0.7** base (versionCode 118). The 6.0.7 line **shares the 6.0.4 keystore**, so this installs straight over your existing BannerHub v6 — no uninstall when moving up from the `-604` series.
+BannerHub v6 rebased onto the **GameHub 6.0.8** base (versionCode 119). The 6.0.8 line **shares the 6.0.4/6.0.7 keystore**, so this installs straight over your existing BannerHub v6 — no uninstall when moving up from the `-607` or `-604` series.
 
-### 🧱 Rebased onto GameHub 6.0.7
+### 🧱 Rebased onto GameHub 6.0.8
 
-Every BannerHub v6 patch was re-fingerprinted against the 6.0.7 bytecode and **device-verified end-to-end**. 6.0.7 is a substantial upstream shift, so most structural anchors had to be re-derived: R8 reshuffled the class map again, the **`:wine` subprocess was folded back into the main process**, `com.winemu.openapi.Config` was removed, the DEX count dropped 6 → 5, and the in-game menus moved further into Compose.
+GameHub 6.0.8 is a **tiny** upstream bump from 6.0.7 — the only native change is `libsteamkit_core.so` (Steam game-library management: remove-from-library + install validation, plus the GPU-spoof PC-settings keys moved to a `…V2` namespace). No Wine, renderer, DXVK, or Turnip changes, and the manifest + permissions are identical. But XiaoJi's R8 pass **reshuffled the obfuscated class/method map again**, which breaks every patch that pins to those names — so **all 41 patches were re-fingerprinted against the 6.0.8 bytecode** and the build is green end-to-end.
 
-### 🪶 Smaller — and no separate Lite anymore
+### ✅ Device-verified on 6.0.8
 
-The full 6.0.7 build is ~46 MB — **already smaller than the old 6.0.4 Lite**. XiaoJi's own −46% size pass (MiSans font dedup, PNG→WebP recompress, codec/SDK removals) on top of our privacy/size strips means a distinct Lite would strip nothing extra. So **the 607 line ships no Lite — the concept is absorbed** into every variant.
+Re-tested on-device after the rebase: the **Banner Tools** menu + grid (Vibration · Game ID · Audio · GOG · Overlay · Root), the **custom catalog API** (redirect + curated component delivery), **local-game import** into the library, and **PC-accurate controller vibration** (per-game mode + live intensity scaling) all confirmed working.
 
-### ⚠️ Two per-game tiles dropped on 6.0.7
+### 📦 Everything carried forward from `-607`
 
-**GPU Spoof** and the **Legacy renderer (GLES2)** toggle are now **6.0.4-only**:
+Everything from the `-607` line ships forward unchanged: **GOG integration**, the **BannerHub Explore homepage** (wordmark/logo hero, What's New article, live `bh_explore.json` override, offline-capable) with its **in-app update check + installed-vs-latest readout** (amber banner + ⚙ cog), **PC-accurate controller vibration** (preload-free — no `libevshim`/`LD_PRELOAD`), the **in-game performance overlay** (root, draggable pill, CPU-governor + Adreno min-clock toggles, auto-reverts on exit), **recording-compatible audio**, the **offline component picker**, the strict per-game settings store, the synthetic 32-bit ID rewrite for external front-ends (Beacon / ES-DE / RetroHRAI / NeoStation), the always-visible PC Game Settings row, the privacy-hardening stack + public [`PRIVACY.md`](PRIVACY.md), the stable keystore, and the BannerHub v6 visual rebrand. As on 6.0.7 there's still **no separate Lite** build, and the **GPU Spoof** and **Legacy renderer (GLES2)** tiles stay retired (6.0.8 keeps 6.0.7's native GPU spoof and rewritten Vulkan X-server).
 
-- 6.0.7 ships a **native GPU spoof** of its own, making the patch redundant.
-- The legacy GLES2 renderer needs the old GLES2 X-server; 6.0.7's rewritten **Vulkan X-server is incompatible** with the old `libxserver.so` / `libwinemu.so` pair (device-confirmed `SIGABRT`). The renderer patches stay pinned to 6.0.4.
-
-The Banner Tools grid on 607 is now **Vibration · Game ID · Audio · GOG · Overlay · Root**.
-
-### Carryover from the `-604` line
-
-Everything else ships forward unchanged: **GOG integration**, the **BannerHub Explore homepage** (wordmark/logo hero, What's New article, live `bh_explore.json` override, offline-capable) with its **in-app update check + installed-vs-latest readout** (amber banner + ⚙ cog), **PC-accurate controller vibration** (preload-free — no `libevshim`/`LD_PRELOAD`), the **in-game performance overlay** (root, draggable pill, CPU-governor + Adreno min-clock toggles, auto-reverts on exit), **recording-compatible audio**, the **offline component picker**, the strict per-game settings store, the synthetic 32-bit ID rewrite for external front-ends (Beacon / ES-DE / RetroHRAI / NeoStation), the always-visible PC Game Settings row, the privacy-hardening stack + public [`PRIVACY.md`](PRIVACY.md), the stable keystore, and the BannerHub v6 visual rebrand.
-
-> 📜 Past-release notes for the entire `-604` line (`v1.8.0-604` down through `v1.0.0-604`, plus `v1.0.0-602`, `v1.0.1-601`, `v1.0.0-601`, and `v1.0.1-600`) are preserved on their respective [release pages](https://github.com/The412Banner/bannerhub-revanced/releases). The README keeps only the current release in this section.
+> 📜 Past-release notes for the `-607` line (`v1.0.0-607`) and the entire `-604` line (`v1.8.0-604` down through `v1.0.0-604`, plus `v1.0.0-602`, `v1.0.1-601`, `v1.0.0-601`, and `v1.0.1-600`) are preserved on their respective [release pages](https://github.com/The412Banner/bannerhub-revanced/releases). The README keeps only the current release in this section.
 
 ---
 
@@ -114,8 +105,8 @@ It also fixes a launch-time `VerifyError` that the original 5.x `Disable Crashly
 
 ## Source
 
-- **Base APK:** `GameHub_6.0.7.apk` — the official 6.0.7 global build (versionCode 118), attached unmodified to the [`base-apk-607`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/base-apk-607) release for reproducibility. Earlier base APKs remain attached to [`base-apk-604`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/base-apk-604) (6.0.4), [`base-apk-602`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/base-apk-602) (6.0.2), [`base-apk-601`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/base-apk-601) (6.0.1) and [`base-apk-600`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/base-apk-600) (6.0.0) for older releases.
-- **Patcher:** [ReVanced CLI 6.0.0](https://github.com/ReVanced/revanced-cli/releases/tag/v6.0.0) + the bundle built from this repo's `gamehub-607-build` branch (`gamehub-604-build`, `gamehub-602-build`, `gamehub-601-build`, and `gamehub-600-build` remain in place for older 6.0.x work).
+- **Base APK:** `GameHub_6.0.8.apk` — the official 6.0.8 global build (versionCode 119), attached unmodified to the [`base-apk-608`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/base-apk-608) release for reproducibility. Earlier base APKs remain attached to [`base-apk-607`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/base-apk-607) (6.0.7), [`base-apk-604`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/base-apk-604) (6.0.4), [`base-apk-602`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/base-apk-602) (6.0.2), [`base-apk-601`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/base-apk-601) (6.0.1) and [`base-apk-600`](https://github.com/The412Banner/bannerhub-revanced/releases/tag/base-apk-600) (6.0.0) for older releases.
+- **Patcher:** [ReVanced CLI 6.0.0](https://github.com/ReVanced/revanced-cli/releases/tag/v6.0.0) + the bundle built from this repo's `gamehub-608-build` branch (`gamehub-607-build`, `gamehub-604-build`, `gamehub-602-build`, `gamehub-601-build`, and `gamehub-600-build` remain in place for older 6.0.x work).
 - **Catalog backend:** [`The412Banner/bannerhub-api`](https://github.com/The412Banner/bannerhub-api) — Cloudflare Worker source, deployed at `bannerhub-api.the412banner.workers.dev`. Serves the curated component catalog from GitHub Pages and forwards unallowlisted paths back to upstream `landscape-api.vgabc.com` with the original signed-request behavior preserved.
 - **Build environment:** GitHub Actions, Ubuntu 24.04 runner, Temurin JDK 17. The full pipeline is [`.github/workflows/release.yml`](.github/workflows/release.yml): a `build` job produces the `.rvp` patch bundle, a 9-way matrix patches the base APK in parallel (one variant per matrix entry), and a final `release` job globs all artefacts into a single GitHub Release when triggered with `stable=true`.
 
@@ -137,9 +128,9 @@ The same patch bundle is applied to the same base APK 9 times, each time with a 
 
 Three variants (Normal, Normal-GHL, Original) share the bare "BannerHub v6" launcher label and the two AnTuTu variants share "BannerHub v6 AnTuTu" — they install side-by-side via different package names, so the shared labels are intentional.
 
-### 🪶 No Lite on the 6.0.7 base
+### 🪶 No Lite on the 6.0.8 base
 
-The `-604` line shipped a separate ~34.5 MB-smaller **Lite** counterpart of each variant. **The 6.0.7 line does not** — and doesn't need to. XiaoJi's own −46% size pass on 6.0.7 (MiSans font dedup, PNG→WebP recompress, codec/SDK removals) already brings the full build to ~46 MB, **smaller than the old 6.0.4 Lite ever was**. A distinct Lite would strip nothing extra, so the Lite concept is **absorbed into every full variant**. The historical Lite write-up for the 604 line is preserved at [`bannerhub-v6-lite.md`](bannerhub-v6-lite.md).
+The `-604` line shipped a separate ~34.5 MB-smaller **Lite** counterpart of each variant. **The 6.0.7 and 6.0.8 lines do not** — and don't need to. XiaoJi's own −46% size pass since 6.0.7 (MiSans font dedup, PNG→WebP recompress, codec/SDK removals) already brings the full build to ~46 MB, **smaller than the old 6.0.4 Lite ever was**. A distinct Lite would strip nothing extra, so the Lite concept is **absorbed into every full variant**. The historical Lite write-up for the 604 line is preserved at [`bannerhub-v6-lite.md`](bannerhub-v6-lite.md).
 
 ## Frontend support
 
@@ -185,7 +176,7 @@ This bundle ships only patches that successfully apply against GameHub 6.0. Ever
 
 ### `Bypass login`
 
-Skips the login screen entirely and makes the library system function under a synthetic identity. Six bytecode rewrites cooperate (the walkthrough below uses the 6.0.2 R8 letter names for historical continuity; every version's letters — including the current 6.0.7 mappings — are recorded in the per-patch source comments and the [`gamehub_reports/`](gamehub_reports/) maps. The patch *mechanics* are identical across versions — only the class letters differ.):
+Skips the login screen entirely and makes the library system function under a synthetic identity. Six bytecode rewrites cooperate (the walkthrough below uses the 6.0.2 R8 letter names for historical continuity; every version's letters — including the current 6.0.8 mappings — are recorded in the per-patch source comments and the [`gamehub_reports/`](gamehub_reports/) maps. The patch *mechanics* are identical across versions — only the class letters differ.):
 
 1. **`xle.i(gi0)` and `xle.r(gi0)`** — the navigator methods that gate Login routing. Original logic does `iget Lxle;->b:Lct0;` → `invoke-interface Lct0;->a()Z` → `if-nez :skipLogin` → otherwise build a `Lsa0;` Login navigation intent. Patch removes the `invoke-interface`/`move-result` pair and substitutes `const/4 vN, 0x1` so the branch is always taken.
 2. **`rr0.a(...)`** — a separate `NavigationInterceptor` (`getOrder()==10`) added in 6.0.1 that gates on `Lct0;->a()Z` independently of the navigator. Same iget+invoke-interface+if-nez pattern; bypassed identically with `const/4 vN, 0x1`.
@@ -235,15 +226,15 @@ The 10-iteration debugging trail behind landing this patch is recorded in `proje
 
 Appends a `bh_pc_vibration_label = "PC Vibration Settings"` entry to `features.home`'s Compose Multiplatform resource bundle (`.cvr` file). Documentation patch — the runtime resolution actually goes through the `Lxd3.l1` short-circuit described above because Compose's resource manifest needs entries the bare `.cvr` doesn't register. Kept anyway so the resource is reachable by any future patch that goes through the proper manifest registration path.
 
-### `GPU Spoof` 🔒 *6.0.4-only — not in the 607 build*
+### `GPU Spoof` 🔒 *6.0.4-only — not in the 607/608 build*
 
-> **Pinned to 6.0.4.** GameHub 6.0.7 ships a **native GPU spoof** of its own, so this patch is redundant there and is gated out (`compatibleWith("6.0.4")`) — the tile does not appear on the 607 Banner Tools grid. The description below applies to the `-604` line.
+> **Pinned to 6.0.4.** GameHub 6.0.7 and 6.0.8 ship a **native GPU spoof** of their own, so this patch is redundant there and is gated out (`compatibleWith("6.0.4")`) — the tile does not appear on the 607/608 Banner Tools grid. The description below applies to the `-604` line.
 
 Adds a **GPU Spoof** row to both per-game popup menus. The dialog offers **Off** (default), a **preset** GPU picker (a legacy NVIDIA/AMD/Intel list plus a modern RTX/RX/Arc set), or **Custom** (free vendor / device hex + name). `GpuSpoofPatch` ("GPU spoof DXVK plumbing") force-writes the chosen `customVendorId`/`customDeviceId` into a per-game `dxvk.conf` and points `DXVK_CONFIG_FILE` at it, injected *after* the Wine env builder's conditional DXVK block so the spoof always applies. No-ops entirely when the game's mode is Off. Fixes titles that hard-refuse an "unsupported video card" (CryEngine — Crysis 2). The `BhGpuSpoofController` owns mode state (Off / preset / custom); storage is the shared strict per-game store (see *Strict per-game settings store* below). Free-text adapter names go only to the `dxvk.conf` file, never the whitespace-splitting inline `DXVK_CONFIG`, so "NVIDIA GeForce RTX 4080" isn't truncated to "NVIDIA".
 
-### `Legacy renderer (GLES2) toggle` 🔒 *6.0.4-only — not in the 607 build*
+### `Legacy renderer (GLES2) toggle` 🔒 *6.0.4-only — not in the 607/608 build*
 
-> **Pinned to 6.0.4.** 6.0.7's rewritten Vulkan X-server is **incompatible** with the old GLES2 `libxserver.so` / `libwinemu.so` pair — forcing the legacy path on 607 is a device-confirmed `SIGABRT`. The patch is gated out (`compatibleWith("6.0.4")`) and the Renderer tile does not appear on the 607 Banner Tools grid. The description below applies to the `-604` line.
+> **Pinned to 6.0.4.** The rewritten Vulkan X-server in 6.0.7/6.0.8 is **incompatible** with the old GLES2 `libxserver.so` / `libwinemu.so` pair — forcing the legacy path on 607/608 is a device-confirmed `SIGABRT`. The patch is gated out (`compatibleWith("6.0.4")`) and the Renderer tile does not appear on the 607/608 Banner Tools grid. The description below applies to the `-604` line.
 
 GameHub 6.0.4 rewrote its X-server renderer from GLES2 to Vulkan (`libxserver.so`). Some games regressed. A **Renderer** menu row + dialog adds a per-game choice: **New** (default — stock 6.0.4 Vulkan, zero patch effect) or **Legacy** (the proven 6.0.2 GLES2-era `libxserver.so` + `libwinemu.so` pair). `RendererLibBundlePatch` bundles the 6.0.2 libs under a non-clobbering name; `RendererSwapPatch` adds a `setRenderingEnabled` native and routes `XServer`'s `loadLibrary` + `setFlipEnabled` call sites through `BhRendererController` so the swap is gated strictly per game — an unset game is pure stock, zero regression.
 
@@ -373,28 +364,28 @@ Available for ad-hoc CLI use; have no effect on the released APKs unless explici
 ```sh
 git clone https://github.com/The412Banner/bannerhub-revanced.git
 cd bannerhub-revanced
-git checkout gamehub-607-build
+git checkout gamehub-608-build
 
 # 1. Build the patch bundle
 ./gradlew build
 
 # 2. Get the base APK
-gh release download base-apk-607 \
+gh release download base-apk-608 \
   --repo The412Banner/bannerhub-revanced \
-  --pattern "GameHub_6.0.7.apk" \
-  --output GameHub_6.0.7.apk
+  --pattern "GameHub_6.0.8.apk" \
+  --output GameHub_6.0.8.apk
 
 # 3. Get ReVanced CLI
 curl -L https://github.com/ReVanced/revanced-cli/releases/download/v6.0.0/revanced-cli-6.0.0-all.jar \
   -o revanced-cli.jar
 
 # 4. Patch it (single-variant example: Normal)
-java -jar revanced-cli.jar patch GameHub_6.0.7.apk \
+java -jar revanced-cli.jar patch GameHub_6.0.8.apk \
   --patches "$(find patches/build/libs -name '*.rvp' ! -name '*-sources*' ! -name '*-javadoc*' | head -1)" \
   --bypass-verification \
   -e "Change package name" -O 'packageName="banner.hub"' \
   -e "Change app name"     -O 'appName="GameHub"' \
-  --out GameHub-6.0.7-Patched-Normal.apk
+  --out GameHub-6.0.8-Patched-Normal.apk
 ```
 
 > **Note on `-O` quoting:** the JSON-string quotes around the value (`"…"` inside the single-quoted shell argument) are required. Picocli's `Map<String,Object>` parser auto-coerces values and trips on package names ending in `f`/`d`/`l` (Java numeric-literal suffixes — `com.tencent.tmgp.cf` is the canonical example).
@@ -403,11 +394,11 @@ java -jar revanced-cli.jar patch GameHub_6.0.7.apk \
 
 ### Naming & versioning scheme
 
-APK files follow the pattern **`BannerHub-V6-{version}-Patched-{variant}.apk`** — e.g. `BannerHub-V6-1.0.0-607-Patched-Normal.apk`. The version string has three parts:
+APK files follow the pattern **`BannerHub-V6-{version}-Patched-{variant}.apk`** — e.g. `BannerHub-V6-1.0.0-608-Patched-Normal.apk`. The version string has three parts:
 
 - **BannerHub v6** — product name. Fixed; aligned with GameHub's 6.x series and stays put across upstream patch-version bumps.
 - **`1.1.0`** — BannerHub-side semver (`major.minor.patch`). Tracks our own changes: new patches, infrastructure work, bug fixes. Bumps on every release.
-- **`-607`** — GameHub base version with the dots stripped (`6.0.7` → `607`). Tells you which upstream GameHub APK was patched. When XiaoJi ships a new base (e.g. `6.0.8`), the suffix becomes `-608` and the patch set is re-fingerprinted and retargeted. The BannerHub-side semver restarts at `1.0.0` for each new base line (the `-604` line ran `v1.0.0-604` → `v1.8.0-604`; the `-607` line begins at `v1.0.0-607`).
+- **`-608`** — GameHub base version with the dots stripped (`6.0.8` → `608`). Tells you which upstream GameHub APK was patched. When XiaoJi ships a new base (e.g. `6.0.9`), the suffix becomes `-609` and the patch set is re-fingerprinted and retargeted. The BannerHub-side semver restarts at `1.0.0` for each new base line (the `-604` line ran `v1.0.0-604` → `v1.8.0-604`; the `-607` line was a single `v1.0.0-607`; the `-608` line begins at `v1.0.0-608`).
 
 The release tag (`v1.1.0-604`) is the version string with a leading `v`. The `{variant}` slot in the filename identifies which of the 9 side-by-side packagings you grabbed.
 
@@ -416,7 +407,7 @@ The release tag (`v1.1.0-604`) is the version string with a leading `v`. The `{v
 The release pipeline has two modes:
 
 - **Prerelease (default)** — every tag push and every `workflow_dispatch` run with `stable=false` produces the 9 variant APKs as Actions artifacts only (14-day retention). Useful for device-testing without cluttering the Releases page.
-- **Stable** — `workflow_dispatch` from `Actions → Run workflow` with the **`stable`** checkbox ticked and a version (e.g. `1.0.0-607`) populated. The matrix runs as normal, then a final `release` job creates a GitHub Release with the 9 APKs, `.rvp` bundle, `.rve` extension files, and the release notes (sourced verbatim from `release.yml`). All 9 APKs are re-signed with the BannerHub keystore (`v1`+`v2`+`v3` schemes) before upload so the cert is stable across releases.
+- **Stable** — `workflow_dispatch` from `Actions → Run workflow` with the **`stable`** checkbox ticked and a version (e.g. `1.0.0-608`) populated. The matrix runs as normal, then a final `release` job creates a GitHub Release with the 9 APKs, `.rvp` bundle, `.rve` extension files, and the release notes (sourced verbatim from `release.yml`). All 9 APKs are re-signed with the BannerHub keystore (`v1`+`v2`+`v3` schemes) before upload so the cert is stable across releases.
 
 ## Credits
 

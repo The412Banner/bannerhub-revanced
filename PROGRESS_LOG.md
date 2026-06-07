@@ -117,6 +117,12 @@ Single-anchor refingerprint, the cleanest kind. The patch hooks GameHub's `Appli
 
 **Remaining reds after fp16 (3):** Debug logging (5 fp), PC-accurate vibration (5 fp + native `winebus.so` binary patcher 🔴), Show PC Game Settings row (2 fp + resource).
 
+### Show PC Game Settings row (2026-06-06) — ✅ FIXED (fp17, commit `2b7f6f0`, 43/2)
+
+Expected a 2-fingerprint refingerprint; found the More Menu was **fully Compose-rewritten** on 6.0.7 (the method is now a Composable: `Lc37;->a(Lf17;ILev6;Ljh7;Leh3;I)V`, Composer + `$changed` trailer), so the 6.0.4 anchors (static label singleton `Lmil;->U:Lxrl;` + adjacent if-eqz gate) needed re-derivation rather than a name swap. But the underlying **mechanism survived** — the PC-settings block is still guarded by a single boolean `if-eqz` and is the always-present branch, so removing the gate still force-shows the row. Full map: menu `Lx57;->a(Lf37;Lpo7;Lv83;I)V`→`Lc37;->a(Lf17;ILev6;Ljh7;Leh3;I)V` (signature **globally unique**, 1 match in apk); row item ctor `Liae(Lo05,String,Lpw6)`→`Ltyc(Ln55,String,Lgv6)` (×13 in c37, 0 in any sig-sharer); label wrapper `Lxrl;`→`Lu3k;`; PC-settings label `Lmil;->U`→`Llsj;->c0` — re-derived via the Compose resource chain (`features_game_pc_settings` Compose string key → `kqj` resource lambda `:pswitch_8` → packed-switch index **0x14** → `<clinit>` does `const 0x14`/`new Lkqj`/`sput Llsj;->c0:Lu3k;`). In `c37;->a` the label sgets at line 2074; the gate is `if-eqz v63, :cond_55` 6 instructions before it (well within MAX_BACKWARD_SCAN=40). Dropped the now-redundant remove-from-library label disambiguator (signature uniqueness + the Ltyc-ctor anchor already pin the method). Rewrote the patch + its full re-derivation recipe in the header comment. **fp17 ([run 27077560817](https://github.com/The412Banner/bannerhub-revanced/actions/runs/27077560817)) = 43 applied / 2 failed — `"Show PC Game Settings row" succeeded`.** ⚠️ device-verify: open a Steam-linked / retro game's More Menu and confirm "PC Game Settings" now appears (apply was the only thing proven here; also watch for a Compose group-balance crash, though forcing the always-present branch is the safe case).
+
+**Remaining reds after fp17 (2):** Debug logging (5 fp), PC-accurate vibration (5 fp + native `winebus.so` binary patcher 🔴 heaviest).
+
 ----
 
 ### Banner Tools menu row (2026-06-06) — STARTED (5th cascade; the hard one)

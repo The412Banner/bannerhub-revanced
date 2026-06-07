@@ -163,7 +163,7 @@ Device-verify pass (fp19 Normal-GHL on `gamehub.lite` via `getlog` root bridge) 
 ## 🏁🏁 6.0.7 PORT — DEVICE-VERIFIED COMPLETE (2026-06-06)
 
 All 45 patches apply (fp19) AND the full feature set is device-verified on `gamehub.lite` v6.0.7 vc118 (fp19/fp20, via getlog root bridge): Explore hijack, Show PC Game Settings row, Local game-id (logged), Debug logging (logcat), GOG download+library (after the fp20 FGS fix), Bypass login, and PC-accurate vibration (sustained rumble). 1 device-found bug (GOG FGS crash) found AND fixed in the same pass. Remaining before a stable cut are NON-patch chores:
-1. **`release.yml` 604→607 string cleanup** (~15 refs in the release-notes body/version suffix).
+1. ✅ **`release.yml` 604→607 cleanup DONE** (commit `141b680`): base 6.0.4→6.0.7 / vc114→vc118, all `gamehub-604-build` blob/tree URLs→607, `-604`→`-607` suffix, version-string examples→607, `6.0.4's`→`6.0.x's` Vulkan X-server, dropped the stale `:wine`-boundary clause. **Lite fully removed from 607 notes** (per user: Lite builds will no longer be made/required on 607 — the matrix already produces 9 APKs, no Lite job): variants table de-Lited (9 rows, single APK col), 18→9 APK count, dropped Optional-Lite + Mute-UI-sounds bullets/rows (Mute UI sounds is gated out on 607), Lite-strips row reframed to "Privacy/size strips (every variant)", What's-new reframed to the 6.0.7 base bump.
 2. **Debuggable-on-stable decision** (Debug logging marks 607 debuggable, carried from 604).
 3. Minor: the Debug-logging file-backup path is hardcoded `com.xiaoji.egggame` (logcat channel works; file backup EACCES on renamed variants) — FIX-LATER, derive path from runtime package.
 4. Optional: exercise the Debug import probes with a PC (not GOG) game import.

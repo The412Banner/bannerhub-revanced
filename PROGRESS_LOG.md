@@ -123,6 +123,18 @@ Expected a 2-fingerprint refingerprint; found the More Menu was **fully Compose-
 
 **Remaining reds after fp17 (2):** Debug logging (5 fp), PC-accurate vibration (5 fp + native `winebus.so` binary patcher 🔴 heaviest).
 
+### Debug logging (2026-06-06) — ✅ PORTED (fp18, commit `eebd455`, 44/1)
+
+Dev-only diagnostic patch (marks APK `android:debuggable=true` + injects `DebugTrace` probes — logcat tag `GH600-DEBUG` @ `Log.i` + `gh600-debug.log` on external storage — along the PC/GOG game-import → library-write path). Was `use=true` and shipped in every 604 build incl. **v1.8.0-604** (verified in that release's run 26702381474: `"Debug logging" succeeded`), i.e. the 604 stable APKs are debuggable. User chose to port it (not gate/opt-out). Re-derived 4 anchors from `~/gh607-apktool-d`:
+- **Probe 1 (error-reporter impl):** `Lj86;->e` → `Lz86;->a` — the `Lt9c;` decorator impl whose `a(Ljava/lang/Throwable;Lev6;)V` re-invokes `Lt9c;->a` on a wrapped field then writes to the sink (the other impl `qua` builds a `Pua` → `Lfoa;->v`, not it). Throwable = p1.
+- **Probe 2 (import save fn):** `Lvu7;->v` → `Lam7;->v` (SAVE_REPO = BypassLogin's `GAME_LIB_REPO` `Lam7;`; method still `v(GameInfo,LaunchMethod,Continuation)` — model params STABLE so anchored structurally). Catch call `Lxgd;->e` → **`Lt9c;->a(Throwable,Lev6;)`** (interface method renamed `e`→`a`, Function0 `Lmw6;`→`Lev6;`); Throwable in p3 at the call site (am7.smali:7212). Entry + catch probes both land.
+- **Probe 3 (retro upsert marker): DROPPED.** `RetroGameDao.upsert` removed on 6.0.7 — retro persistence rebuilt under `com.xiaoji.egggame.retro_emulators.data.local` with Room-generated `RetroGameDao_Impl.a/b/f/g/h` (no `upsert` anywhere in the apk). No equivalent target; the other 3 probes still cover the import path.
+- **Probe 4 (import txn):** `Lws7;->invokeSuspend` → **`Lza;->w`** — R8 merged the import lambdas into one dispatch class `Lza;` (constructed inside `Lam7;->v` w/ discriminator 0x17) and outlined the txn body into method `w` (sole method in `Lza;` with both `GameLaunchMethodDao.insert` + `GameLibraryBaseDao.insert`, both anchored on STABLE DAO names).
+
+**fp18 ([run 27077860836](https://github.com/The412Banner/bannerhub-revanced/actions/runs/27077860836)) = 44 applied / 1 failed — `"Debug logging" succeeded`.** ⚠️ runtime-verify the probes actually fire (logcat `GH600-DEBUG` + `gh600-debug.log`) on a real PC/GOG import, and note the 607 release is now debuggable too (revisit if that's unwanted for stable).
+
+**Remaining reds after fp18 (1):** PC-accurate vibration (5 fp + native `winebus.so` binary patcher 🔴 heaviest) — the last one.
+
 ----
 
 ### Banner Tools menu row (2026-06-06) — STARTED (5th cascade; the hard one)

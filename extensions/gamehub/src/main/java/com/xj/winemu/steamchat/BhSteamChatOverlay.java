@@ -11,9 +11,12 @@ import android.os.Looper;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.view.inputmethod.EditorInfo;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -26,14 +29,16 @@ import java.util.concurrent.Executors;
 import java.util.WeakHashMap;
 
 /**
- * In-game Steam friends/chat overlay — READ-ONLY PROTOTYPE.
+ * In-game Steam friends/chat overlay.
  *
  * A Banner-owned classic-View pill + slide-out panel attached over the Wine
  * game surface (identical WindowManager technique to {@code BhPerfOverlay}),
  * gated by the Banner Tools → Steam Chat master toggle. The panel pulls your
  * Steam friends list (and, on tap, a friend's recent message history) from the
- * in-process Steam client via {@link BhSteamBridge} — request/response only;
- * live push (steam:chat-message Flow) is a later increment.
+ * in-process Steam client via {@link BhSteamBridge}, and can send replies
+ * (friends.send_message). Delivery is request/response; incoming messages show
+ * on the next history refresh — live push (steam:chat-message Flow) is a later
+ * increment.
  *
  * Hooked from WineActivity.onResume -> attach / onDestroy -> detach.
  */
@@ -368,10 +373,10 @@ public final class BhSteamChatOverlay {
             back.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { loadFriends(); } });
             listCol.addView(back);
 
-            if (json == null) { setStatus("No messages (or request failed)."); return; }
+            if (json == null) { setStatus("No history yet — say hello."); addComposer(openFriendId); return; }
             try {
                 JSONArray arr = asArray(json, "messages", "items", "data", "history", "value");
-                if (arr == null) { setStatus("Chat with " + name); addRaw(json); return; }
+                if (arr == null) { setStatus("Chat with " + name); addRaw(json); addComposer(openFriendId); return; }
                 for (int i = 0; i < arr.length(); i++) {
                     JSONObject m = arr.optJSONObject(i);
                     if (m == null) continue;
@@ -386,10 +391,95 @@ public final class BhSteamChatOverlay {
                     mv.setPadding(0, dp(4), 0, dp(4));
                     listCol.addView(mv);
                 }
-                setStatus("Chat with " + name + " · " + arr.length() + " messages (read-only)");
+                setStatus("Chat with " + name + " · " + arr.length() + " messages");
+                addComposer(openFriendId);
             } catch (Throwable t) {
-                setStatus("Chat with " + name); addRaw(json);
+                setStatus("Chat with " + name); addRaw(json); addComposer(openFriendId);
             }
+        }
+
+        /** Bottom-of-conversation message composer: input + Send → friends.send_message. */
+        private void addComposer(final long steamId) {
+            if (steamId == 0) return;
+            LinearLayout bar = new LinearLayout(act);
+            bar.setOrientation(LinearLayout.HORIZONTAL);
+            bar.setGravity(Gravity.CENTER_VERTICAL);
+            bar.setPadding(0, dp(8), 0, dp(2));
+
+            final EditText input = new EditText(act);
+            input.setHint("Message…");
+            input.setHintTextColor(COL_OFFLINE);
+            input.setTextColor(COL_TEXT);
+            input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+            input.setSingleLine(true);
+            input.setImeOptions(EditorInfo.IME_ACTION_SEND);
+            GradientDrawable ibg = new GradientDrawable();
+            ibg.setColor(0x22000000);
+            ibg.setCornerRadius(dp(6));
+            input.setBackground(ibg);
+            input.setPadding(dp(8), dp(6), dp(8), dp(6));
+            input.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            bar.addView(input);
+
+            final TextView send = new TextView(act);
+            send.setText("Send");
+            send.setTextColor(COL_ACCENT);
+            send.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+            send.setPadding(dp(12), dp(6), dp(4), dp(6));
+            bar.addView(send);
+
+            final Runnable doSend = new Runnable() {
+                public void run() {
+                    String text = input.getText().toString().trim();
+                    if (text.isEmpty()) return;
+                    input.setText("");
+                    sendMessage(steamId, text);
+                }
+            };
+            send.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) { doSend.run(); }
+            });
+            input.setOnEditorActionListener(new TextView.OnEditorActionListener() {
+                public boolean onEditorAction(TextView v, int actionId, KeyEvent e) {
+                    if (actionId == EditorInfo.IME_ACTION_SEND
+                            || (e != null && e.getKeyCode() == KeyEvent.KEYCODE_ENTER && e.getAction() == KeyEvent.ACTION_DOWN)) {
+                        doSend.run();
+                        return true;
+                    }
+                    return false;
+                }
+            });
+            listCol.addView(bar);
+        }
+
+        private void sendMessage(final long steamId, final String text) {
+            setStatus("Sending…");
+            IO.execute(new Runnable() {
+                public void run() {
+                    String payload;
+                    try {
+                        payload = new JSONObject()
+                                .put("steamId", steamId)
+                                .put("message", text)
+                                .put("clientMessageId", System.currentTimeMillis())
+                                .toString();
+                    } catch (Throwable t) {
+                        post(new Runnable() { public void run() { setStatus("Send failed: bad payload."); } });
+                        return;
+                    }
+                    final String resp = BhSteamBridge.request("friends.send_message", payload, 8000);
+                    post(new Runnable() {
+                        public void run() {
+                            if (resp == null) {
+                                setStatus("Send failed · bridge: " + BhSteamBridge.getStatus());
+                            } else {
+                                // Reload so the just-sent message appears in the thread.
+                                loadHistory(steamId, currentTitle);
+                            }
+                        }
+                    });
+                }
+            });
         }
 
         private void addRaw(String json) {

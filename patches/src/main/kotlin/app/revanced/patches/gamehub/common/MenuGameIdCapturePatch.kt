@@ -52,17 +52,19 @@ val menuGameIdCapturePatch = bytecodePatch(
         // The param signature alone is shared by 3 methods (su/c37/v90); the
         // Ltyc;-><init> anchor disambiguates to the real builder (c37). The
         // 6.0.4 Lwhl;->S label sget anchor is dropped (label classes moved).
+        // 6.0.8: Lc37;->a → La37;->a(Le17;ILdv6;Lhh7;Leh3;I)V; row ctor
+        // Ltyc;->Lwyc;(Lm55;,String,Lfv6;) (all 12 More-Menu rows built in a37.a).
         val menuMethod = firstMethod {
-            parameterTypes == listOf("Lf17;", "I", "Lev6;", "Ljh7;", "Leh3;", "I") &&
+            parameterTypes == listOf("Le17;", "I", "Ldv6;", "Lhh7;", "Leh3;", "I") &&
                 returnType == "V" &&
                 (implementation?.instructions?.any { ins ->
                     ins.opcode == Opcode.INVOKE_DIRECT &&
                         (ins as? ReferenceInstruction)?.reference
                             ?.let { it is MethodReference &&
-                                    it.definingClass == "Ltyc;" &&
+                                    it.definingClass == "Lwyc;" &&
                                     it.name == "<init>" &&
                                     it.parameterTypes.toList() == listOf(
-                                        "Ln55;", "Ljava/lang/String;", "Lgv6;"
+                                        "Lm55;", "Ljava/lang/String;", "Lfv6;"
                                     )
                             } == true
                 } ?: false)
@@ -77,13 +79,15 @@ val menuGameIdCapturePatch = bytecodePatch(
         // collected via a [Object]->List call); the Lg6c ctor count >=4 is
         // unique to this method (the same 7-param sig also matches on2/w16,
         // which build 0 Lg6c rows).
+        // 6.0.8: Ly7c;->f → Lb8c;->f(Lc8c;Lfv6;Ldv6;ZLiyc;Leh3;I)V; tile row
+        // ctor Lg6c;->Lj6c; (built 5× in b8c.f).
         val libraryMenuMethod = firstMethod {
-            parameterTypes == listOf("Lz7c;", "Lgv6;", "Lev6;", "Z", "Lfyc;", "Leh3;", "I") &&
+            parameterTypes == listOf("Lc8c;", "Lfv6;", "Ldv6;", "Z", "Liyc;", "Leh3;", "I") &&
                 returnType == "V" &&
                 (implementation?.instructions?.count { ins ->
                     ins.opcode == Opcode.INVOKE_DIRECT &&
                         (ins as? ReferenceInstruction)?.getReference<MethodReference>()
-                            ?.let { it.definingClass == "Lg6c;" && it.name == "<init>" } == true
+                            ?.let { it.definingClass == "Lj6c;" && it.name == "<init>" } == true
                 } ?: 0) >= 4
         }
         libraryMenuMethod.addInstructions(0, capture)
@@ -105,10 +109,12 @@ val menuGameIdCapturePatch = bytecodePatch(
         // (fp4/fp5). Method-level `returnType == "..."` (below) is fine. The
         // 11-param (L,Z,9xL)->List signature is globally unique (1 method in
         // the whole apk), so it pins Levb;->b0 on its own.
+        // 6.0.8: Levb;->b0 → Lhvb;->b0(11-param L,Z,9×L→List, globally unique).
+        // Lny;/Ljq2; stayed stable; others reshuffled.
         val pzcMethod = firstMethod {
             parameterTypes == listOf(
-                "Loza;", "Z", "Ldtb;", "Ldtb;", "Lpg8;", "Lpg8;",
-                "Lx6b;", "Lny;", "Ljq2;", "Lctb;", "Ldtb;"
+                "Lsza;", "Z", "Lgtb;", "Lgtb;", "Lrg8;", "Lrg8;",
+                "La7b;", "Lny;", "Ljq2;", "Lftb;", "Lgtb;"
             ) &&
                 returnType == "Ljava/util/List;"
         }

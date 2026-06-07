@@ -8,31 +8,38 @@ import app.revanced.patches.gamehub.GAMEHUB_VERSION
 import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 
 // =========================================================================
-// 6.0.4 R8-mangled class letter map for the vibration patch.
+// R8-mangled class/method map for the vibration patch, version by version.
 //
 // Source: TideGear/GameHub-Vibration-Fix (BannerHub PR #80 / GameNative
-// PR #1214). 6.0.2 letters were `za8` (Physical), `lrl` (motor manager
-// type), `dg5` (env builder), `ns2.I0` (join helper), `ow6` (Function1).
+// PR #1214). 6.0.2 letters were `za8` (Physical), `dg5` (env builder).
 //
-// PHYSICAL_CLASS  — GamepadDevice$Physical-equivalent. Structural anchor:
-//                   public final class extending Lcb8;, with:
-//                     - method `g(II)V` .locals 3, body starts `const v0, 0xffff`
-//                     - method `f()V`   .locals 1, body starts iget on `k:L<motor>;`
-//                     - field `f:I` (deviceId)
-//                     - field `k:L<motor manager>;`
-//                   6.0.2 → `Lza8;`, 6.0.4 → `Lab8;`. Note: a different,
-//                   unrelated class still uses the letter `Lza8;` in 6.0.4 —
-//                   match by content (instructions + fields) not by name.
-// ENV_BUILDER     — Wine env-vars builder that constructs the LD_PRELOAD
-//                   list. Structural anchor:
-//                     - method `a(...)V` .locals 35 with first arg the
-//                       Wine config object
-//                     - body builds an ArrayList<String> in v12, calls
-//                       Kotlin joinToString$default with ":" separator
-//                     - has field `a:Landroid/content/Context;`
-//                   6.0.2 → `Ldg5;`, 6.0.4 → `Lbg5;`.
-private const val PHYSICAL_CLASS = "Lab8;"
-private const val ENV_BUILDER    = "Lbg5;"
+// PHYSICAL_CLASS  — the multi-motor "Physical" gamepad device (dual-motor
+//                   VibratorManager blend). The abstract base is `Lpz7;`
+//                   (fields a:I=low, b:I=high cache; abstract h(II)V + g()V);
+//                   PHYSICAL_CLASS is its concrete subclass. Structural anchor:
+//                     - extends the device base, method `h(II)V` .locals 3
+//                       starting `const v0, 0xffff` (the 65535 rumble scale)
+//                     - method `g()V` .locals 1 (multi-motor stop)
+//                     - field `f:I` = the Android device id
+//                       (constructor wires getAndroidDeviceId() into it)
+//                     - field `k:` = the motor/vibrator manager
+//                   The sibling subclass (`oz7` on 6.0.7) is the single
+//                   android.os.Vibrator device — match by content, not name.
+//                   6.0.2 Lza8;  6.0.4 Lab8; (dispatch g(II)V, stop f()V)
+//                   6.0.7 Lnz7; — methods shifted: dispatch g(II)V → h(II)V,
+//                   stop f()V → g()V; the device-id field is still `f:I`.
+// WINE_ACTIVITY   — the Wine session Activity. Hook 4 (the winebus disk-patch
+//                   trigger) used to anchor the Wine env-vars builder
+//                   (6.0.2 Ldg5;, 6.0.4 Lbg5;->a(...)V .locals 35). In 6.0.7
+//                   that dedicated builder was dissolved — the LD_PRELOAD env
+//                   is now assembled inside a merged WineActivity class
+//                   (`bqn;->t0`) with no clean Context field. WineActivity is
+//                   a stable, non-obfuscated AppCompatActivity (= a Context)
+//                   whose onCreate runs at game launch, before the Wine
+//                   process maps winebus.so — a strictly more robust anchor.
+private const val PHYSICAL_CLASS = "Lnz7;"   // 6.0.4: Lab8;
+private const val WINE_ACTIVITY =
+    "Lcom/xiaoji/egggame/features/winemu/WineActivity;"
 
 private const val VIB_HANDLER =
     "Lcom/xj/winemu/vibration/BhVibrationController;"
@@ -61,15 +68,11 @@ val vibrationPatch = bytecodePatch(
         // -----------------------------------------------------------------
         // Hook 1: GamepadServerManager.onRumble(III)V — dispatcher entry.
         //
-        // Original body starts:
-        //   .line 1
-        //   if-ltz p1, :cond_4
-        //
-        // We prepend an invoke-static into our handler; if it returns true
-        // we early-return (we handled the rumble), otherwise fall through
-        // to the stock path. The method is annotated @Keep so R8 doesn't
-        // touch its signature across versions; the `:cond_4` label has been
-        // stable on 6.0.x as well.
+        // Original body starts `if-ltz p1, :cond_0` and dispatches to the
+        // device manager (Lfc8;->G(III)V). We prepend an invoke-static into
+        // our handler; if it returns true we early-return (we handled the
+        // rumble), otherwise fall through to the stock path. The method is
+        // @Keep so R8 doesn't touch its signature; class name is stable.
         // -----------------------------------------------------------------
         firstMethod {
             definingClass == GAMEPAD_SERVER_MANAGER && name == "onRumble"
@@ -87,17 +90,19 @@ val vibrationPatch = bytecodePatch(
         }
 
         // -----------------------------------------------------------------
-        // Hook 2: PHYSICAL_CLASS.g(II)V — per-controller dispatch delegate.
+        // Hook 2: PHYSICAL_CLASS.h(II)V — per-controller dispatch delegate.
         //
-        // Reads deviceId from PHYSICAL.f:I, hands (deviceId, low, high) to
-        // the extension. If the extension returns true (handled), we
-        // early-return; otherwise fall through to stock per-vibrator
-        // blending (which is the single-motor `low*0.80 + high*0.33` blend
-        // we want to skip on multi-motor pads).
+        // The device manager (Lfc8;->G) routes a non-zero (low, high) to
+        // PHYSICAL.h(II)V. Reads deviceId from PHYSICAL.f:I, hands
+        // (deviceId, low, high) to the extension. If it returns true
+        // (handled), we early-return; otherwise fall through to stock
+        // per-vibrator blending (the single-motor `low*0.80 + high*0.33`
+        // blend we want to skip on multi-motor pads).
+        // 6.0.4: Lab8;->g(II)V → 6.0.7: Lnz7;->h(II)V.
         // -----------------------------------------------------------------
         firstMethod {
             definingClass == PHYSICAL_CLASS &&
-                name == "g" &&
+                name == "h" &&
                 parameterTypes == listOf("I", "I") &&
                 returnType == "V"
         }.apply {
@@ -115,15 +120,16 @@ val vibrationPatch = bytecodePatch(
         }
 
         // -----------------------------------------------------------------
-        // Hook 3: PHYSICAL_CLASS.f()V — stop hook.
+        // Hook 3: PHYSICAL_CLASS.g()V — stop hook.
         //
-        // Stock GameHub routes (0, 0) through f() instead of g(II), so
-        // hook 2 doesn't catch the release. We notify the keepalive map
-        // here, then fall through to the original cleanup.
+        // Stock GameHub routes (0, 0) through g() instead of h(II) (see
+        // Lfc8;->G), so hook 2 doesn't catch the release. We notify the
+        // keepalive map here, then fall through to the original cleanup.
+        // 6.0.4: Lab8;->f()V → 6.0.7: Lnz7;->g()V.
         // -----------------------------------------------------------------
         firstMethod {
             definingClass == PHYSICAL_CLASS &&
-                name == "f" &&
+                name == "g" &&
                 parameterTypes.isEmpty() &&
                 returnType == "V"
         }.apply {
@@ -137,51 +143,39 @@ val vibrationPatch = bytecodePatch(
         }
 
         // -----------------------------------------------------------------
-        // Hook 4: ENV_BUILDER.a(...)V — preload-free winebus disk-patch.
+        // Hook 4: WineActivity.onCreate — preload-free winebus disk-patch.
         //
         // Replaces the former libevshim.so LD_PRELOAD injection. Mapping an
         // extra .so into the Wine subprocess destabilises box64 under
         // new-WoW64 and silently exits a class of games (DiRT 3 →
         // STATUS_INVALID_IMAGE_FORMAT c000007b; Shotgun King ~700ms). Instead
         // we call BhVibrationController.ensureWinebusDurationPatchOnce(ctx)
-        // once per app process, right before the env builder hands the env
-        // list to the Wine launcher. The Java side scans the app files tree
-        // and rewrites every winebus.so's two non-zero SDL_JoystickRumble
-        // duration loads to 0xffffffff on disk (aarch64 + x86_64) so SDL2's
-        // ~1s rumble_expiration never fires; an AtomicBoolean gates repeat
-        // scans. No LD_PRELOAD, no extra mapping.
+        // once per app process. The Java side scans the app files tree and
+        // rewrites every winebus.so's two non-zero SDL_JoystickRumble duration
+        // loads to 0xffffffff on disk (aarch64 + x86_64) so SDL2's ~1s
+        // rumble_expiration never fires; an AtomicBoolean gates repeat scans.
+        // No LD_PRELOAD, no extra mapping.
         //
-        // Anchor: method ENTRY (index 0) of the env builder. The former
-        // anchor used fragile index arithmetic — `joinIdx - 5`, assuming the
-        // five instructions before the joinToString$default invoke-static/
-        // range were the `:`-separator arg-setup block. In the 6.0.4 base
-        // (versionCode 114) the instruction layout differs: `joinIdx - 5`
-        // lands inside the ArrayList-building loop, immediately AFTER an
-        // unconditional `goto` and before a `:cond_*` label, so the two
-        // injected instructions become unreachable dead code and the patch
-        // never runs (confirmed by zero WINEBUS breadcrumbs on a live
-        // launch). Index 0 is unconditionally reached every time the env
-        // builder is invoked at launch — the same guaranteed-reachable spot
-        // Hooks 1–3 use. `ensureWinebusDurationPatchOnce` is AtomicBoolean-
-        // gated so an at-entry call is correct and self-deduplicating.
-        //
-        // `p0` is `this` (the env builder, a high register under .locals 35);
-        // materialise it into v0, read the Context field, call the patcher.
-        // v0 is clobbered, but the method's own first instruction
-        // (`move-object/from16 v0, p0`) re-initialises it immediately after,
-        // so prepending here is safe with no label needed.
-        //
-        // Ported from TideGear/GameHub-Vibration-Fix Patch 4 (GameNative
-        // PR #1214 lineage) with the author's permission.
+        // 6.0.7 anchor change: the dedicated env-vars builder this hook used
+        // (6.0.4 Lbg5;->a(...)V) was dissolved into a merged WineActivity
+        // class with no clean Context field. WineActivity.onCreate is a
+        // stable, guaranteed-at-launch entry that IS a Context, and runs
+        // before the Wine process maps winebus.so — and the
+        // AtomicBoolean-gated patcher is self-deduplicating, so an at-onCreate
+        // call is correct. onCreate is `.locals 19`, so `p0` (this) is a high
+        // register; materialise it via move-object/from16 (v0 is clobbered but
+        // the method re-initialises it, so prepending at index 0 is safe).
         // -----------------------------------------------------------------
         firstMethod {
-            definingClass == ENV_BUILDER && name == "a" && returnType == "V"
+            definingClass == WINE_ACTIVITY &&
+                name == "onCreate" &&
+                parameterTypes == listOf("Landroid/os/Bundle;") &&
+                returnType == "V"
         }.apply {
             addInstructions(
                 0,
                 """
                     move-object/from16 v0, p0
-                    iget-object v0, v0, $ENV_BUILDER->a:Landroid/content/Context;
                     invoke-static {v0}, $VIB_HANDLER->ensureWinebusDurationPatchOnce(Landroid/content/Context;)V
                 """.trimIndent(),
             )

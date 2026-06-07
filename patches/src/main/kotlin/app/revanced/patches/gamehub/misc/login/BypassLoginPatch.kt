@@ -79,12 +79,20 @@ import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 // ~/gh607-apktool-d using the structural anchors above. Method names on the auth
 // interface (a/b/c/d/e/f/g/h) are preserved; only class letters + the userid
 // method (e→g) and the second navigator gate (r→s) changed.
+// 6.0.8 — re-derived against ~/gh608-apktool-d. AUTH_IMPL/AUTH_INTERFACE are
+// UNCHANGED (Lfw0; implements Lcw0;, 3× Lq4g; StateFlow fields, getters d/e/h
+// return Lsdi;, f() returns the token — bodies byte-identical to 607). Reshuffled:
+//   AUTH_TOKEN   Ln2l;→Lt2l;  (= return type of Lcw0;->f(); 10-field token, .a=userId)
+//   GAME_LIB_REPO Lam7;→Ldm7;  (am7 is now a coroutine lambda; dm7 has b:Lcw0;,
+//                  save x(GameInfo,LaunchMethod,Continuation), userid getter h())
+//   USERID method g→h          (dm7.h(): iget b:Lcw0; → f()Lt2l; → Lt2l;->a:String)
+//   NAVIGATOR    Lg8d;→Lj8d;   (j8d has b:Lcw0;, gates i/s with the auth-check+login)
 private const val AUTH_IMPL              = "Lfw0;"
 private const val AUTH_INTERFACE         = "Lcw0;"
-private const val AUTH_TOKEN             = "Ln2l;"
-private const val GAME_LIB_REPO          = "Lam7;"
-private const val GAME_LIB_REPO_USERID_METHOD = "g"
-private const val NAVIGATOR              = "Lg8d;"
+private const val AUTH_TOKEN             = "Lt2l;"
+private const val GAME_LIB_REPO          = "Ldm7;"
+private const val GAME_LIB_REPO_USERID_METHOD = "h"
+private const val NAVIGATOR              = "Lj8d;"
 // NAV_INTERCEPTOR in 6.0.4 is Liod;, but its a(...) body no longer holds the
 // auth check inline — it dispatches to coroutine continuation Lhod;->invokeSuspend
 // where the iget+invoke+if-nez pattern actually lives. The apply block below

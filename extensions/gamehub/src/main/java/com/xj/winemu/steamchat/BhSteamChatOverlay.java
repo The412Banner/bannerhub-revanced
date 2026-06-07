@@ -59,6 +59,9 @@ public final class BhSteamChatOverlay {
 
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final ExecutorService IO = Executors.newSingleThreadExecutor();
+    private static final ExecutorService IMG_IO = Executors.newFixedThreadPool(2);
+    private static final java.util.regex.Pattern URL_RE =
+            java.util.regex.Pattern.compile("https?://[^\\s\\]\\[\"']+");
 
     private static final WeakHashMap<Activity, Controller> sOverlays = new WeakHashMap<>();
 
@@ -439,14 +442,18 @@ public final class BhSteamChatOverlay {
                     if (m == null) continue;
                     String text = firstNonEmpty(m.optString("message"), m.optString("text"),
                             m.optString("body"), m.optString("content"), "");
-                    long sender = m.optLong("senderSteamId", m.optLong("steamId", 0));
                     boolean fromMe = m.optBoolean("fromLocalUser", m.optBoolean("isOutgoing", false));
-                    TextView mv = new TextView(act);
-                    mv.setText((fromMe ? "You: " : "") + text);
-                    mv.setTextColor(fromMe ? COL_SUBTEXT : COL_TEXT);
-                    mv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-                    mv.setPadding(0, dp(4), 0, dp(4));
-                    listCol.addView(mv);
+                    String imgUrl = extractImageUrl(text);
+                    if (imgUrl != null) {
+                        listCol.addView(imageRow(imgUrl, fromMe));
+                    } else {
+                        TextView mv = new TextView(act);
+                        mv.setText((fromMe ? "You: " : "") + stripBBCode(text));
+                        mv.setTextColor(fromMe ? COL_SUBTEXT : COL_TEXT);
+                        mv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+                        mv.setPadding(0, dp(4), 0, dp(4));
+                        listCol.addView(mv);
+                    }
                 }
                 setStatus("Chat with " + name + " · " + arr.length() + " messages");
                 addComposer(openFriendId);
@@ -524,10 +531,13 @@ public final class BhSteamChatOverlay {
                 public void run() {
                     String payload;
                     try {
+                        // SendMessageRequest (elh): steamId:long, message:String,
+                        // clientMessageId:String (optional). It MUST be a string —
+                        // kotlinx rejects a number here and the send silently fails.
                         payload = new JSONObject()
                                 .put("steamId", steamId)
                                 .put("message", text)
-                                .put("clientMessageId", System.currentTimeMillis())
+                                .put("clientMessageId", String.valueOf(System.currentTimeMillis()))
                                 .toString();
                     } catch (Throwable t) {
                         post(new Runnable() { public void run() { setStatus("Send failed: bad payload."); } });
@@ -537,7 +547,7 @@ public final class BhSteamChatOverlay {
                     post(new Runnable() {
                         public void run() {
                             if (resp == null) {
-                                setStatus("Send failed · bridge: " + BhSteamBridge.getStatus());
+                                setStatus("Send failed · " + BhSteamBridge.getLastError());
                             } else {
                                 // Reload so the just-sent message appears in the thread.
                                 loadHistory(steamId, currentTitle);
@@ -546,6 +556,41 @@ public final class BhSteamChatOverlay {
                     });
                 }
             });
+        }
+
+        /** Render a chat image: async-download the bitmap into an ImageView; tap opens full-res in browser. */
+        private View imageRow(final String url, boolean fromMe) {
+            final android.widget.ImageView iv = new android.widget.ImageView(act);
+            LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(220),
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            ilp.topMargin = dp(4); ilp.bottomMargin = dp(4);
+            iv.setLayoutParams(ilp);
+            iv.setAdjustViewBounds(true);
+            iv.setScaleType(android.widget.ImageView.ScaleType.FIT_START);
+            iv.setMinimumHeight(dp(80));
+            GradientDrawable ph = new GradientDrawable();
+            ph.setColor(0x22FFFFFF); ph.setCornerRadius(dp(6));
+            iv.setBackground(ph);
+            iv.setContentDescription("Steam chat image");
+            iv.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    try {
+                        android.content.Intent it = new android.content.Intent(android.content.Intent.ACTION_VIEW,
+                                android.net.Uri.parse(url));
+                        it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                        act.startActivity(it);
+                    } catch (Throwable ignored) {}
+                }
+            });
+            IMG_IO.execute(new Runnable() {
+                public void run() {
+                    final android.graphics.Bitmap bmp = fetchBitmap(url);
+                    post(new Runnable() { public void run() {
+                        if (bmp != null) { iv.setBackground(null); iv.setImageBitmap(bmp); }
+                    }});
+                }
+            });
+            return iv;
         }
 
         private void addRaw(String json) {
@@ -601,5 +646,52 @@ public final class BhSteamChatOverlay {
     private static String firstNonEmpty(String... vals) {
         for (String v : vals) if (v != null && !v.isEmpty() && !v.equals("null")) return v;
         return "";
+    }
+
+    /**
+     * Steam chat image messages arrive as BBCode carrying an https image URL
+     * (e.g. {@code [img src=…steamusercontent…]…[/img]}). Pull the first such URL
+     * so we can render it inline; returns null for ordinary text messages.
+     */
+    private static String extractImageUrl(String text) {
+        if (text == null) return null;
+        boolean looksImg = text.contains("[img") || text.contains("steamusercontent")
+                || text.contains("steamuserimages");
+        if (!looksImg) return null;
+        java.util.regex.Matcher m = URL_RE.matcher(text);
+        // Prefer a thumbnail URL if one is called out; else the first URL.
+        String first = null;
+        while (m.find()) {
+            String u = m.group();
+            if (first == null) first = u;
+            if (u.contains("thumb")) return u;
+        }
+        return first;
+    }
+
+    /** Strip the most common Steam BBCode tags so non-image messages read cleanly. */
+    private static String stripBBCode(String text) {
+        if (text == null || text.indexOf('[') < 0) return text;
+        return text.replaceAll("\\[/?[a-zA-Z][^\\]]*\\]", "").trim();
+    }
+
+    private static android.graphics.Bitmap fetchBitmap(String url) {
+        java.net.HttpURLConnection c = null;
+        java.io.InputStream in = null;
+        try {
+            c = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+            c.setConnectTimeout(8000);
+            c.setReadTimeout(8000);
+            c.setInstanceFollowRedirects(true);
+            in = c.getInputStream();
+            android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
+            o.inSampleSize = 2; // thumbnails are ~512px; halve to save memory
+            return android.graphics.BitmapFactory.decodeStream(in, null, o);
+        } catch (Throwable t) {
+            return null;
+        } finally {
+            try { if (in != null) in.close(); } catch (Throwable ignored) {}
+            if (c != null) c.disconnect();
+        }
     }
 }

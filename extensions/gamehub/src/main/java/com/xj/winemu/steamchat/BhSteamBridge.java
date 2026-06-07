@@ -43,6 +43,7 @@ public final class BhSteamBridge {
     private static volatile boolean sResolved = false;
     private static volatile boolean sUsable = false;
     private static volatile String sStatus = "not resolved";
+    private static volatile String sLastError = "";
 
     private static Object sClient;          // SteamBridgeClient instance
     private static Method sExecuteRaw;      // executeRaw-<mangled>(String,String,kri,r65,Continuation)
@@ -62,6 +63,8 @@ public final class BhSteamBridge {
     /** Human-readable resolve outcome (shown on the overlay; logcat scrolls out
      *  fast under Wine's log volume). */
     public static String getStatus() { return sStatus; }
+    /** Reason the most recent request() returned null (timeout / native failure / exception). */
+    public static String getLastError() { return sLastError; }
 
     private static ClassLoader hostLoader() {
         ClassLoader cl = BhSteamBridge.class.getClassLoader();
@@ -184,7 +187,8 @@ public final class BhSteamBridge {
      * any failure/timeout. Blocking — call only from a worker thread.
      */
     public static String request(String topic, String payloadJson, long timeoutMs) {
-        if (!isAvailable()) return null;
+        sLastError = "";
+        if (!isAvailable()) { sLastError = "bridge unavailable"; return null; }
         final CountDownLatch latch = new CountDownLatch(1);
         final AtomicReference<Object> out = new AtomicReference<>(null);
         final AtomicReference<Object> fail = new AtomicReference<>(null);
@@ -216,14 +220,22 @@ public final class BhSteamBridge {
             // sentinel) and the result arrives via resumeWith → wait on the latch.
             if (ret instanceof String) return (String) ret;
             if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
-                Log.w(TAG, "request " + topic + " timed out after " + timeoutMs + "ms");
+                sLastError = "timeout after " + timeoutMs + "ms";
+                Log.w(TAG, "request " + topic + " " + sLastError);
                 return null;
             }
-            if (fail.get() != null) { Log.w(TAG, "request " + topic + " failed: " + fail.get()); return null; }
+            if (fail.get() != null) {
+                sLastError = "native: " + fail.get();
+                Log.w(TAG, "request " + topic + " failed: " + fail.get());
+                return null;
+            }
             Object v = out.get();
-            return (v instanceof String) ? (String) v : null;
+            if (v instanceof String) return (String) v;
+            sLastError = "non-string result: " + v;
+            return null;
         } catch (Throwable t) {
             Throwable c = (t.getCause() != null) ? t.getCause() : t;
+            sLastError = c.getClass().getSimpleName() + ": " + c.getMessage();
             Log.w(TAG, "request " + topic + " threw: " + c);
             return null;
         }

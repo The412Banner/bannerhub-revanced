@@ -71,7 +71,7 @@ jobs:
           java-version: "17"
 
       - name: Cache Gradle
-        uses: burrunan/gradle-cache-action@v3
+        uses: gradle/actions/setup-gradle@v5
 
       # libevshim.so build step removed — the vibration patch is now
       # preload-free (in-process winebus.so disk patch via

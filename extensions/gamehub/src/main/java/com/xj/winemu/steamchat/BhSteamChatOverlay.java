@@ -128,6 +128,7 @@ public final class BhSteamChatOverlay {
         private LinearLayout panel;
         private TextView pill;
         private TextView status;
+        private TextView backRow;        // pinned "‹ Back to friends" (conversation view only)
         private LinearLayout listCol;    // friend rows / message rows
         private boolean expanded = false;
         private boolean attached = false;
@@ -240,6 +241,18 @@ public final class BhSteamChatOverlay {
             status.setText("Steam friends");
             panel.addView(status);
 
+            // Pinned back affordance: lives in the panel's fixed zone (above the
+            // ScrollView) so it never scrolls away while a conversation is open.
+            // Shown only in the conversation view; hidden on the friends list.
+            backRow = new TextView(act);
+            backRow.setText("‹ Back to friends");
+            backRow.setTextColor(COL_ACCENT);
+            backRow.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+            backRow.setPadding(0, dp(2), 0, dp(8));
+            backRow.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { loadFriends(); } });
+            backRow.setVisibility(View.GONE);
+            panel.addView(backRow);
+
             ScrollView scroll = new ScrollView(act);
             scroll.setLayoutParams(new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(320)));
@@ -303,6 +316,7 @@ public final class BhSteamChatOverlay {
 
         private void loadFriends() {
             openFriendId = 0;
+            if (backRow != null) backRow.setVisibility(View.GONE);
             setStatus("Loading friends…");
             IO.execute(new Runnable() {
                 public void run() {
@@ -316,6 +330,7 @@ public final class BhSteamChatOverlay {
         private void loadHistory(final long steamId, final String name) {
             openFriendId = steamId;
             currentTitle = name;
+            if (backRow != null) backRow.setVisibility(View.VISIBLE);
             setStatus("Loading messages…");
             IO.execute(new Runnable() {
                 public void run() {
@@ -451,15 +466,9 @@ public final class BhSteamChatOverlay {
 
         private void renderHistory(String json, String name) {
             listCol.removeAllViews();
-            // back row
-            TextView back = new TextView(act);
-            back.setText("‹ Back to friends");
-            back.setTextColor(COL_ACCENT);
-            back.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-            back.setPadding(0, dp(2), 0, dp(8));
-            back.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { loadFriends(); } });
-            listCol.addView(back);
-
+            // The "‹ Back to friends" control is now the pinned `backRow` in the
+            // panel's fixed zone (made visible in loadHistory), so it stays put
+            // instead of scrolling away with the message list.
             if (json == null) { setStatus("No history yet — say hello."); addComposer(openFriendId); return; }
             try {
                 JSONArray arr = asArray(json, "messages", "items", "data", "history", "value");

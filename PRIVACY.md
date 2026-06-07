@@ -8,7 +8,7 @@ It only covers the **BannerHub-side patches**. It does not cover GameHub's upstr
 
 ## What we kill
 
-Every row below is a real telemetry channel that was active on vanilla GameHub 6.0.4 and is **no longer reachable** in the BannerHub v6 build that ships from `gamehub-604-build`. The "Mechanism" column says how, and "Merge commit" links to the actual code that did it.
+Every row below is a real telemetry channel that was active on vanilla GameHub 6.0.7 and is **no longer reachable** in the BannerHub v6 build that ships from `gamehub-607-build`. The "Mechanism" column says how, and "Merge commit" links to the actual code that did it. (These patches were carried forward from the 6.0.4 line and **re-fingerprinted against the 6.0.7 bytecode** — the mechanisms are unchanged; the commit links point at the original implementation.)
 
 | Channel | What it leaked | Mechanism | Merge commit |
 | --- | --- | --- | --- |
@@ -21,7 +21,20 @@ Every row below is a real telemetry channel that was active on vanilla GameHub 6
 | **`statistic-gamehub-api.vgabc.com/events`** | general in-app analytics events to XiaoJi | `Lcx5;->a` (the public send-batch entry point) early-returns a fake success result before any URL string is allocated. Coroutine state machine, HTTP client, and DNS resolver never run | [`b043f8c`](https://github.com/The412Banner/bannerhub-revanced/commit/b043f8c) |
 | **`statistic-gamehub-api.vgabc.com/events/device-performance-config`** | device specs + perf telemetry to XiaoJi | `Loh4;->b` (the public report entry point) early-returns a fake success result with the same shape callers expect. Lambda body holding the URL is unreachable dead code | [`b043f8c`](https://github.com/The412Banner/bannerhub-revanced/commit/b043f8c) |
 
-Empirical confirmation on a real device (Pixel-class hardware, BannerHub v6 on `gamehub-604-build@53d9ec1`, full 6.5-minute session = install → open → game launch → in-game session → quit): **zero DNS queries** for `statistic-gamehub-api.vgabc.com`, `dev2-gamehub-api.vgabc.com`, or `landscape-api-beta.vgabc.com` recorded across the entire trace. Same trace, zero hits in logcat for any of those hosts.
+Empirical confirmation on a real device (Pixel-class hardware, BannerHub v6 on `gamehub-604-build@53d9ec1`, full 6.5-minute session = install → open → game launch → in-game session → quit): **zero DNS queries** for `statistic-gamehub-api.vgabc.com`, `dev2-gamehub-api.vgabc.com`, or `landscape-api-beta.vgabc.com` recorded across the entire trace. Same trace, zero hits in logcat for any of those hosts. This trace was captured on the 6.0.4 line; the kill patches on `gamehub-607-build` are the same mechanisms re-fingerprinted against the 6.0.7 bytecode, and the 6.0.7 build is device-verified end-to-end (a fresh 6.0.7 DNS trace is the same shape — re-run the steps below to confirm on your own device).
+
+---
+
+## Rolled into every build — the former Lite-only strips
+
+On the 6.0.4 line, BannerHub v6 shipped a separate, smaller **Lite** build that stripped a few unused/heavy components. **On the 6.0.7 base there is no separate Lite** — XiaoJi's own −46 % size pass already makes the full build smaller than the old Lite ever was. Two of those strips are **privacy-relevant**, so rather than lose them along with the Lite build, they now apply to **every** variant by default ([`590584f`](https://github.com/The412Banner/bannerhub-revanced/commit/590584f)):
+
+| Removed | What it was | Mechanism |
+| --- | --- | --- |
+| **Aliyun / Alibaba NumberAuth** — carrier one-tap phone-login SDK (`com.mobile.auth.gatewayauth.*`) | Carrier "one-tap" login that resolves your phone number through your mobile carrier — an identity surface — plus the SDK's bundled anti-tamper / root / emulator / proxy fingerprint checks. Under BannerHub's login bypass the real auth flow never completes, so it is both dead weight and a fingerprint surface. | **Disable Aliyun NumberAuth** patch: stubs the sole `System.loadLibrary("pns-…alijtca_plus")` site to a no-op — anchored on the unique method holding a `pns-` const-string **and** a `loadLibrary` call, so it survives R8 letter reshuffles — then deletes the `libpns-*-alijtca_plus.so` native lib. ~0.5 MB. |
+| **Haima cloud-gaming stack** — HMCP / WebRTC | XiaoJi's cloud-gaming feature: streams games from **XiaoJi cloud servers**. Non-functional under BannerHub's catalog redirect anyway, and a live connection to XiaoJi cloud infrastructure. | **Strip cloud gaming** patch: neutralises the two SDK native load sites first (`IjkMediaPlayer.loadLibrariesOnce` → `return-void`; `org.hmwebrtc.NativeLibrary$DefaultLoader.load` → `return false`, the SDK's own designed missing-lib outcome), then strips the 4 Haima native libs + the entire `features.cloud` Compose asset tree. ~21.5 MB. |
+
+The 6.0.4 Lite also stripped a duplicate MiSans font and the AVIF/HEIC image codecs; on 6.0.7 both are **moot** — XiaoJi already deduplicated the font and dropped those codecs in its own size pass, so there's nothing left for BannerHub to strip there.
 
 ---
 
@@ -93,7 +106,7 @@ Don't trust the table — verify it. The patches are open source; the artifacts 
    - All `com.mob.*` and `cn.fly.*` components should have `android:enabled="false"`
    - `com.google.android.gms.measurement.AppMeasurement{Receiver,Service,JobService}` should be `android:enabled="false"`
    - `AD_ID`, `ACCESS_ADSERVICES_AD_ID`, `ACCESS_ADSERVICES_ATTRIBUTION` should be absent from `<uses-permission>` declarations
-4. **Smali check** — `Lcx5;->a` (general events) and `Loh4;->b` (perf-config) should begin with a `new-instance` → const loads → `invoke-direct[/range] … <init>` → `return-object v0` sequence before any URL strings or HTTP calls.
+4. **Smali check** — the analytics send-batch entry point (general events) and the device-performance report entry point should each begin with a `new-instance` → const loads → `invoke-direct[/range] … <init>` → `return-object v0` sequence before any URL strings or HTTP calls. (The exact obfuscated class letters differ per base version — R8 reshuffles them on every minor bump — so check the [patch sources](https://github.com/The412Banner/bannerhub-revanced/tree/gamehub-607-build/patches/src/main/kotlin/app/revanced/patches/gamehub) for the current 6.0.7 anchors rather than a hard-coded letter.)
 
 ---
 
@@ -101,4 +114,4 @@ Don't trust the table — verify it. The patches are open source; the artifacts 
 
 If you find a leak this document doesn't mention, please open an issue at [github.com/The412Banner/bannerhub-revanced/issues](https://github.com/The412Banner/bannerhub-revanced/issues). Disclosure gaps in this file are bugs.
 
-*Last updated: 2026-05-14. Covers `gamehub-604-build` at HEAD `53d9ec1` and later.*
+*Last updated: 2026-06-06. Covers `gamehub-607-build` (GameHub 6.0.7, versionCode 118). The telemetry-kill patches are carried forward from the 6.0.4 line, re-fingerprinted against the 6.0.7 bytecode; the former Lite-only NumberAuth + cloud-gaming strips now ship in every variant.*

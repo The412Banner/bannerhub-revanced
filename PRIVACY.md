@@ -82,6 +82,18 @@ Steam cover art for the Steam game integration. Same shape as `bigeyes.com`: ima
 
 ---
 
+## Your store logins (Steam / GOG / Epic) stay between you and the store
+
+BannerHub is a launcher and catalog layer — **not** an auth broker. It never asks for, sees, stores, or relays your Steam, GOG, or Epic **password or session token**. Each store login goes straight to that store, exactly as it would in the store's own client:
+
+- **GOG** — "Sign in to GOG" opens GOG's **own** OAuth page (`https://auth.gog.com/auth`) inside a WebView. You type your username and password into **GOG's** form, so they go directly to GOG — BannerHub never sees them. GOG returns an access/refresh token in the redirect, which is stored **only in on-device storage** (`bh_gog_prefs` SharedPreferences) and used **only** against GOG's own endpoints (`embed.gog.com`, `api.gog.com`, `content-system.gog.com`, the GOG CDN). The token is never sent to the BannerHub Worker or to GameHub. *(Verify in [`GogLoginActivity.java`](https://github.com/The412Banner/bannerhub-revanced/blob/gamehub-607-build/extensions/gamehub/src/main/java/app/revanced/extension/gamehub/gog/GogLoginActivity.java) — and grep the `gog/` extension: no GOG token ever leaves for `workers.dev` or `vgabc.com`.)*
+- **Steam** — Steam login happens inside the **real Steam client** running under Wine (the genuine Valve binary). Your Steam credentials and Steam Guard code go directly to Valve; BannerHub has no code in that path and never sees them. The only Steam value BannerHub's catalog can ever read is your **public** SteamID64 / public owned-games list — never a password or session token.
+- **Epic** — handled entirely by **Epic Online Services**. BannerHub ships **no Epic login or networking code at all**, so your Epic credentials go directly to Epic.
+
+None of BannerHub's patches rewrite a Steam, GOG, or Epic host, and the catalog redirect only ever touches XiaoJi's two `landscape-api-*.vgabc.com` catalog hosts — so your store sign-ins never transit the BannerHub Worker, Cloudflare, or GameHub's servers.
+
+---
+
 ## What is intentionally out of scope
 
 These exist, and we did not touch them, because they're not part of the XiaoJi / Firebase / Mob / Google telemetry surface that this series targeted:

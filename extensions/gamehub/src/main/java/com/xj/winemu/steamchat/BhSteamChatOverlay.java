@@ -478,16 +478,25 @@ public final class BhSteamChatOverlay {
                 for (int i = 0; i < arr.length(); i++) {
                     JSONObject m = arr.optJSONObject(i);
                     if (m == null) continue;
-                    String text = firstNonEmpty(m.optString("message"), m.optString("text"),
-                            m.optString("body"), m.optString("content"), "");
-                    boolean fromMe = m.optBoolean("fromLocalUser", m.optBoolean("isOutgoing", false));
-                    String imgUrl = extractImageUrl(text);
+                    // SteamChatMessageDto.direction is the only reliable sender
+                    // signal — "Incoming" (friend) vs "Outgoing" (us). friendSteamId
+                    // is the conversation peer on BOTH sides, so it can't tell who
+                    // sent it. (Old fromLocalUser/isOutgoing guesses never matched,
+                    // so every bubble fell through to "incoming" = left.)
+                    boolean fromMe = "Outgoing".equalsIgnoreCase(m.optString("direction", ""))
+                            || m.optBoolean("fromLocalUser", m.optBoolean("isOutgoing", false));
+                    // rawMessage carries BBCode (incl. [img …]) for image detection;
+                    // plainMessage is the display-ready text the native UI shows.
+                    String rawMessage = firstNonEmpty(m.optString("rawMessage"), m.optString("message"),
+                            m.optString("text"), m.optString("body"), m.optString("content"), "");
+                    String plainMessage = firstNonEmpty(m.optString("plainMessage"), "");
+                    String imgUrl = extractImageUrl(rawMessage);
                     if (imgUrl != null) {
                         // Image inside an aligned, sender-tinted bubble.
                         listCol.addView(bubbleRow(fromMe, imageRow(imgUrl, fromMe)));
                     } else {
                         TextView mv = new TextView(act);
-                        mv.setText(stripBBCode(text));
+                        mv.setText(plainMessage.isEmpty() ? stripBBCode(rawMessage) : plainMessage);
                         mv.setTextColor(COL_TEXT);
                         mv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
                         // Cap width so long lines wrap into the bubble instead of

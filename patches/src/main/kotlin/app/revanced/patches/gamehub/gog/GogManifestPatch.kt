@@ -90,9 +90,7 @@ val gogManifestPatch = resourcePatch(
             // enough — an unregistered Service silently fails to start, which
             // is why M3 downloads did not begin. Mirror the proven
             // BannerHub-3.7.x registration (foregroundServiceType="dataSync",
-            // exported=false). Required perms (INTERNET, FOREGROUND_SERVICE,
-            // POST_NOTIFICATIONS, FOREGROUND_SERVICE_DATA_SYNC) are already
-            // declared by the base GameHub 6.0.4 manifest — no perm patch.
+            // exported=false).
             val serviceName = "$PKG.BhDownloadService"
             val services = app.getElementsByTagName("service")
             var serviceExists = false
@@ -109,6 +107,32 @@ val gogManifestPatch = resourcePatch(
                     setAttribute("android:foregroundServiceType", "dataSync")
                 }
                 app.appendChild(service)
+            }
+
+            // FOREGROUND_SERVICE_DATA_SYNC is required to start a `dataSync`
+            // foreground service on targetSDK 34+. On GameHub 6.0.4 the base
+            // manifest declared it, so BhDownloadService rode on it. 6.0.7
+            // swapped its own FGS dataSync→specialUse and DROPPED the
+            // FOREGROUND_SERVICE_DATA_SYNC permission (base now only has
+            // FOREGROUND_SERVICE_SPECIAL_USE) — so on 6.0.7 starting our
+            // download service threw SecurityException and crashed the app at
+            // BhDownloadService.onStartCommand. Declare the permission
+            // ourselves (idempotent — no-op where the base already has it) so
+            // the GOG download FGS is self-sufficient across versions.
+            val requiredPerm = "android.permission.FOREGROUND_SERVICE_DATA_SYNC"
+            val perms = dom.documentElement.getElementsByTagName("uses-permission")
+            var permExists = false
+            for (i in 0 until perms.length) {
+                if ((perms.item(i) as Element).getAttribute("android:name") == requiredPerm) {
+                    permExists = true
+                    break
+                }
+            }
+            if (!permExists) {
+                val perm = dom.createElement("uses-permission").apply {
+                    setAttribute("android:name", requiredPerm)
+                }
+                dom.documentElement.appendChild(perm)
             }
         }
     }

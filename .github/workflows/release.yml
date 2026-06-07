@@ -137,7 +137,7 @@ jobs:
           cp explore/bh_explore.json shared/ 2>/dev/null || true
 
       - name: Upload shared artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: shared
           path: shared/
@@ -177,7 +177,7 @@ jobs:
           java-version: "17"
 
       - name: Download shared artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: shared
           path: shared/
@@ -233,7 +233,7 @@ jobs:
           "${APKSIGNER}" verify --print-certs "out/${FILENAME}"
 
       - name: Upload variant APK
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: apk-${{ matrix.variant.name }}
           path: out/BannerHub-V6-${{ needs.build.outputs.version }}-Patched-${{ matrix.variant.name }}.apk
@@ -252,13 +252,13 @@ jobs:
       contents: write
     steps:
       - name: Download shared artifacts (rvp + rve)
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           name: shared
           path: shared/
 
       - name: Download all variant APKs
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v7
         with:
           pattern: apk-*
           path: apks/

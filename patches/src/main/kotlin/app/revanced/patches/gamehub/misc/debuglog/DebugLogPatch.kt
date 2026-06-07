@@ -68,14 +68,20 @@ private const val DEBUG_TRACE = "Lapp/revanced/extension/gamehub/debug/DebugTrac
 //                  6.0.7 Lza; — method `invokeSuspend` → `w`.
 // =========================================================================
 
-private const val Y2D_INTERFACE = "Lt9c;"   // 6.0.4: Lxgd;
+// 6.0.8 re-derive (~/gh608-apktool-d): Y2D_INTERFACE Lt9c;->Lw9c; (= Ldm7;->x
+// catch invoke target, a(Throwable,Ldv6;)); Y2D_IMPL Lz86;->Ly86; (its a()
+// iget a:Lw9c; then invoke-interface Lw9c;->a — the delegator; sibling tua
+// builds Lsua;+calls Lioa;->j = decoy); SAVE_REPO Lam7;->Ldm7; (= GAME_LIB_REPO,
+// am7 now a lambda), SAVE_METHOD v->x; IMPORT_TXN class stays Lza; (coincidental)
+// but method w->x (za.x(Object)Object outlined, holds both DAO inserts, dm7 refs it).
+private const val Y2D_INTERFACE = "Lw9c;"   // 6.0.7: Lt9c;  6.0.4: Lxgd;
 private const val Y2D_ERR_METHOD = "a"       // 6.0.4: e
-private const val Y2D_IMPL = "Lz86;"         // 6.0.4: Lj86;
+private const val Y2D_IMPL = "Ly86;"         // 6.0.7: Lz86;  6.0.4: Lj86;
 private const val Y2D_IMPL_METHOD = "a"      // 6.0.4: e
-private const val SAVE_REPO = "Lam7;"        // 6.0.4: Lvu7;
-private const val SAVE_METHOD = "v"
-private const val IMPORT_TXN = "Lza;"        // 6.0.4: Lws7;
-private const val IMPORT_TXN_METHOD = "w"    // 6.0.4: invokeSuspend
+private const val SAVE_REPO = "Ldm7;"        // 6.0.7: Lam7;  6.0.4: Lvu7;
+private const val SAVE_METHOD = "x"          // 6.0.7: v
+private const val IMPORT_TXN = "Lza;"        // 6.0.7: Lza;  6.0.4: Lws7;
+private const val IMPORT_TXN_METHOD = "x"    // 6.0.7: w  6.0.4: invokeSuspend
 private const val GAME_LAUNCH_METHOD_DAO =
     "Lcom/xiaoji/egggame/game/database/dao/GameLaunchMethodDao;"
 private const val GAME_LIBRARY_BASE_DAO =

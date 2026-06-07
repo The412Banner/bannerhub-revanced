@@ -242,6 +242,8 @@ public final class BhSteamChatOverlay {
         }
 
         private String currentTitle = "";
+        private String lastFriendsJson;
+        private boolean offlineCollapsed = true;
 
         private void setExpanded(boolean exp) {
             expanded = exp;
@@ -293,20 +295,57 @@ public final class BhSteamChatOverlay {
         private void renderFriends(String json) {
             listCol.removeAllViews();
             if (json == null) { setStatus("friends.list → null · bridge: " + BhSteamBridge.getStatus()); return; }
+            lastFriendsJson = json;
             try {
                 JSONArray arr = asArray(json, "friends", "items", "data", "list", "value");
                 if (arr == null) { setStatus("Unexpected response."); addRaw(json); return; }
-                int online = 0;
+
+                // Partition online (incl. in-game) from offline; in-game sorts first.
+                java.util.List<JSONObject> online = new java.util.ArrayList<>();
+                java.util.List<JSONObject> offline = new java.util.ArrayList<>();
                 for (int i = 0; i < arr.length(); i++) {
                     JSONObject f = arr.optJSONObject(i);
                     if (f == null) continue;
-                    if (f.optBoolean("isOnline", false)) online++;
-                    listCol.addView(friendRow(f));
+                    boolean on = f.optBoolean("isOnline", false) || f.optBoolean("isInGame", false);
+                    (on ? online : offline).add(f);
                 }
-                setStatus(arr.length() + " friends · " + online + " online");
+                java.util.Collections.sort(online, new java.util.Comparator<JSONObject>() {
+                    public int compare(JSONObject a, JSONObject b) {
+                        return (a.optBoolean("isInGame", false) ? 0 : 1)
+                                - (b.optBoolean("isInGame", false) ? 0 : 1);
+                    }
+                });
+
+                if (!online.isEmpty()) {
+                    listCol.addView(sectionHeader("Online — " + online.size(), false));
+                    for (JSONObject f : online) listCol.addView(friendRow(f));
+                }
+                if (!offline.isEmpty()) {
+                    View h = sectionHeader((offlineCollapsed ? "▸  " : "▾  ") + "Offline — " + offline.size(), true);
+                    h.setOnClickListener(new View.OnClickListener() {
+                        public void onClick(View v) {
+                            offlineCollapsed = !offlineCollapsed;
+                            renderFriends(lastFriendsJson);
+                        }
+                    });
+                    listCol.addView(h);
+                    if (!offlineCollapsed) for (JSONObject f : offline) listCol.addView(friendRow(f));
+                }
+                setStatus(arr.length() + " friends · " + online.size() + " online");
             } catch (Throwable t) {
                 setStatus("Parse error."); addRaw(json);
             }
+        }
+
+        /** A small all-caps section label; {@code tappable} headers get accent color. */
+        private TextView sectionHeader(String text, boolean tappable) {
+            TextView h = new TextView(act);
+            h.setText(text);
+            h.setAllCaps(true);
+            h.setTextColor(tappable ? COL_ACCENT : COL_SUBTEXT);
+            h.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+            h.setPadding(0, dp(10), 0, dp(4));
+            return h;
         }
 
         private View friendRow(final JSONObject f) {

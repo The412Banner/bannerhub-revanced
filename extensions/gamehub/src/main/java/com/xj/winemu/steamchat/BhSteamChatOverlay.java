@@ -16,6 +16,8 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
+import android.content.Context;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -118,6 +120,7 @@ public final class BhSteamChatOverlay {
     private static final class Controller {
         private final Activity act;
         private WindowManager wm;
+        private WindowManager.LayoutParams lp;
         private LinearLayout container;  // [panel][pill]
         private LinearLayout panel;
         private TextView pill;
@@ -143,18 +146,20 @@ public final class BhSteamChatOverlay {
                 buildPanel();
                 buildPill();
 
-                WindowManager.LayoutParams p = new WindowManager.LayoutParams(
+                lp = new WindowManager.LayoutParams(
                         WindowManager.LayoutParams.WRAP_CONTENT,
                         WindowManager.LayoutParams.WRAP_CONTENT,
                         WindowManager.LayoutParams.TYPE_APPLICATION_PANEL,
                         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                                 | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
                         PixelFormat.TRANSLUCENT);
-                p.gravity = Gravity.TOP | Gravity.START;
-                p.token = token;
-                p.y = dp(180);
+                lp.gravity = Gravity.TOP | Gravity.START;
+                lp.token = token;
+                lp.y = dp(180);
+                // Pan the window up when the soft keyboard shows so the composer stays visible.
+                lp.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN;
 
-                wm.addView(container, p);
+                wm.addView(container, lp);
                 attached = true;
                 Log.i(TAG, "steam chat overlay attached");
                 return true;
@@ -226,7 +231,7 @@ public final class BhSteamChatOverlay {
             status.setTextColor(COL_SUBTEXT);
             status.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
             status.setPadding(0, dp(4), 0, dp(8));
-            status.setText("Read-only prototype");
+            status.setText("Steam friends");
             panel.addView(status);
 
             ScrollView scroll = new ScrollView(act);
@@ -248,7 +253,20 @@ public final class BhSteamChatOverlay {
         private void setExpanded(boolean exp) {
             expanded = exp;
             panel.setVisibility(exp ? View.VISIBLE : View.GONE);
+            // Take key/IME focus only while the panel is open, so the composer's
+            // EditText can receive text; collapse hands input back to the game.
+            setWindowFocusable(exp);
             if (exp && listCol.getChildCount() == 0) loadFriends();
+        }
+
+        /** Toggle FLAG_NOT_FOCUSABLE on the live overlay window. */
+        private void setWindowFocusable(boolean focusable) {
+            if (wm == null || lp == null || container == null || !attached) return;
+            int flag = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+            int updated = focusable ? (lp.flags & ~flag) : (lp.flags | flag);
+            if (updated == lp.flags) return;
+            lp.flags = updated;
+            try { wm.updateViewLayout(container, lp); } catch (Throwable ignored) {}
         }
 
         // ── data ──────────────────────────────────────────────────────────────
@@ -451,7 +469,15 @@ public final class BhSteamChatOverlay {
             input.setTextColor(COL_TEXT);
             input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
             input.setSingleLine(true);
+            input.setFocusable(true);
+            input.setFocusableInTouchMode(true);
             input.setImeOptions(EditorInfo.IME_ACTION_SEND);
+            input.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) { showKeyboard(input); }
+            });
+            input.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+                public void onFocusChange(View v, boolean has) { if (has) showKeyboard(input); }
+            });
             GradientDrawable ibg = new GradientDrawable();
             ibg.setColor(0x22000000);
             ibg.setCornerRadius(dp(6));
@@ -472,6 +498,7 @@ public final class BhSteamChatOverlay {
                     String text = input.getText().toString().trim();
                     if (text.isEmpty()) return;
                     input.setText("");
+                    hideKeyboard(input);
                     sendMessage(steamId, text);
                 }
             };
@@ -532,6 +559,17 @@ public final class BhSteamChatOverlay {
 
         private void setStatus(String s) { if (status != null) status.setText(s); }
         private void post(Runnable r) { MAIN.post(r); }
+
+        private void showKeyboard(final View v) {
+            v.requestFocus();
+            InputMethodManager imm = (InputMethodManager) act.getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) imm.showSoftInput(v, InputMethodManager.SHOW_IMPLICIT);
+        }
+
+        private void hideKeyboard(final View v) {
+            InputMethodManager imm = (InputMethodManager) act.getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) imm.hideSoftInputFromWindow(v.getWindowToken(), 0);
+        }
         private int dp(int v) {
             return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v,
                     act.getResources().getDisplayMetrics());

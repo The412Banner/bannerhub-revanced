@@ -331,7 +331,7 @@ jobs:
 
             - **Rebased onto GameHub 6.0.7** — every BannerHub v6 patch was re-fingerprinted against the 6.0.7 bytecode (R8 reshuffle, the `:wine` process folded into main, `com.winemu.openapi.Config` removal, the Compose menu rewrite) and **device-verified** end-to-end.
             - **Smaller** — the full 6.0.7 build is ~46 MB, already smaller than the old 6.0.4 **Lite** (which is why there's no separate Lite anymore; see above).
-            - The full feature set carries over: GOG integration, BannerHub Explore homepage, PC-accurate controller vibration, in-game performance overlay (root), recording-compatible audio, GPU spoof, legacy renderer toggle, per-game settings, and the privacy hardening.
+            - The full feature set carries over: GOG integration, BannerHub Explore homepage, PC-accurate controller vibration, in-game performance overlay (root), recording-compatible audio, and the privacy hardening. (GPU spoof and the legacy-renderer toggle are 6.0.4-only — 6.0.7 ships a native GPU spoof, and its rewritten Vulkan X-server is incompatible with the old GLES2 renderer lib.)
 
             ### Variants
 
@@ -372,9 +372,7 @@ jobs:
             | **Offline component picker — local list** | Offline, every per-game picker (GPU driver, DXVK, VKD3D, FEXCore/Box64, **and the Wine/Proton container**) lists the components you've already downloaded, catalog-ordered. Online behaviour byte-identical; fully fail-safe (any error falls back to stock). |
             | **PC-accurate vibration** | Routes XInput rumble into Android's VibratorManager (independent dual-motor). Preload-free: an on-disk `winebus.so` patch defeats SDL2's ~1 s auto-stop with no `libevshim.so` / `LD_PRELOAD` (fixes the x86_64/box64 launch-death). Default on at 100%. |
             | **PC Vibration Settings (activity + menu row)** | Per-game mode (off / device / controller / both) and intensity (0–100%), plus a **PC Vibration Settings** row in both per-game popups. |
-            | **GPU Spoof** | Per-game GPU identity reported to DXVK via a per-game `dxvk.conf` — Off (default), a preset NVIDIA/AMD/Intel picker, or fully custom vendor/device/name. Fixes "unsupported video card" refusals (e.g. CryEngine — Crysis 2). |
-            | **Legacy renderer (GLES2) toggle** | Per-game opt-in to the proven 6.0.2 GLES2-era `libxserver.so`/`libwinemu.so` pair for games that regressed under 6.0.x's Vulkan X-server rewrite. Default New = stock, zero patch effect. |
-            | **Strict per-game settings store** | GPU Spoof / Legacy renderer / PC Vibration each save strictly per-game in BannerHub's own store with explicit Save/Cancel — no host clobber, no app-wide leak. |
+            | **Strict per-game settings store** | PC Vibration saves strictly per-game in BannerHub's own store with explicit Save/Cancel — no host clobber, no app-wide leak. |
             | **Show PC Game Settings row** | Keeps the per-game **PC game settings** row visible in Explorer view (XiaoJi's UX hid it for Steam-linked games). |
             | **Privacy hardening** | Upstream telemetry/analytics channels stripped at the bytecode level (Firebase Analytics/Crashlytics, GMS Measurement, Mob Push, heartbeat, OTA, Ad-ID, cert-pinning override, etc.). Full list + honest leftovers in `PRIVACY.md`. |
             | **Change app icon** | BannerHub v6 branding — adaptive icon, Wine container header, auth/splash assets. |

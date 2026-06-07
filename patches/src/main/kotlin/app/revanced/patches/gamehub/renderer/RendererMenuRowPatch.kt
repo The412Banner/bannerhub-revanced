@@ -4,7 +4,6 @@ import app.revanced.patcher.extensions.addInstructions
 import app.revanced.patcher.firstMethod
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
-import app.revanced.patches.gamehub.GAMEHUB_VERSION
 import app.revanced.patches.gamehub.common.menuGameIdCapturePatch
 import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 import app.revanced.patches.gamehub.vibration.vibrationMenuRowPatch
@@ -44,7 +43,15 @@ val rendererMenuRowPatch = bytecodePatch(
         "(New Vulkan / Legacy GLES2). Injects after the existing rows so " +
         "stock behaviour and the GPU-Spoof row are preserved.",
 ) {
-    compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
+    // GATED OUT of 6.0.7: pinned to 6.0.4 so the patcher SKIPS it (version-
+    // incompatible, not a SEVERE failure). The Legacy GLES2 path swaps in the
+    // 6.0.2 libxserver, whose JNI_OnLoad RegisterNatives needs XServer methods
+    // 6.0.7 deleted (setSurfaceFormat/setFlipEnabled) -> SIGABRT at <clinit>
+    // (device-confirmed on DOOMBLADE, 2026-06-06). 6.0.7 grew XServer 11->40
+    // natives (ReShade FX engine), so the old .so cannot satisfy the contract;
+    // not patchable without a source-built GLES2 libxserver. New mode = stock,
+    // unaffected. Revive only with a 6.0.7-contract GLES2 libxserver.
+    compatibleWith(GAMEHUB_PACKAGE("6.0.4"))
     // vibrationMenuRowPatch owns the SINGLE Lxd3;->l1 resolver head-block
     // that resolves Injection 3's sentinel key — depend on it (no 2nd l1).
     dependsOn(sharedGamehubExtensionPatch, rendererManifestPatch, menuGameIdCapturePatch, vibrationMenuRowPatch)

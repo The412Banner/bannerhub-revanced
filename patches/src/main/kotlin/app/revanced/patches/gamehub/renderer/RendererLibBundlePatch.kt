@@ -3,7 +3,6 @@ package app.revanced.patches.gamehub.renderer
 import app.revanced.patcher.patch.PatchException
 import app.revanced.patcher.patch.resourcePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
-import app.revanced.patches.gamehub.GAMEHUB_VERSION
 import java.io.File
 
 // =========================================================================
@@ -42,7 +41,15 @@ val rendererLibBundlePatch = resourcePatch(
         "as *_legacy.so alongside the stock 6.0.4 ones (additive, never " +
         "overwrites stock). The conditional loaders choose per game.",
 ) {
-    compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
+    // GATED OUT of 6.0.7: pinned to 6.0.4 so the patcher SKIPS it (version-
+    // incompatible, not a SEVERE failure). The Legacy GLES2 path swaps in the
+    // 6.0.2 libxserver, whose JNI_OnLoad RegisterNatives needs XServer methods
+    // 6.0.7 deleted (setSurfaceFormat/setFlipEnabled) -> SIGABRT at <clinit>
+    // (device-confirmed on DOOMBLADE, 2026-06-06). 6.0.7 grew XServer 11->40
+    // natives (ReShade FX engine), so the old .so cannot satisfy the contract;
+    // not patchable without a source-built GLES2 libxserver. New mode = stock,
+    // unaffected. Revive only with a 6.0.7-contract GLES2 libxserver.
+    compatibleWith(GAMEHUB_PACKAGE("6.0.4"))
 
     apply {
         LEGACY_LIBS.forEach { (stockName, legacyName) ->

@@ -116,16 +116,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release download base-apk-607 \
-            --pattern "GameHub_6.0.7.apk" \
+          gh release download base-apk-608 \
+            --pattern "GameHub_6.0.8.apk" \
             --repo ${{ github.repository }} \
-            --output GameHub_6.0.7.apk
+            --output GameHub_6.0.8.apk
 
       - name: Stage shared artifacts
         run: |
           mkdir -p shared
           cp revanced-cli.jar shared/
-          cp GameHub_6.0.7.apk shared/
+          cp GameHub_6.0.8.apk shared/
           cp $(find patches/build/libs -name "*.rvp" ! -name "*-javadoc*" ! -name "*-sources*" | head -1) shared/patches.rvp
           # Side-channel artefacts that ship in the final release
           cp patches/build/libs/*.rvp shared/ 2>/dev/null || true
@@ -194,7 +194,7 @@ jobs:
           # parsed as a Java float suffix and triggers NumberFormatException
           # before the patch ever runs). The quotes also make values with
           # spaces (e.g. "BannerHub v6 PuBG CrossFire") a non-issue.
-          java -jar shared/revanced-cli.jar patch shared/GameHub_6.0.7.apk \
+          java -jar shared/revanced-cli.jar patch shared/GameHub_6.0.8.apk \
             --patches shared/patches.rvp \
             --bypass-verification \
             -e "Change package name" \
@@ -371,7 +371,7 @@ jobs:
             ### Install notes
 
             - **Signing**: stable BannerHub test keystore. A one-time uninstall is only needed if upgrading from `v1.0.0-604` or older (cert changed then); every release since installs in place. Fingerprints in [`keystore/README.md`](https://github.com/${{ github.repository }}/blob/gamehub-607-build/keystore/README.md).
-            - Base APK is unmodified XiaoJi GameHub 6.0.7 (versionCode 118) — only the bytecode/resources the patches need are touched.
+            - Base APK is unmodified XiaoJi GameHub 6.0.8 (versionCode 119) — only the bytecode/resources the patches need are touched.
             - The `.rvp` / `.rve` bundles are attached for use with `revanced-cli` directly. Built with ReVanced CLI 6.0.0; APKs from `gamehub-607-build`.
 
             <details>

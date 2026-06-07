@@ -12,9 +12,9 @@ import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 
 // =============================================================================
 // Forces "PC Game Settings" to always appear in the Explorer view's
-// game-detail More Menu (Lx57;->a). XiaoJi-native UX safety filtering hides
-// this row for game types where direct Wine/DXVK/Box64/VKD3D settings don't
-// apply (Steam-launched games, retro games, etc.) — see
+// game-detail More Menu. XiaoJi-native UX safety filtering hides this row for
+// game types where direct Wine/DXVK/Box64/VKD3D settings don't apply
+// (Steam-launched games, retro games, etc.) — see
 // [[bannerhub-revanced-menu-gating]] for the full trace.
 //
 // User direction: scope the unblanking to PC Game Settings ONLY. Other rows
@@ -22,44 +22,53 @@ import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 // native gating. Clicking PC Game Settings on a "wrong" game type may no-op
 // or show an empty dialog — accepted risk.
 //
-// Mechanism: the row's gate is a single `if-eqz vN, :cond_X` instruction
-// preceding the row construction in Lx57;->a. Removing it lets control fall
-// through unconditionally into the row construction code → row always added.
+// Mechanism (unchanged 6.0.4 → 6.0.7): the row's gate is a single
+// `if-eqz vN, :cond_X` instruction preceding the row construction in the menu
+// method. Removing it lets control fall through unconditionally into the row
+// construction code → row always added. The menu was Compose-rewritten in
+// 6.0.7 (the method is now a Composable taking a Composer + $changed), but the
+// PC-settings block is still guarded by a single boolean if-eqz and is the
+// always-present branch, so forcing it is the cleanest Compose case (the
+// group is consistently present rather than appearing/disappearing).
+//
+// Obfuscated-name map (R8 letters reshuffle every minor; the structure holds):
+//   Menu method     6.0.4 Lx57;->a(Lf37;Lpo7;Lv83;I)V
+//                   6.0.7 Lc37;->a(Lf17;ILev6;Ljh7;Leh3;I)V  (signature is
+//                         GLOBALLY UNIQUE — 1 match in the whole apk)
+//   Row item ctor   6.0.4 Liae;-><init>(Lo05;String;Lpw6;)V
+//                   6.0.7 Ltyc;-><init>(Ln55;String;Lgv6;)V
+//   Label wrapper   6.0.4 Lxrl;   6.0.7 Lu3k;
+//   PC-settings lbl 6.0.4 Lmil;->U:Lxrl;   6.0.7 Llsj;->c0:Lu3k;
 //
 // Anchor strategy (no hardcoded smali line):
-//   1. Locate the menu Composable via the same structural anchor used by
-//      [[VibrationMenuRowPatch]]: method on a public final class with the
-//      signature `a(Lf37;Lpo7;Lv83;I)V`, body constructs Liae rows AND
-//      references Lwhl;->S:Lxrl; (Remove from Library label).
-//   2. Within that method, find the SOLE sget-object that loads
-//      Lmil;->U:Lxrl; — this is the PC Game Settings label. Confirmed by
-//      tracing Lmil;->U -> Lggl(15) -> packed-switch :pswitch_d ->
-//      const-string "string:features_game_pc_settings" in GameHub 6.0.4.
+//   1. Locate the menu Composable by its unique parameter signature, further
+//      pinned by the presence of the More-Menu row-item constructor (ROW_DATA)
+//      — the same row builder VibrationMenuRowPatch's family keys on.
+//   2. Within that method, find the SOLE sget-object that loads the PC Game
+//      Settings label (PC_SETTINGS_LABEL_CLASS->PC_SETTINGS_LABEL_FIELD).
 //   3. Walk backward up to MAX_BACKWARD_SCAN instructions from that sget.
 //      The nearest if-eqz/if-nez is the row's gate. Remove it.
 //
-// MAX_BACKWARD_SCAN is conservative (the actual distance on 6.0.4 is 17
-// instructions — line 2421 gate to line 2438 sget). 40 is a safety margin
-// for minor base bumps that might inject extra instructions.
+// MAX_BACKWARD_SCAN is conservative (actual distance on 6.0.7 is 6
+// instructions — the `if-eqz v63, :cond_55` gate to the label sget). 40 is a
+// safety margin for minor base bumps that might inject extra instructions.
 //
-// How to re-derive Lmil;->U on a future base bump (the letters reshuffle
-// every minor; the lookup chain doesn't):
-//   - Grep CVR resources for the base64 of "PC Game Settings" or the key
-//     "features_game_pc_settings" to confirm the value.
-//   - Find the packed-switch case that const-strings that key. Note its
-//     :pswitch_X label and its integer position in the packed-switch_data_0
-//     block (the data block lists labels in REVERSE — value N maps to entry
-//     [last_index - N]).
-//   - The integer N is the constructor argument to the Lggl-class lambda;
-//     find the `sput-object` that initializes the `Lmil;-><letter>:Lxrl;`
-//     field wrapping `new Lggl(N)`. The <letter> is the field name (e.g. U).
+// How to re-derive the PC-settings label field on a future base bump (the
+// letters reshuffle every minor; the lookup chain doesn't):
+//   - The label key is the Compose string resource "features_game_pc_settings"
+//     (assets/composeResources/.../strings.commonMain.cvr). In 6.0.7 it is
+//     emitted by the `kqj` resource lambda's `:pswitch_8`, which the
+//     packed-switch maps to integer index 0x14.
+//   - Find the `<clinit>`/static init that does `const vX, 0x14` →
+//     `new-instance Lkqj;` → `invoke-direct ...Lkqj;-><init>(I)V` →
+//     `sput-object ...:Lu3k;`. That `L<class>;-><field>:Lu3k;` is the label
+//     (6.0.7: Llsj;->c0). Confirm it is sget-object'd inside the menu method.
 // =============================================================================
 
-private const val LMIL = "Lmil;"
-private const val PC_SETTINGS_LABEL_FIELD = "U"
-private const val LXRL = "Lxrl;"
-private const val ROW_DATA = "Liae;"
-private const val REMOVE_LIBRARY_LABEL = "Lwhl;->S:Lxrl;"
+private const val PC_SETTINGS_LABEL_CLASS = "Llsj;"   // 6.0.4: Lmil;
+private const val PC_SETTINGS_LABEL_FIELD = "c0"      // 6.0.4: U  (kqj StringResource idx 0x14)
+private const val LABEL_WRAPPER = "Lu3k;"             // 6.0.4: Lxrl;
+private const val ROW_DATA = "Ltyc;"                  // 6.0.4: Liae;  (More-Menu row item)
 
 private const val MAX_BACKWARD_SCAN = 40
 
@@ -69,19 +78,18 @@ val showPcGameSettingsRowPatch = bytecodePatch(
     description = "Forces the 'PC Game Settings' row to appear in the Explorer " +
         "game-detail More Menu for every game type, including Steam-linked games " +
         "where XiaoJi-native logic would normally hide it. Removes the single " +
-        "if-eqz gate immediately preceding the row's construction in Lx57;->a. " +
-        "Other rows keep their native gating.",
+        "if-eqz gate immediately preceding the row's construction in the menu " +
+        "Composable. Other rows keep their native gating.",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
 
     apply {
-        // Anchor: the More Menu Composable. Reuses the structural predicate
-        // from VibrationMenuRowPatch — public method (Lf37;Lpo7;Lv83;I)V whose
-        // body constructs Liae rows and references the Remove-from-Library
-        // label. This identifies Lx57;->a uniquely on 6.0.4 even after R8
-        // reshuffles the class letter.
+        // Anchor: the More Menu Composable, identified by its globally-unique
+        // parameter signature (Lf17;ILev6;Ljh7;Leh3;I)V and further pinned by
+        // the presence of the More-Menu row-item constructor (ROW_DATA), which
+        // is unique to this method among any signature sig-sharers.
         val menuMethod = firstMethod {
-            parameterTypes == listOf("Lf37;", "Lpo7;", "Lv83;", "I") &&
+            parameterTypes == listOf("Lf17;", "I", "Lev6;", "Ljh7;", "Leh3;", "I") &&
                 returnType == "V" &&
                 (implementation?.instructions?.any { ins ->
                     ins.opcode == Opcode.INVOKE_DIRECT &&
@@ -90,33 +98,28 @@ val showPcGameSettingsRowPatch = bytecodePatch(
                                     it.definingClass == ROW_DATA &&
                                     it.name == "<init>" &&
                                     it.parameterTypes.toList() == listOf(
-                                        "Lo05;", "Ljava/lang/String;", "Lpw6;"
+                                        "Ln55;", "Ljava/lang/String;", "Lgv6;"
                                     )
                             } == true
-                } ?: false) &&
-                (implementation?.instructions?.any { ins ->
-                    ins.opcode == Opcode.SGET_OBJECT &&
-                        (ins as? ReferenceInstruction)?.reference?.toString()
-                            ?.contains(REMOVE_LIBRARY_LABEL) == true
                 } ?: false)
         }
 
         val instructions = menuMethod.implementation!!.instructions.toList()
 
-        // Find the sget-object Lmil;->U:Lxrl; — the PC Game Settings label load.
+        // Find the sget-object Llsj;->c0:Lu3k; — the PC Game Settings label load.
         val labelSgetIdx = instructions.indexOfFirst { ins ->
             ins.opcode == Opcode.SGET_OBJECT &&
                 (ins as? ReferenceInstruction)?.reference
                     ?.let { it is FieldReference &&
-                            it.definingClass == LMIL &&
+                            it.definingClass == PC_SETTINGS_LABEL_CLASS &&
                             it.name == PC_SETTINGS_LABEL_FIELD &&
-                            it.type == LXRL
+                            it.type == LABEL_WRAPPER
                     } == true
         }
         require(labelSgetIdx >= 0) {
-            "ShowPcGameSettingsRowPatch: Lmil;->U:Lxrl; not found in menu method " +
-                "— letter mapping may have reshuffled. See [[bannerhub-revanced-menu-gating]] " +
-                "for the re-derivation recipe."
+            "ShowPcGameSettingsRowPatch: $PC_SETTINGS_LABEL_CLASS->$PC_SETTINGS_LABEL_FIELD:$LABEL_WRAPPER " +
+                "not found in menu method — letter mapping may have reshuffled. See " +
+                "[[bannerhub-revanced-menu-gating]] for the re-derivation recipe."
         }
 
         // Scan backward for the nearest if-eqz/if-nez — that's the row's gate.
@@ -129,7 +132,7 @@ val showPcGameSettingsRowPatch = bytecodePatch(
             "ShowPcGameSettingsRowPatch: no if-eqz/if-nez found within " +
                 "$MAX_BACKWARD_SCAN instructions before the PC Game Settings " +
                 "label load. The menu may have been restructured upstream — " +
-                "re-inspect Lx57;->a around the Lmil;->U:Lxrl; sget."
+                "re-inspect the menu method around the PC-settings label sget."
         }
 
         // Drop the gate. Control now falls through unconditionally into the

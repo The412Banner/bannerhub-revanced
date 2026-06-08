@@ -4185,3 +4185,29 @@ before the game. ⇒ the 6.0.2 `libwinemu` can't bootstrap the **608** proton10.
 the 6.0.2 libwinemu is implicated for the 608 container; if it ALSO fails, it's the game/container.
 Plus: test a clean **64-bit** title (GoW = the 6.0.4 known-good) in Legacy to validate the renderer path
 independent of the wow64/bootstrap wall. Memory: [[project_bannerhub_revanced_legacy_gles2_renderer]].
+
+### 2026-06-08 — ✅✅ Legacy GLES2 renderer WORKS on 6.0.8 (device-confirmed) + CORRECTION re DiRT 3
+
+**DEVICE-CONFIRMED: the legacy GLES2 renderer renders games on 6.0.8.** Test title **Doomblade**
+(clean modern 64-bit) set to **Legacy (GLES2)** → **game screen shown**, sustained **fps=59** across
+durationSec 10→20→30 (gpuPercent 1-7, ramMb 427, tmp 51-53°C = real GPU rendering, not black).
+Live `/proc/<pid>/maps` of the running game (root bridge) proves the full stack is mapped in:
+`libxserver_shim.so` (our 608 wrapper) + `libxserver_legacy.so` (6.0.2 GLES2 X-server) +
+`libwinemu_legacy.so` (6.0.2 compositor) + `libGLESv2_adreno.so` (Adreno GLES driver, NOT Vulkan/
+Turnip). pre2 (`4a48135`, run 27133968418, apk md5 `c594d29e`). ⇒ **the xserver wrapper-shim port of
+the legacy GLES2 renderer to 6.0.8 is functional** — the feature that was dropped as impossible on
+6.0.7 (raw 6.0.2 libxserver SIGABRT at `<clinit>`) now works behind the 40-method translator shim.
+
+**CORRECTION to the prior entry's "wine-bootstrap wall = 6.0.2 libwinemu can't drive the 608 container"
+— that was WRONG.** The failing game `131962` is **DiRT 3** ("Colin Mcrae: Dirt 3", `dirt3_game.exe`,
+appid 321040) — the exact title our 6.0.4 notes flag as a RED HERRING: it dies with
+`load_64bit_module c000007b` from its own **32-bit GFWL/wow64** problem, **independent of renderer**.
+Capture proved it: DiRT 3 dies in **wine bootstrap, BEFORE XServer is ever loaded** (no shim line, no
+renderer init) and fails the SAME way regardless of mode. I generalised DiRT 3 to the renderer again —
+the precise mistake [[project_bannerhub_revanced_legacy_gles2_renderer]] warns against ("never
+generalise DiRT 3; validate with a clean title"). Doomblade = the clean title → renderer validated.
+`BhRenderer` mode encoding confirmed: `MODE_NEW=0`, `MODE_LEGACY=1` (the `container=… mode=1` log = Legacy).
+
+**State:** `feature/legacy-renderer-608` working + device-confirmed. NEXT: spread-test more titles
+(esp. a known DXVK/D3D11 game) for the inert-features caveat; then decide merge to `gamehub-608-build`
++ restore the per-game Renderer tile in the stable line. Memory updated.

@@ -160,6 +160,11 @@ static jboolean w_stop(JNIEnv* env, jobject thiz) {
 // ------------------------------ effects* stubs -------------------------------
 // 6.0.7's ReShade-style post-processing layer. None of it is needed to run a game;
 // return empty/false/null/0 so the app's effects UI is inert but never crashes.
+// CRITICAL: the array-returning effects* methods (effectsListEffects/Techniques/
+// Uniforms, effectsUniformGet*/Info) MUST return a real empty array, never NULL —
+// GameHub's launch-time effects setup (ou5.f) calls effectsListEffects() and does
+// `array-length` on the result unconditionally, so a NULL is an instant
+// NullPointerException ("get length of null array") before the game ever starts.
 static void       fx_applyPreset (JNIEnv*e,jobject t,jstring s){(void)e;(void)t;(void)s;}
 static jstring    fx_effectName  (JNIEnv*e,jobject t,jlong h){(void)e;(void)t;(void)h;return NULL;}
 static jstring    fx_effectSrc   (JNIEnv*e,jobject t,jlong h){(void)e;(void)t;(void)h;return NULL;}
@@ -167,9 +172,9 @@ static jstring    fx_exportPreset(JNIEnv*e,jobject t){(void)e;(void)t;return NUL
 static jboolean   fx_getTechEn   (JNIEnv*e,jobject t,jlong h){(void)e;(void)t;(void)h;return JNI_FALSE;}
 static jboolean   fx_isEnabled   (JNIEnv*e,jobject t){(void)e;(void)t;return JNI_FALSE;}
 static jstring    fx_lastError   (JNIEnv*e,jobject t){(void)e;(void)t;return NULL;}
-static jlongArray fx_listEffects (JNIEnv*e,jobject t){(void)e;(void)t;return NULL;}
-static jlongArray fx_listTechs   (JNIEnv*e,jobject t,jlong h){(void)e;(void)t;(void)h;return NULL;}
-static jlongArray fx_listUniforms(JNIEnv*e,jobject t,jlong h){(void)e;(void)t;(void)h;return NULL;}
+static jlongArray fx_listEffects (JNIEnv*e,jobject t){(void)t;return (*e)->NewLongArray(e,0);}
+static jlongArray fx_listTechs   (JNIEnv*e,jobject t,jlong h){(void)t;(void)h;return (*e)->NewLongArray(e,0);}
+static jlongArray fx_listUniforms(JNIEnv*e,jobject t,jlong h){(void)t;(void)h;return (*e)->NewLongArray(e,0);}
 static jlong      fx_loadEffect  (JNIEnv*e,jobject t,jstring a,jstring b,jobjectArray c,jobjectArray d){(void)e;(void)t;(void)a;(void)b;(void)c;(void)d;return 0;}
 static void       fx_setEnabled  (JNIEnv*e,jobject t,jboolean b){(void)e;(void)t;(void)b;}
 static void       fx_setTechEn   (JNIEnv*e,jobject t,jlong h,jboolean b){(void)e;(void)t;(void)h;(void)b;}
@@ -178,10 +183,10 @@ static jobject    fx_annoBool    (JNIEnv*e,jobject t,jlong h,jstring s){(void)e;
 static jobject    fx_annoFloat   (JNIEnv*e,jobject t,jlong h,jstring s){(void)e;(void)t;(void)h;(void)s;return NULL;}
 static jobject    fx_annoInt     (JNIEnv*e,jobject t,jlong h,jstring s){(void)e;(void)t;(void)h;(void)s;return NULL;}
 static jstring    fx_annoString  (JNIEnv*e,jobject t,jlong h,jstring s){(void)e;(void)t;(void)h;(void)s;return NULL;}
-static jbooleanArray fx_getBool  (JNIEnv*e,jobject t,jlong h,jint i){(void)e;(void)t;(void)h;(void)i;return NULL;}
-static jfloatArray   fx_getFloat (JNIEnv*e,jobject t,jlong h,jint i){(void)e;(void)t;(void)h;(void)i;return NULL;}
-static jintArray     fx_getInt   (JNIEnv*e,jobject t,jlong h,jint i){(void)e;(void)t;(void)h;(void)i;return NULL;}
-static jintArray     fx_uniInfo  (JNIEnv*e,jobject t,jlong h){(void)e;(void)t;(void)h;return NULL;}
+static jbooleanArray fx_getBool  (JNIEnv*e,jobject t,jlong h,jint i){(void)t;(void)h;(void)i;return (*e)->NewBooleanArray(e,0);}
+static jfloatArray   fx_getFloat (JNIEnv*e,jobject t,jlong h,jint i){(void)t;(void)h;(void)i;return (*e)->NewFloatArray(e,0);}
+static jintArray     fx_getInt   (JNIEnv*e,jobject t,jlong h,jint i){(void)t;(void)h;(void)i;return (*e)->NewIntArray(e,0);}
+static jintArray     fx_uniInfo  (JNIEnv*e,jobject t,jlong h){(void)t;(void)h;return (*e)->NewIntArray(e,0);}
 static jstring    fx_uniName     (JNIEnv*e,jobject t,jlong h){(void)e;(void)t;(void)h;return NULL;}
 static void       fx_uniReset    (JNIEnv*e,jobject t,jlong h){(void)e;(void)t;(void)h;}
 static void       fx_setBool     (JNIEnv*e,jobject t,jlong h,jbooleanArray a){(void)e;(void)t;(void)h;(void)a;}

@@ -332,19 +332,19 @@ jobs:
 
             ## What's new in ${{ needs.build.outputs.version }}
 
-            BannerHub v6 rebased onto the **GameHub 6.0.8** base (versionCode 119). Same keystore as the `-607` and `-604` lines, so it installs in place over either.
+            The headline: a brand-new **in-game Steam friends & chat overlay**, plus a Banner Tools cleanup that folds BannerHub's in-game overlays into one menu. Same **GameHub 6.0.8** base (versionCode 119) and stable keystore as `1.0.0-608`, so it installs in place over it.
 
-            ### 🧱 Rebased onto GameHub 6.0.8
+            ### 💬 In-game Steam friends & chat overlay
 
-            GameHub 6.0.8 is a **tiny** upstream bump — the only native change is `libsteamkit_core.so` (Steam game-library management: remove-from-library + install validation, plus the GPU-spoof PC-settings keys moved to a `…V2` namespace). No Wine, renderer, DXVK, or Turnip changes. But XiaoJi's R8 pass **reshuffled the obfuscated class/method names**, which breaks every patch that pins to them — so **all 41 patches were re-fingerprinted against the 6.0.8 bytecode** and the build is green end-to-end.
+            A draggable 💬 pill over your game opens your full **Steam friends list** — avatars, online / in-game presence, and **unread badges** — and lets you **read and reply to chats inline** without leaving the game. Conversations render like the native Steam client: left/right message bubbles, sender names, timestamps, inline images, and **live incoming messages**; opening a chat marks it read and clears its badge. Pin the pill anywhere down the right edge and fade it with a per-pill **opacity slider**. Just needs you signed into Steam in GameHub — **no root required**. Enable it in **Banner Tools → Overlay → Show in-game Steam chat overlay**.
 
-            ### ✅ Device-verified on 6.0.8
+            ### 🧹 Banner Tools: one "In-game Overlays" menu
 
-            Re-tested on-device after the rebase: the **Banner Tools** menu + grid, the **custom catalog API** (redirect + curated component delivery), **local-game import** into the library, and **PC-accurate controller vibration** (per-game mode + live intensity scaling) all confirmed working.
+            The Steam-chat and performance overlays now share a single **Overlay** tile that **opens for everyone** — no longer locked behind root. Inside, the **Steam chat** toggle is free; the **Performance** toggle is root-gated *in place* (with a tap-to-grant prompt) instead of locking the whole tile, so non-root users get the chat overlay without hitting a root wall. The standalone "Steam Chat" tile is gone (folded in here).
 
             ### ✅ Everything else carries over
 
-            GOG integration, the BannerHub Explore homepage (update banner + installed-vs-latest readout), PC-accurate controller vibration, the in-game performance overlay (root), recording-compatible audio, the offline component picker, portrait PC-settings, and the full privacy-hardening stack all ship forward from `-607` unchanged. As on 6.0.7 there's still **no separate Lite** build, and the **GPU Spoof** and **Legacy renderer (GLES2)** tiles stay retired — 6.0.8 keeps 6.0.7's native GPU spoof and rewritten Vulkan X-server.
+            The 6.0.8 rebase (all 41 patches re-fingerprinted, device-verified), GOG integration, the BannerHub Explore homepage (update banner + installed-vs-latest readout), PC-accurate controller vibration, recording-compatible audio, the offline component picker, portrait PC-settings, and the full privacy-hardening stack all ship forward from `1.0.0-608` unchanged. There's still **no separate Lite** build, and the **GPU Spoof** and **Legacy renderer (GLES2)** tiles stay retired.
 
             The Banner Tools grid on 6.0.8 stays **Vibration · Game ID · Audio · GOG · Overlay · Root**.
 

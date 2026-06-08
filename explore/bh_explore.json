@@ -13,7 +13,7 @@
           "action": "article",
           "icon": "bh_explore_logo",
           "arg": "https://github.com/The412Banner/bannerhub-revanced",
-          "body": "WHAT'S NEW IN v1.0.0-608\n• Rebased onto GameHub 6.0.8\n• Device-verified on 6.0.8\n• Everything carried forward from `-607`\n\nEVERYTHING WE'VE ADDED\n• No-login launch — straight to your library, no account needed\n• Offline play for imported PC games (works in airplane mode)\n• PC-accurate controller vibration & rumble, with per-game settings\n• GOG sign-in, library & in-app install\n• BannerHub Explore homepage + in-app update check\n• In-game performance overlay (root)\n• Recording-compatible audio toggle\n• Strict per-game settings store\n• PC Game Settings & Game ID menu rows\n• BannerHub component catalog — drivers, DXVK, VKD3D, translators\n• Custom BannerHub branding & app icon\n• Muted UI click sounds\n\nTap below to view the project on GitHub."
+          "body": "WHAT'S NEW IN v1.1.0-608\n• In-game Steam friends & chat overlay\n• Banner Tools: one \"In-game Overlays\" menu\n\nEVERYTHING WE'VE ADDED\n• No-login launch — straight to your library, no account needed\n• Offline play for imported PC games (works in airplane mode)\n• PC-accurate controller vibration & rumble, with per-game settings\n• GOG sign-in, library & in-app install\n• BannerHub Explore homepage + in-app update check\n• In-game performance overlay (root)\n• Recording-compatible audio toggle\n• Strict per-game settings store\n• PC Game Settings & Game ID menu rows\n• BannerHub component catalog — drivers, DXVK, VKD3D, translators\n• Custom BannerHub branding & app icon\n• Muted UI click sounds\n\nTap below to view the project on GitHub."
         }
       ]
     },

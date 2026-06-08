@@ -332,19 +332,17 @@ jobs:
 
             ## What's new in ${{ needs.build.outputs.version }}
 
-            The headline: a brand-new **in-game Steam friends & chat overlay**, plus a Banner Tools cleanup that folds BannerHub's in-game overlays into one menu. Same **GameHub 6.0.8** base (versionCode 119) and stable keystore as `1.0.0-608`, so it installs in place over it.
+            The headline: a **privacy fix** — BannerHub now fully shuts off **Firebase Crashlytics**, closing a hole where the upstream app was quietly re-enabling crash-reporting collection *at runtime*. Same **GameHub 6.0.8** base (versionCode 119) and stable keystore, so it installs in place over `1.1.0-608` / `1.0.0-608`.
 
-            ### 💬 In-game Steam friends & chat overlay
+            ### 🔒 Firebase Crashlytics fully disabled (Plan 11)
 
-            A draggable 💬 pill over your game opens your full **Steam friends list** — avatars, online / in-game presence, and **unread badges** — and lets you **read and reply to chats inline** without leaving the game. Conversations render like the native Steam client: left/right message bubbles, sender names, timestamps, inline images, and **live incoming messages**; opening a chat marks it read and clears its badge. Pin the pill anywhere down the right edge and fade it with a per-pill **opacity slider**. Just needs you signed into Steam in GameHub — **no root required**. Enable it in **Banner Tools → Overlay → Show in-game Steam chat overlay**.
+            While verifying the privacy patches with a live DNS/SNI capture, we found that GameHub's own startup code was **re-enabling Crashlytics data collection at runtime** (writing `firebase_crashlytics_collection_enabled=true` into the SDK), which **silently overrode** our manifest kill-switch — so Crashlytics was actually live, still phoning home to `firebase-settings.crashlytics.com`, `firebaselogging-pa.googleapis.com` (the Firebase "Firelog" transport), and `firebaseinstallations.googleapis.com`.
 
-            ### 🧹 Banner Tools: one "In-game Overlays" menu
-
-            The Steam-chat and performance overlays now share a single **Overlay** tile that **opens for everyone** — no longer locked behind root. Inside, the **Steam chat** toggle is free; the **Performance** toggle is root-gated *in place* (with a tap-to-grant prompt) instead of locking the whole tile, so non-root users get the chat overlay without hitting a root wall. The standalone "Steam Chat" tile is gone (folded in here).
+            The new **Disable Firebase auto-init** patch stops that runtime re-enable (while leaving FirebaseApp itself initialized, so the app still launches normally). With it, the manifest "off" finally holds — **device-confirmed**: those three Firebase hosts no longer appear in the app's traffic, and the Firebase-driven share of `play.googleapis.com` drops too. Firebase **Analytics** was already dead (hard manifest flag), so this completes the Firebase shutoff. Full details + the honest leftovers in [`PRIVACY.md`](https://github.com/${{ github.repository }}/blob/gamehub-608-build/PRIVACY.md).
 
             ### ✅ Everything else carries over
 
-            The 6.0.8 rebase (all 41 patches re-fingerprinted, device-verified), GOG integration, the BannerHub Explore homepage (update banner + installed-vs-latest readout), PC-accurate controller vibration, recording-compatible audio, the offline component picker, portrait PC-settings, and the full privacy-hardening stack all ship forward from `1.0.0-608` unchanged. There's still **no separate Lite** build, and the **GPU Spoof** and **Legacy renderer (GLES2)** tiles stay retired.
+            The **in-game Steam friends & chat overlay** (draggable 💬 pill → Steam friends list with presence, unread badges, and inline read/reply; **no root**) under **Banner Tools → Overlay**, the 6.0.8 rebase (all patches re-fingerprinted, device-verified), GOG integration, the BannerHub Explore homepage (update banner + installed-vs-latest readout), PC-accurate controller vibration, recording-compatible audio, the offline component picker, portrait PC-settings, and the rest of the privacy-hardening stack all ship forward from `1.1.0-608` unchanged. There's still **no separate Lite** build, and the **GPU Spoof** and **Legacy renderer (GLES2)** tiles stay retired.
 
             The Banner Tools grid on 6.0.8 stays **Vibration · Game ID · Audio · GOG · Overlay · Root**.
 

@@ -51,7 +51,7 @@
 ## Table of contents
 
 1. [AI Disclaimer](#ai-disclaimer)
-2. [What's new in v1.1.0-608](#whats-new-in-v110-608)
+2. [What's new in v1.2.0-608](#whats-new-in-v120-608)
 3. [What this is](#what-this-is)
 4. [Source](#source)
 5. [Variants](#variants)
@@ -73,23 +73,19 @@ This project has no source code — XiaoJi GameHub is closed-source and ships on
 
 Before any **stable release** is published, every change is **manually debugged and tested by me across multiple devices — both rooted and unrooted**. Debugging uses `logcat` output (captured with the [`getlog` Magisk helper](https://github.com/The412Banner/logcat-bridge) on rooted devices, plain `adb logcat` on unrooted) plus the in-app debug log files that the `Debug logging` patch produces. No release is cut until the change has been verified end-to-end on hardware.
 
-## What's new in v1.1.0-608
+## What's new in v1.2.0-608
 
-The headline of this release: a brand-new **in-game Steam friends & chat overlay**, plus a Banner Tools cleanup that consolidates BannerHub's in-game overlays into one menu. Built on the same **GameHub 6.0.8** base (versionCode 119) as `v1.0.0-608` and signed with the same stable keystore, so it installs straight over your existing BannerHub v6 — no uninstall.
+The headline of this release: a **privacy fix** — BannerHub now fully shuts off **Firebase Crashlytics**, closing a hole where the upstream app was quietly re-enabling crash-reporting collection *at runtime* behind our kill-switch. Built on the same **GameHub 6.0.8** base (versionCode 119) and stable keystore as `v1.1.0-608`, so it installs straight over your existing BannerHub v6 — no uninstall.
 
-### 💬 In-game Steam friends & chat overlay
+### 🔒 Firebase Crashlytics fully disabled
 
-A draggable 💬 pill over your game opens your full **Steam friends list** — avatars, online / in-game presence, and **unread badges** — and lets you **read and reply to chats inline** without leaving the game. Conversations render like the native Steam client: left/right message bubbles, sender names, timestamps, inline images, and **live incoming messages**; opening a chat marks it read and clears its badge. Pin the pill anywhere down the right edge and fade it with a per-pill **opacity slider**. It just needs you signed into Steam in GameHub — **no root required**. Turn it on in **Banner Tools → Overlay → Show in-game Steam chat overlay**.
+Verifying the privacy patches with a live DNS/SNI capture revealed that GameHub's own startup code **re-enables Crashlytics data collection at runtime** (writing `firebase_crashlytics_collection_enabled=true` into the SDK), which silently **overrode** our manifest kill-switch — so Crashlytics was still phoning home to `firebase-settings.crashlytics.com`, `firebaselogging-pa.googleapis.com` (the Firebase "Firelog" transport), and `firebaseinstallations.googleapis.com`. The new **Disable Firebase auto-init** patch stops that runtime re-enable while leaving FirebaseApp itself initialized (so the app still launches normally), so the manifest "off" finally holds. **Device-confirmed**: those three Firebase hosts no longer appear in the app's traffic, and the Firebase-driven share of `play.googleapis.com` drops too. Firebase **Analytics** was already dead via a hard manifest flag, so this completes the Firebase shutoff — see [`PRIVACY.md`](PRIVACY.md).
 
-### 🧹 Banner Tools: one "In-game Overlays" menu
+### Carryover from v1.1.0-608
 
-The Steam-chat and performance overlays now share a single **Overlay** tile that **opens for everyone** — it's no longer locked behind root. Inside, the **Steam chat** toggle is free, while the **Performance** toggle is root-gated *in place* (with a tap-to-grant prompt) instead of locking the whole tile, so non-root users get the chat overlay without hitting a root wall. The old standalone "Steam Chat" tile is gone (folded in here); the grid stays **Vibration · Game ID · Audio · GOG · Overlay · Root**.
+Everything from `v1.1.0-608` ships forward unchanged: the **in-game Steam friends & chat overlay** (draggable 💬 pill → Steam friends list with presence, unread badges, and inline read/reply; **no root**) under **Banner Tools → Overlay**, the **GameHub 6.0.8 rebase** (all patches re-fingerprinted, device-verified), **GOG integration**, the **BannerHub Explore homepage** (What's New article, live `bh_explore.json` override, in-app update check + installed-vs-latest readout), **PC-accurate controller vibration** (preload-free — no `libevshim`/`LD_PRELOAD`), the **in-game performance overlay** (root), **recording-compatible audio**, the **offline component picker**, the strict per-game settings store, the synthetic 32-bit ID rewrite for external front-ends (Beacon / ES-DE / RetroHRAI / NeoStation), the always-visible PC Game Settings row, the privacy-hardening stack + public [`PRIVACY.md`](PRIVACY.md), the stable keystore, and the BannerHub v6 visual rebrand. Still **no separate Lite** build, and the **GPU Spoof** + **Legacy renderer (GLES2)** tiles stay retired. The Banner Tools grid stays **Vibration · Game ID · Audio · GOG · Overlay · Root**.
 
-### Carryover from v1.0.0-608
-
-Everything from `v1.0.0-608` ships forward unchanged: the **GameHub 6.0.8 rebase** (all 41 patches re-fingerprinted, device-verified), **GOG integration**, the **BannerHub Explore homepage** (What's New article, live `bh_explore.json` override, in-app update check + installed-vs-latest readout), **PC-accurate controller vibration** (preload-free — no `libevshim`/`LD_PRELOAD`), the **in-game performance overlay** (root), **recording-compatible audio**, the **offline component picker**, the strict per-game settings store, the synthetic 32-bit ID rewrite for external front-ends (Beacon / ES-DE / RetroHRAI / NeoStation), the always-visible PC Game Settings row, the privacy-hardening stack + public [`PRIVACY.md`](PRIVACY.md), the stable keystore, and the BannerHub v6 visual rebrand. Still **no separate Lite** build, and the **GPU Spoof** + **Legacy renderer (GLES2)** tiles stay retired.
-
-> 📜 Past-release notes for `v1.0.0-608`, the `-607` line (`v1.0.0-607`), and the entire `-604` line (`v1.8.0-604` down through `v1.0.0-604`, plus `v1.0.0-602`, `v1.0.1-601`, `v1.0.0-601`, and `v1.0.1-600`) are preserved on their respective [release pages](https://github.com/The412Banner/bannerhub-revanced/releases). The README keeps only the current release in this section.
+> 📜 Past-release notes for `v1.1.0-608`, `v1.0.0-608`, the `-607` line (`v1.0.0-607`), and the entire `-604` line (`v1.8.0-604` down through `v1.0.0-604`, plus `v1.0.0-602`, `v1.0.1-601`, `v1.0.0-601`, and `v1.0.1-600`) are preserved on their respective [release pages](https://github.com/The412Banner/bannerhub-revanced/releases). The README keeps only the current release in this section.
 
 ---
 

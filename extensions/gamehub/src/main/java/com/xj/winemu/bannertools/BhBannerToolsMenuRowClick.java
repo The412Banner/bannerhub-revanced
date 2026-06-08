@@ -65,7 +65,6 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
         "GOG",
         "Overlay",
         "Root",
-        "Steam Chat",
     };
     private static final String[] TILE_DRAWABLES = new String[] {
         "bh_bt_vibration",
@@ -74,7 +73,6 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
         "bh_bt_gog",
         "bh_bt_overlay",
         "bh_bt_root",
-        "bh_bt_steam_chat",
     };
 
     // Tile indices that act on the CURRENT GAME (need a gameId in scope).
@@ -127,13 +125,11 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
                 .setNegativeButton(android.R.string.cancel, null)
                 .create();
 
-            // Overlay tile requires root (it controls the root-gated in-game
-            // performance overlay), so it's greyed until root is granted.
-            final boolean rootGranted =
-                com.xj.winemu.perf.BhPerfController.get().isRootGranted(host);
-
             // Wire per-tile clicks now that we have the dialog reference;
             // tiles are in dispatch-index order so which == dispatch case.
+            // The Overlay tile is NOT root-gated any more — it opens for everyone
+            // and holds the Steam-chat (no root) + Performance (root-gated inside
+            // the dialog itself) toggles.
             for (int i = 0; i < tiles.size(); i++) {
                 final int which = i;
                 final View tile = tiles.get(i);
@@ -142,16 +138,6 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
                     tile.setAlpha(0.4f);
                     tile.setOnClickListener(v ->
                         Toast.makeText(host, "Open from a game", Toast.LENGTH_SHORT).show());
-                } else if (which == 4 && !rootGranted) {
-                    // Overlay tile, no root yet — grey out and send the user to
-                    // the Root tile to grant first.
-                    tile.setAlpha(0.4f);
-                    tile.setOnClickListener(v -> {
-                        Toast.makeText(host, "Grant root access first",
-                            Toast.LENGTH_SHORT).show();
-                        dispatch(host, 5); // open the Root dialog
-                        dialog.dismiss();
-                    });
                 } else {
                     tile.setOnClickListener(v -> {
                         dispatch(host, which);
@@ -300,9 +286,6 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
                     break;
                 case 5:
                     com.xj.winemu.perf.BhPerfMenus.showRootDialog(host);
-                    break;
-                case 6:
-                    com.xj.winemu.steamchat.BhSteamChatMenus.showToggleDialog(host);
                     break;
                 default:
                     Log.w(TAG, "unknown dialog item index " + which);

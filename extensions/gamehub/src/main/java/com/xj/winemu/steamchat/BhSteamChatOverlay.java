@@ -164,9 +164,9 @@ public final class BhSteamChatOverlay {
                         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                                 | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
                         PixelFormat.TRANSLUCENT);
-                lp.gravity = Gravity.TOP | Gravity.START;
+                lp.gravity = Gravity.TOP | Gravity.END;  // right edge, like the ⚡ perf pill
                 lp.token = token;
-                lp.y = dp(180);
+                lp.y = BhSteamChatController.get().getPillY(act, dp(180));
                 // Pan the window up when the soft keyboard shows so the composer stays visible.
                 lp.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN;
 
@@ -192,18 +192,23 @@ public final class BhSteamChatOverlay {
 
         private void buildPill() {
             pill = new TextView(act);
-            pill.setText("💬"); // 💬
+            pill.setText("💬");
             pill.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
             pill.setGravity(Gravity.CENTER);
             pill.setPadding(dp(10), dp(14), dp(10), dp(14));
             GradientDrawable bg = new GradientDrawable();
             bg.setColor(COL_PILL_BG);
-            bg.setCornerRadii(new float[]{0,0, dp(14),dp(14), dp(14),dp(14), 0,0});
+            // Rounded on the inner (left) edge, flat against the right screen edge.
+            bg.setCornerRadii(new float[]{dp(14),dp(14), 0,0, 0,0, dp(14),dp(14)});
             pill.setBackground(bg);
-            pill.setOnClickListener(new View.OnClickListener() {
-                public void onClick(View v) { setExpanded(!expanded); }
-            });
+            pill.setAlpha(opacityFraction());
+            pill.setOnTouchListener(new PillTouch());
             container.addView(pill);
+        }
+
+        /** Stored pill opacity as an alpha fraction (0.05..1.0). */
+        private float opacityFraction() {
+            return BhSteamChatController.get().getPillOpacity(act) / 100f;
         }
 
         private void buildPanel() {
@@ -267,8 +272,92 @@ public final class BhSteamChatOverlay {
             scroll.addView(listCol);
             panel.addView(scroll);
 
+            panel.addView(buildOpacityRow());
+
             panel.setVisibility(View.GONE);
             container.addView(panel);
+        }
+
+        // pill-opacity slider (mirrors the perf overlay) ----------------------
+        private View buildOpacityRow() {
+            LinearLayout col = new LinearLayout(act);
+            col.setOrientation(LinearLayout.VERTICAL);
+            col.setPadding(0, dp(10), 0, dp(2));
+
+            View div = new View(act);
+            LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
+            dlp.bottomMargin = dp(8);
+            div.setLayoutParams(dlp);
+            div.setBackgroundColor(0x14FFFFFF);
+            col.addView(div);
+
+            final TextView label = new TextView(act);
+            final int pct = BhSteamChatController.get().getPillOpacity(act);
+            label.setText("Pill opacity — " + pct + "%");
+            label.setTextColor(COL_TEXT);
+            label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+            col.addView(label);
+
+            final int min = BhSteamChatController.PILL_OPACITY_MIN;
+            final android.widget.SeekBar bar = new android.widget.SeekBar(act);
+            // Map slider 0..(100-MIN) onto opacity MIN..100 so the pill can fade
+            // to nearly invisible but never fully vanish.
+            bar.setMax(100 - min);
+            bar.setProgress(pct - min);
+            LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            blp.topMargin = dp(2);
+            bar.setLayoutParams(blp);
+            bar.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+                public void onProgressChanged(android.widget.SeekBar sb, int progress, boolean fromUser) {
+                    int p = progress + min;
+                    label.setText("Pill opacity — " + p + "%");
+                    if (pill != null) pill.setAlpha(p / 100f);  // live preview
+                }
+                public void onStartTrackingTouch(android.widget.SeekBar sb) {}
+                public void onStopTrackingTouch(android.widget.SeekBar sb) {
+                    BhSteamChatController.get().setPillOpacity(act, sb.getProgress() + min);
+                }
+            });
+            col.addView(bar);
+            return col;
+        }
+
+        // pill drag (vertical move) + tap (expand) ----------------------------
+        private final class PillTouch implements View.OnTouchListener {
+            private float downRawY;
+            private int downY;
+            private boolean dragged;
+
+            @Override public boolean onTouch(View v, android.view.MotionEvent e) {
+                switch (e.getActionMasked()) {
+                    case android.view.MotionEvent.ACTION_DOWN:
+                        downRawY = e.getRawY();
+                        downY = lp.y;
+                        dragged = false;
+                        return true;
+                    case android.view.MotionEvent.ACTION_MOVE: {
+                        int dy = (int) (e.getRawY() - downRawY);
+                        if (Math.abs(dy) > dp(6)) dragged = true;
+                        int ny = downY + dy;
+                        if (ny < 0) ny = 0;
+                        int max = act.getResources().getDisplayMetrics().heightPixels
+                                - container.getHeight();
+                        if (max > 0 && ny > max) ny = max;
+                        lp.y = ny;
+                        try { if (wm != null && attached) wm.updateViewLayout(container, lp); }
+                        catch (Throwable ignored) {}
+                        return true;
+                    }
+                    case android.view.MotionEvent.ACTION_UP:
+                        if (dragged) BhSteamChatController.get().setPillY(act, lp.y);
+                        else setExpanded(!expanded);
+                        return true;
+                    default:
+                        return false;
+                }
+            }
         }
 
         private String currentTitle = "";
@@ -282,6 +371,8 @@ public final class BhSteamChatOverlay {
         private void setExpanded(boolean exp) {
             expanded = exp;
             panel.setVisibility(exp ? View.VISIBLE : View.GONE);
+            // Full opacity while open (easy to grab), faded back when collapsed.
+            if (pill != null) pill.setAlpha(exp ? 1f : opacityFraction());
             // Take key/IME focus only while the panel is open, so the composer's
             // EditText can receive text; collapse hands input back to the game.
             setWindowFocusable(exp);

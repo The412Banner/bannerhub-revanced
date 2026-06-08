@@ -34,6 +34,7 @@ public final class BhPerfMenus {
     private static final int COL_TEXT    = 0xFFEFEFEF;
     private static final int COL_SUBTEXT = 0xFF9AA0AC;
     private static final int COL_WARN    = 0xFFFF6E6E;
+    private static final int COL_ACCENT  = 0xFF66C0F4;
 
     private BhPerfMenus() {}
 
@@ -42,37 +43,69 @@ public final class BhPerfMenus {
     public static void showOverlayToggleDialog(final Activity host) {
         if (host == null) return;
         try {
-            final BhPerfController ctl = BhPerfController.get();
+            final BhPerfController perf = BhPerfController.get();
+            final com.xj.winemu.steamchat.BhSteamChatController chat =
+                com.xj.winemu.steamchat.BhSteamChatController.get();
 
             LinearLayout box = column(host);
 
-            TextView desc = body(host,
-                "The in-game performance overlay is a draggable ⚡ pill that "
-              + "appears over your game. Tap it for quick toggles — Sustained "
-              + "Performance Mode and Max Adreno Clocks.\n\n"
-              + "Turn it off here to hide the pill entirely. The change takes "
-              + "effect the next time you open a game.");
-            box.addView(desc);
+            // ── Steam Chat overlay (no root needed) ──────────────────────────
+            box.addView(sectionHeader(host, "💬  Steam Chat overlay"));
+            box.addView(body(host,
+                "A draggable 💬 pill over your game — browse your Steam friends, "
+              + "see presence, and read/reply to chats inline. Requires being "
+              + "signed into Steam in GameHub. Takes effect next time you open a "
+              + "game."));
 
-            final CheckBox cb = new CheckBox(host);
-            cb.setText("Show in-game performance overlay");
-            cb.setTextColor(COL_TEXT);
-            cb.setChecked(ctl.isOverlayEnabled(host));
-            LinearLayout.LayoutParams cblp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-            cblp.topMargin = dp(host, 12);
-            cb.setLayoutParams(cblp);
-            cb.setOnCheckedChangeListener((b, checked) -> {
-                ctl.setOverlayEnabled(host, checked);
+            final CheckBox chatCb = new CheckBox(host);
+            chatCb.setText("Show in-game Steam chat overlay");
+            chatCb.setTextColor(COL_TEXT);
+            chatCb.setChecked(chat.isEnabled(host));
+            chatCb.setLayoutParams(rowLp(host));
+            chatCb.setOnCheckedChangeListener((b, checked) -> {
+                chat.setEnabled(host, checked);
+                Toast.makeText(host,
+                    checked ? "Steam chat overlay ON" : "Steam chat overlay OFF",
+                    Toast.LENGTH_SHORT).show();
+            });
+            box.addView(chatCb);
+
+            // ── Performance overlay (root-gated in place) ────────────────────
+            box.addView(sectionHeader(host, "⚡  Performance overlay"));
+            box.addView(body(host,
+                "A draggable ⚡ pill with quick toggles — Sustained Performance "
+              + "Mode and Max Adreno Clocks. These do privileged sysfs writes, "
+              + "so they need root.\n\n"
+              + "Turn it off to hide the pill. Takes effect next time you open a "
+              + "game."));
+
+            final boolean rooted = perf.isRootGranted(host);
+            final CheckBox perfCb = new CheckBox(host);
+            perfCb.setText("Show in-game performance overlay");
+            perfCb.setTextColor(rooted ? COL_TEXT : COL_SUBTEXT);
+            perfCb.setChecked(perf.isOverlayEnabled(host));
+            perfCb.setEnabled(rooted);
+            perfCb.setAlpha(rooted ? 1f : 0.5f);
+            perfCb.setLayoutParams(rowLp(host));
+            perfCb.setOnCheckedChangeListener((b, checked) -> {
+                perf.setOverlayEnabled(host, checked);
                 Toast.makeText(host,
                     checked ? "Overlay enabled" : "Overlay disabled",
                     Toast.LENGTH_SHORT).show();
             });
-            box.addView(cb);
+            box.addView(perfCb);
+
+            if (!rooted) {
+                // Move the gate the Overlay TILE used to do onto this toggle, so
+                // the root-granting path stays discoverable.
+                TextView grant = body(host, "⚠ Requires root — tap to grant");
+                grant.setTextColor(COL_ACCENT);
+                grant.setOnClickListener(v -> showRootDialog(host));
+                box.addView(grant);
+            }
 
             new AlertDialog.Builder(host)
-                .setTitle("In-game Performance Overlay")
+                .setTitle("In-game Overlays")
                 .setView(scroll(host, box))
                 .setPositiveButton(android.R.string.ok, null)
                 .show();
@@ -80,6 +113,28 @@ public final class BhPerfMenus {
             Toast.makeText(host, "Couldn't open overlay settings",
                 Toast.LENGTH_SHORT).show();
         }
+    }
+
+    private static TextView sectionHeader(Activity host, String text) {
+        TextView tv = new TextView(host);
+        tv.setText(text);
+        tv.setTextColor(COL_ACCENT);
+        tv.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(host, 16);
+        tv.setLayoutParams(lp);
+        return tv;
+    }
+
+    private static LinearLayout.LayoutParams rowLp(Activity host) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(host, 10);
+        return lp;
     }
 
     // ── Root grant / revoke ──────────────────────────────────────────────────

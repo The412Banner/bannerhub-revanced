@@ -20,6 +20,12 @@ public final class BhSteamChatController {
 
     public static final String PREFS = "bh_steam_chat";
     public static final String KEY_ENABLED = "overlay_enabled";
+    public static final String KEY_PILL_Y = "pill_y";
+    /** Pill opacity as a percent 5..100 (alpha 0.05..1.0) — faded while gaming
+     *  but never fully invisible. Default 100 = opaque. */
+    public static final String KEY_PILL_OPACITY = "pill_opacity";
+    public static final int PILL_OPACITY_MIN = 5;
+    public static final int PILL_OPACITY_DEFAULT = 100;
 
     private static final BhSteamChatController INSTANCE = new BhSteamChatController();
 
@@ -47,5 +53,42 @@ public final class BhSteamChatController {
         } catch (Throwable t) {
             Log.w(TAG, "setEnabled failed", t);
         }
+    }
+
+    // ── pill position (persisted Y) ─────────────────────────────────────────
+
+    public int getPillY(Context ctx, int def) {
+        try {
+            return prefs(ctx).getInt(KEY_PILL_Y, def);
+        } catch (Throwable t) {
+            return def;
+        }
+    }
+
+    public void setPillY(Context ctx, int y) {
+        try {
+            prefs(ctx).edit().putInt(KEY_PILL_Y, y).apply();
+        } catch (Throwable ignored) {}
+    }
+
+    // ── pill opacity (persisted percent 5..100) ─────────────────────────────
+
+    public int getPillOpacity(Context ctx) {
+        try {
+            int v = prefs(ctx).getInt(KEY_PILL_OPACITY, PILL_OPACITY_DEFAULT);
+            if (v < PILL_OPACITY_MIN) v = PILL_OPACITY_MIN;
+            if (v > 100) v = 100;
+            return v;
+        } catch (Throwable t) {
+            return PILL_OPACITY_DEFAULT;
+        }
+    }
+
+    public void setPillOpacity(Context ctx, int percent) {
+        if (percent < PILL_OPACITY_MIN) percent = PILL_OPACITY_MIN;
+        if (percent > 100) percent = 100;
+        try {
+            prefs(ctx).edit().putInt(KEY_PILL_OPACITY, percent).apply();
+        } catch (Throwable ignored) {}
     }
 }

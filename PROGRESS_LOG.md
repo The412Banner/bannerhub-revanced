@@ -19,6 +19,9 @@ and dropped, because the raw 6.0.2 libxserver SIGABRTs against the rewritten 40-
   `RendererManifestPatch` 6.0.8, `RendererMenuRowPatch` 6.0.8 (inert). `BhRendererController.loadXserver` loads
   the wrapper in Legacy mode + exports the legacy path via `Os.setenv`. Banner Tools regains the per-game
   **Renderer** tile (drawable already shipped).
+- **CI GREEN** (run 27132419346, `1.1.0-608-renderer-pre1`, artifact-only): build + 9/9 patch
+  jobs success, **0 SEVERE**, all 4 renderer patches `succeeded` on the real 608 APK. 9 apk-*
+  artifacts (~46 MB; apk-Normal = banner.hub). Device test pending.
 - **Not verified:** local gradle build blocked (patches plugin is in the private `revanced/gamehub-patches`
   GitHub Packages repo). Real verify = CI artifact-only run. Device-only unknowns remain: composite under the
   single-process model + libwinemu/DirectRendering coupling + `DEFAULT_SURFACE_FORMAT` value.

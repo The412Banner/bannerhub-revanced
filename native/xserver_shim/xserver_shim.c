@@ -1,12 +1,15 @@
 // =============================================================================
-// xserver_shim — Legacy GLES2 renderer "translator" for GameHub 6.0.7
+// xserver_shim — Legacy GLES2 renderer "translator" for GameHub 6.0.7 / 6.0.8
 // =============================================================================
 //
-// SKELETON / DRAFT (2026-06-07). Compiles; NOT yet device-validated. The two
-// device-only unknowns (does it composite under 6.0.7's single-process model;
-// the libwinemu/DirectRendering coupling) are out of scope for this file — this
-// only solves the JNI command-surface mismatch documented in
-// docs/LEGACY_RENDERER_607_SHIM_RECON.md (Appendix A = the recovered table).
+// WIRED for 6.0.8 (2026-06-08). Compiles to a real Android arm64 .so; the two
+// device-only unknowns (does it composite under the single-process model; the
+// libwinemu/DirectRendering coupling) are still settled only by a device run —
+// out of scope for this file, which solves the JNI command-surface mismatch
+// documented in docs/LEGACY_RENDERER_607_SHIM_RECON.md (Appendix A = the
+// recovered table). 6.0.8's XServer native surface is byte-identical to 6.0.7's
+// (40 methods, same names+sigs — 6.0.8 changed only libsteamkit_core.so), so
+// the same 40-entry table below applies unchanged.
 //
 // WHAT THIS IS
 //   A wrapper `libxserver.so`. The per-game legacy swap loads THIS instead of the
@@ -83,8 +86,15 @@ static jint hook_RegisterNatives(JNIEnv* env, jclass clazz,
 // table for the duration of one call on the loading thread (early, single-threaded
 // w.r.t. native registration) — acceptable here; revisit if it ever races.
 static int capture_legacy(JavaVM* vm) {
-    void* h = dlopen(LEGACY_SONAME, RTLD_NOW | RTLD_LOCAL);
-    if (!h) { LOGE("dlopen %s failed: %s", LEGACY_SONAME, dlerror()); return -1; }
+    // The loader (BhRendererController.loadXserver) exports the legacy lib's
+    // ABSOLUTE path here — robust whether the APK extracts native libs or the
+    // controller had to unpack it to the cache dir. Fall back to the bare
+    // soname (resolves via the app's nativeLibraryDir when libs are extracted).
+    const char* envp   = getenv("BH_XSERVER_LEGACY_PATH");
+    const char* target = (envp && envp[0]) ? envp : LEGACY_SONAME;
+    void* h = dlopen(target, RTLD_NOW | RTLD_LOCAL);
+    if (!h) { LOGE("dlopen %s failed: %s", target, dlerror()); return -1; }
+    LOGI("opened legacy engine: %s", target);
 
     jint (*legacy_onload)(JavaVM*, void*) =
         (jint (*)(JavaVM*, void*)) dlsym(h, "JNI_OnLoad");
@@ -123,6 +133,13 @@ static void w_surfaceChanged(JNIEnv* env, jobject thiz, jobject surface) {
     if (setFmt) setFmt(env, thiz, DEFAULT_SURFACE_FORMAT); // TODO(device): ordering/value
     fn_surface surf = (fn_surface) get_fn("surfaceChanged");
     if (surf) surf(env, thiz, surface);
+    // Self-drive the master switch ON once the surface is set. 6.0.7/6.0.8 no
+    // longer guarantee a setGpuPassthroughEnabled call (it's a user-gated flag),
+    // but the GLES2 engine needs setRenderingEnabled(true) to composite — this
+    // is the proven 6.0.4 "force-on, self-drive" behaviour, now anchored to the
+    // surface-ready point instead of <clinit>. Harmless to assert more than once.
+    fn_set_bool re = (fn_set_bool) get_fn("setRenderingEnabled");
+    if (re) re(env, thiz, JNI_TRUE);
 }
 
 // setGpuPassthroughEnabled(Z): no legacy analog. The GLES2 engine has one master

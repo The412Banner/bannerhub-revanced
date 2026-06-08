@@ -53,11 +53,11 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
     // NOTE: "GPU Spoof" dropped on 6.0.7 — the base GameHub app now ships a
     // native GPU-spoof feature, so BannerHub's redundant tile + patches are
     // gated off on 607 (GpuSpoof{Patch,ManifestPatch,MenuRowPatch} pinned to
-    // 6.0.4). "Renderer" likewise dropped on 6.0.7: the Legacy GLES2 path needs
-    // the 6.0.2 libxserver, which is binary-incompatible with 6.0.7's rewritten
-    // XServer (device-confirmed SIGABRT), so the renderer patches are pinned to
-    // 6.0.4 and the tile would just dead-launch an unregistered activity. Keep
-    // this array in lock-step with dispatch(int).
+    // 6.0.4). "Renderer" is BACK on 6.0.8: the Legacy GLES2 path now loads via
+    // the wrapper shim (libxserver_shim.so) that satisfies 6.0.8's rewritten
+    // 40-method XServer contract, and BhRendererSettingsActivity is registered
+    // again — so the tile launches a real activity. Keep this array in lock-step
+    // with dispatch(int).
     private static final String[] TILE_LABELS = new String[] {
         "Vibration",
         "Game ID",
@@ -65,6 +65,7 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
         "GOG",
         "Overlay",
         "Root",
+        "Renderer",
     };
     private static final String[] TILE_DRAWABLES = new String[] {
         "bh_bt_vibration",
@@ -73,6 +74,7 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
         "bh_bt_gog",
         "bh_bt_overlay",
         "bh_bt_root",
+        "bh_bt_renderer",
     };
 
     // Tile indices that act on the CURRENT GAME (need a gameId in scope).
@@ -80,7 +82,7 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
     // greyed + non-interactive; the global tiles (Audio, GOG, Overlay, Root)
     // stay usable. Keep in sync with dispatch(int) ordering.
     private static boolean isPerGameTile(int i) {
-        return i == 0 || i == 1; // Vibration/Game ID
+        return i == 0 || i == 1 || i == 6; // Vibration/Game ID/Renderer
     }
 
     @Override
@@ -286,6 +288,12 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
                     break;
                 case 5:
                     com.xj.winemu.perf.BhPerfMenus.showRootDialog(host);
+                    break;
+                case 6:
+                    // Renderer: per-game New (Vulkan) / Legacy (GLES2 via the
+                    // wrapper shim) selector. Same launch shape as the others —
+                    // opens BhRendererSettingsActivity scoped to the active game.
+                    new com.xj.winemu.renderer.BhRendererMenuRowClick().invoke(null);
                     break;
                 default:
                     Log.w(TAG, "unknown dialog item index " + which);

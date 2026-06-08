@@ -1,9 +1,16 @@
-# xserver_shim — legacy GLES2 renderer wrapper for GameHub 6.0.7
+# xserver_shim — legacy GLES2 renderer wrapper for GameHub 6.0.7 / 6.0.8
 
-**Status: SKELETON / DRAFT. Compiles; not yet device-validated.** Solves only the JNI
+**Status: WIRED into the 6.0.8 renderer patch (branch `feature/legacy-renderer-608`); not
+yet device-validated.** Builds a real Android arm64 `.so` (see `build.sh`), staged at
+`patches/src/main/resources/legacyrenderer/libxserver_shim.so` and bundled by
+`RendererLibBundlePatch`; `BhRendererController.loadXserver` loads it in Legacy mode and
+hands it the legacy engine's absolute path via `BH_XSERVER_LEGACY_PATH`. Solves the JNI
 command-surface mismatch from `docs/LEGACY_RENDERER_607_SHIM_RECON.md`. The two device-only
-unknowns (does the GLES2 engine composite under 6.0.7's single-process model; the
-`libwinemu`/`DirectRendering` coupling) are still open and out of scope for this file.
+unknowns (does the GLES2 engine composite under the single-process model; the
+`libwinemu`/`DirectRendering` coupling) remain open — they need a device run.
+
+6.0.8's `XServer` native surface is byte-identical to 6.0.7's (40 methods, same names+sigs;
+6.0.8 changed only `libsteamkit_core.so`), so the recon below applies unchanged.
 
 ## What it does
 

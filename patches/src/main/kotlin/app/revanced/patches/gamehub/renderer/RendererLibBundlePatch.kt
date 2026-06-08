@@ -13,14 +13,20 @@ import java.io.File
 // (GoW, 2026-05-18).
 //
 // This patch is ADDITIVE: it writes each 6.0.2 binary as
-// `lib<name>_legacy.so` ALONGSIDE the stock 6.0.4 `lib<name>.so`. The stock
-// libs are never touched, so New mode is provably bit-identical to upstream.
+// `lib<name>_legacy.so` ALONGSIDE the stock `lib<name>.so`. The stock libs are
+// never touched, so New mode is provably bit-identical to upstream.
 // BhRendererController.loadXserver / loadWinemu pick between them at load
 // time per the launching game's renderer pref.
+//
+// 6.0.8 also bundles the WRAPPER `libxserver_shim.so` (built from
+// native/xserver_shim/). On 6.0.8 the raw 6.0.2 libxserver can't load against
+// the rewritten 40-method XServer; loadXserver loads this wrapper instead, and
+// the wrapper dlopens libxserver_legacy.so under the new contract.
 //
 // Bundled binary md5s:
 //   libxserver_legacy.so  e8eb894825da66cca0fc59b242ac0ad5 (verified 6.0.2)
 //   libwinemu_legacy.so   407f274d998335dbce03b2074a187e9f (verified 6.0.2)
+//   libxserver_shim.so    built from native/xserver_shim/ (arm64-v8a)
 // =========================================================================
 
 private const val RES_DIR = "/legacyrenderer"
@@ -34,6 +40,10 @@ private val LEGACY_LIBS = mapOf(
     "libwinemu.so" to "libwinemu_legacy.so",
 )
 
+// Standalone wrapper libs (no stock counterpart) written into the same ABI dir.
+// Anchored on libxserver.so just to locate the (existing) arm64-v8a directory.
+private val EXTRA_LIBS = listOf("libxserver_shim.so")
+
 @Suppress("unused")
 val rendererLibBundlePatch = resourcePatch(
     name = "Legacy renderer libxserver bundle",
@@ -41,34 +51,40 @@ val rendererLibBundlePatch = resourcePatch(
         "as *_legacy.so alongside the stock 6.0.4 ones (additive, never " +
         "overwrites stock). The conditional loaders choose per game.",
 ) {
-    // GATED OUT of 6.0.7: pinned to 6.0.4 so the patcher SKIPS it (version-
-    // incompatible, not a SEVERE failure). The Legacy GLES2 path swaps in the
-    // 6.0.2 libxserver, whose JNI_OnLoad RegisterNatives needs XServer methods
-    // 6.0.7 deleted (setSurfaceFormat/setFlipEnabled) -> SIGABRT at <clinit>
-    // (device-confirmed on DOOMBLADE, 2026-06-06). 6.0.7 grew XServer 11->40
-    // natives (ReShade FX engine), so the old .so cannot satisfy the contract;
-    // not patchable without a source-built GLES2 libxserver. New mode = stock,
-    // unaffected. Revive only with a 6.0.7-contract GLES2 libxserver.
-    compatibleWith(GAMEHUB_PACKAGE("6.0.4"))
+    // 6.0.8: the wrapper shim makes the legacy pair loadable against the
+    // rewritten XServer, so this is no longer pinned to 6.0.4.
+    compatibleWith(GAMEHUB_PACKAGE("6.0.8"))
 
     apply {
-        LEGACY_LIBS.forEach { (stockName, legacyName) ->
-            val bundled = object {}.javaClass.getResourceAsStream("$RES_DIR/$legacyName")
+        // Anchor on the stock libxserver.so to locate the (existing) ABI dir.
+        val anchor: File = get("$ABI_DIR/libxserver.so")
+        if (!anchor.isFile) {
+            throw PatchException(
+                "Expected stock $ABI_DIR/libxserver.so not found — base APK layout changed.",
+            )
+        }
+        val abiDir = anchor.parentFile
+
+        fun stage(resName: String, outName: String) {
+            val bytes = object {}.javaClass.getResourceAsStream("$RES_DIR/$resName")
                 ?.use { it.readBytes() }
                 ?: throw PatchException(
-                    "Bundled 6.0.2 $legacyName not found at $RES_DIR/$legacyName in patch resources.",
+                    "Bundled $resName not found at $RES_DIR/$resName in patch resources.",
                 )
+            File(abiDir, outName).writeBytes(bytes)
+        }
 
-            // Anchor on the stock lib so we land in the right (existing) ABI
-            // dir and never have to create one; assert it stays untouched.
-            val stock: File = get("$ABI_DIR/$stockName")
-            if (!stock.isFile) {
+        // The 6.0.2 pair, additive (stock <name>.so never overwritten).
+        LEGACY_LIBS.forEach { (stockName, legacyName) ->
+            if (!File(abiDir, stockName).isFile) {
                 throw PatchException(
                     "Expected stock $ABI_DIR/$stockName not found — base APK layout changed.",
                 )
             }
-
-            File(stock.parentFile, legacyName).writeBytes(bundled)
+            stage(legacyName, legacyName)
         }
+
+        // The wrapper shim (loaded in place of stock libxserver in Legacy mode).
+        EXTRA_LIBS.forEach { stage(it, it) }
     }
 }

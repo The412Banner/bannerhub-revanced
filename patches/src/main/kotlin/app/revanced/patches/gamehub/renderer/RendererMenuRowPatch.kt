@@ -43,15 +43,13 @@ val rendererMenuRowPatch = bytecodePatch(
         "(New Vulkan / Legacy GLES2). Injects after the existing rows so " +
         "stock behaviour and the GPU-Spoof row are preserved.",
 ) {
-    // GATED OUT of 6.0.7: pinned to 6.0.4 so the patcher SKIPS it (version-
-    // incompatible, not a SEVERE failure). The Legacy GLES2 path swaps in the
-    // 6.0.2 libxserver, whose JNI_OnLoad RegisterNatives needs XServer methods
-    // 6.0.7 deleted (setSurfaceFormat/setFlipEnabled) -> SIGABRT at <clinit>
-    // (device-confirmed on DOOMBLADE, 2026-06-06). 6.0.7 grew XServer 11->40
-    // natives (ReShade FX engine), so the old .so cannot satisfy the contract;
-    // not patchable without a source-built GLES2 libxserver. New mode = stock,
-    // unaffected. Revive only with a 6.0.7-contract GLES2 libxserver.
-    compatibleWith(GAMEHUB_PACKAGE("6.0.4"))
+    // 6.0.8: INERT by design — all standalone row injections below are inside
+    // an `if (false)` block (Banner Tools owns the menu sites on this branch and
+    // dispatches into BhRendererSettingsActivity). Re-pinned to 6.0.8 only to
+    // keep the renderer patch family version-consistent and retain the
+    // dependsOn(vibrationMenuRowPatch) shared-resolver edge. The actual 6.0.8
+    // toggle surface is the Banner Tools "Renderer" tile.
+    compatibleWith(GAMEHUB_PACKAGE("6.0.8"))
     // vibrationMenuRowPatch owns the SINGLE Lxd3;->l1 resolver head-block
     // that resolves Injection 3's sentinel key — depend on it (no 2nd l1).
     dependsOn(sharedGamehubExtensionPatch, rendererManifestPatch, menuGameIdCapturePatch, vibrationMenuRowPatch)

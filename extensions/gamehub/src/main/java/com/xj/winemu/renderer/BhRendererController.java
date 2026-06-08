@@ -131,11 +131,18 @@ public final class BhRendererController {
 
     /**
      * Replaces {@code System.loadLibrary("xserver")} in XServer's static
-     * initializer. When the launching game's renderer pref is Legacy, loads
-     * the bundled 6.0.2 {@code libxserver_legacy.so}; otherwise loads stock
-     * {@code "xserver"} bit-identically (zero regression in New mode). Any
+     * initializer. When the launching game's renderer pref is Legacy, loads the
+     * bundled WRAPPER {@code libxserver_shim.so} (which dlopens the 6.0.2
+     * {@code libxserver_legacy.so} and re-publishes it under 6.0.8's rewritten
+     * 40-method XServer contract — see native/xserver_shim/); otherwise loads
+     * stock {@code "xserver"} bit-identically (zero regression in New mode). Any
      * failure on the legacy path falls back to the stock lib so the app can
      * never be bricked by this feature.
+     *
+     * <p>The wrapper's {@code JNI_OnLoad} needs the legacy engine's absolute
+     * path; we hand it over via the {@code BH_XSERVER_LEGACY_PATH} env var so it
+     * works whether or not the APK extracts native libs (the wrapper falls back
+     * to resolving the bare soname when the var is unset).
      */
     public static void loadXserver(String name) {
         boolean legacy = false;
@@ -146,17 +153,29 @@ public final class BhRendererController {
         }
         if (legacy) {
             try {
-                File so = resolveLegacyLib("libxserver_legacy.so");
-                if (so != null && so.isFile()) {
-                    System.load(so.getAbsolutePath());
+                File legacyLib = resolveLegacyLib("libxserver_legacy.so");
+                File wrapper   = resolveLegacyLib("libxserver_shim.so");
+                if (legacyLib != null && legacyLib.isFile()
+                        && wrapper != null && wrapper.isFile()) {
+                    try {
+                        android.system.Os.setenv(
+                                "BH_XSERVER_LEGACY_PATH",
+                                legacyLib.getAbsolutePath(), true);
+                    } catch (Throwable t) {
+                        Log.w(TAG, "setenv BH_XSERVER_LEGACY_PATH failed; wrapper "
+                                + "will fall back to soname", t);
+                    }
+                    System.load(wrapper.getAbsolutePath());
                     legacyActive = true;
                     legacyDecided = true;
-                    Log.i(TAG, "loaded LEGACY libxserver: " + so.getAbsolutePath());
+                    Log.i(TAG, "loaded LEGACY renderer via wrapper "
+                            + wrapper.getAbsolutePath()
+                            + " -> " + legacyLib.getAbsolutePath());
                     return;
                 }
-                Log.w(TAG, "legacy libxserver unavailable; falling back to stock");
+                Log.w(TAG, "legacy renderer libs unavailable; falling back to stock");
             } catch (Throwable t) {
-                Log.w(TAG, "legacy libxserver load failed; falling back to stock", t);
+                Log.w(TAG, "legacy renderer load failed; falling back to stock", t);
             }
         }
         System.loadLibrary(name);

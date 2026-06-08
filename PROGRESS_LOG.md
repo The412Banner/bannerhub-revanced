@@ -4147,3 +4147,41 @@ NEXT: update bannerhub-site v6 page (Latest + 1.1.0-608 changelog) — don't pus
 The cut v1.1.0-608 release showed the **1.0.0-608** What's New (the "Rebased onto GameHub 6.0.8 / 41 patches" rebase notes) with **zero mention of the Steam chat overlay** — three sources were never advanced past 1.0.0-608: (1) the hardcoded `## What's new` block in `release.yml`'s release body, (2) the README `## What's new in v1.0.0-608` section (which feeds the in-app Explore card via `gen_whatsnew.py`), and (3) therefore the baked + asset `bh_explore.json`. Fixed all (commit `e42e148` on `gamehub-608-build`): rewrote the What's-New in **release.yml** (future cuts) + **README** (new `## What's new in v1.1.0-608` — headline 💬 Steam chat overlay + 🧹 In-game Overlays consolidation; old release notes pushed to the carryover/past-release framing), regenerated **explore/bh_explore.json** via `gen_whatsnew.py` (hero now "WHAT'S NEW IN v1.1.0-608 • In-game Steam friends & chat overlay • Banner Tools: one In-game Overlays menu"). GitHub-side (no rebuild): **edited the published `v1.1.0-608` release body** in place (`gh release edit`, surgically replaced only the What's-New section) + **re-uploaded the live `bh_explore.json` asset** with the hero body swapped (kept its correct build-time `version=1.1.0-608`/`build=608010100` stamp) so the in-app Explore "What's New" refreshes live via `releases/latest/download/bh_explore.json`. Verified live both. CAVEAT: the `bh_explore.json` **baked into the shipped 1.1.0-608 APKs** (offline fallback) still carries the stale hero — the live override supersedes it online; only a rebuild would fix the offline copy (not warranted). ROOT CAUSE = the `## What's new` text is curated/hardcoded per release in BOTH release.yml and README and wasn't bumped when 1.1.0-608 was cut; for next stable, update those two BEFORE cutting.
 
 **RE-CUT to fix the offline copy (2026-06-08):** at user's request, re-ran the stable workflow (`gamehub-608-build` `92cb583`, version `1.1.0-608`, `stable=true`) → **run `27110532975` ✅** (CI `gen_whatsnew` regenerated hero for v1.1.0-608, all 9 patched, no SEVERE). `action-gh-release` **replaced all 13 assets in place** on the existing `v1.1.0-608` release (still Latest, prerelease=false); body re-applied from the now-correct release.yml template (still mentions Steam chat). Verified the **baked `assets/bh_explore.json` inside the new APK** now reads "WHAT'S NEW IN v1.1.0-608 • In-game Steam friends & chat overlay …" — offline copy fixed. **New stable-keystore Normal apk md5 = `3f0a27ee39c33d1fb74f80989dfdd9e9`** (was `8e433ff7…`; md5 churn expected from rebuild, installs in place). Delivered to `/storage/emulated/0/Download/BannerHub-V6-1.1.0-608-Normal.apk`.
+
+## 2026-06-08 — Legacy GLES2 on 608: NPE launch-crash FIXED (effects array stubs); next wall = wine bootstrap
+
+**renderer-pre1 crashed the app on every Legacy-mode game launch.** Device log (banner.hub):
+`java.lang.NullPointerException: Attempt to get length of null array at ou5.f` ← `WineActivity.j`
+(launch coroutine). Root cause confirmed in `ou5.f()` smali: GameHub's launch-time effects
+setup calls `XServer.effectsSetEnabled(Z)` then `effectsListEffects()[J` and **immediately
+`array-length`** on the result — unconditionally. Our `xserver_shim` returned **NULL** for the
+array-returning `effects*` stubs → null-array `.length` → NPE before the game starts. (The shim
+comment claimed "never crashes," but null arrays crash on `.length`.)
+
+**Fix `4a48135`** (`feature/legacy-renderer-608`, pushed): the seven array-returning stubs now
+return real empty arrays via JNI `New*Array(e,0)` — `effectsListEffects/Techniques/Uniforms`→`[J`,
+`effectsUniformGetBool/Float/Int`→`[Z/[F/[I`, `effectsUniformInfo`→`[I`. An empty effects list also
+short-circuits the whole ReShade enumeration, so the boxed/String stubs returning NULL are never
+reached. Rebuilt `libxserver_shim.so` (md5 `b7fb6a89…`; NDK at the **Termux** home, not PRoot —
+`NDK=/data/data/com.termux/files/home/android-sdk/ndk/29.0.14206865 bash build.sh`).
+Artifact build **run 27133968418** ✅ (0 SEVERE). pre2 Normal apk md5 `c594d29e…` →
+`/storage/emulated/0/Download/BannerHub-V6-1.1.0-608-renderer-pre2-Patched-Normal.apk`.
+
+**pre2 device result (user): app no longer crashes, but the game does not launch.** Device log shows
+the shim + pair now work perfectly:
+`BH_XSERVER_SHIM: opened legacy engine … libxserver_legacy.so / captured 11 legacy native(s) /
+registered 40 natives (9 forward + 2 bridge + 29 stub)`, `BhRenderer: loaded LEGACY renderer via
+wrapper`, **and** (later launch) `BhRenderer: loaded LEGACY libwinemu` → the full 6.0.2 PAIR loads
+on 608. Adreno GLES driver comes up. Container = **`proton10.0-x64-1@1.0.0` + Box64-0.4.3-Hybrid-Bionic,
+`isArm64X=false`** (the proven-good 6.0.4 pairing). Yet wine dies at:
+`002c:err:wow:load_64bit_module failed to load dll c000007b` (STATUS_INVALID_IMAGE_FORMAT) →
+engine `EngineStateChanged.Idle` → `HandleByDestroy normalExit=true` → clean exit, no tombstone.
+Launch path = `explorer.exe` (wine shell) — so the 64-bit-module load fails during **wine bootstrap**,
+before the game. ⇒ the 6.0.2 `libwinemu` can't bootstrap the **608** proton10.0 x64 container/Box64
+(a wine-bootstrap incompat, NOT a renderer/shim issue; not fixable in the shim). This is the SAME
+`load_64bit_module c000007b` signature seen for DiRT-3 on 6.0.4, but here it's even on x64+Box64.
+
+**NEXT (control test to isolate):** launch the SAME game in **New (Vulkan)** mode on 608 — if it boots,
+the 6.0.2 libwinemu is implicated for the 608 container; if it ALSO fails, it's the game/container.
+Plus: test a clean **64-bit** title (GoW = the 6.0.4 known-good) in Legacy to validate the renderer path
+independent of the wow64/bootstrap wall. Memory: [[project_bannerhub_revanced_legacy_gles2_renderer]].

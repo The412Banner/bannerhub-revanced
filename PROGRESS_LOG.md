@@ -1,5 +1,29 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-06-08 — 🔒 Plan 11: Disable Firebase auto-init (Crashlytics runtime-reenable fix) — MERGED to `gamehub-608-build` `61a2a3f`
+
+Live DNS/SNI captures (via the new DNSWatch root app) of patched vs stock 6.0.8 showed BannerHub still
+contacting `firebase-settings.crashlytics.com`, `firebaselogging-pa.googleapis.com` (datatransport/Firelog)
+and `firebaseinstallations.googleapis.com`. **Root cause:** `com.xiaoji.egggame.AndroidApp`'s Firebase-setup
+helper (`a()V`, from onCreate) **re-enables Crashlytics collection at runtime** (`firebase_crashlytics_collection_enabled=true`
++ `firebase_data_collection_default_enabled=true` written to SDK prefs), **overriding** our manifest
+`DisableCrashlyticsPatch` flag — so Crashlytics was actually live. (Analytics stayed dead: `_collection_deactivated`
+is a hard manifest flag the app can't override → no `app-measurement.com`.) Note 6.0.8 ships **no**
+`FirebaseInitProvider`; Firebase discovers via `ComponentDiscoveryService` + the app inits FirebaseApp itself.
+
+**Patch `DisableFirebaseAutoInitPatch.kt`** (bytecode): in the AndroidApp method holding the stable string
+`"FirebaseCrashlytics component is not present."`, insert `return-void` before the first `monitor-enter` — i.e.
+**after** `FirebaseApp.initializeApp`/`getInstance` (kept: a later coroutine `hgf.a`/`zo` needs it) and **before**
+the collection re-enable. Manifest `false` then holds → Crashlytics off → settings/Firelog/FID all stop.
+
+**3 build iterations to get it right** (device-tested each via root bridge + DNSWatch):
+pre1 (disable ComponentDiscoveryService) → crash `FirebaseCrashlytics component is not present`; pre2 (stub whole
+`a()`) → crash `Default FirebaseApp is not initialized`; **pre3 ✅** (return after init/before re-enable) → app
+launches, all 3 Firebase hosts **gone** from app-attributed traffic; `play.googleapis.com` Firebase-share also
+dropped (GMS-share unpatched — system app). Merged `--no-ff` to `gamehub-608-build` `61a2a3f` with PRIVACY.md
+correction (Crashlytics row + residuals moved to "killed"). Stable tag not yet cut.
+
+
 ## 2026-06-06 — 🚀 GameHub 6.0.7 (vc118) port begun on `gamehub-607-build`
 
 Upstream shipped **GameHub 6.0.7** (vc118, 75.97 MB — a −46% size pass; full decompile/map in

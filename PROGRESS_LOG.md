@@ -1,5 +1,29 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-06-08 — 🟢 Legacy GLES2 renderer wired onto 6.0.8 via the xserver wrapper shim (`feature/legacy-renderer-608`)
+
+Branch **`feature/legacy-renderer-608`** off `gamehub-608-build`, commit **`cbd8359`**. Implements + wires the
+607-recon'd wrapper shim so the Legacy GLES2 renderer is selectable on 6.0.8 (it had been pinned to 6.0.4
+and dropped, because the raw 6.0.2 libxserver SIGABRTs against the rewritten 40-method XServer).
+
+- **Gate verified:** 6.0.8 `XServer` native surface is byte-identical to 6.0.7's (40 methods, same names/sigs;
+  608 changed only `libsteamkit_core.so`) — checked against `~/gh608-apktool-d` + `gamehub-6.0.8-jadx`. So the
+  shim's 40-entry table is unchanged. `setFlipEnabled` is gone (now `setGpuPassthroughEnabled`); `<clinit>` still
+  `loadLibrary("xserver")`; 6 `winemu` loaders.
+- **Shim:** `native/xserver_shim/xserver_shim.c` updated (dlopen legacy by abs path via `BH_XSERVER_LEGACY_PATH`
+  env, soname fallback; `surfaceChanged` force-drives `setRenderingEnabled(true)` after the surface is set).
+  Built on-device (Termux clang 21 + NDK 29 arm64 sysroot) via `native/xserver_shim/build.sh` →
+  `patches/src/main/resources/legacyrenderer/libxserver_shim.so` (md5 `88258193a1045abe0eeefe5864bff8be`).
+- **Patches:** `RendererSwapPatch` 6.0.4→6.0.8 (dropped the addNativeMethod + setFlipEnabled redirect; kept the
+  `<clinit>` loadLibrary + winemu redirects), `RendererLibBundlePatch` 6.0.8 + bundles the wrapper,
+  `RendererManifestPatch` 6.0.8, `RendererMenuRowPatch` 6.0.8 (inert). `BhRendererController.loadXserver` loads
+  the wrapper in Legacy mode + exports the legacy path via `Os.setenv`. Banner Tools regains the per-game
+  **Renderer** tile (drawable already shipped).
+- **Not verified:** local gradle build blocked (patches plugin is in the private `revanced/gamehub-patches`
+  GitHub Packages repo). Real verify = CI artifact-only run. Device-only unknowns remain: composite under the
+  single-process model + libwinemu/DirectRendering coupling + `DEFAULT_SURFACE_FORMAT` value.
+
+
 ## 2026-06-06 — 🚀 GameHub 6.0.7 (vc118) port begun on `gamehub-607-build`
 
 Upstream shipped **GameHub 6.0.7** (vc118, 75.97 MB — a −46% size pass; full decompile/map in

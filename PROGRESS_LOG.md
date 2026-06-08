@@ -21,7 +21,15 @@ pre1 (disable ComponentDiscoveryService) → crash `FirebaseCrashlytics componen
 `a()`) → crash `Default FirebaseApp is not initialized`; **pre3 ✅** (return after init/before re-enable) → app
 launches, all 3 Firebase hosts **gone** from app-attributed traffic; `play.googleapis.com` Firebase-share also
 dropped (GMS-share unpatched — system app). Merged `--no-ff` to `gamehub-608-build` `61a2a3f` with PRIVACY.md
-correction (Crashlytics row + residuals moved to "killed"). Stable tag not yet cut.
+correction (Crashlytics row + residuals moved to "killed").
+
+🏁 **STABLE SHIPPED `v1.2.0-608` (Latest)** — run `27155961298` (first dispatch cancelled: release notes/README
+were still on 1.1.0-608; refreshed `release.yml` body + README "What's new in v1.2.0-608" → Plan 11 headline,
+Steam-chat overlay folded to carryover, `gen_whatsnew` regenerated the Explore card, commit `b4c81e5`, then
+re-dispatched). 13 assets (9 APK + bh_explore.json + 3 .rvp), stable keystore, Normal apk md5 `f372cd2c`. Release
+notes render the Firebase fix correctly. Website `bannerhub-site` updated + Pages-deployed live (`dc54ba5`):
+v6 page changelog + version badges (v1.2.0-608) + v6-privacy page (Plan 11 kill row, residual cards → killed,
+vgabc rows corrected to loopback redirect, 6.0.8 A/B note).
 
 
 ## 2026-06-06 — 🚀 GameHub 6.0.7 (vc118) port begun on `gamehub-607-build`

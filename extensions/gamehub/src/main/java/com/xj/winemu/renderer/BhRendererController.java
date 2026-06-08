@@ -123,11 +123,17 @@ public final class BhRendererController {
 
     private static volatile boolean legacyActive = false;
     private static volatile boolean legacyDecided = false;
-    /** libwinemu loads first, via several early clinit loaders; this guards
-     *  the one-shot legacy swap. Independent of legacyActive/legacyDecided,
-     *  which stay owned by loadXserver so flip()'s frozen-decision contract
-     *  is unchanged. */
-    private static volatile boolean winemuLoaded = false;
+    /** Legacy libwinemu loaded (frozen in for the process). Once true, no
+     *  further winemu load happens — never stock over legacy. */
+    private static volatile boolean winemuLegacyLoaded = false;
+    /** Stock libwinemu has been loaded at least once. Used only to refuse a
+     *  late legacy swap after stock is already in (can't swap in-process). The
+     *  stock path itself is NOT guarded — it passes through to
+     *  System.loadLibrary on EVERY call, byte-identical to unpatched GameHub,
+     *  because the dependency installer is a second engine session in the same
+     *  long-lived (6.0.7+ single) process and regresses if its winemu load is
+     *  short-circuited. */
+    private static volatile boolean winemuStockLoaded = false;
 
     /**
      * Replaces {@code System.loadLibrary("xserver")} in XServer's static
@@ -145,12 +151,17 @@ public final class BhRendererController {
      * to resolving the bare soname when the var is unset).
      */
     public static void loadXserver(String name) {
+        boolean depInstaller = isDependencyInstallerSession();
         boolean legacy = false;
-        try {
-            legacy = getInstance().isLegacyForGame(launchGameId());
-        } catch (Throwable t) {
-            Log.w(TAG, "loadXserver: legacy resolve failed; using stock", t);
+        if (!depInstaller) {
+            try {
+                legacy = getInstance().isLegacyForGame(launchGameId());
+            } catch (Throwable t) {
+                Log.w(TAG, "loadXserver: legacy resolve failed; using stock", t);
+            }
         }
+        Log.i(TAG, "loadXserver(" + name + ") legacy=" + legacy
+                + " depInstaller=" + depInstaller + " gameId=" + safeLaunchGameId());
         if (legacy) {
             try {
                 File legacyLib = resolveLegacyLib("libxserver_legacy.so");
@@ -199,19 +210,30 @@ public final class BhRendererController {
      * legacy lib never regress.
      */
     public static void loadWinemu(String name) {
-        if (winemuLoaded) return;
+        // Legacy already frozen in for this process → ignore further calls
+        // (never load stock libwinemu on top of the 6.0.2 one).
+        if (winemuLegacyLoaded) return;
+
+        boolean depInstaller = isDependencyInstallerSession();
         boolean legacy = false;
-        try {
-            legacy = getInstance().isLegacyForGame(launchGameId());
-        } catch (Throwable t) {
-            Log.w(TAG, "loadWinemu: legacy resolve failed; using stock", t);
+        if (!depInstaller && !winemuStockLoaded) {
+            try {
+                legacy = getInstance().isLegacyForGame(launchGameId());
+            } catch (Throwable t) {
+                Log.w(TAG, "loadWinemu: legacy resolve failed; using stock", t);
+            }
         }
+        Log.i(TAG, "loadWinemu(" + name + ") legacy=" + legacy
+                + " depInstaller=" + depInstaller
+                + " stockLoaded=" + winemuStockLoaded
+                + " gameId=" + safeLaunchGameId());
+
         if (legacy) {
             try {
                 File so = resolveLegacyLib("libwinemu_legacy.so");
                 if (so != null && so.isFile()) {
                     System.load(so.getAbsolutePath());
-                    winemuLoaded = true;
+                    winemuLegacyLoaded = true;
                     Log.i(TAG, "loaded LEGACY libwinemu: " + so.getAbsolutePath());
                     return;
                 }
@@ -220,8 +242,12 @@ public final class BhRendererController {
                 Log.w(TAG, "legacy libwinemu load failed; falling back to stock", t);
             }
         }
+        // STOCK path: byte-identical to unpatched GameHub. NOT guarded — every
+        // caller passes straight through to System.loadLibrary (idempotent), so
+        // the dependency-installer session behaves exactly as on a build with
+        // no renderer patch at all.
         System.loadLibrary(name);
-        winemuLoaded = true;
+        winemuStockLoaded = true;
     }
 
     /**
@@ -399,6 +425,52 @@ public final class BhRendererController {
         String gid = BhMenuGameId.getCaptured();
         if (gid == null || gid.isEmpty()) gid = sniffGameIdFromStack();
         return gid;
+    }
+
+    /** Never-throwing launchGameId() for log lines. */
+    private static String safeLaunchGameId() {
+        try {
+            String g = launchGameId();
+            return (g == null || g.isEmpty()) ? "(none)" : g;
+        } catch (Throwable t) {
+            return "(err)";
+        }
+    }
+
+    /**
+     * True if GameHub's component/dependency-installer activity is currently in
+     * this process's activity stack. That installer runs the 32-bit redists
+     * (oalinst / vcredist / XLiveRedist) as its OWN engine session; on the
+     * 6.0.7+ single-process model it shares the long-lived main process with
+     * any prior game session. It must ALWAYS use stock winemu/xserver — the
+     * 6.0.2 legacy pair can't run the wow64 installers, and routing the session
+     * through the legacy resolver at all regressed component installs. So we
+     * detect it and force the plain stock path.
+     */
+    static boolean isDependencyInstallerSession() {
+        try {
+            Class<?> atCls = Class.forName("android.app.ActivityThread");
+            Method cur = atCls.getMethod("currentActivityThread");
+            Object at = cur.invoke(null);
+            if (at == null) return false;
+            Field fActs = atCls.getDeclaredField("mActivities");
+            fActs.setAccessible(true);
+            Object acts = fActs.get(at);
+            if (!(acts instanceof Map)) return false;
+            for (Object record : ((Map<?, ?>) acts).values()) {
+                if (record == null) continue;
+                Field fAct = record.getClass().getDeclaredField("activity");
+                fAct.setAccessible(true);
+                Object a = fAct.get(record);
+                if (a == null) continue;
+                String cn = a.getClass().getName();
+                // host: com.xiaoji.egggame...WineDependencyInstallActivity
+                if (cn.contains("DependencyInstall") || cn.contains("DependenceInstall")) {
+                    return true;
+                }
+            }
+        } catch (Throwable ignored) { }
+        return false;
     }
 
     /** If a WineActivity is in the stack, grab its gameId Intent extra. */

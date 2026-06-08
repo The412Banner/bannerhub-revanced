@@ -4107,4 +4107,10 @@ Iteration arc (one commit ≈ one "pre" build):
 
 **MERGED to `gamehub-608-build` (2026-06-08).** Deleted the now-dead `BhSteamChatMenus.java` (`2d6be95`), then **fast-forward merged** `feature/steam-chat-overlay` into `gamehub-608-build` (was 0 ahead / 26 behind → clean FF, all pre1→pre18 commits + logs preserved). `gamehub-608-build` tip = `2d6be95`, pushed. Verification artifact build run `27109666381` ✅ on the merged mainline — Steam chat overlay + Banner Tools menu-row/drawables all applied, no SEVERE. Feature branch retained.
 
-**State:** `gamehub-608-build` HEAD `2d6be95` (Steam chat feature merged), pushed, clean. **No stable cut yet** (still artifacts-only; stable = run `release.yml` with `stable=true` + version `1.1.0-608`). Memory: [[project_bannerhub_v6_steam_chat_overlay]]. NEXT: cut the `v1.1.0-608` stable when ready; optional future polish = friend search / typing indicator (`friends.send_typing`) / stickers.
+**State:** `gamehub-608-build` HEAD `a0b40e3` (Steam chat feature merged), pushed, clean. Memory: [[project_bannerhub_v6_steam_chat_overlay]].
+
+## 2026-06-08 — 🏁 STABLE SHIPPED `v1.1.0-608` (Latest)
+
+Cut from `gamehub-608-build` (`a0b40e3`) via `release.yml` `workflow_dispatch` version `1.1.0-608` `stable=true` → **run `27109930201` ✅** (all 9 variants patched, "In-game Steam chat overlay" + Banner Tools all succeeded, no SEVERE). GitHub Release **`v1.1.0-608`** ("BannerHub v6 1.1.0-608", prerelease=false, **marked Latest**, supersedes `v1.0.0-608`): 13 assets = 9 APKs + `bh_explore.json` + 3 `.rvp`. Stable-keystore Normal apk md5 **`8e433ff7efdcae0562e0289dd35dfe39`** (installs in place over prior stables — same pkg `banner.hub` + same stable keystore). Headline of this release = the in-game Steam friends/chat overlay (pre1→pre18 arc above) + the Banner Tools "In-game Overlays" consolidation. URL: https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.1.0-608
+
+NEXT: update bannerhub-site v6 page (Latest + 1.1.0-608 changelog) — don't push site until user go; optional future polish = friend search / typing indicator (`friends.send_typing`) / stickers.

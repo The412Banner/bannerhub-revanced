@@ -42,7 +42,7 @@ val steamChatOverlayPatch = bytecodePatch(
         "Banner Tools -> Steam Chat.",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
-    dependsOn(sharedGamehubExtensionPatch)
+    dependsOn(sharedGamehubExtensionPatch, steamChatImagePickerManifestPatch)
 
     apply {
         firstMethod {

@@ -301,8 +301,14 @@ public final class BhSteamChatOverlay {
             panel.addView(backRow);
 
             scroll = new ScrollView(act);
+            // Cap the list height so the panel (header + list + composer-in-list +
+            // opacity row, even when the opacity slider is expanded) fits within the
+            // screen instead of running off the bottom. Reserve room for the chrome
+            // + an expanded opacity slider.
+            int screenH = act.getResources().getDisplayMetrics().heightPixels;
+            int listH = Math.max(dp(140), Math.min(dp(320), screenH - dp(210)));
             scroll.setLayoutParams(new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, dp(320)));
+                    ViewGroup.LayoutParams.MATCH_PARENT, listH));
             listCol = new LinearLayout(act);
             listCol.setOrientation(LinearLayout.VERTICAL);
             scroll.addView(listCol);
@@ -355,6 +361,7 @@ public final class BhSteamChatOverlay {
                     sliderBox.setVisibility(opacityExpanded ? View.VISIBLE : View.GONE);
                     int p = BhSteamChatController.get().getPillOpacity(act);
                     header.setText((opacityExpanded ? "▾  " : "▸  ") + "Pill opacity — " + p + "%");
+                    if (opacityExpanded) fitPanelOnScreen();  // keep the slider on-screen
                 }
             });
 
@@ -438,6 +445,28 @@ public final class BhSteamChatOverlay {
             setWindowFocusable(exp);
             if (exp) ensureChatSubscription();
             if (exp && listCol.getChildCount() == 0) loadFriends();
+            if (exp) fitPanelOnScreen();
+        }
+
+        /** After the panel lays out, nudge the whole overlay window up if its
+         *  bottom would fall off-screen, so the bottom controls (composer area,
+         *  the opacity slider when expanded) stay visible regardless of where the
+         *  pill was dragged. Does not persist the pill's stored Y. */
+        private void fitPanelOnScreen() {
+            if (container == null) return;
+            container.post(new Runnable() {
+                public void run() {
+                    if (!attached || wm == null || lp == null) return;
+                    int screenH = act.getResources().getDisplayMetrics().heightPixels;
+                    int h = container.getHeight();
+                    if (h <= 0) return;
+                    int maxY = Math.max(0, screenH - h);
+                    if (lp.y > maxY) {
+                        lp.y = maxY;
+                        try { wm.updateViewLayout(container, lp); } catch (Throwable ignored) {}
+                    }
+                }
+            });
         }
 
         /** Subscribe once to live chat messages; reload the open thread when one arrives for it. */

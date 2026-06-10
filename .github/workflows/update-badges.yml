@@ -9,7 +9,7 @@ name: Update download badges
 
 on:
   schedule:
-    - cron: "23 */6 * * *"
+    - cron: "23 * * * *"
   workflow_dispatch:
   release:
     types: [published]

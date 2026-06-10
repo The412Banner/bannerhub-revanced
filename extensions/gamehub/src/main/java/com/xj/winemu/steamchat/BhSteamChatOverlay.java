@@ -155,6 +155,11 @@ public final class BhSteamChatOverlay {
         private TextView status;
         private TextView backRow;        // pinned "‹ Back to friends" (conversation view only)
         private LinearLayout listCol;    // friend rows / message rows
+        private ScrollView scroll;       // the list scroller (for auto-scroll-to-bottom)
+        private EditText composerInput;  // current composer field (null on friends list)
+        private String draft = "";       // composer text, preserved across silent refreshes
+        private boolean composerWasFocused; // composer focus state, preserved across refreshes
+        private boolean opacityExpanded = false; // opacity slider collapsed by default
         private boolean expanded = false;
         private boolean attached = false;
         private long openFriendId = 0;   // 0 = showing friends list
@@ -295,7 +300,7 @@ public final class BhSteamChatOverlay {
             backRow.setVisibility(View.GONE);
             panel.addView(backRow);
 
-            ScrollView scroll = new ScrollView(act);
+            scroll = new ScrollView(act);
             scroll.setLayoutParams(new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(320)));
             listCol = new LinearLayout(act);
@@ -309,7 +314,8 @@ public final class BhSteamChatOverlay {
             container.addView(panel);
         }
 
-        // pill-opacity slider (mirrors the perf overlay) ----------------------
+        // pill-opacity slider (mirrors the perf overlay), collapsed behind an
+        // arrow header at the panel's bottom so it only takes space when wanted.
         private View buildOpacityRow() {
             LinearLayout col = new LinearLayout(act);
             col.setOrientation(LinearLayout.VERTICAL);
@@ -323,12 +329,34 @@ public final class BhSteamChatOverlay {
             div.setBackgroundColor(0x14FFFFFF);
             col.addView(div);
 
-            final TextView label = new TextView(act);
             final int pct = BhSteamChatController.get().getPillOpacity(act);
-            label.setText("Pill opacity — " + pct + "%");
+
+            // Collapsible header: "▸ Pill opacity — N%" toggles the slider box.
+            final TextView header = new TextView(act);
+            header.setTextColor(COL_SUBTEXT);
+            header.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+            header.setPadding(0, dp(2), 0, dp(2));
+            col.addView(header);
+
+            final LinearLayout sliderBox = new LinearLayout(act);
+            sliderBox.setOrientation(LinearLayout.VERTICAL);
+            sliderBox.setVisibility(opacityExpanded ? View.VISIBLE : View.GONE);
+
+            final TextView label = new TextView(act);
+            label.setText("Drag to fade the pill");
             label.setTextColor(COL_TEXT);
-            label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-            col.addView(label);
+            label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+            sliderBox.addView(label);
+
+            header.setText((opacityExpanded ? "▾  " : "▸  ") + "Pill opacity — " + pct + "%");
+            header.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    opacityExpanded = !opacityExpanded;
+                    sliderBox.setVisibility(opacityExpanded ? View.VISIBLE : View.GONE);
+                    int p = BhSteamChatController.get().getPillOpacity(act);
+                    header.setText((opacityExpanded ? "▾  " : "▸  ") + "Pill opacity — " + p + "%");
+                }
+            });
 
             final int min = BhSteamChatController.PILL_OPACITY_MIN;
             final android.widget.SeekBar bar = new android.widget.SeekBar(act);
@@ -343,7 +371,7 @@ public final class BhSteamChatOverlay {
             bar.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
                 public void onProgressChanged(android.widget.SeekBar sb, int progress, boolean fromUser) {
                     int p = progress + min;
-                    label.setText("Pill opacity — " + p + "%");
+                    header.setText("▾  Pill opacity — " + p + "%");
                     if (pill != null) pill.setAlpha(p / 100f);  // live preview
                 }
                 public void onStartTrackingTouch(android.widget.SeekBar sb) {}
@@ -351,7 +379,8 @@ public final class BhSteamChatOverlay {
                     BhSteamChatController.get().setPillOpacity(act, sb.getProgress() + min);
                 }
             });
-            col.addView(bar);
+            sliderBox.addView(bar);
+            col.addView(sliderBox);
             return col;
         }
 
@@ -425,8 +454,9 @@ public final class BhSteamChatOverlay {
                         post(new Runnable() {
                             public void run() {
                                 // Only refresh if this message belongs to the conversation on screen.
+                                // Silent: no "Loading…" flash, keep the user's draft, auto-scroll.
                                 if (expanded && openFriendId != 0 && (from == 0 || from == openFriendId)) {
-                                    loadHistory(openFriendId, currentTitle);
+                                    loadHistory(openFriendId, currentTitle, true);
                                 }
                             }
                         });
@@ -471,6 +501,7 @@ public final class BhSteamChatOverlay {
 
         private void loadFriends() {
             openFriendId = 0;
+            draft = ""; composerWasFocused = false;  // leaving the conversation
             if (backRow != null) backRow.setVisibility(View.GONE);
             setStatus("Loading friends…");
             IO.execute(new Runnable() {
@@ -503,10 +534,26 @@ public final class BhSteamChatOverlay {
         }
 
         private void loadHistory(final long steamId, final String name) {
+            loadHistory(steamId, name, false);
+        }
+
+        /** @param silent when true (live-message refresh) skip the "Loading…" flash
+         *  and preserve the in-progress composer draft + focus so a reload doesn't
+         *  interrupt the user mid-type. */
+        private void loadHistory(final long steamId, final String name, final boolean silent) {
+            boolean switching = (openFriendId != steamId);
             openFriendId = steamId;
             currentTitle = name;
             if (backRow != null) backRow.setVisibility(View.VISIBLE);
-            setStatus("Loading messages…");
+            if (switching) {
+                // Opening a different conversation — don't carry the old draft over.
+                draft = ""; composerWasFocused = false;
+            } else if (composerInput != null) {
+                // Same conversation refresh — snapshot so the rebuild restores it.
+                draft = composerInput.getText().toString();
+                composerWasFocused = composerInput.hasFocus();
+            }
+            if (!silent) setStatus("Loading messages…");
             IO.execute(new Runnable() {
                 public void run() {
                     String payload = "{\"steamId\":" + steamId + ",\"limit\":30}";
@@ -557,6 +604,7 @@ public final class BhSteamChatOverlay {
         }
 
         private void renderFriends(String json) {
+            composerInput = null;  // no composer on the friends list
             listCol.removeAllViews();
             if (json == null) { setStatus("friends.list → null · bridge: " + BhSteamBridge.getStatus()); return; }
             lastFriendsJson = json;
@@ -741,54 +789,102 @@ public final class BhSteamChatOverlay {
                 }
                 setStatus("Chat with " + name + " · " + arr.length() + " messages");
                 addComposer(openFriendId);
+                scrollToBottom();
             } catch (Throwable t) {
                 setStatus("Chat with " + name); addRaw(json); addComposer(openFriendId);
+                scrollToBottom();
             }
         }
 
-        /** Bottom-of-conversation message composer: sticker picker + input + Send. */
+        // Unicode emoji always available regardless of Steam ownership — this is
+        // the "emoji options" the picker leads with (stickers/emoticons are
+        // account-gated purchased items and most users own none).
+        private static final String[] EMOJI = {
+                "😀","😁","😂","🤣","😊","😍","😘","😎","🤩","🥳","😉","😜","😇","🙂","🙃","😴",
+                "😢","😭","😡","🤔","😱","🤯","🥺","😬","🤗","🤝","👍","👎","👏","🙏","💪","🔥",
+                "✨","🎉","❤️","💔","💯","✅","❌","⭐","🎮","🕹️","👀","💀","🤡","🫡","😏","🤙"};
+
+        /** Bottom-of-conversation message composer: picker (emoji/emoticon/sticker)
+         *  + image + input + Send. Composer text + focus survive silent refreshes. */
         private void addComposer(final long steamId) {
             if (steamId == 0) return;
             LinearLayout composer = new LinearLayout(act);
             composer.setOrientation(LinearLayout.VERTICAL);
 
-            // Sticker strip (hidden until ☺ is tapped; populated lazily from
-            // friends.chat_stickers — the user's owned stickers).
-            final android.widget.HorizontalScrollView stickerScroll =
-                    new android.widget.HorizontalScrollView(act);
-            final LinearLayout stickerStrip = new LinearLayout(act);
-            stickerStrip.setOrientation(LinearLayout.HORIZONTAL);
-            stickerScroll.addView(stickerStrip);
-            stickerScroll.setVisibility(View.GONE);
-            LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(
+            // ── picker panel (hidden until ☺ is tapped) ──
+            final LinearLayout pickerBox = new LinearLayout(act);
+            pickerBox.setOrientation(LinearLayout.VERTICAL);
+            pickerBox.setVisibility(View.GONE);
+            LinearLayout.LayoutParams pbp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            slp.topMargin = dp(6);
-            stickerScroll.setLayoutParams(slp);
-            composer.addView(stickerScroll);
+            pbp.topMargin = dp(6);
+            pickerBox.setLayoutParams(pbp);
 
+            final android.widget.HorizontalScrollView pickerScroll = new android.widget.HorizontalScrollView(act);
+            final LinearLayout strip = new LinearLayout(act);
+            strip.setOrientation(LinearLayout.HORIZONTAL);
+            strip.setPadding(0, dp(6), 0, dp(2));
+            pickerScroll.addView(strip);
+
+            final EditText input = new EditText(act);   // declared early so tabs can insert
+
+            // tab row: Emoji · Steam (emoticons) · Stickers
+            LinearLayout tabs = new LinearLayout(act);
+            tabs.setOrientation(LinearLayout.HORIZONTAL);
+            final TextView tabEmoji = pickerTab("😀 Emoji");
+            final TextView tabEmote = pickerTab("🙂 Steam");
+            final TextView tabStick = pickerTab("🏷 Stickers");
+            tabs.addView(tabEmoji); tabs.addView(tabEmote); tabs.addView(tabStick);
+            pickerBox.addView(tabs);
+            pickerBox.addView(pickerScroll);
+
+            final Runnable showEmoji = new Runnable() { public void run() {
+                setActiveTab(tabEmoji, tabEmote, tabStick);
+                strip.removeAllViews(); populateEmoji(strip, input);
+            }};
+            final Runnable showEmote = new Runnable() { public void run() {
+                setActiveTab(tabEmote, tabEmoji, tabStick);
+                strip.removeAllViews(); loadEmoticons(strip, input);
+            }};
+            final Runnable showStick = new Runnable() { public void run() {
+                setActiveTab(tabStick, tabEmoji, tabEmote);
+                strip.removeAllViews(); loadStickers(strip, steamId);
+            }};
+            tabEmoji.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ showEmoji.run(); }});
+            tabEmote.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ showEmote.run(); }});
+            tabStick.setOnClickListener(new View.OnClickListener(){ public void onClick(View v){ showStick.run(); }});
+            composer.addView(pickerBox);
+
+            // ── input bar ──
             LinearLayout bar = new LinearLayout(act);
             bar.setOrientation(LinearLayout.HORIZONTAL);
             bar.setGravity(Gravity.CENTER_VERTICAL);
             bar.setPadding(0, dp(8), 0, dp(2));
 
-            final TextView stickerBtn = new TextView(act);
-            stickerBtn.setText("☺");
-            stickerBtn.setTextColor(COL_ACCENT);
-            stickerBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
-            stickerBtn.setPadding(dp(2), dp(4), dp(8), dp(4));
-            stickerBtn.setOnClickListener(new View.OnClickListener() {
+            final TextView pickBtn = new TextView(act);
+            pickBtn.setText("☺");
+            pickBtn.setTextColor(COL_ACCENT);
+            pickBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+            pickBtn.setPadding(dp(2), dp(4), dp(6), dp(4));
+            pickBtn.setOnClickListener(new View.OnClickListener() {
                 public void onClick(View v) {
-                    if (stickerScroll.getVisibility() == View.VISIBLE) {
-                        stickerScroll.setVisibility(View.GONE);
-                        return;
-                    }
-                    stickerScroll.setVisibility(View.VISIBLE);
-                    if (stickerStrip.getChildCount() == 0) loadStickers(stickerStrip, steamId);
+                    if (pickerBox.getVisibility() == View.VISIBLE) { pickerBox.setVisibility(View.GONE); return; }
+                    pickerBox.setVisibility(View.VISIBLE);
+                    if (strip.getChildCount() == 0) showEmoji.run();  // default to always-available emoji
+                    scrollToBottom();
                 }
             });
-            bar.addView(stickerBtn);
+            bar.addView(pickBtn);
 
-            final EditText input = new EditText(act);
+            final TextView imgBtn = new TextView(act);
+            imgBtn.setText("🖼");
+            imgBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+            imgBtn.setPadding(dp(2), dp(4), dp(8), dp(4));
+            imgBtn.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) { pickImage(steamId); }
+            });
+            bar.addView(imgBtn);
+
             input.setHint("Message…");
             input.setHintTextColor(COL_OFFLINE);
             input.setTextColor(COL_TEXT);
@@ -809,11 +905,18 @@ public final class BhSteamChatOverlay {
             input.setBackground(ibg);
             input.setPadding(dp(8), dp(6), dp(8), dp(6));
             input.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            // Restore an in-progress draft from before a silent refresh BEFORE the
+            // watcher is attached, so programmatic restore doesn't fire send_typing.
+            if (draft != null && !draft.isEmpty()) {
+                input.setText(draft);
+                input.setSelection(input.getText().length());
+                if (composerWasFocused) input.requestFocus();
+            }
             // Steam's "X is typing…" hint on the friend's side: notify at most
             // once per 10s while there's text in the box (their window is ~15s).
             input.addTextChangedListener(new android.text.TextWatcher() {
                 public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
-                public void afterTextChanged(android.text.Editable s) {}
+                public void afterTextChanged(android.text.Editable s) { draft = s == null ? "" : s.toString(); }
                 public void onTextChanged(CharSequence s, int a, int b, int c) {
                     if (s == null || s.length() == 0) return;
                     long now = System.currentTimeMillis();
@@ -825,6 +928,7 @@ public final class BhSteamChatOverlay {
                     }});
                 }
             });
+            composerInput = input;
             bar.addView(input);
 
             final TextView send = new TextView(act);
@@ -839,6 +943,7 @@ public final class BhSteamChatOverlay {
                     String text = input.getText().toString().trim();
                     if (text.isEmpty()) return;
                     input.setText("");
+                    draft = "";
                     hideKeyboard(input);
                     sendMessage(steamId, text);
                 }
@@ -860,18 +965,70 @@ public final class BhSteamChatOverlay {
             listCol.addView(composer);
         }
 
-        /** Fill the picker strip from friends.chat_stickers; tap sends the sticker. */
-        private void loadStickers(final LinearLayout strip, final long steamId) {
+        /** A picker tab chip. */
+        private TextView pickerTab(String label) {
+            TextView t = new TextView(act);
+            t.setText(label);
+            t.setTextColor(COL_SUBTEXT);
+            t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+            t.setPadding(dp(8), dp(4), dp(8), dp(4));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.rightMargin = dp(6);
+            t.setLayoutParams(lp);
+            return t;
+        }
+
+        private void setActiveTab(TextView active, TextView... others) {
+            active.setTextColor(COL_ACCENT);
+            active.setTypeface(Typeface.DEFAULT_BOLD);
+            for (TextView o : others) { o.setTextColor(COL_SUBTEXT); o.setTypeface(Typeface.DEFAULT); }
+        }
+
+        /** Insert text at the composer's caret and keep the draft in sync. */
+        private void insertIntoComposer(EditText input, String t) {
+            if (input == null || t == null || t.isEmpty()) return;
+            int s = Math.max(input.getSelectionStart(), 0);
+            int e = Math.max(input.getSelectionEnd(), 0);
+            input.getText().replace(Math.min(s, e), Math.max(s, e), t, 0, t.length());
+            draft = input.getText().toString();
+        }
+
+        /** Unicode-emoji strip: tap appends the glyph to the message. */
+        private void populateEmoji(final LinearLayout strip, final EditText input) {
+            for (int i = 0; i < EMOJI.length; i++) {
+                final String g = EMOJI[i];
+                TextView t = new TextView(act);
+                t.setText(g);
+                t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+                t.setPadding(dp(4), dp(2), dp(4), dp(2));
+                t.setOnClickListener(new View.OnClickListener() {
+                    public void onClick(View v) { insertIntoComposer(input, g); }
+                });
+                strip.addView(t);
+            }
+        }
+
+        /** Steam emoticon strip from friends.chat_emoticons; tap inserts the
+         *  emoticon token (e.g. ":steamhappy:") which Steam expands on send. */
+        private void loadEmoticons(final LinearLayout strip, final EditText input) {
+            TextView loading = new TextView(act);
+            loading.setText("Loading emoticons…");
+            loading.setTextColor(COL_SUBTEXT);
+            loading.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+            strip.addView(loading);
             IO.execute(new Runnable() {
                 public void run() {
-                    final String json = BhSteamBridge.request("friends.chat_stickers", "{}", 8000);
+                    final String json = BhSteamBridge.request("friends.chat_emoticons", "{}", 8000);
                     post(new Runnable() {
                         public void run() {
+                            strip.removeAllViews();
                             JSONArray arr = json == null ? null
-                                    : asArray(json, "stickers", "items", "data", "list", "value");
+                                    : asArray(json, "emoticons", "items", "data", "list", "value");
                             if (arr == null || arr.length() == 0) {
                                 TextView none = new TextView(act);
-                                none.setText(json == null ? "Couldn't load stickers" : "No stickers available");
+                                none.setText(json == null ? "Couldn't load emoticons"
+                                        : "No Steam emoticons owned — use Emoji");
                                 none.setTextColor(COL_SUBTEXT);
                                 none.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
                                 strip.addView(none);
@@ -880,10 +1037,67 @@ public final class BhSteamChatOverlay {
                             for (int i = 0; i < arr.length(); i++) {
                                 JSONObject s = arr.optJSONObject(i);
                                 if (s == null) continue;
-                                final String name = s.optString("name", "");
-                                if (name.isEmpty()) continue;
-                                String img = firstNonEmpty(s.optString("staticImageUrl"),
-                                        s.optString("imageUrl"), STICKER_CDN + urlEnc(name));
+                                String token = firstNonEmpty(s.optString("token"), s.optString("name"));
+                                if (token.isEmpty()) continue;
+                                // Steam tokens are usually already ":name:"; normalise.
+                                final String insert = token.startsWith(":") ? token : ":" + token + ":";
+                                String img = firstNonEmpty(s.optString("imageUrl"), s.optString("largeImageUrl"),
+                                        EMOTICON_CDN + urlEnc(token.replace(":", "")));
+                                final android.widget.ImageView iv = new android.widget.ImageView(act);
+                                int sz = dp(34);
+                                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(sz, sz);
+                                if (i > 0) lp.leftMargin = dp(6);
+                                iv.setLayoutParams(lp);
+                                iv.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+                                iv.setContentDescription(insert);
+                                final String u = img;
+                                IMG_IO.execute(new Runnable() { public void run() {
+                                    final android.graphics.Bitmap b = fetchBitmap(u);
+                                    if (b != null) post(new Runnable() { public void run() { iv.setImageBitmap(b); } });
+                                }});
+                                iv.setOnClickListener(new View.OnClickListener() {
+                                    public void onClick(View v) { insertIntoComposer(input, insert); }
+                                });
+                                strip.addView(iv);
+                            }
+                        }
+                    });
+                }
+            });
+        }
+
+        /** Fill the picker strip from friends.chat_stickers; tap sends the sticker.
+         *  SteamChatStickerDto has no name field, so derive the sticker name from
+         *  the image URL path (…/economy/sticker/<appid>/<name>/…) for send. */
+        private void loadStickers(final LinearLayout strip, final long steamId) {
+            TextView loading = new TextView(act);
+            loading.setText("Loading stickers…");
+            loading.setTextColor(COL_SUBTEXT);
+            loading.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+            strip.addView(loading);
+            IO.execute(new Runnable() {
+                public void run() {
+                    final String json = BhSteamBridge.request("friends.chat_stickers", "{}", 8000);
+                    post(new Runnable() {
+                        public void run() {
+                            strip.removeAllViews();
+                            JSONArray arr = json == null ? null
+                                    : asArray(json, "stickers", "items", "data", "list", "value");
+                            if (arr == null || arr.length() == 0) {
+                                TextView none = new TextView(act);
+                                none.setText(json == null ? "Couldn't load stickers"
+                                        : "No stickers owned — these are purchased Steam items");
+                                none.setTextColor(COL_SUBTEXT);
+                                none.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+                                strip.addView(none);
+                                return;
+                            }
+                            for (int i = 0; i < arr.length(); i++) {
+                                JSONObject s = arr.optJSONObject(i);
+                                if (s == null) continue;
+                                String img = firstNonEmpty(s.optString("staticImageUrl"), s.optString("imageUrl"));
+                                if (img.isEmpty()) continue;
+                                final String name = stickerNameFromUrl(img);
                                 final android.widget.ImageView iv = new android.widget.ImageView(act);
                                 int sz = dp(48);
                                 LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(sz, sz);
@@ -897,7 +1111,10 @@ public final class BhSteamChatOverlay {
                                     if (b != null) post(new Runnable() { public void run() { iv.setImageBitmap(b); } });
                                 }});
                                 iv.setOnClickListener(new View.OnClickListener() {
-                                    public void onClick(View v) { sendSticker(steamId, name); }
+                                    public void onClick(View v) {
+                                        if (name.isEmpty()) toast("Couldn't identify sticker");
+                                        else sendSticker(steamId, name);
+                                    }
                                 });
                                 strip.addView(iv);
                             }
@@ -905,6 +1122,26 @@ public final class BhSteamChatOverlay {
                     });
                 }
             });
+        }
+
+        /** Launch the transparent image picker, which uploads the chosen image to
+         *  this conversation via friends.upload_chat_image and finishes itself. */
+        private void pickImage(long steamId) {
+            try {
+                android.content.Intent it = new android.content.Intent(act,
+                        Class.forName("com.xj.winemu.steamchat.BhSteamImagePickerActivity"));
+                it.putExtra("steamId", steamId);
+                it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                act.startActivity(it);
+            } catch (Throwable t) {
+                toast("Image picker unavailable");
+                Log.w(TAG, "pickImage failed", t);
+            }
+        }
+
+        private void toast(final String msg) {
+            try { android.widget.Toast.makeText(act, msg, android.widget.Toast.LENGTH_SHORT).show(); }
+            catch (Throwable ignored) {}
         }
 
         private void sendSticker(final long steamId, final String stickerName) {
@@ -1333,6 +1570,12 @@ public final class BhSteamChatOverlay {
         private void setStatus(String s) { if (status != null) status.setText(s); }
         private void post(Runnable r) { MAIN.post(r); }
 
+        /** Snap the conversation to the newest message (bottom). */
+        private void scrollToBottom() {
+            if (scroll == null) return;
+            scroll.post(new Runnable() { public void run() { scroll.fullScroll(View.FOCUS_DOWN); } });
+        }
+
         private void showKeyboard(final View v) {
             v.requestFocus();
             InputMethodManager imm = (InputMethodManager) act.getSystemService(Context.INPUT_METHOD_SERVICE);
@@ -1463,6 +1706,21 @@ public final class BhSteamChatOverlay {
             String dir = d.optString("installDirName", "");
             if (!dir.isEmpty() && !"null".equals(dir)) return dir;
         } catch (Throwable ignored) {}
+        return "";
+    }
+
+    /** Derive a sticker name from its CDN url. Steam sticker art lives at
+     *  …/economy/sticker/&lt;appid&gt;/&lt;name&gt;/… — the segment after the appid is the
+     *  sticker name used by friends.send_sticker. Returns "" if it can't be found. */
+    private static String stickerNameFromUrl(String url) {
+        if (url == null) return "";
+        int i = url.indexOf("/economy/sticker/");
+        if (i < 0) return "";
+        String rest = url.substring(i + "/economy/sticker/".length());
+        String[] seg = rest.split("/");
+        // seg[0] = appid, seg[1] = sticker name (when present).
+        if (seg.length >= 2 && !seg[1].isEmpty()) return seg[1];
+        if (seg.length == 1 && !seg[0].isEmpty()) return seg[0];
         return "";
     }
 

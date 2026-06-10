@@ -1,0 +1,71 @@
+name: Update download badges
+
+# Keeps .github/badges/*.json fresh so the README's shields.io "endpoint"
+# badges can render download counts without shields' shared GitHub token
+# pool (which intermittently fails with "unable to select next github
+# token from pool"). The counts are computed here with the repo's own
+# GITHUB_TOKEN and committed as static JSON; shields only has to fetch
+# raw.githubusercontent.com, never the GitHub API.
+
+on:
+  schedule:
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+env:
+  # The release event checks out the tag by default; badge data always
+  # lives on the default branch, so pin it explicitly.
+  BADGE_BRANCH: gamehub-608-build
+
+jobs:
+  badges:
+    name: Refresh badge data
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: gamehub-608-build
+
+      - name: Compute download counts and write badge JSON
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          total=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases" --jq '.[].assets[].download_count' | jq -s 'add // 0')
+          latest=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '[.assets[].download_count] | add // 0' || echo 0)
+          echo "total=$total latest=$latest"
+
+          # shields-style metric formatting: 2908 -> 2.9k, 46356 -> 46k
+          fmt() {
+            local n=$1
+            if   [ "$n" -ge 1000000 ]; then awk -v n="$n" 'BEGIN { printf "%.1fM", n/1000000 }' | sed 's/\.0M$/M/'
+            elif [ "$n" -ge 10000 ];   then awk -v n="$n" 'BEGIN { printf "%.0fk", n/1000 }'
+            elif [ "$n" -ge 1000 ];    then awk -v n="$n" 'BEGIN { printf "%.1fk", n/1000 }' | sed 's/\.0k$/k/'
+            else echo "$n"; fi
+          }
+
+          mkdir -p .github/badges
+          printf '{"schemaVersion":1,"label":"Downloads","message":"%s","color":"blue","namedLogo":"github","cacheSeconds":3600}\n' \
+            "$(fmt "$total")" > .github/badges/downloads-total.json
+          printf '{"schemaVersion":1,"label":"Latest Release","message":"%s","color":"brightgreen","namedLogo":"github","cacheSeconds":3600}\n' \
+            "$(fmt "$latest")" > .github/badges/downloads-latest.json
+
+      - name: Commit and push if changed
+        run: |
+          set -euo pipefail
+          git config user.name "The412Banner"
+          git config user.email "205237651+The412Banner@users.noreply.github.com"
+          git add .github/badges
+          if git diff --cached --quiet; then
+            echo "Badge data unchanged."
+            exit 0
+          fi
+          git commit -m "chore: refresh download badge data"
+          git pull --rebase origin "${BADGE_BRANCH}"
+          git push origin HEAD:"${BADGE_BRANCH}"

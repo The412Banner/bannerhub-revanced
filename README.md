@@ -10,12 +10,12 @@
 
 <p align="center">
   <a href="https://discord.gg/n8S4G2WZQ4"><img src="https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white&style=for-the-badge" alt="Join the The412Banner Discord"/></a>
-  <a href="https://github.com/The412Banner/bannerhub-revanced/releases"><img src="https://img.shields.io/github/downloads/The412Banner/bannerhub-revanced/total.svg?logo=github&label=Downloads&color=blue&style=for-the-badge" alt="Total downloads"/></a>
-  <a href="https://github.com/The412Banner/bannerhub-revanced/releases/latest"><img src="https://img.shields.io/github/downloads/The412Banner/bannerhub-revanced/latest/total.svg?logo=github&label=Latest%20Release&color=brightgreen&style=for-the-badge" alt="Latest release downloads"/></a>
+  <a href="https://github.com/The412Banner/bannerhub-revanced/releases"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FThe412Banner%2Fbannerhub-revanced%2Fgamehub-608-build%2F.github%2Fbadges%2Fdownloads-total.json&style=for-the-badge" alt="Total downloads"/></a>
+  <a href="https://github.com/The412Banner/bannerhub-revanced/releases/latest"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FThe412Banner%2Fbannerhub-revanced%2Fgamehub-608-build%2F.github%2Fbadges%2Fdownloads-latest.json&style=for-the-badge" alt="Latest release downloads"/></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.0.0-608"><strong>📥 Latest stable: v1.0.0-608</strong></a>
+  <a href="https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.2.0-608"><strong>📥 Latest stable: v1.2.0-608</strong></a>
   ·
   <a href="#patches-applied">Patches</a>
   ·
@@ -44,7 +44,7 @@
 >
 > **USE AT YOUR OWN RISK.**
 
-**What it does** — removes the login requirement, redirects the catalog API to the BannerHub Cloudflare Worker, ships **preload-free** PC-accurate XInput rumble for Wine games (with a per-game settings dialog injected into both popup menus), adds in-app **GOG** sign-in / library / download-install reachable from a new BannerHub-owned **Explore** tab, mutes the UI feedback sounds (with an optional recording-compatible audio toggle), and rebrands the launcher icon + in-app artwork as BannerHub v6. Nine APK variants install side-by-side on the same device. (On the 6.0.8 base there's **no separate Lite** — XiaoJi's own −46% size pass already makes the full build smaller than the old 6.0.4 Lite, so the Lite concept is absorbed. See [What's new](#whats-new-in-v100-608).)
+**What it does** — removes the login requirement, redirects the catalog API to the BannerHub Cloudflare Worker, ships **preload-free** PC-accurate XInput rumble for Wine games (with a per-game settings dialog injected into both popup menus), adds in-app **GOG** sign-in / library / download-install reachable from a new BannerHub-owned **Explore** tab, mutes the UI feedback sounds (with an optional recording-compatible audio toggle), and rebrands the launcher icon + in-app artwork as BannerHub v6. Nine APK variants install side-by-side on the same device. (On the 6.0.8 base there's **no separate Lite** — XiaoJi's own −46% size pass already makes the full build smaller than the old 6.0.4 Lite, so the Lite concept is absorbed. See [What's new](#whats-new-in-v120-608).)
 
 > ✅ **In-place updates** — BannerHub releases are signed with a stable test keystore ([`keystore/README.md`](keystore/README.md)) so every stable installs on top of the previous one with no uninstall. The 6.0.8 line **shares the same keystore as the 6.0.7 and 6.0.4 lines**, so `v1.0.0-608` installs straight over your existing BannerHub v6 — no uninstall needed when moving from the `-607` or `-604` series. **One-time migration only applies if you're still on `v1.0.0-604` or older** (those used per-run ephemeral keys): uninstall once, then install. From there on, regular Android updates flow normally.
 

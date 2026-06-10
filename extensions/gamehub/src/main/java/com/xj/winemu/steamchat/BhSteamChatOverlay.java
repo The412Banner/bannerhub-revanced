@@ -68,6 +68,25 @@ public final class BhSteamChatOverlay {
     // SteamID64 for individual accounts: 17 digits beginning 7656119… .
     private static final java.util.regex.Pattern STEAMID64_RE =
             java.util.regex.Pattern.compile("\"steamId\"\\s*:\\s*\"?(7656\\d{13})\"?");
+    // Invite-family BBCode tags, exactly the set GameHub's own chat parser
+    // special-cases (kgj). An invite message's plainMessage is empty, which is
+    // why these used to render as blank bubbles.
+    private static final java.util.regex.Pattern INVITE_TAG_RE = java.util.regex.Pattern.compile(
+            "\\[(gameinvite|lobbyinvite|lobbyinviteconnectstring|remoteplaytogetherinvite"
+            + "|playtestinvite|broadcastinvite|broadcastviewrequest|tradeoffer|inviteurl|invite)\\b([^\\]]*)\\]",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
+    private static final java.util.regex.Pattern TAG_ATTR_RE = java.util.regex.Pattern.compile(
+            "([a-zA-Z_]+)\\s*=\\s*\"?([^\"\\]\\s]+)\"?");
+    private static final java.util.regex.Pattern STICKER_RE = java.util.regex.Pattern.compile(
+            "\\[sticker\\b([^\\]]*)\\](?:([^\\[]*)\\[/sticker\\])?", java.util.regex.Pattern.CASE_INSENSITIVE);
+    private static final java.util.regex.Pattern EMOTICON_RE = java.util.regex.Pattern.compile(
+            "\\[emoticon\\]([^\\[]+)\\[/emoticon\\]", java.util.regex.Pattern.CASE_INSENSITIVE);
+    // Same CDN endpoints GameHub's chat renderer uses for sticker/emoticon art.
+    private static final String STICKER_CDN  = "https://community.fastly.steamstatic.com/economy/sticker/";
+    private static final String EMOTICON_CDN = "https://community.fastly.steamstatic.com/economy/emoticon/";
+    private static final String APP_HEADER_CDN = "https://cdn.cloudflare.steamstatic.com/steam/apps/";
+    // appId → {gameName, headerImageUrl} resolved via apps.app_details, session cache.
+    private static final java.util.HashMap<Integer, String[]> sAppInfo = new java.util.HashMap<>();
 
     private static final WeakHashMap<Activity, Controller> sOverlays = new WeakHashMap<>();
 
@@ -140,6 +159,15 @@ public final class BhSteamChatOverlay {
         private boolean attached = false;
         private long openFriendId = 0;   // 0 = showing friends list
         private Object chatSub;          // live steam:chat-message subscription handle
+        private Object typingSub;        // live steam:chat-typing subscription handle
+        private long lastTypingSentMs;   // throttle for our own friends.send_typing
+        // Reverts the "is typing…" status if no message follows within Steam's
+        // ~15s typing-notification window.
+        private final Runnable clearTyping = new Runnable() {
+            public void run() {
+                if (openFriendId != 0) setStatus("Chat with " + currentTitle);
+            }
+        };
 
         Controller(Activity a) { this.act = a; }
 
@@ -185,6 +213,9 @@ public final class BhSteamChatOverlay {
             attached = false;
             try { BhSteamBridge.unlisten(chatSub); } catch (Throwable ignored) {}
             chatSub = null;
+            try { BhSteamBridge.unlisten(typingSub); } catch (Throwable ignored) {}
+            typingSub = null;
+            MAIN.removeCallbacks(clearTyping);
             try { if (wm != null && container != null) wm.removeView(container); } catch (Throwable ignored) {}
         }
 
@@ -382,25 +413,48 @@ public final class BhSteamChatOverlay {
 
         /** Subscribe once to live chat messages; reload the open thread when one arrives for it. */
         private void ensureChatSubscription() {
-            if (chatSub != null) return;
-            chatSub = BhSteamBridge.listen("steam:chat-message", new BhSteamBridge.EventListener() {
-                public void onEvent(final String payloadJson) {
-                    long who = 0;
-                    try {
-                        JSONObject o = new JSONObject(payloadJson);
-                        who = o.optLong("friendSteamId", o.optLong("steamId", o.optLong("senderSteamId", 0)));
-                    } catch (Throwable ignored) {}
-                    final long from = who;
-                    post(new Runnable() {
-                        public void run() {
-                            // Only refresh if this message belongs to the conversation on screen.
-                            if (expanded && openFriendId != 0 && (from == 0 || from == openFriendId)) {
-                                loadHistory(openFriendId, currentTitle);
+            if (chatSub == null) {
+                chatSub = BhSteamBridge.listen("steam:chat-message", new BhSteamBridge.EventListener() {
+                    public void onEvent(final String payloadJson) {
+                        long who = 0;
+                        try {
+                            JSONObject o = new JSONObject(payloadJson);
+                            who = o.optLong("friendSteamId", o.optLong("steamId", o.optLong("senderSteamId", 0)));
+                        } catch (Throwable ignored) {}
+                        final long from = who;
+                        post(new Runnable() {
+                            public void run() {
+                                // Only refresh if this message belongs to the conversation on screen.
+                                if (expanded && openFriendId != 0 && (from == 0 || from == openFriendId)) {
+                                    loadHistory(openFriendId, currentTitle);
+                                }
                             }
-                        }
-                    });
-                }
-            });
+                        });
+                    }
+                });
+            }
+            // SteamChatTypingDto carries only {friendSteamId}; surface it on the
+            // status line for the open conversation and let it lapse after the
+            // ~15s window Steam clients use when no message follows.
+            if (typingSub == null) {
+                typingSub = BhSteamBridge.listen("steam:chat-typing", new BhSteamBridge.EventListener() {
+                    public void onEvent(final String payloadJson) {
+                        long who = 0;
+                        try { who = new JSONObject(payloadJson).optLong("friendSteamId", 0); }
+                        catch (Throwable ignored) {}
+                        final long from = who;
+                        post(new Runnable() {
+                            public void run() {
+                                if (expanded && openFriendId != 0 && from == openFriendId) {
+                                    setStatus(currentTitle + " is typing…");
+                                    MAIN.removeCallbacks(clearTyping);
+                                    MAIN.postDelayed(clearTyping, 15000);
+                                }
+                            }
+                        });
+                    }
+                });
+            }
         }
 
         /** Toggle FLAG_NOT_FOCUSABLE on the live overlay window. */
@@ -644,12 +698,30 @@ public final class BhSteamChatOverlay {
                             m.optString("text"), m.optString("body"), m.optString("content"), "");
                     String plainMessage = firstNonEmpty(m.optString("plainMessage"), "");
                     String imgUrl = extractImageUrl(rawMessage);
-                    if (imgUrl != null) {
+                    java.util.regex.Matcher invite = INVITE_TAG_RE.matcher(rawMessage);
+                    String stickerName = extractStickerName(rawMessage);
+                    java.util.List<String> emotes = emoticonOnlyNames(rawMessage);
+                    if (invite.find()) {
+                        // Game/lobby/etc. invite: plainMessage is empty for these,
+                        // which is what used to render as a blank bubble.
+                        listCol.addView(bubbleRow(fromMe,
+                                inviteCard(invite.group(1).toLowerCase(java.util.Locale.ROOT),
+                                        attrsOf(invite.group(2)), fromMe, name)));
+                    } else if (stickerName != null) {
+                        listCol.addView(bubbleRow(fromMe, stickerView(stickerName)));
+                    } else if (emotes != null) {
+                        // Message is nothing but emoticons → render them as images.
+                        listCol.addView(bubbleRow(fromMe, emoticonRow(emotes)));
+                    } else if (imgUrl != null) {
                         // Image inside an aligned, sender-tinted bubble.
                         listCol.addView(bubbleRow(fromMe, imageRow(imgUrl, fromMe)));
                     } else {
                         TextView mv = new TextView(act);
-                        mv.setText(plainMessage.isEmpty() ? stripBBCode(rawMessage) : plainMessage);
+                        // Mixed text+emoticon: show emoticons in their :name: form.
+                        String shown = plainMessage.isEmpty()
+                                ? stripBBCode(EMOTICON_RE.matcher(rawMessage).replaceAll(":$1:"))
+                                : plainMessage;
+                        mv.setText(shown);
                         mv.setTextColor(COL_TEXT);
                         mv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
                         // Cap width so long lines wrap into the bubble instead of
@@ -674,13 +746,47 @@ public final class BhSteamChatOverlay {
             }
         }
 
-        /** Bottom-of-conversation message composer: input + Send → friends.send_message. */
+        /** Bottom-of-conversation message composer: sticker picker + input + Send. */
         private void addComposer(final long steamId) {
             if (steamId == 0) return;
+            LinearLayout composer = new LinearLayout(act);
+            composer.setOrientation(LinearLayout.VERTICAL);
+
+            // Sticker strip (hidden until ☺ is tapped; populated lazily from
+            // friends.chat_stickers — the user's owned stickers).
+            final android.widget.HorizontalScrollView stickerScroll =
+                    new android.widget.HorizontalScrollView(act);
+            final LinearLayout stickerStrip = new LinearLayout(act);
+            stickerStrip.setOrientation(LinearLayout.HORIZONTAL);
+            stickerScroll.addView(stickerStrip);
+            stickerScroll.setVisibility(View.GONE);
+            LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            slp.topMargin = dp(6);
+            stickerScroll.setLayoutParams(slp);
+            composer.addView(stickerScroll);
+
             LinearLayout bar = new LinearLayout(act);
             bar.setOrientation(LinearLayout.HORIZONTAL);
             bar.setGravity(Gravity.CENTER_VERTICAL);
             bar.setPadding(0, dp(8), 0, dp(2));
+
+            final TextView stickerBtn = new TextView(act);
+            stickerBtn.setText("☺");
+            stickerBtn.setTextColor(COL_ACCENT);
+            stickerBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+            stickerBtn.setPadding(dp(2), dp(4), dp(8), dp(4));
+            stickerBtn.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) {
+                    if (stickerScroll.getVisibility() == View.VISIBLE) {
+                        stickerScroll.setVisibility(View.GONE);
+                        return;
+                    }
+                    stickerScroll.setVisibility(View.VISIBLE);
+                    if (stickerStrip.getChildCount() == 0) loadStickers(stickerStrip, steamId);
+                }
+            });
+            bar.addView(stickerBtn);
 
             final EditText input = new EditText(act);
             input.setHint("Message…");
@@ -703,6 +809,22 @@ public final class BhSteamChatOverlay {
             input.setBackground(ibg);
             input.setPadding(dp(8), dp(6), dp(8), dp(6));
             input.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            // Steam's "X is typing…" hint on the friend's side: notify at most
+            // once per 10s while there's text in the box (their window is ~15s).
+            input.addTextChangedListener(new android.text.TextWatcher() {
+                public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+                public void afterTextChanged(android.text.Editable s) {}
+                public void onTextChanged(CharSequence s, int a, int b, int c) {
+                    if (s == null || s.length() == 0) return;
+                    long now = System.currentTimeMillis();
+                    if (now - lastTypingSentMs < 10000) return;
+                    lastTypingSentMs = now;
+                    IO.execute(new Runnable() { public void run() {
+                        BhSteamBridge.request("friends.send_typing",
+                                "{\"steamId\":" + steamId + "}", 4000);
+                    }});
+                }
+            });
             bar.addView(input);
 
             final TextView send = new TextView(act);
@@ -734,7 +856,80 @@ public final class BhSteamChatOverlay {
                     return false;
                 }
             });
-            listCol.addView(bar);
+            composer.addView(bar);
+            listCol.addView(composer);
+        }
+
+        /** Fill the picker strip from friends.chat_stickers; tap sends the sticker. */
+        private void loadStickers(final LinearLayout strip, final long steamId) {
+            IO.execute(new Runnable() {
+                public void run() {
+                    final String json = BhSteamBridge.request("friends.chat_stickers", "{}", 8000);
+                    post(new Runnable() {
+                        public void run() {
+                            JSONArray arr = json == null ? null
+                                    : asArray(json, "stickers", "items", "data", "list", "value");
+                            if (arr == null || arr.length() == 0) {
+                                TextView none = new TextView(act);
+                                none.setText(json == null ? "Couldn't load stickers" : "No stickers available");
+                                none.setTextColor(COL_SUBTEXT);
+                                none.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+                                strip.addView(none);
+                                return;
+                            }
+                            for (int i = 0; i < arr.length(); i++) {
+                                JSONObject s = arr.optJSONObject(i);
+                                if (s == null) continue;
+                                final String name = s.optString("name", "");
+                                if (name.isEmpty()) continue;
+                                String img = firstNonEmpty(s.optString("staticImageUrl"),
+                                        s.optString("imageUrl"), STICKER_CDN + urlEnc(name));
+                                final android.widget.ImageView iv = new android.widget.ImageView(act);
+                                int sz = dp(48);
+                                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(sz, sz);
+                                if (i > 0) lp.leftMargin = dp(6);
+                                iv.setLayoutParams(lp);
+                                iv.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+                                iv.setContentDescription(name);
+                                final String u = img;
+                                IMG_IO.execute(new Runnable() { public void run() {
+                                    final android.graphics.Bitmap b = fetchBitmap(u);
+                                    if (b != null) post(new Runnable() { public void run() { iv.setImageBitmap(b); } });
+                                }});
+                                iv.setOnClickListener(new View.OnClickListener() {
+                                    public void onClick(View v) { sendSticker(steamId, name); }
+                                });
+                                strip.addView(iv);
+                            }
+                        }
+                    });
+                }
+            });
+        }
+
+        private void sendSticker(final long steamId, final String stickerName) {
+            setStatus("Sending sticker…");
+            IO.execute(new Runnable() {
+                public void run() {
+                    String payload;
+                    try {
+                        // SendStickerRequest: steamId, stickerName, clientMessageId
+                        // (String, same caveat as send_message).
+                        payload = new JSONObject()
+                                .put("steamId", steamId)
+                                .put("stickerName", stickerName)
+                                .put("clientMessageId", String.valueOf(System.currentTimeMillis()))
+                                .toString();
+                    } catch (Throwable t) { return; }
+                    final String resp = BhSteamBridge.request("friends.send_sticker", payload, 8000);
+                    post(new Runnable() {
+                        public void run() {
+                            if (resp == null) setStatus("Sticker failed · " + BhSteamBridge.getLastError());
+                            else loadHistory(steamId, currentTitle);
+                        }
+                    });
+                }
+            });
         }
 
         private void sendMessage(final long steamId, final String text) {
@@ -957,6 +1152,175 @@ public final class BhSteamChatOverlay {
             return iv;
         }
 
+        /**
+         * Rich card for an invite-family BBCode message, mirroring the native
+         * chat screen: game artwork, "<sender> invited you to play", game name,
+         * and a live/Expired state. The invite tag itself carries only ids
+         * (appid / lobbyid / connect string) — name + artwork resolve from
+         * apps.app_details, and liveness is the same signal the native card
+         * uses: the inviting friend is still in that app right now
+         * (SteamFriendDto.gameAppId).
+         */
+        private View inviteCard(String tag, java.util.Map<String, String> attrs,
+                                boolean fromMe, String friendName) {
+            int appId = 0;
+            try { appId = Integer.parseInt(attrs.containsKey("appid") ? attrs.get("appid") : "0"); }
+            catch (Throwable ignored) {}
+
+            LinearLayout card = new LinearLayout(act);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setLayoutParams(new LinearLayout.LayoutParams(dp(200), ViewGroup.LayoutParams.WRAP_CONTENT));
+
+            // Artwork (Steam header capsule, 460×215). CDN path by appid is what
+            // app_details' headerImageUrl resolves to for almost every app.
+            if (appId > 0) {
+                final android.widget.ImageView art = new android.widget.ImageView(act);
+                LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(dp(200), dp(94));
+                alp.bottomMargin = dp(6);
+                art.setLayoutParams(alp);
+                art.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+                GradientDrawable ph = new GradientDrawable();
+                ph.setColor(0x22FFFFFF); ph.setCornerRadius(dp(6));
+                art.setBackground(ph);
+                final String headerUrl = APP_HEADER_CDN + appId + "/header.jpg";
+                IMG_IO.execute(new Runnable() { public void run() {
+                    final android.graphics.Bitmap b = fetchBitmap(headerUrl);
+                    if (b != null) post(new Runnable() { public void run() {
+                        art.setBackground(null); art.setImageBitmap(b);
+                    }});
+                }});
+                card.addView(art);
+            }
+
+            TextView verb = new TextView(act);
+            verb.setText(inviteVerbLine(tag, fromMe, friendName));
+            verb.setTextColor(COL_SUBTEXT);
+            verb.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+            card.addView(verb);
+
+            final TextView gameName = new TextView(act);
+            gameName.setText(appId > 0 ? "App " + appId : inviteKindLabel(tag));
+            gameName.setTextColor(COL_TEXT);
+            gameName.setTypeface(Typeface.DEFAULT_BOLD);
+            gameName.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+            card.addView(gameName);
+            if (appId > 0) resolveAppName(appId, gameName);
+
+            // State line for invites we received: joinable while the friend is
+            // still in that game, otherwise Expired (grey) — same rule as the
+            // native card. We deliberately don't offer Join: another game is
+            // already running fullscreen; joining happens from GameHub itself.
+            if (!fromMe && appId > 0) {
+                TextView state = new TextView(act);
+                boolean live = friendCurrentlyInApp(openFriendId, appId);
+                state.setText(live ? "● Active now — join from GameHub's Steam chat" : "Expired");
+                state.setTextColor(live ? COL_INGAME : COL_OFFLINE);
+                state.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+                state.setPadding(0, dp(4), 0, 0);
+                card.addView(state);
+            }
+            return card;
+        }
+
+        /** "<who> invited you to play / playtest / watch …" per invite tag kind. */
+        private String inviteVerbLine(String tag, boolean fromMe, String friendName) {
+            String who = fromMe ? "You invited " + friendName : friendName + " invited you";
+            if (tag.equals("playtestinvite"))             return who + " to playtest";
+            if (tag.equals("remoteplaytogetherinvite"))   return who + " to Remote Play";
+            if (tag.startsWith("broadcast"))              return who + " to watch";
+            if (tag.equals("tradeoffer"))
+                return fromMe ? "You sent " + friendName + " a trade offer"
+                              : friendName + " sent you a trade offer";
+            if (tag.equals("invite") || tag.equals("inviteurl"))
+                return fromMe ? "You sent an invite" : friendName + " sent you an invite";
+            return who + " to play";
+        }
+
+        /** Fallback card title when the tag carries no appid. */
+        private String inviteKindLabel(String tag) {
+            if (tag.equals("tradeoffer"))               return "Trade offer";
+            if (tag.startsWith("broadcast"))            return "Steam broadcast";
+            if (tag.equals("remoteplaytogetherinvite")) return "Remote Play Together";
+            return "Steam invite";
+        }
+
+        /** True if `steamId` is in-game in `appId` right now, per the cached
+         *  friends.list snapshot (SteamFriendDto.gameAppId/isInGame). */
+        private boolean friendCurrentlyInApp(long steamId, int appId) {
+            if (lastFriendsJson == null || steamId == 0) return false;
+            try {
+                JSONArray arr = asArray(lastFriendsJson, "friends", "items", "data", "list", "value");
+                if (arr == null) return false;
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject f = arr.optJSONObject(i);
+                    if (f == null || f.optLong("steamId", 0) != steamId) continue;
+                    return f.optBoolean("isInGame", false) && f.optLong("gameAppId", 0) == appId;
+                }
+            } catch (Throwable ignored) {}
+            return false;
+        }
+
+        /** Resolve appId → display name via apps.app_details (session-cached)
+         *  and drop it into `target` when it arrives. */
+        private void resolveAppName(final int appId, final TextView target) {
+            synchronized (sAppInfo) {
+                String[] hit = sAppInfo.get(appId);
+                if (hit != null) { if (!hit[0].isEmpty()) target.setText(hit[0]); return; }
+            }
+            IO.execute(new Runnable() {
+                public void run() {
+                    String name = "";
+                    try {
+                        String resp = BhSteamBridge.request("apps.app_details",
+                                "{\"appId\":" + appId + "}", 8000);
+                        if (resp != null) name = appNameFrom(resp);
+                    } catch (Throwable ignored) {}
+                    final String got = name;
+                    synchronized (sAppInfo) { sAppInfo.put(appId, new String[]{got, ""}); }
+                    if (!got.isEmpty()) post(new Runnable() { public void run() { target.setText(got); } });
+                }
+            });
+        }
+
+        /** A Steam sticker, rendered from the same CDN the native screen uses. */
+        private View stickerView(String stickerName) {
+            final android.widget.ImageView iv = new android.widget.ImageView(act);
+            int s = dp(92);  // native sticker render size
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(s, s);
+            iv.setLayoutParams(lp);
+            iv.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+            iv.setContentDescription(stickerName);
+            final String url = STICKER_CDN + urlEnc(stickerName);
+            IMG_IO.execute(new Runnable() { public void run() {
+                final android.graphics.Bitmap b = fetchBitmap(url);
+                if (b != null) post(new Runnable() { public void run() { iv.setImageBitmap(b); } });
+            }});
+            return iv;
+        }
+
+        /** A run of emoticon images for an all-emoticon message (max 6 shown). */
+        private View emoticonRow(java.util.List<String> names) {
+            LinearLayout row = new LinearLayout(act);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            int n = Math.min(names.size(), 6);
+            for (int i = 0; i < n; i++) {
+                final android.widget.ImageView iv = new android.widget.ImageView(act);
+                int s = dp(28);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(s, s);
+                if (i > 0) lp.leftMargin = dp(3);
+                iv.setLayoutParams(lp);
+                iv.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+                iv.setContentDescription(names.get(i));
+                final String url = EMOTICON_CDN + urlEnc(names.get(i));
+                IMG_IO.execute(new Runnable() { public void run() {
+                    final android.graphics.Bitmap b = fetchBitmap(url);
+                    if (b != null) post(new Runnable() { public void run() { iv.setImageBitmap(b); } });
+                }});
+                row.addView(iv);
+            }
+            return row;
+        }
+
         private void addRaw(String json) {
             TextView raw = new TextView(act);
             raw.setText(json.length() > 1200 ? json.substring(0, 1200) + "…" : json);
@@ -1040,6 +1404,71 @@ public final class BhSteamChatOverlay {
             if (u.contains("thumb")) return u;
         }
         return first;
+    }
+
+    /** Parse the attribute blob of a BBCode tag (`appid="550" steamid=…`) into a map. */
+    private static java.util.Map<String, String> attrsOf(String attrBlob) {
+        java.util.HashMap<String, String> out = new java.util.HashMap<>();
+        if (attrBlob == null) return out;
+        java.util.regex.Matcher m = TAG_ATTR_RE.matcher(attrBlob);
+        while (m.find()) out.put(m.group(1).toLowerCase(java.util.Locale.ROOT), m.group(2));
+        return out;
+    }
+
+    /** Sticker name from `[sticker type="name"]` / `[sticker]name[/sticker]`, or null. */
+    private static String extractStickerName(String raw) {
+        if (raw == null || !raw.toLowerCase(java.util.Locale.ROOT).contains("[sticker")) return null;
+        java.util.regex.Matcher m = STICKER_RE.matcher(raw);
+        if (!m.find()) return null;
+        java.util.Map<String, String> attrs = attrsOf(m.group(1));
+        String name = attrs.containsKey("type") ? attrs.get("type") : attrs.get("name");
+        if (name == null || name.isEmpty()) name = m.group(2);
+        return (name == null || name.trim().isEmpty()) ? null : name.trim();
+    }
+
+    /** If the message body is nothing but `[emoticon]…[/emoticon]` runs, return
+     *  the emoticon names; null when there's any other content. */
+    private static java.util.List<String> emoticonOnlyNames(String raw) {
+        if (raw == null || !raw.toLowerCase(java.util.Locale.ROOT).contains("[emoticon")) return null;
+        java.util.ArrayList<String> names = new java.util.ArrayList<>();
+        java.util.regex.Matcher m = EMOTICON_RE.matcher(raw);
+        while (m.find()) names.add(m.group(1).trim());
+        if (names.isEmpty()) return null;
+        return EMOTICON_RE.matcher(raw).replaceAll("").trim().isEmpty() ? names : null;
+    }
+
+    /** App display name out of an apps.app_details response (AppDetailsDto:
+     *  localizedNames map keyed by language, installDirName as fallback). */
+    private static String appNameFrom(String json) {
+        try {
+            JSONObject root = new JSONObject(json);
+            JSONObject d = root.has("appId") ? root : null;
+            if (d == null) for (String k : new String[]{"data", "details", "appDetails", "value"}) {
+                JSONObject inner = root.optJSONObject(k);
+                if (inner != null && inner.has("appId")) { d = inner; break; }
+            }
+            if (d == null) d = root;
+            JSONObject names = d.optJSONObject("localizedNames");
+            if (names != null) {
+                for (String k : new String[]{"english", "en", "name"}) {
+                    String v = names.optString(k, "");
+                    if (!v.isEmpty() && !"null".equals(v)) return v;
+                }
+                java.util.Iterator<String> it = names.keys();
+                if (it.hasNext()) {
+                    String v = names.optString(it.next(), "");
+                    if (!v.isEmpty() && !"null".equals(v)) return v;
+                }
+            }
+            String dir = d.optString("installDirName", "");
+            if (!dir.isEmpty() && !"null".equals(dir)) return dir;
+        } catch (Throwable ignored) {}
+        return "";
+    }
+
+    private static String urlEnc(String s) {
+        try { return java.net.URLEncoder.encode(s, "UTF-8").replace("+", "%20"); }
+        catch (Throwable t) { return s; }
     }
 
     /** Strip the most common Steam BBCode tags so non-image messages read cleanly. */

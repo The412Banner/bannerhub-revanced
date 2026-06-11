@@ -1662,11 +1662,21 @@ public final class BhSteamChatOverlay {
      * (e.g. {@code [img src=…steamusercontent…]…[/img]}). Pull the first such URL
      * so we can render it inline; returns null for ordinary text messages.
      */
+    // A bare https URL ending in an image extension (our R2-hosted chat images
+    // arrive as plain …/chat/i/<id>.jpg messages, as do many pasted image links).
+    private static final java.util.regex.Pattern IMG_URL_RE = java.util.regex.Pattern.compile(
+            "https?://[^\\s\\]\\[\"']+\\.(?:jpg|jpeg|png|gif|webp)(?:\\?[^\\s\"']*)?",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
+
     private static String extractImageUrl(String text) {
         if (text == null) return null;
         boolean looksImg = text.contains("[img") || text.contains("steamusercontent")
-                || text.contains("steamuserimages");
+                || text.contains("steamuserimages") || text.contains("/chat/i/")
+                || IMG_URL_RE.matcher(text).find();
         if (!looksImg) return null;
+        // Prefer the image-extension URL when present (skips non-image links).
+        java.util.regex.Matcher im = IMG_URL_RE.matcher(text);
+        if (im.find()) return im.group();
         java.util.regex.Matcher m = URL_RE.matcher(text);
         // Prefer a thumbnail URL if one is called out; else the first URL.
         String first = null;

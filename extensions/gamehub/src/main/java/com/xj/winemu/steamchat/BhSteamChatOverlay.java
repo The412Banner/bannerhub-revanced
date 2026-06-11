@@ -145,7 +145,7 @@ public final class BhSteamChatOverlay {
 
     // ── controller ───────────────────────────────────────────────────────────
 
-    private static final class Controller {
+    private static final class Controller implements BhVoiceController.Host {
         private final Activity act;
         private WindowManager wm;
         private WindowManager.LayoutParams lp;
@@ -166,6 +166,11 @@ public final class BhSteamChatOverlay {
         private Object chatSub;          // live steam:chat-message subscription handle
         private Object typingSub;        // live steam:chat-typing subscription handle
         private long lastTypingSentMs;   // throttle for our own friends.send_typing
+        private BhVoiceController voice;  // active WebRTC voice call (null when idle)
+        private String pendingOfferJson;  // buffered incoming offer awaiting accept
+        private long pendingOfferPeer;    // peer SteamID of the buffered offer
+        private LinearLayout voiceBar;    // in-call / incoming-call control bar
+        private TextView voiceText;       // call status label in voiceBar
         // Reverts the "is typing…" status if no message follows within Steam's
         // ~15s typing-notification window.
         private final Runnable clearTyping = new Runnable() {
@@ -216,6 +221,7 @@ public final class BhSteamChatOverlay {
         void detach() {
             if (!attached) return;
             attached = false;
+            try { if (voice != null) { voice.hangup(); voice = null; } } catch (Throwable ignored) {}
             try { BhSteamBridge.unlisten(chatSub); } catch (Throwable ignored) {}
             chatSub = null;
             try { BhSteamBridge.unlisten(typingSub); } catch (Throwable ignored) {}
@@ -287,6 +293,15 @@ public final class BhSteamChatOverlay {
             status.setPadding(0, dp(4), 0, dp(8));
             status.setText("Steam friends");
             panel.addView(status);
+
+            // Voice-call control bar (incoming-call prompt / in-call mute+hangup).
+            // Lives in the fixed zone so it stays put while the thread scrolls.
+            voiceBar = new LinearLayout(act);
+            voiceBar.setOrientation(LinearLayout.HORIZONTAL);
+            voiceBar.setGravity(Gravity.CENTER_VERTICAL);
+            voiceBar.setPadding(0, dp(4), 0, dp(6));
+            voiceBar.setVisibility(View.GONE);
+            panel.addView(voiceBar);
 
             // Pinned back affordance: lives in the panel's fixed zone (above the
             // ScrollView) so it never scrolls away while a conversation is open.
@@ -474,12 +489,22 @@ public final class BhSteamChatOverlay {
             if (chatSub == null) {
                 chatSub = BhSteamBridge.listen("steam:chat-message", new BhSteamBridge.EventListener() {
                     public void onEvent(final String payloadJson) {
-                        long who = 0;
+                        long who = 0; String dir = ""; String body = "";
                         try {
                             JSONObject o = new JSONObject(payloadJson);
                             who = o.optLong("friendSteamId", o.optLong("steamId", o.optLong("senderSteamId", 0)));
+                            dir = o.optString("direction", "");
+                            body = firstNonEmpty(o.optString("message"), o.optString("plainMessage"), o.optString("rawMessage"));
                         } catch (Throwable ignored) {}
                         final long from = who;
+                        // Voice signalling rides hidden, prefix-marked chat messages —
+                        // intercept inbound ones and route to the call layer instead
+                        // of refreshing the visible thread.
+                        if ("Incoming".equalsIgnoreCase(dir) && body.startsWith(BhVoiceController.SIG_PREFIX)) {
+                            final String sig = BhVoiceController.unb64(body.substring(BhVoiceController.SIG_PREFIX.length()));
+                            post(new Runnable() { public void run() { handleVoiceSignal(from, sig); } });
+                            return;
+                        }
                         post(new Runnable() {
                             public void run() {
                                 // Only refresh if this message belongs to the conversation on screen.
@@ -618,6 +643,170 @@ public final class BhSteamChatOverlay {
             return localSteamId;
         }
 
+        // ── voice calls (WebRTC in a WebView, signalled via hidden chat) ─────────
+
+        private static final int MIC_REQ = 0xB402;
+
+        /** Start an outgoing voice call to the open conversation's friend. */
+        private void startVoiceCall(final long steamId, final String name) {
+            if (steamId == 0) return;
+            if (voice != null) { toast("Already in a call"); return; }
+            if (!ensureMicPermission()) { toast("Grant microphone access, then call again"); return; }
+            voice = new BhVoiceController(act, steamId, this);
+            showVoiceBar("Calling " + name + "…", true);
+            voice.start(true);
+        }
+
+        /** Route an inbound signalling blob to the call layer. UI thread. */
+        private void handleVoiceSignal(long peer, String sigJson) {
+            String t;
+            try { t = new JSONObject(sigJson).optString("t", ""); } catch (Throwable x) { return; }
+            if (voice != null && voice.friendSteamId() == peer) {
+                if ("bye".equals(t)) { voice.remoteHangup(); voice = null; hideVoiceBar(); }
+                else voice.onSignal(sigJson);
+                return;
+            }
+            if (voice == null && "offer".equals(t)) {
+                pendingOfferPeer = peer;
+                pendingOfferJson = sigJson;
+                showIncomingCall(peer);
+            }
+            // stray ice/answer/bye with no matching call → ignore
+        }
+
+        private void acceptIncomingCall() {
+            if (pendingOfferJson == null) return;
+            if (!ensureMicPermission()) { toast("Grant microphone access, then accept"); return; }
+            long peer = pendingOfferPeer;
+            String offer = pendingOfferJson;
+            pendingOfferJson = null;
+            voice = new BhVoiceController(act, peer, this);
+            showVoiceBar("Connecting…", true);
+            voice.start(false);
+            voice.onSignal(offer);  // feed the buffered offer
+        }
+
+        private void declineIncomingCall() {
+            final long peer = pendingOfferPeer;
+            if (peer != 0) {
+                final String bye = BhVoiceController.SIG_PREFIX + BhVoiceController.b64("{\"t\":\"bye\"}");
+                IO.execute(new Runnable() { public void run() { sendSignalTo(peer, bye); } });
+            }
+            pendingOfferJson = null; pendingOfferPeer = 0;
+            hideVoiceBar();
+        }
+
+        // BhVoiceController.Host -------------------------------------------------
+        public void sendVoiceSignal(final String body) {
+            final long peer = voice != null ? voice.friendSteamId() : pendingOfferPeer;
+            if (peer == 0) return;
+            IO.execute(new Runnable() { public void run() { sendSignalTo(peer, body); } });
+        }
+
+        public void onVoiceState(final String state, final String detail) {
+            post(new Runnable() { public void run() {
+                if ("ended".equals(state)) {
+                    voice = null; hideVoiceBar();
+                    toast((detail != null && !detail.isEmpty()) ? "Call ended: " + detail : "Call ended");
+                    return;
+                }
+                String label = "in-call".equals(state)
+                        ? "● In call" + (detail != null && detail.contains("mut") ? " · muted" : "")
+                        : "calling".equals(state) ? "Calling…"
+                        : "connecting".equals(state) ? "Connecting…" : state;
+                showVoiceBar(label, true);
+            }});
+        }
+
+        /** Send one signalling line as a (hidden, marker-prefixed) chat message. Worker-thread. */
+        private void sendSignalTo(long peer, String body) {
+            try {
+                String payload = new JSONObject()
+                        .put("steamId", peer).put("message", body)
+                        .put("clientMessageId", String.valueOf(System.currentTimeMillis())).toString();
+                BhSteamBridge.request("friends.send_message", payload, 8000);
+            } catch (Throwable ignored) {}
+        }
+
+        private boolean ensureMicPermission() {
+            try {
+                if (act.checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
+                        == android.content.pm.PackageManager.PERMISSION_GRANTED) return true;
+                act.requestPermissions(new String[]{android.Manifest.permission.RECORD_AUDIO}, MIC_REQ);
+                return false;
+            } catch (Throwable t) { return true; }  // pre-M / odd host: assume granted
+        }
+
+        // voice bar UI ----------------------------------------------------------
+        private void showVoiceBar(String label, boolean inCall) {
+            if (voiceBar == null) return;
+            voiceBar.removeAllViews();
+            voiceBar.setVisibility(View.VISIBLE);
+            TextView t = new TextView(act);
+            t.setText(label);
+            t.setTextColor(COL_INGAME);
+            t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+            t.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            voiceBar.addView(t);
+            if (inCall) {
+                TextView mute = pillButton(voice != null && voice.isMuted() ? "Unmute" : "Mute");
+                final String lbl = label;
+                mute.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+                    if (voice != null) { voice.setMuted(!voice.isMuted()); showVoiceBar(lbl, true); }
+                }});
+                voiceBar.addView(mute);
+                TextView end = pillButton("Hang up");
+                end.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+                    if (voice != null) { voice.hangup(); voice = null; }
+                    hideVoiceBar();
+                }});
+                voiceBar.addView(end);
+            }
+            fitPanelOnScreen();
+        }
+
+        private void showIncomingCall(long peer) {
+            if (voiceBar == null) return;
+            if (!expanded) setExpanded(true);  // surface the prompt
+            voiceBar.removeAllViews();
+            voiceBar.setVisibility(View.VISIBLE);
+            TextView t = new TextView(act);
+            t.setText("📞 Incoming voice call");
+            t.setTextColor(COL_ACCENT);
+            t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+            t.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            voiceBar.addView(t);
+            TextView acc = pillButton("Accept");
+            acc.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { acceptIncomingCall(); }});
+            voiceBar.addView(acc);
+            TextView dec = pillButton("Decline");
+            dec.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { declineIncomingCall(); }});
+            voiceBar.addView(dec);
+            fitPanelOnScreen();
+        }
+
+        private void hideVoiceBar() {
+            if (voiceBar != null) { voiceBar.removeAllViews(); voiceBar.setVisibility(View.GONE); }
+        }
+
+        /** Small rounded action button for the voice bar. */
+        private TextView pillButton(String label) {
+            TextView b = new TextView(act);
+            b.setText(label);
+            b.setTextColor(COL_TEXT);
+            b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+            b.setPadding(dp(10), dp(4), dp(10), dp(4));
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(COL_PILL_BG);
+            bg.setCornerRadius(dp(12));
+            b.setBackground(bg);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.leftMargin = dp(6);
+            b.setLayoutParams(lp);
+            return b;
+        }
+
         // ── render (UI thread) ──────────────────────────────────────────────────
 
         private void showNotReady() {
@@ -752,6 +941,9 @@ public final class BhSteamChatOverlay {
                 for (int i = 0; i < arr.length(); i++) {
                     JSONObject m = arr.optJSONObject(i);
                     if (m == null) continue;
+                    // Hidden voice-signalling messages never render in the thread.
+                    if (firstNonEmpty(m.optString("message"), m.optString("plainMessage"),
+                            m.optString("rawMessage")).startsWith(BhVoiceController.SIG_PREFIX)) continue;
                     // SteamChatMessageDto.direction is the only reliable sender
                     // signal — "Incoming" (friend) vs "Outgoing" (us). friendSteamId
                     // is the conversation peer on BOTH sides, so it can't tell who
@@ -908,11 +1100,20 @@ public final class BhSteamChatOverlay {
             final TextView imgBtn = new TextView(act);
             imgBtn.setText("🖼");
             imgBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-            imgBtn.setPadding(dp(2), dp(4), dp(8), dp(4));
+            imgBtn.setPadding(dp(2), dp(4), dp(6), dp(4));
             imgBtn.setOnClickListener(new View.OnClickListener() {
                 public void onClick(View v) { pickImage(steamId); }
             });
             bar.addView(imgBtn);
+
+            final TextView callBtn = new TextView(act);
+            callBtn.setText("🎙");
+            callBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+            callBtn.setPadding(dp(2), dp(4), dp(8), dp(4));
+            callBtn.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) { startVoiceCall(steamId, currentTitle); }
+            });
+            bar.addView(callBtn);
 
             input.setHint("Message…");
             input.setHintTextColor(COL_OFFLINE);

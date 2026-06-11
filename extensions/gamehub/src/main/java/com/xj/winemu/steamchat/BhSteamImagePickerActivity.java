@@ -4,7 +4,6 @@ import android.app.Activity;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
-import android.util.Base64;
 import android.util.Log;
 import android.widget.Toast;
 
@@ -12,14 +11,23 @@ import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 
 /**
  * Transparent, internal-only helper that lets the Steam chat overlay send an
  * image. The overlay is a WindowManager view with no Activity-result plumbing of
  * its own, so it delegates the gallery pick here: this Activity fires
- * ACTION_GET_CONTENT, reads the chosen image's bytes, and uploads them to the
- * conversation via {@code friends.upload_chat_image} (UploadChatImageRequest:
- * steamId / fileName / mimeType / bytesBase64), then finishes immediately.
+ * ACTION_GET_CONTENT, reads the chosen image's bytes, hosts them, and sends the
+ * resulting URL to the friend as a normal chat message, then finishes.
+ *
+ * <p>Steam's native {@code friends.upload_chat_image} returns 401 (the session's
+ * web access-token is expired/absent), so instead of the native byte-upload we
+ * POST the image to our own bannerhub-api worker ({@code /chat/upload-image} →
+ * R2, 7-day retention) and send the returned {@code /chat/i/<id>.jpg} URL via
+ * {@code friends.send_message}. Steam clients embed image URLs inline, so the
+ * friend sees the picture, not a bare link.
  *
  * Registered in the manifest by BhSteamImagePickerManifestPatch
  * (android:exported="false", no intent-filter).
@@ -30,8 +38,13 @@ public final class BhSteamImagePickerActivity extends Activity {
     private static final int REQ_PICK = 0xB401;
     // 8 MB ceiling — Steam chat images are small; avoid OOM on a huge pick.
     private static final int MAX_BYTES = 8 * 1024 * 1024;
+    // Our bannerhub-api worker image host (R2-backed, 7-day retention).
+    private static final String UPLOAD_URL =
+            "https://bannerhub-api.the412banner.workers.dev/chat/upload-image";
+    private static final String UPLOAD_KEY = "bh6img";   // matches the worker's x-bh-chat gate
 
     private long steamId;
+    private volatile String uploadErr = "";
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -61,36 +74,40 @@ public final class BhSteamImagePickerActivity extends Activity {
             public void run() {
                 String result;
                 try {
-                    // Steam's "begin upload" rejects exotic source formats (HEIC/WebP)
-                    // and very large images, so normalise everything to a sized JPEG;
-                    // fall back to the raw bytes only if decoding fails.
+                    // Normalise to a sized JPEG (raw fallback), host it on our R2
+                    // worker, then send the URL as a normal chat message — Steam
+                    // embeds image URLs inline. Sidesteps the 401 on the native
+                    // byte-upload path entirely.
                     byte[] bytes;
-                    String fileName, mime;
+                    String mime;
                     byte[] jpeg = encodeJpeg(uri);
                     if (jpeg != null) {
                         bytes = jpeg;
-                        fileName = "image_" + System.currentTimeMillis() + ".jpg";
                         mime = "image/jpeg";
                     } else {
                         bytes = readBytes(uri);
                         mime = firstNonNull(getContentResolver().getType(uri), "image/jpeg");
-                        fileName = displayName(uri, mime);
                     }
-                    if (bytes == null) result = "Couldn't read image";
-                    else {
-                        String b64 = Base64.encodeToString(bytes, Base64.NO_WRAP);
-                        String payload = new JSONObject()
-                                .put("steamId", steamId)
-                                .put("fileName", fileName)
-                                .put("mimeType", mime)
-                                .put("bytesBase64", b64)
-                                .toString();
-                        String resp = BhSteamBridge.request("friends.upload_chat_image", payload, 30000);
-                        result = (resp != null) ? "Image sent"
-                                : "Image send failed · " + BhSteamBridge.getLastError();
+                    if (bytes == null) {
+                        result = "Couldn't read image";
+                    } else {
+                        String hostedUrl = uploadToHost(bytes, mime);
+                        if (hostedUrl == null) {
+                            result = "Image upload failed · " + uploadErr;
+                        } else {
+                            // SendMessageRequest: clientMessageId MUST be a String.
+                            String payload = new JSONObject()
+                                    .put("steamId", steamId)
+                                    .put("message", hostedUrl)
+                                    .put("clientMessageId", String.valueOf(System.currentTimeMillis()))
+                                    .toString();
+                            String resp = BhSteamBridge.request("friends.send_message", payload, 15000);
+                            result = (resp != null) ? "Image sent"
+                                    : "Hosted, but chat send failed · " + BhSteamBridge.getLastError();
+                        }
                     }
                 } catch (Throwable t) {
-                    Log.w(TAG, "upload_chat_image failed", t);
+                    Log.w(TAG, "image send failed", t);
                     result = "Image send failed";
                 }
                 final String r = result;
@@ -119,6 +136,43 @@ public final class BhSteamImagePickerActivity extends Activity {
                     })
                     .show();
         } catch (Throwable t) { toast(msg); finish(); }
+    }
+
+    /** POST the image bytes to the bannerhub-api worker and return the hosted
+     *  public URL ({@code …/chat/i/<id>.jpg}), or null on failure (reason in
+     *  {@link #uploadErr}). */
+    private String uploadToHost(byte[] bytes, String mime) {
+        HttpURLConnection c = null;
+        try {
+            c = (HttpURLConnection) new URL(UPLOAD_URL).openConnection();
+            c.setRequestMethod("POST");
+            c.setDoOutput(true);
+            c.setConnectTimeout(15000);
+            c.setReadTimeout(30000);
+            c.setRequestProperty("Content-Type", mime);
+            c.setRequestProperty("x-bh-chat", UPLOAD_KEY);
+            c.setFixedLengthStreamingMode(bytes.length);
+            OutputStream os = c.getOutputStream();
+            try { os.write(bytes); os.flush(); } finally { os.close(); }
+            int code = c.getResponseCode();
+            if (code != 200) { uploadErr = "host HTTP " + code; return null; }
+            InputStream in = c.getInputStream();
+            ByteArrayOutputStream bo = new ByteArrayOutputStream();
+            try {
+                byte[] buf = new byte[4096];
+                int n;
+                while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
+            } finally { in.close(); }
+            String url = new JSONObject(new String(bo.toByteArray(), "UTF-8")).optString("url", "");
+            if (url.isEmpty()) { uploadErr = "host gave no url"; return null; }
+            return url;
+        } catch (Throwable t) {
+            uploadErr = t.getClass().getSimpleName();
+            Log.w(TAG, "uploadToHost failed", t);
+            return null;
+        } finally {
+            if (c != null) c.disconnect();
+        }
     }
 
     /** Decode the picked image (downscaled to ≤ MAX_DIM on the long edge) and
@@ -174,22 +228,6 @@ public final class BhSteamImagePickerActivity extends Activity {
         } finally {
             try { if (in != null) in.close(); } catch (Throwable ignored) {}
         }
-    }
-
-    private String displayName(Uri uri, String mime) {
-        String name = null;
-        try {
-            android.database.Cursor c = getContentResolver().query(uri,
-                    new String[]{android.provider.OpenableColumns.DISPLAY_NAME}, null, null, null);
-            if (c != null) {
-                try { if (c.moveToFirst()) name = c.getString(0); } finally { c.close(); }
-            }
-        } catch (Throwable ignored) {}
-        if (name == null || name.isEmpty()) {
-            String ext = mime != null && mime.contains("/") ? mime.substring(mime.indexOf('/') + 1) : "jpg";
-            name = "image_" + System.currentTimeMillis() + "." + ext;
-        }
-        return name;
     }
 
     private static String firstNonNull(String a, String b) { return a != null ? a : b; }

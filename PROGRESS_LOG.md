@@ -4202,3 +4202,14 @@ pre3 device test surfaced the real image-upload cause: `friends.upload_chat_imag
 - **Extension** (`a8a1d24`): `BhSteamImagePickerActivity` now pick → `encodeJpeg` → `uploadToHost` (POST worker, x-bh-chat header) → `friends.send_message(url)`. Dropped native upload_chat_image entirely. Overlay `extractImageUrl` now matches bare image-extension URLs (incl. `/chat/i/`) via `IMG_URL_RE` so our side renders sent images inline.
 
 Verify run `27314887152` ✅; prerelease APK run `27314954926` ✅ (all 9, no SEVERE). Genshin delivered: `/storage/emulated/0/Download/BannerHub-V6-1.3.0-608-pre4-Genshin.apk` md5 **`728c0fd1c97a8ea862917304cd2ba7b0`**. Test: 🖼 → pick gallery image → should host + post as inline image both sides (failure dialog now names the failing stage: host vs chat send).
+
+## 2026-06-10 — Steam chat v2 pre5: WebRTC 1:1 voice call (Option C, spike) on feature/steam-chat-v2
+
+User: "start voice as part of chat v2." Built Option C (WebRTC 1:1, signalled over Steam chat). Commit `2f7b2d5`:
+- **Architecture pivot**: WebView-hosted WebRTC, NOT a bundled native lib (injecting libwebrtc.so into a patched APK is fragile). Android System WebView ships Chromium WebRTC → run getUserMedia + RTCPeerConnection in a headless WebView.
+- **`BhVoiceController`** (new): hosts the WebView + embedded HTML/JS page (audio-only peer, symmetric caller/callee), `@JavascriptInterface BhVoice` bridge (signal/state/log). `SIG_PREFIX` = zero-width-marked hidden chat messages carry base64 SDP/ICE.
+- **Overlay integration**: chat-message listener intercepts Incoming SIG_PREFIX messages → `handleVoiceSignal` (routes to call / raises incoming-call prompt for offers); renderHistory skips signal messages; 🎙 composer button → `startVoiceCall`; voiceBar in panel fixed zone (Calling/Connecting/In-call + Mute/Hang up; incoming = Accept/Decline); RECORD_AUDIO via `ensureMicPermission`; detach hangs up. Controller implements `BhVoiceController.Host` (sendVoiceSignal→hidden send_message, onVoiceState→voiceBar).
+- **`steamChatVoiceManifestPatch`** (new): adds RECORD_AUDIO + MODIFY_AUDIO_SETTINGS; wired into `steamChatOverlayPatch` dependsOn.
+- **STUN-only** spike (public Google STUN hardcoded in the page). Cloudflare TURN deferred — token got Authentication error on `/calls` API (Realtime needs dashboard enable, like R2 did). `/voice/turn` worker endpoint = task #6 pending.
+
+Verify run `27315718747` ✅; prerelease APK run `27315788919` ✅ (all 9, no SEVERE). Genshin delivered: `/storage/emulated/0/Download/BannerHub-V6-1.3.0-608-pre5-Genshin.apk` md5 **`ee90205c7240729ee90e6465e765cd07`**. TEST (needs 2 devices BOTH on pre5): open each other → 🎙 → Accept → talk. KNOWN GAPS: both-on-cellular needs TURN; audio-focus-vs-game not handled; WebView headless (attach 1px if no audio).

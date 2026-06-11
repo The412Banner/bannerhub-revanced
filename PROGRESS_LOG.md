@@ -4213,3 +4213,15 @@ User: "start voice as part of chat v2." Built Option C (WebRTC 1:1, signalled ov
 - **STUN-only** spike (public Google STUN hardcoded in the page). Cloudflare TURN deferred — token got Authentication error on `/calls` API (Realtime needs dashboard enable, like R2 did). `/voice/turn` worker endpoint = task #6 pending.
 
 Verify run `27315718747` ✅; prerelease APK run `27315788919` ✅ (all 9, no SEVERE). Genshin delivered: `/storage/emulated/0/Download/BannerHub-V6-1.3.0-608-pre5-Genshin.apk` md5 **`ee90205c7240729ee90e6465e765cd07`**. TEST (needs 2 devices BOTH on pre5): open each other → 🎙 → Accept → talk. KNOWN GAPS: both-on-cellular needs TURN; audio-focus-vs-game not handled; WebView headless (attach 1px if no audio).
+
+## ⏸ 2026-06-10 — PAUSED / RESUME POINT (awaiting a 2-device voice tester)
+
+**Branch `feature/steam-chat-v2`** (code tip `2f7b2d5`, log tip this commit). Current build **`1.3.0-608-pre5`** Genshin md5 `ee90205c7240729ee90e6465e765cd07` on device.
+
+BLOCKED ON: 2-device voice test (user finding a 2nd person — both must run pre5). Test = open each other → 🎙 → Accept → talk; report connects+audio / stuck-Connecting / silent / game-audio-over-call.
+
+Device-CONFIRMED (pre2–pre4): emoji, auto-scroll, opacity, send-image via R2. UNVERIFIED: voice (2 devices), typing (needs a friend whose msgs send).
+
+NEXT (keyed to test outcome): stuck-connecting → enable Cloudflare Realtime + add `/voice/turn` TURN endpoint (worker; `/calls` API 401s til enabled); silent → attach WebView 1px; game-audio-over-call → audio-focus/ducking. THEN merge `feature/steam-chat-v2` → `gamehub-608-build` + What's New in release.yml+README BEFORE cutting → cut stable `v1.3.0-608` (current Latest = v1.2.0-608).
+
+Build/deliver: `gh workflow run release.yml --ref feature/steam-chat-v2 -f version=1.3.0-608-preN -f stable=false` → `gh run download <id> -n apk-Genshin` → `/storage/emulated/0/Download/...-Genshin.apk`. Infra LIVE: R2 `bannerhub-chat-images` (7d) + worker routes `/chat/upload-image`,`/chat/i/<key>`. Worker deploy = fetch + redeploy from pushed HEAD (avoid the imagefs split-brain logged above).

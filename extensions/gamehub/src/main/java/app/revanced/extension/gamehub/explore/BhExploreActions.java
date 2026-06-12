@@ -13,6 +13,7 @@ import android.widget.Toast;
  *
  * Actions:
  *   "gog"         → GogMainActivity (login / owned-library hub)
+ *   "steam"       → SteamClientCard (install / register the full Steam client)
  *   "url"         → ACTION_VIEW the card's {@code arg} link
  *   "article"     → BannerExploreArticleActivity, fed the card's title/body/image
  *   "bannertools" → Banner Tools dialog (from-Explore: per-game tiles greyed)
@@ -35,6 +36,10 @@ public final class BhExploreActions {
             switch (card.action) {
                 case "gog":
                     openActivity(host, GOG_HUB);
+                    break;
+                case "steam":
+                    app.revanced.extension.gamehub.steamclient.SteamClientCard
+                            .onCardTap(host);
                     break;
                 case "bannertools":
                     // Opens the same Banner Tools dialog as the per-game menus,

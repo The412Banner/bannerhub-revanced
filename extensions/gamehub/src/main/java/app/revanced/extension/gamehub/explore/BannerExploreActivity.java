@@ -894,4 +894,15 @@ public class BannerExploreActivity extends Activity {
         float density = getResources().getDisplayMetrics().density;
         return (int) (v * density);
     }
+
+    /** The Steam card's install dialog launches the GOG FolderPickerActivity
+     *  for its Browse row; the result lands here and is forwarded so the open
+     *  dialog can update its destination in place. */
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode,
+                                    android.content.Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        app.revanced.extension.gamehub.steamclient.SteamClientCard
+                .handleActivityResult(this, requestCode, resultCode, data);
+    }
 }

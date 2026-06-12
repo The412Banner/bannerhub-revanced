@@ -77,9 +77,10 @@ public final class BhExploreManifest {
         +       "\\nTap below to view the project on GitHub.\"}"
         + "]},"
 
-        // ── Stores rail (real bundled GOG logo) ──────────────
+        // ── Stores rail (real bundled GOG + Steam logos) ──────────────
         + "{\"title\":\"Your stores\",\"type\":\"shortcuts\",\"cards\":["
-        +   "{\"label\":\"GOG\",\"subtitle\":\"Sign in & browse your library\",\"action\":\"gog\",\"icon\":\"bh_explore_gog\"}"
+        +   "{\"label\":\"GOG\",\"subtitle\":\"Sign in & browse your library\",\"action\":\"gog\",\"icon\":\"bh_explore_gog\"},"
+        +   "{\"label\":\"Steam\",\"subtitle\":\"Install & play the full Steam client\",\"action\":\"steam\",\"icon\":\"bh_explore_steam\"}"
         + "]}"
 
         + "]}";

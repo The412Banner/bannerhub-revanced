@@ -28,6 +28,12 @@
           "icon": "bh_explore_gog"
         },
         {
+          "label": "Steam",
+          "subtitle": "Install & play the full Steam client",
+          "action": "steam",
+          "icon": "bh_explore_steam"
+        },
+        {
           "label": "Banner Tools",
           "subtitle": "Overlay, root & per-game tools",
           "action": "bannertools",

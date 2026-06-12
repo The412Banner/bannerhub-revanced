@@ -1,5 +1,29 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-06-12 — 🟦 Steam client card on Explore (`feature/steam-client-card` off `gamehub-608-build`) — pre1
+
+New "Steam" card on the Explore Stores rail (next to GOG). Spec (user, 2026-06-12): tap →
+dialog "Download and install the full Steam client?" with Close/Download; destination defaults
+to public **Downloads** with a Browse row (reuses GOG `FolderPickerActivity`); on Download the
+dialog shows **two progress bars** (download → zip extraction); extracts in place, deletes the
+zip, persists the found `steam.exe` to prefs (`bh_steam_client`). After install (or if Browse
+lands on a folder already containing `steam.exe` — register-without-download path), tapping the
+card **adds Steam to the game library exactly like a GOG game**: `GogLaunchHelper.addToLibrary`
+(start_type=1409 GogGameByPcEmulator) → launches in its own container from the library tile.
+
+**New:** `steamclient/SteamClientCard.java` (dialog + HttpURLConnection download w/ manual
+redirect-chain follow + java.util.zip extract w/ zip-slip guard + auto-detect existing installs
+under Downloads). **Wired:** `BhExploreActions` ("steam" action), `BannerExploreActivity`
+(onActivityResult forward for the folder picker), Stores rail card in BOTH `explore/bh_explore.json`
++ patches asset copy + the Java BUNDLED_JSON fallback, `ExploreDrawablesPatch` ships
+`bh_explore_steam.png` (512² from Wikimedia Steam icon). No new activities/permissions.
+
+**OPEN:** `DOWNLOAD_URL` is a placeholder —
+`https://github.com/The412Banner/Nightlies/releases/download/steam-client/steam-client.zip` —
+user uploads the packaged client (.zip preferred; .7z would need bundled extractor libs) when
+on better internet; repoint = one-line change. Untested on device; needs build + Genshin-variant
+delivery.
+
 ## 2026-06-08 — 🔒 Plan 11: Disable Firebase auto-init (Crashlytics runtime-reenable fix) — MERGED to `gamehub-608-build` `61a2a3f`
 
 Live DNS/SNI captures (via the new DNSWatch root app) of patched vs stock 6.0.8 showed BannerHub still

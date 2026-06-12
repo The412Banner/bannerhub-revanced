@@ -21,8 +21,13 @@ under Downloads). **Wired:** `BhExploreActions` ("steam" action), `BannerExplore
 **OPEN:** `DOWNLOAD_URL` is a placeholder —
 `https://github.com/The412Banner/Nightlies/releases/download/steam-client/steam-client.zip` —
 user uploads the packaged client (.zip preferred; .7z would need bundled extractor libs) when
-on better internet; repoint = one-line change. Untested on device; needs build + Genshin-variant
-delivery.
+on better internet; repoint = one-line change.
+
+**pre1 build ✅** run `27430264927` (`1.3.0-608-steamcard-pre1`, artifacts-only — stable=false).
+Genshin variant delivered to device `Download/BannerHub-V6-1.3.0-608-steamcard-pre1-Patched-Genshin.apk`
+(md5 `2979343a`). Device-testable NOW without the archive: card render + dialog + Browse +
+register-existing-install (user's Steam lives outside Downloads) + add-to-library; the Download
+path 404s until the release asset exists.
 
 ## 2026-06-08 — 🔒 Plan 11: Disable Firebase auto-init (Crashlytics runtime-reenable fix) — MERGED to `gamehub-608-build` `61a2a3f`
 

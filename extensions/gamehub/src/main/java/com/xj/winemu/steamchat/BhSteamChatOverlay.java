@@ -720,6 +720,11 @@ public final class BhSteamChatOverlay {
         // BhVoiceController.Host -------------------------------------------------
         public void onVoiceState(final String state, final String detail) {
             post(new Runnable() { public void run() {
+                if ("external".equals(state)) {
+                    voice = null; hideVoiceBar();
+                    toast("Voice call opened in your browser (update Android System WebView for in-app calls)");
+                    return;
+                }
                 if ("ended".equals(state)) {
                     voice = null; hideVoiceBar();
                     toast((detail != null && !detail.isEmpty()) ? "Call ended: " + detail : "Call ended");
@@ -748,6 +753,7 @@ public final class BhSteamChatOverlay {
                         .put("t", "ring").put("room", room).put("from", self)
                         .put("name", name == null ? "" : name)
                         .put("ts", System.currentTimeMillis()).toString();
+                Log.i(TAG, "voice: postRing self=" + self + " peer=" + peer + " room=" + room);
                 postSignal("lobby", peer, self, payload);
             } catch (Throwable ignored) {}
         }
@@ -768,18 +774,23 @@ public final class BhSteamChatOverlay {
             if (resp == null) return;
             try {
                 JSONArray sigs = new JSONObject(resp).optJSONArray("signals");
-                if (sigs == null) return;
+                if (sigs == null || sigs.length() == 0) return;
+                Log.i(TAG, "voice: lobby poll self=" + self + " got " + sigs.length() + " signal(s)");
                 for (int i = 0; i < sigs.length(); i++) {
                     JSONObject row = sigs.optJSONObject(i);
                     if (row == null) continue;
                     JSONObject p = new JSONObject(row.optString("payload", "{}"));
                     if (!"ring".equals(p.optString("t"))) continue;
                     long ts = p.optLong("ts", 0);
-                    if (ts != 0 && System.currentTimeMillis() - ts > 45000) continue;  // stale ring
+                    if (ts != 0 && System.currentTimeMillis() - ts > 45000) {
+                        Log.i(TAG, "voice: ignoring stale ring");
+                        continue;
+                    }
                     final long peer = p.optLong("from", 0);
                     final String room = p.optString("room", "");
                     final String name = p.optString("name", "");
                     if (peer == 0 || room.isEmpty()) continue;
+                    Log.i(TAG, "voice: incoming ring from=" + peer + " room=" + room);
                     post(new Runnable() { public void run() { onIncomingRing(peer, room, name); } });
                 }
             } catch (Throwable ignored) {}
@@ -791,9 +802,13 @@ public final class BhSteamChatOverlay {
             lobbyPolling = true;
             lobbyThread = new Thread(new Runnable() { public void run() {
                 long self = 0;
+                Log.i(TAG, "voice: lobby poll started");
                 while (lobbyPolling) {
                     try {
-                        if (self == 0) self = ensureLocalSteamId();
+                        if (self == 0) {
+                            self = ensureLocalSteamId();
+                            if (self != 0) Log.i(TAG, "voice: lobby poll self resolved=" + self);
+                        }
                         if (self != 0) pollLobbyOnce(self);
                     } catch (Throwable ignored) {}
                     try { Thread.sleep(3000); } catch (InterruptedException e) { break; }

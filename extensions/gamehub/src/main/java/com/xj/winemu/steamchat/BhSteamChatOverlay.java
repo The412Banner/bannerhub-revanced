@@ -26,6 +26,12 @@ import android.widget.TextView;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.WeakHashMap;
@@ -167,8 +173,11 @@ public final class BhSteamChatOverlay {
         private Object typingSub;        // live steam:chat-typing subscription handle
         private long lastTypingSentMs;   // throttle for our own friends.send_typing
         private BhVoiceController voice;  // active WebRTC voice call (null when idle)
-        private String pendingOfferJson;  // buffered incoming offer awaiting accept
-        private long pendingOfferPeer;    // peer SteamID of the buffered offer
+        private String pendingRoom;       // pairRoom of a ringing incoming call (null = none)
+        private long pendingOfferPeer;    // peer SteamID of the ringing incoming call
+        private String pendingPeerName;   // display name of the ringing caller
+        private volatile boolean lobbyPolling; // ring-inbox poll loop active
+        private Thread lobbyThread;       // dedicated thread for the ring poll
         private LinearLayout voiceBar;    // in-call / incoming-call control bar
         private TextView voiceText;       // call status label in voiceBar
         // Reverts the "is typing…" status if no message follows within Steam's
@@ -210,6 +219,7 @@ public final class BhSteamChatOverlay {
 
                 wm.addView(container, lp);
                 attached = true;
+                startLobbyPoll();   // listen for incoming voice rings while attached
                 Log.i(TAG, "steam chat overlay attached");
                 return true;
             } catch (Throwable t) {
@@ -221,6 +231,7 @@ public final class BhSteamChatOverlay {
         void detach() {
             if (!attached) return;
             attached = false;
+            stopLobbyPoll();
             try { if (voice != null) { voice.hangup(); voice = null; } } catch (Throwable ignored) {}
             try { BhSteamBridge.unlisten(chatSub); } catch (Throwable ignored) {}
             chatSub = null;
@@ -497,14 +508,6 @@ public final class BhSteamChatOverlay {
                             body = firstNonEmpty(o.optString("message"), o.optString("plainMessage"), o.optString("rawMessage"));
                         } catch (Throwable ignored) {}
                         final long from = who;
-                        // Voice signalling rides hidden, prefix-marked chat messages —
-                        // intercept inbound ones and route to the call layer instead
-                        // of refreshing the visible thread.
-                        if ("Incoming".equalsIgnoreCase(dir) && body.startsWith(BhVoiceController.SIG_PREFIX)) {
-                            final String sig = BhVoiceController.unb64(body.substring(BhVoiceController.SIG_PREFIX.length()));
-                            post(new Runnable() { public void run() { handleVoiceSignal(from, sig); } });
-                            return;
-                        }
                         post(new Runnable() {
                             public void run() {
                                 // Only refresh if this message belongs to the conversation on screen.
@@ -647,62 +650,74 @@ public final class BhSteamChatOverlay {
 
         private static final int MIC_REQ = 0xB402;
 
-        /** Start an outgoing voice call to the open conversation's friend. */
-        private void startVoiceCall(final long steamId, final String name) {
-            if (steamId == 0) return;
+        private static final String VOICE_BASE = "https://bannerhub-api.the412banner.workers.dev";
+
+        /** Start an outgoing voice call to the open conversation's friend: ring
+         *  the callee through the lobby inbox, then open our own room WebView.
+         *  (The hosted page does the mic + SDP/ICE; we just attach it.) */
+        private void startVoiceCall(final long peer, final String name) {
+            if (peer == 0) return;
             if (voice != null) { toast("Already in a call"); return; }
             if (!ensureMicPermission()) { toast("Grant microphone access, then call again"); return; }
-            voice = new BhVoiceController(act, steamId, this);
             showVoiceBar("Calling " + name + "…", true);
-            voice.start(true);
+            IO.execute(new Runnable() { public void run() {
+                final long self = ensureLocalSteamId();
+                if (self == 0) {
+                    post(new Runnable() { public void run() {
+                        hideVoiceBar(); toast("Can't start call — Steam not signed in");
+                    }});
+                    return;
+                }
+                final String room = pairRoom(self, peer);
+                postRing(self, peer, room, name);   // doorbell via the lobby inbox
+                post(new Runnable() { public void run() {
+                    if (voice != null) return;
+                    voice = new BhVoiceController(act, room, self, peer, Controller.this);
+                    voice.start();
+                }});
+            }});
         }
 
-        /** Route an inbound signalling blob to the call layer. UI thread. */
-        private void handleVoiceSignal(long peer, String sigJson) {
-            String t;
-            try { t = new JSONObject(sigJson).optString("t", ""); } catch (Throwable x) { return; }
-            if (voice != null && voice.friendSteamId() == peer) {
-                if ("bye".equals(t)) { voice.remoteHangup(); voice = null; hideVoiceBar(); }
-                else voice.onSignal(sigJson);
-                return;
-            }
-            if (voice == null && "offer".equals(t)) {
-                pendingOfferPeer = peer;
-                pendingOfferJson = sigJson;
-                showIncomingCall(peer);
-            }
-            // stray ice/answer/bye with no matching call → ignore
+        /** A ring landed in our lobby inbox — surface Accept/Decline. UI thread. */
+        private void onIncomingRing(long peer, String room, String name) {
+            if (voice != null || pendingRoom != null) return;  // already busy / already ringing
+            pendingOfferPeer = peer;
+            pendingRoom = room;
+            pendingPeerName = name;
+            showIncomingCall(peer, name);
         }
 
         private void acceptIncomingCall() {
-            if (pendingOfferJson == null) return;
+            if (pendingRoom == null) return;
             if (!ensureMicPermission()) { toast("Grant microphone access, then accept"); return; }
-            long peer = pendingOfferPeer;
-            String offer = pendingOfferJson;
-            pendingOfferJson = null;
-            voice = new BhVoiceController(act, peer, this);
+            final long peer = pendingOfferPeer;
+            final String room = pendingRoom;
+            pendingRoom = null; pendingPeerName = null;
             showVoiceBar("Connecting…", true);
-            voice.start(false);
-            voice.onSignal(offer);  // feed the buffered offer
+            IO.execute(new Runnable() { public void run() {
+                final long self = ensureLocalSteamId();
+                post(new Runnable() { public void run() {
+                    if (voice != null) return;
+                    voice = new BhVoiceController(act, room, self, peer, Controller.this);
+                    voice.start();
+                }});
+            }});
         }
 
         private void declineIncomingCall() {
             final long peer = pendingOfferPeer;
-            if (peer != 0) {
-                final String bye = BhVoiceController.SIG_PREFIX + BhVoiceController.b64("{\"t\":\"bye\"}");
-                IO.execute(new Runnable() { public void run() { sendSignalTo(peer, bye); } });
-            }
-            pendingOfferJson = null; pendingOfferPeer = 0;
+            final String room = pendingRoom;
+            pendingRoom = null; pendingOfferPeer = 0; pendingPeerName = null;
             hideVoiceBar();
+            if (peer != 0 && room != null) {
+                IO.execute(new Runnable() { public void run() {
+                    long self = ensureLocalSteamId();
+                    postSignal(room, peer, self, "{\"t\":\"bye\"}");  // tell the caller we declined
+                }});
+            }
         }
 
         // BhVoiceController.Host -------------------------------------------------
-        public void sendVoiceSignal(final String body) {
-            final long peer = voice != null ? voice.friendSteamId() : pendingOfferPeer;
-            if (peer == 0) return;
-            IO.execute(new Runnable() { public void run() { sendSignalTo(peer, body); } });
-        }
-
         public void onVoiceState(final String state, final String detail) {
             post(new Runnable() { public void run() {
                 if ("ended".equals(state)) {
@@ -718,14 +733,117 @@ public final class BhSteamChatOverlay {
             }});
         }
 
-        /** Send one signalling line as a (hidden, marker-prefixed) chat message. Worker-thread. */
-        private void sendSignalTo(long peer, String body) {
+        /** pairRoom = sorted SteamID pair "smaller-larger" (matches the hosted
+         *  page's deterministic offerer rule, so both sides derive the same id). */
+        private static String pairRoom(long a, long b) {
+            return a < b ? (a + "-" + b) : (b + "-" + a);
+        }
+
+        // ── ring inbox (worker /voice/signal + /voice/poll on a "lobby" room) ────
+
+        /** Ring the callee: drop a {t:ring} blob in their lobby inbox. Worker-thread. */
+        private void postRing(long self, long peer, String room, String name) {
             try {
                 String payload = new JSONObject()
-                        .put("steamId", peer).put("message", body)
-                        .put("clientMessageId", String.valueOf(System.currentTimeMillis())).toString();
-                BhSteamBridge.request("friends.send_message", payload, 8000);
+                        .put("t", "ring").put("room", room).put("from", self)
+                        .put("name", name == null ? "" : name)
+                        .put("ts", System.currentTimeMillis()).toString();
+                postSignal("lobby", peer, self, payload);
             } catch (Throwable ignored) {}
+        }
+
+        /** POST one signal blob to the worker mailbox. Worker-thread. */
+        private void postSignal(String room, long to, long from, String payload) {
+            try {
+                String body = new JSONObject()
+                        .put("room", room).put("to", to).put("from", from)
+                        .put("payload", payload).toString();
+                httpPost(VOICE_BASE + "/voice/signal", body);
+            } catch (Throwable ignored) {}
+        }
+
+        /** Poll our lobby inbox once for incoming rings. Worker-thread. */
+        private void pollLobbyOnce(long self) {
+            String resp = httpGet(VOICE_BASE + "/voice/poll?room=lobby&self=" + self);
+            if (resp == null) return;
+            try {
+                JSONArray sigs = new JSONObject(resp).optJSONArray("signals");
+                if (sigs == null) return;
+                for (int i = 0; i < sigs.length(); i++) {
+                    JSONObject row = sigs.optJSONObject(i);
+                    if (row == null) continue;
+                    JSONObject p = new JSONObject(row.optString("payload", "{}"));
+                    if (!"ring".equals(p.optString("t"))) continue;
+                    long ts = p.optLong("ts", 0);
+                    if (ts != 0 && System.currentTimeMillis() - ts > 45000) continue;  // stale ring
+                    final long peer = p.optLong("from", 0);
+                    final String room = p.optString("room", "");
+                    final String name = p.optString("name", "");
+                    if (peer == 0 || room.isEmpty()) continue;
+                    post(new Runnable() { public void run() { onIncomingRing(peer, room, name); } });
+                }
+            } catch (Throwable ignored) {}
+        }
+
+        /** Background ring-inbox poll; runs while the overlay is attached. */
+        private void startLobbyPoll() {
+            if (lobbyThread != null) return;
+            lobbyPolling = true;
+            lobbyThread = new Thread(new Runnable() { public void run() {
+                long self = 0;
+                while (lobbyPolling) {
+                    try {
+                        if (self == 0) self = ensureLocalSteamId();
+                        if (self != 0) pollLobbyOnce(self);
+                    } catch (Throwable ignored) {}
+                    try { Thread.sleep(3000); } catch (InterruptedException e) { break; }
+                }
+            }}, "bh-voice-lobby");
+            lobbyThread.setDaemon(true);
+            lobbyThread.start();
+        }
+
+        private void stopLobbyPoll() {
+            lobbyPolling = false;
+            Thread t = lobbyThread;
+            lobbyThread = null;
+            if (t != null) t.interrupt();
+        }
+
+        private static String httpGet(String urlStr) {
+            HttpURLConnection c = null;
+            try {
+                c = (HttpURLConnection) new URL(urlStr).openConnection();
+                c.setConnectTimeout(6000); c.setReadTimeout(6000);
+                if (c.getResponseCode() / 100 != 2) return null;
+                return readAll(c.getInputStream());
+            } catch (Throwable t) { return null; }
+            finally { if (c != null) c.disconnect(); }
+        }
+
+        private static void httpPost(String urlStr, String body) {
+            HttpURLConnection c = null;
+            try {
+                c = (HttpURLConnection) new URL(urlStr).openConnection();
+                c.setRequestMethod("POST");
+                c.setConnectTimeout(6000); c.setReadTimeout(6000);
+                c.setDoOutput(true);
+                c.setRequestProperty("Content-Type", "application/json");
+                OutputStream os = c.getOutputStream();
+                os.write(body.getBytes("UTF-8"));
+                os.flush(); os.close();
+                c.getResponseCode();  // drive the request
+            } catch (Throwable ignored) {}
+            finally { if (c != null) c.disconnect(); }
+        }
+
+        private static String readAll(java.io.InputStream in) throws Exception {
+            BufferedReader r = new BufferedReader(new InputStreamReader(in, "UTF-8"));
+            StringBuilder sb = new StringBuilder();
+            String line;
+            while ((line = r.readLine()) != null) sb.append(line);
+            r.close();
+            return sb.toString();
         }
 
         private boolean ensureMicPermission() {
@@ -765,13 +883,13 @@ public final class BhSteamChatOverlay {
             fitPanelOnScreen();
         }
 
-        private void showIncomingCall(long peer) {
+        private void showIncomingCall(long peer, String name) {
             if (voiceBar == null) return;
             if (!expanded) setExpanded(true);  // surface the prompt
             voiceBar.removeAllViews();
             voiceBar.setVisibility(View.VISIBLE);
             TextView t = new TextView(act);
-            t.setText("📞 Incoming voice call");
+            t.setText("📞 " + ((name != null && !name.isEmpty()) ? name : "Incoming") + " is calling");
             t.setTextColor(COL_ACCENT);
             t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
             t.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
@@ -941,9 +1059,6 @@ public final class BhSteamChatOverlay {
                 for (int i = 0; i < arr.length(); i++) {
                     JSONObject m = arr.optJSONObject(i);
                     if (m == null) continue;
-                    // Hidden voice-signalling messages never render in the thread.
-                    if (firstNonEmpty(m.optString("message"), m.optString("plainMessage"),
-                            m.optString("rawMessage")).startsWith(BhVoiceController.SIG_PREFIX)) continue;
                     // SteamChatMessageDto.direction is the only reliable sender
                     // signal — "Incoming" (friend) vs "Outgoing" (us). friendSteamId
                     // is the conversation peer on BOTH sides, so it can't tell who

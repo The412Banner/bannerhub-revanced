@@ -4225,3 +4225,17 @@ Device-CONFIRMED (pre2–pre4): emoji, auto-scroll, opacity, send-image via R2. 
 NEXT (keyed to test outcome): stuck-connecting → enable Cloudflare Realtime + add `/voice/turn` TURN endpoint (worker; `/calls` API 401s til enabled); silent → attach WebView 1px; game-audio-over-call → audio-focus/ducking. THEN merge `feature/steam-chat-v2` → `gamehub-608-build` + What's New in release.yml+README BEFORE cutting → cut stable `v1.3.0-608` (current Latest = v1.2.0-608).
 
 Build/deliver: `gh workflow run release.yml --ref feature/steam-chat-v2 -f version=1.3.0-608-preN -f stable=false` → `gh run download <id> -n apk-Genshin` → `/storage/emulated/0/Download/...-Genshin.apk`. Infra LIVE: R2 `bannerhub-chat-images` (7d) + worker routes `/chat/upload-image`,`/chat/i/<key>`. Worker deploy = fetch + redeploy from pushed HEAD (avoid the imagefs split-brain logged above).
+
+---
+
+## chat v2 pre6 (`6ddf142`, 2026-06-13) — voice mic-hang FIX
+
+**2-device voice test of pre5 (2026-06-13) FAILED → root-caused.** Caller stuck on "Calling…", callee got NO incoming indicator, both directions, cross-network. Logcat (`/sdcard/Download/voicetest-pre5-logcat.txt`, app pid 12582): overlay attached + bridge ok + listening on `steam:chat-message` ✅; WebView chromium 113 + Adreno renderer started ✅; but **zero `voicejs:` lines** and no `st('failed','mic…')` → the JS `init()` **hung at `await getUserMedia`** (neither resolved nor rejected). Renderer processes repeatedly spawned + killed (`isolated not needed` / lowmemorykiller).
+
+**Root cause:** the voice `WebView` was created with `new WebView(act)` but **never attached to a window** (headless). Chromium backgrounds a detached page, so `getUserMedia` never resolves → `createOffer()` never runs → no `{t:"offer"}` is ever sent → caller sits on "Calling…" (that label is set *before* the offer, so it proves nothing), callee never signalled. NOT the TURN/NAT risk — the call never reached ICE.
+
+**Fix (`BhVoiceController.java`):**
+- `attachHeadless()` — add the WebView to the window as a **1×1 transparent, non-interactive `TYPE_APPLICATION_PANEL`** (flags NOT_FOCUSABLE|NOT_TOUCHABLE|NOT_TOUCH_MODAL, `PixelFormat.TRANSLUCENT`), the same WindowManager technique the chat overlay uses; removed again in `cleanup()` (tracked by `webAttached`). Foreground page lets mic capture resolve.
+- JS `init()` races `getUserMedia` against an **8s timeout** (`Promise.race([gum(),tmo(8000)])`) so a future hang surfaces as "Call ended: mic timeout" instead of an infinite "Calling…"; added a `log('init')` marker (expect a `voicejs: init` line next test).
+
+Build run **27476405168** ✅ success, SEVERE-check clean. Genshin APK md5 **`01772d298c63a9677ac28c9208eeee7e`** → `/storage/emulated/0/Download/BannerHub-V6-1.3.0-608-pre6-Genshin.apk`. ⚠️ BOTH devices must be on pre6. NEXT: re-run the 2-device call — expect `voicejs: init` → `voicejs: pc …` → offer sent → callee rings; if it reaches "Connecting…" then fails cross-network, that's the STUN-only/TURN gap (enable CF Realtime → `/voice/turn`).

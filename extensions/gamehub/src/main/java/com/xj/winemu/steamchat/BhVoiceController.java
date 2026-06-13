@@ -1,7 +1,10 @@
 package com.xj.winemu.steamchat;
 
 import android.app.Activity;
+import android.graphics.PixelFormat;
 import android.util.Log;
+import android.view.Gravity;
+import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
@@ -45,6 +48,7 @@ public final class BhVoiceController {
     private final long friendSteamId;
     private final Host host;
     private WebView web;
+    private boolean webAttached;
     private boolean caller;
     private boolean muted;
     private volatile boolean ended;
@@ -79,12 +83,43 @@ public final class BhVoiceController {
                 }
             });
             web.addJavascriptInterface(new Bridge(), "BhVoice");
+            // The WebView MUST be attached to a window: Chromium backgrounds a
+            // detached page and getUserMedia() then never resolves (mic capture
+            // hangs → no SDP offer is ever produced → call sticks on "Calling…").
+            // Attach it as a 1×1, transparent, non-interactive overlay window so
+            // the page runs foreground; it's removed again in cleanup().
+            attachHeadless();
             web.loadDataWithBaseURL("https://localhost/", page(caller),
                     "text/html", "utf-8", null);
         } catch (Throwable t) {
             Log.w(TAG, "voice start failed", t);
             host.onVoiceState("ended", "init failed");
             cleanup();
+        }
+    }
+
+    /** Add the WebView to the window as a 1×1, transparent, non-interactive panel
+     *  so Chromium treats the page as foreground and mic capture can resolve.
+     *  Same WindowManager technique as the chat overlay itself. UI thread. */
+    private void attachHeadless() {
+        try {
+            WindowManager wm = act.getWindowManager();
+            WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+                    1, 1,
+                    WindowManager.LayoutParams.TYPE_APPLICATION_PANEL,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                            | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                            | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+                    PixelFormat.TRANSLUCENT);
+            lp.gravity = Gravity.TOP | Gravity.START;
+            lp.x = 0;
+            lp.y = 0;
+            wm.addView(web, lp);
+            webAttached = true;
+        } catch (Throwable t) {
+            // Falling back to a detached WebView keeps signalling alive but mic
+            // capture may hang; log so a failed attach is diagnosable.
+            Log.w(TAG, "voice webview attach failed", t);
         }
     }
 
@@ -123,9 +158,14 @@ public final class BhVoiceController {
     private void cleanup() {
         ended = true;
         final WebView w = web;
+        final boolean wasAttached = webAttached;
         web = null;
+        webAttached = false;
         if (w == null) return;
         act.runOnUiThread(new Runnable() { public void run() {
+            if (wasAttached) {
+                try { act.getWindowManager().removeView(w); } catch (Throwable ignored) {}
+            }
             try { w.loadUrl("about:blank"); w.removeAllViews(); w.destroy(); } catch (Throwable ignored) {}
         }});
     }
@@ -167,8 +207,11 @@ public final class BhVoiceController {
             + "function log(m){try{BhVoice.log(''+m)}catch(e){}}\n"
             + "function send(o){try{BhVoice.signal(JSON.stringify(o))}catch(e){}}\n"
             + "function st(s,d){try{BhVoice.state(s,d||'')}catch(e){}}\n"
+            + "function gum(){return navigator.mediaDevices.getUserMedia({audio:true,video:false});}\n"
+            + "function tmo(ms){return new Promise(function(_,r){setTimeout(function(){r(new Error('timeout'));},ms);});}\n"
             + "async function init(){\n"
-            + " try{localStream=await navigator.mediaDevices.getUserMedia({audio:true,video:false});}\n"
+            + " log('init');\n"
+            + " try{localStream=await Promise.race([gum(),tmo(8000)]);}\n"
             + " catch(e){st('failed','mic '+e);return;}\n"
             + " pc=new RTCPeerConnection({iceServers:ICE});\n"
             + " localStream.getTracks().forEach(function(t){pc.addTrack(t,localStream);});\n"

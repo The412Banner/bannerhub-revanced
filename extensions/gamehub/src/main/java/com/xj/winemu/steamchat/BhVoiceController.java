@@ -1,7 +1,10 @@
 package com.xj.winemu.steamchat;
 
 import android.app.Activity;
+import android.content.Intent;
+import android.content.pm.PackageInfo;
 import android.graphics.PixelFormat;
+import android.net.Uri;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.WindowManager;
@@ -30,6 +33,12 @@ public final class BhVoiceController {
     private static final String TAG = "BhSteamChat";
     private static final String BASE = "https://bannerhub-api.the412banner.workers.dev";
 
+    /** WebView (Chromium) major versions below this can't reliably open the mic
+     *  for WebRTC inside an embedded WebView — observed: 113 hangs getUserMedia
+     *  forever while Chrome 149 on the same device works. Below the threshold we
+     *  skip the embedded WebView and open the room in the external browser. */
+    private static final int MIN_WEBVIEW_MAJOR = 120;
+
     /** Overlay hook: surface call-state changes (calling/connecting/in-call/ended). */
     public interface Host {
         void onVoiceState(String state, String detail);
@@ -44,6 +53,8 @@ public final class BhVoiceController {
     private boolean webAttached;
     private boolean muted;
     private volatile boolean ended;
+    private String roomUrl;            // the /voice/room URL for this call
+    private boolean fellBackToBrowser; // already escalated to the external browser
 
     public BhVoiceController(Activity act, String roomId, long selfSteamId, long peerSteamId, Host host) {
         this.act = act;
@@ -60,6 +71,20 @@ public final class BhVoiceController {
      *  state back via the {@code BhVoice} bridge. Must run on the UI thread. */
     @SuppressWarnings({"SetJavaScriptEnabled"})
     public void start() {
+        roomUrl = BASE + "/voice/room?room=" + enc(roomId)
+                + "&self=" + selfSteamId + "&peer=" + peerSteamId;
+
+        // Some devices ship an ancient System WebView (e.g. 113) whose embedded
+        // WebRTC can't open the mic — getUserMedia hangs forever. Detect that up
+        // front and run the call in the external browser instead.
+        int wv = webViewMajor();
+        Log.i(TAG, "voice: webview major=" + wv + " (min " + MIN_WEBVIEW_MAJOR + ")");
+        if (wv > 0 && wv < MIN_WEBVIEW_MAJOR) {
+            Log.i(TAG, "voice: webview too old, opening call in browser");
+            openInBrowser();
+            return;
+        }
+
         try {
             web = new WebView(act);
             WebSettings s = web.getSettings();
@@ -79,13 +104,42 @@ public final class BhVoiceController {
             // The WebView MUST be attached to a window or Chromium backgrounds the
             // page and getUserMedia never resolves; attach it 1×1 and invisible.
             attachHeadless();
-            String url = BASE + "/voice/room?room=" + enc(roomId)
-                    + "&self=" + selfSteamId + "&peer=" + peerSteamId;
-            web.loadUrl(url);
+            web.loadUrl(roomUrl);
         } catch (Throwable t) {
             Log.w(TAG, "voice start failed", t);
             host.onVoiceState("ended", "init failed");
             cleanup();
+        }
+    }
+
+    /** Hand the call off to the device's default browser (which uses an
+     *  up-to-date Chromium that can open the mic). Used when the embedded
+     *  WebView is too old, or as a backstop when its mic request times out. */
+    private void openInBrowser() {
+        if (fellBackToBrowser) return;
+        fellBackToBrowser = true;
+        try {
+            Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(roomUrl));
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            act.startActivity(i);
+            host.onVoiceState("external", "");
+        } catch (Throwable t) {
+            Log.w(TAG, "voice browser fallback failed", t);
+            host.onVoiceState("ended", "no browser for voice");
+        }
+        cleanup();
+    }
+
+    /** Major version of the active System WebView (Chromium), or -1 if unknown. */
+    private int webViewMajor() {
+        try {
+            PackageInfo pi = WebView.getCurrentWebViewPackage();
+            if (pi == null || pi.versionName == null) return -1;
+            String v = pi.versionName.trim();
+            int dot = v.indexOf('.');
+            return Integer.parseInt(dot > 0 ? v.substring(0, dot) : v);
+        } catch (Throwable t) {
+            return -1;
         }
     }
 
@@ -159,7 +213,17 @@ public final class BhVoiceController {
         /** Page lifecycle: calling / connecting / in-call / failed / ended. */
         @JavascriptInterface public void state(String st, String detail) {
             if ("in-call".equals(st)) host.onVoiceState("in-call", detail == null ? "" : detail);
-            else if ("failed".equals(st)) { host.onVoiceState("ended", detail == null ? "failed" : detail); cleanup(); }
+            else if ("failed".equals(st)) {
+                // If the embedded mic capture failed/timed out, the WebView's
+                // WebRTC is the culprit — retry the whole call in the browser
+                // rather than just giving up.
+                String d = detail == null ? "" : detail;
+                if (!fellBackToBrowser && d.toLowerCase().contains("mic")) {
+                    act.runOnUiThread(new Runnable() { public void run() { openInBrowser(); } });
+                } else {
+                    host.onVoiceState("ended", d.isEmpty() ? "failed" : d); cleanup();
+                }
+            }
             else if ("ended".equals(st)) { host.onVoiceState("ended", detail == null ? "" : detail); cleanup(); }
             else host.onVoiceState(st, detail == null ? "" : detail);
         }

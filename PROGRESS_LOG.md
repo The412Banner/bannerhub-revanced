@@ -4239,3 +4239,14 @@ Build/deliver: `gh workflow run release.yml --ref feature/steam-chat-v2 -f versi
 - JS `init()` races `getUserMedia` against an **8s timeout** (`Promise.race([gum(),tmo(8000)])`) so a future hang surfaces as "Call ended: mic timeout" instead of an infinite "Calling…"; added a `log('init')` marker (expect a `voicejs: init` line next test).
 
 Build run **27476405168** ✅ success, SEVERE-check clean. Genshin APK md5 **`01772d298c63a9677ac28c9208eeee7e`** → `/storage/emulated/0/Download/BannerHub-V6-1.3.0-608-pre6-Genshin.apk`. ⚠️ BOTH devices must be on pre6. NEXT: re-run the 2-device call — expect `voicejs: init` → `voicejs: pc …` → offer sent → callee rings; if it reaches "Connecting…" then fails cross-network, that's the STUN-only/TURN gap (enable CF Realtime → `/voice/turn`).
+
+---
+
+## chat v2 pre7 (`e0c95d4`, 2026-06-13) — voice moved to hosted Cloudflare room
+
+After the 2-browser test of the hosted worker room passed (live audio across two networks), the in-app client was rewritten to use it. Steam chat is no longer in the voice path at all.
+
+- **BhVoiceController** now just attaches the 1×1 WebView and `loadUrl`s `https://bannerhub-api.the412banner.workers.dev/voice/room?room=&self=&peer=` (real origin → mic opens). Dropped `loadDataWithBaseURL`, the embedded `page()`, `SIG_PREFIX`/`b64`/`unb64`, `onSignal`, `remoteHangup`. `Host` trimmed to `onVoiceState`; the `BhVoice` JS bridge only relays `state`/`log`.
+- **BhSteamChatOverlay**: 🎙 → `startVoiceCall` resolves self SteamID, rings the callee via the lobby inbox (`POST /voice/signal room=lobby payload={t:ring,room,from,name,ts}`), then opens its own room WebView. A 3s background poll of `/voice/poll?room=lobby&self=<self>` (dedicated daemon thread, started in attach / stopped in detach) surfaces incoming rings → Accept/Decline bar. `pairRoom` = sorted SteamID pair. Removed the chat-message SIG_PREFIX interception, `handleVoiceSignal`, `sendVoiceSignal`/`sendSignalTo`. Small `HttpURLConnection` GET/POST helpers.
+
+Build run **27477313940** ✅ (compiles clean), SEVERE-clean. Genshin APK md5 **`c8f1ff2bd24c722ca40f1f47ff402afa`** → `/storage/emulated/0/Download/BannerHub-V6-1.3.0-608-pre7-Genshin.apk`. Both devices need pre7. Expect logcat `voicejs: voice page init…` then `voicejs: pc connected`. NEXT: 2-device retest; then the richer floating call window (state + participant list) the user asked for.

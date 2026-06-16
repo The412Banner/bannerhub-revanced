@@ -194,6 +194,12 @@ public final class BhSteamChatOverlay {
         private TextView unreadBadge;     // blue unread-message count on the pill while chat is closed
         private int pillUnread;           // total unread messages across conversations
         private android.view.animation.Animation badgePulseAnim;
+        private boolean inSettings;       // call-settings screen is showing in the panel
+        // Auto-dismiss an unanswered incoming call (and stop its ringtone) so it
+        // doesn't ring forever if the caller bailed before we answered.
+        private final Runnable incomingTimeout = new Runnable() {
+            public void run() { if (pendingRoom != null && voice == null) onDecline(); }
+        };
         // Reverts the "is typing…" status if no message follows within Steam's
         // ~15s typing-notification window.
         private final Runnable clearTyping = new Runnable() {
@@ -271,6 +277,8 @@ public final class BhSteamChatOverlay {
             typingSub = null;
             MAIN.removeCallbacks(clearTyping);
             MAIN.removeCallbacks(refreshUnreadDebounced);
+            MAIN.removeCallbacks(incomingTimeout);
+            try { BhRingtone.stop(); } catch (Throwable ignored) {}
             try { if (wm != null && container != null) wm.removeView(container); } catch (Throwable ignored) {}
         }
 
@@ -366,13 +374,25 @@ public final class BhSteamChatOverlay {
             LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
             title.setLayoutParams(tlp);
             header.addView(title);
+            TextView cog = new TextView(act);
+            cog.setText("⚙");
+            cog.setTextColor(COL_TEXT);
+            cog.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+            cog.setPadding(dp(8), dp(2), dp(4), dp(2));
+            cog.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) { showSettings(); }
+            });
+            header.addView(cog);
             TextView refresh = new TextView(act);
             refresh.setText("↻"); // ↻
             refresh.setTextColor(COL_TEXT);
             refresh.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
             refresh.setPadding(dp(8), dp(2), dp(4), dp(2));
             refresh.setOnClickListener(new View.OnClickListener() {
-                public void onClick(View v) { if (openFriendId == 0) loadFriends(); else loadHistory(openFriendId, currentTitle); }
+                public void onClick(View v) {
+                    if (inSettings) { showSettings(); return; }
+                    if (openFriendId == 0) loadFriends(); else loadHistory(openFriendId, currentTitle);
+                }
             });
             header.addView(refresh);
             panel.addView(header);
@@ -554,7 +574,7 @@ public final class BhSteamChatOverlay {
             // closing re-syncs the count from the server.
             updateUnreadBadge();
             if (exp) pillUnread = 0;            // reading the chat clears it locally
-            else refreshUnread();               // re-sync from conversation_summaries
+            else { refreshUnread(); stopPreviewIfIdle(); }   // re-sync; stop any settings preview
         }
 
         /** After the panel lays out, nudge the whole overlay window up if its
@@ -650,6 +670,8 @@ public final class BhSteamChatOverlay {
 
         private void loadFriends() {
             openFriendId = 0;
+            inSettings = false;
+            stopPreviewIfIdle();   // stop any settings ringtone preview
             draft = ""; composerWasFocused = false;  // leaving the conversation
             if (backRow != null) backRow.setVisibility(View.GONE);
             setStatus("Loading friends…");
@@ -663,6 +685,152 @@ public final class BhSteamChatOverlay {
                     post(new Runnable() { public void run() { parseUnread(convJson); renderFriends(json); } });
                 }
             });
+        }
+
+        // ── call settings (⚙) ───────────────────────────────────────────────────
+
+        /** Show the incoming-call settings screen (ringtone + vibrate) in the panel. */
+        private void showSettings() {
+            inSettings = true;
+            openFriendId = 0;
+            if (backRow != null) backRow.setVisibility(View.VISIBLE);
+            setStatus("Call settings");
+            renderSettings();
+        }
+
+        private void renderSettings() {
+            if (listCol == null) return;
+            listCol.removeAllViews();
+            final String current = BhSteamChatController.get().getRingtone(act);
+
+            listCol.addView(sectionHeader("Incoming call ringtone", false));
+            listCol.addView(ringtoneRow("Silent (no sound)", "silent", current, false));
+            for (String id : BhRingtone.SYNTH_IDS) {
+                listCol.addView(ringtoneRow(BhRingtone.synthLabel(id), "synth:" + id, current, true));
+            }
+            for (String f : BhRingtone.bundledFiles(act)) {
+                listCol.addView(ringtoneRow(BhRingtone.labelForFile(f), "asset:" + f, current, true));
+            }
+            listCol.addView(customRingtoneRow(current));
+
+            listCol.addView(settingsDivider());
+            listCol.addView(vibrateRow());
+            if (scroll != null) scroll.post(new Runnable() { public void run() { scroll.scrollTo(0, 0); } });
+        }
+
+        /** A selectable ringtone row: ● selected / ○ not, tap to choose, optional ▶ preview. */
+        private View ringtoneRow(String label, final String token, String current, boolean canPreview) {
+            boolean sel = token.equals(current);
+            LinearLayout row = new LinearLayout(act);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(0, dp(7), 0, dp(7));
+            TextView lbl = new TextView(act);
+            lbl.setText((sel ? "● " : "○ ") + label);
+            lbl.setTextColor(sel ? COL_ACCENT : COL_TEXT);
+            lbl.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+            lbl.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            lbl.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+                BhRingtone.stop();
+                BhSteamChatController.get().setRingtone(act, token);
+                renderSettings();
+            }});
+            row.addView(lbl);
+            if (canPreview) {
+                TextView prev = settingsBtn("▶");
+                prev.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+                    BhRingtone.preview(act, token);
+                }});
+                row.addView(prev);
+            }
+            return row;
+        }
+
+        /** Custom-MP3 row: launches the file picker; shows as selected when a custom URI is set. */
+        private View customRingtoneRow(String current) {
+            final boolean sel = current != null && current.startsWith("uri:");
+            LinearLayout row = new LinearLayout(act);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(0, dp(7), 0, dp(7));
+            TextView lbl = new TextView(act);
+            lbl.setText((sel ? "● Custom MP3 (tap to change)" : "○ Custom MP3…"));
+            lbl.setTextColor(sel ? COL_ACCENT : COL_TEXT);
+            lbl.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+            lbl.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            lbl.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+                BhRingtone.stop();
+                try {
+                    android.content.Intent i = new android.content.Intent(act, BhRingtonePickerActivity.class);
+                    i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                    act.startActivity(i);
+                    toast("Pick an MP3 — reopen ⚙ to confirm it's set");
+                } catch (Throwable t) { toast("Couldn't open the file picker"); }
+            }});
+            row.addView(lbl);
+            if (sel) {
+                final String token = current;
+                TextView prev = settingsBtn("▶");
+                prev.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { BhRingtone.preview(act, token); }});
+                row.addView(prev);
+            }
+            return row;
+        }
+
+        private View vibrateRow() {
+            final boolean on = BhSteamChatController.get().isVibrate(act);
+            LinearLayout row = new LinearLayout(act);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(0, dp(8), 0, dp(8));
+            TextView lbl = new TextView(act);
+            lbl.setText("Vibrate on incoming call");
+            lbl.setTextColor(COL_TEXT);
+            lbl.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+            lbl.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            TextView tog = settingsBtn(on ? "On" : "Off");
+            tog.setTextColor(on ? COL_INGAME : COL_SUBTEXT);
+            View.OnClickListener toggle = new View.OnClickListener() { public void onClick(View v) {
+                BhSteamChatController.get().setVibrate(act, !on);
+                renderSettings();
+            }};
+            lbl.setOnClickListener(toggle);
+            tog.setOnClickListener(toggle);
+            row.addView(lbl);
+            row.addView(tog);
+            return row;
+        }
+
+        private TextView settingsBtn(String label) {
+            TextView b = new TextView(act);
+            b.setText(label);
+            b.setTextColor(COL_TEXT);
+            b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+            b.setPadding(dp(12), dp(4), dp(12), dp(4));
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(COL_PILL_BG);
+            bg.setCornerRadius(dp(12));
+            b.setBackground(bg);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.leftMargin = dp(8);
+            b.setLayoutParams(lp);
+            return b;
+        }
+
+        private View settingsDivider() {
+            View d = new View(act);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
+            lp.topMargin = dp(8); lp.bottomMargin = dp(4);
+            d.setLayoutParams(lp);
+            d.setBackgroundColor(0x33FFFFFF);
+            return d;
+        }
+
+        /** Stop a ringtone PREVIEW (settings) without killing a real incoming ring. */
+        private void stopPreviewIfIdle() {
+            if (pendingRoom == null && voice == null && !callConnected) BhRingtone.stop();
         }
 
         /** Build the friendSteamId→unreadCount map from a conversation_summaries response. */
@@ -796,10 +964,19 @@ public final class BhSteamChatOverlay {
             callPeerName = name;
             callUi = "incoming";
             renderCallBox();   // incoming always pops, even when minimized to the pill
+            // Ring + vibrate per the user's call settings; auto-dismiss after 30s.
+            try {
+                BhRingtone.startRing(act, BhSteamChatController.get().getRingtone(act),
+                        BhSteamChatController.get().isVibrate(act));
+            } catch (Throwable ignored) {}
+            MAIN.removeCallbacks(incomingTimeout);
+            MAIN.postDelayed(incomingTimeout, 30000);
         }
 
         @Override public void onAnswer() {
             if (pendingRoom == null) return;
+            BhRingtone.stop();
+            MAIN.removeCallbacks(incomingTimeout);
             if (!ensureMicPermission()) { toast("Grant microphone access, then accept"); return; }
             final long peer = pendingOfferPeer;
             final String room = pendingRoom;
@@ -818,6 +995,8 @@ public final class BhSteamChatOverlay {
         }
 
         @Override public void onDecline() {
+            BhRingtone.stop();
+            MAIN.removeCallbacks(incomingTimeout);
             final long peer = pendingOfferPeer;
             final String room = pendingRoom;
             pendingRoom = null; pendingOfferPeer = 0; pendingPeerName = null;
@@ -842,6 +1021,8 @@ public final class BhSteamChatOverlay {
         @Override public void onEnd() { endCall(); }
 
         private void endCall() {
+            BhRingtone.stop();
+            MAIN.removeCallbacks(incomingTimeout);
             // voice.hangup() posts a bye into the peer's room so they get notified;
             // for a pre-ring Close there's no voice yet and nothing to send (the
             // lobby ring, if any, self-expires).

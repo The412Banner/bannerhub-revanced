@@ -27,6 +27,14 @@ public final class BhSteamChatController {
     public static final int PILL_OPACITY_MIN = 5;
     public static final int PILL_OPACITY_DEFAULT = 100;
 
+    /** Incoming-call ringtone selection token. One of:
+     *  "silent", "synth:<classic|chime|trill|beep>", "asset:<file.mp3>"
+     *  (bundled, from assets/bh_ringtones), or "uri:<content-uri>" (user MP3). */
+    public static final String KEY_RINGTONE = "ringtone";
+    public static final String RINGTONE_DEFAULT = "asset:basic.mp3";
+    /** Vibrate while an incoming call is ringing (default on). */
+    public static final String KEY_VIBRATE = "ringtone_vibrate";
+
     private static final BhSteamChatController INSTANCE = new BhSteamChatController();
 
     private BhSteamChatController() {}
@@ -89,6 +97,37 @@ public final class BhSteamChatController {
         if (percent > 100) percent = 100;
         try {
             prefs(ctx).edit().putInt(KEY_PILL_OPACITY, percent).apply();
+        } catch (Throwable ignored) {}
+    }
+
+    // ── incoming-call ringtone + vibrate ────────────────────────────────────
+
+    public String getRingtone(Context ctx) {
+        try {
+            String v = prefs(ctx).getString(KEY_RINGTONE, RINGTONE_DEFAULT);
+            return (v == null || v.isEmpty()) ? RINGTONE_DEFAULT : v;
+        } catch (Throwable t) {
+            return RINGTONE_DEFAULT;
+        }
+    }
+
+    public void setRingtone(Context ctx, String token) {
+        try {
+            prefs(ctx).edit().putString(KEY_RINGTONE, token == null ? RINGTONE_DEFAULT : token).apply();
+        } catch (Throwable ignored) {}
+    }
+
+    public boolean isVibrate(Context ctx) {
+        try {
+            return prefs(ctx).getBoolean(KEY_VIBRATE, true);
+        } catch (Throwable t) {
+            return true;
+        }
+    }
+
+    public void setVibrate(Context ctx, boolean on) {
+        try {
+            prefs(ctx).edit().putBoolean(KEY_VIBRATE, on).apply();
         } catch (Throwable ignored) {}
     }
 }

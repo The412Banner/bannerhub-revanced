@@ -4357,3 +4357,22 @@ pre16 device-tested ✅ ringtones work. pre17 adds:
 - **Play/pause preview** — the ▶ becomes ■ while previewing (loops until stopped), tracked by `previewingToken`; selecting a tone or leaving settings stops it. (`BhRingtone.preview` now loops, no 5s auto-stop; added `setVolume` for live changes.)
 
 Build run **27647002098** ✅ success, SEVERE-clean. Genshin APK md5 **`5a5d98effb9eb1585b02ab26902ec7c0`** → `/storage/emulated/0/Download/BannerHub-V6-1.3.0-608-pre17-Genshin.apk`. Firmware/components/TURN re-verified intact after the worker guest-id deploy. NEXT: test 🔗 invite (open link on a PC/browser → joins as Guest), volume slider, play/pause preview; then the **app-wide overlay** (Banner Tools toggle to run the overlay before/while in game) + merge → stable v1.3.0-608.
+
+---
+
+## 🏁 STABLE SHIPPED — `v1.3.0-608` (Latest) — 2026-06-16
+
+Merged `feature/steam-chat-v2` → `gamehub-608-build` and cut the new stable. The `-608` semver advances `v1.2.0-608` → **`v1.3.0-608`** (same GameHub 6.0.8 base, versionCode 119, stable keystore → installs in place).
+
+**Headline:** in-game Steam **voice calls** (1:1 + party, WebRTC via the BannerHub Worker origin + Cloudflare Realtime TURN, device-confirmed across ISPs; movable/collapsible call box, incoming ring with caller name + 30s auto-dismiss, ringtone settings = synth/bundled/custom-MP3/silent + volume + preview + vibrate, party mesh + roster, 🔗 share-call link for guest browser join, pill 🎧+unread badges) plus **Steam chat overlay v2** (3-tab ☺ emoji/emoticon/sticker picker, send-image via Worker/R2, game-invite cards, typing indicators, auto-scroll, collapsible pill opacity).
+
+**Process:**
+- Updated What's New BEFORE cutting — README (`## What's new in v1.3.0-608`, Latest badge, TOC + anchor, past-notes line) + `release.yml` body (`bc9cd10`/rebased `9c8807f`).
+- FF-merge blocked by 69 hourly `chore: refresh download badge data` auto-commits on remote → **rebased** the 38 feature commits onto `origin/gamehub-608-build` (clean, no conflicts — badge data file untouched by feature work), pushed.
+- Explore What's New verified accurate to the app (user ask): `gen_whatsnew.py` output = voice + chat v2 bullets; also added **"In-game Steam friends, chat & voice-call overlay (no root)"** to the "EVERYTHING WE'VE ADDED" tail in `explore/bh_explore.json` (`cee02b6`) — it had never listed the overlay since v1.1.0.
+
+**Release:** run **27647952999** ✅ success, **SEVERE-clean**, tag `v1.3.0-608` on `gamehub-608-build`, marked **Latest**. 13 assets (9 APK + bh_explore.json + 3 .rvp). Shipped `bh_explore.json` stamped version `1.3.0-608` / build `608010300`, What's New correct.
+
+**Delivered:** Genshin variant → `/storage/emulated/0/Download/BannerHub-V6-1.3.0-608-Genshin.apk`, md5 **`626156127708d2baa53c7fcb1b6fe9aa`**.
+
+**Pending follow-ups:** update the bannerhub-site v6 page (don't push until user go); the **app-wide overlay** feature (Banner Tools toggle to run the overlay across all BannerHub screens, not just in-game) remains designed-but-unbuilt.

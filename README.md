@@ -422,6 +422,8 @@ BannerHub v6 is a patch bundle — almost nothing under the hood is our work. Ev
 
 > 💬 Want to be added, corrected, or removed? Open an issue or ping us in [Discord](https://discord.gg/n8S4G2WZQ4).
 
+**Community testers** — special thanks to **Glitch** and **Stevolit** for the many cross-network test calls that helped get the in-game Steam voice chat (1:1 + party, `v1.3.0-608`) working and device-confirmed across different ISPs and NATs. 🙏
+
 | Project | Role | Maintainer(s) |
 | --- | --- | --- |
 | [DXVK](https://github.com/doitsujin/dxvk) | Direct3D 9 / 10 / 11 → Vulkan translation | Philip Rebohle ([@doitsujin](https://github.com/doitsujin)) and contributors |

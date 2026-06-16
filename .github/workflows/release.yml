@@ -410,6 +410,8 @@ jobs:
 
             ### Credits
 
+            **Voice-chat testing:** huge thanks to **Glitch** and **Stevolit** for the many cross-network test calls that helped get in-game 1:1 + party voice working and confirmed across different ISPs/NATs. 🙏
+
             PC-accurate controller vibration (including the preload-free rework) is built on **[TideGear](https://github.com/TideGear)**'s [GameHub-Vibration-Fix](https://github.com/TideGear/GameHub-Vibration-Fix) (PR #80 + PR #91), adapted with explicit permission, deriving from [GameNative](https://github.com/utkarshdalal/GameNative) (PR #1214). Full project credits (DXVK, VKD3D-Proton, Box64, FEX, Mesa Turnip, ReVanced, etc.) are in the [README Credits section](https://github.com/${{ github.repository }}/blob/gamehub-608-build/README.md#credits).
           files: |
             apks/BannerHub-V6-*.apk

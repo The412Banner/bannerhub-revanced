@@ -185,6 +185,13 @@ public final class BhSteamChatOverlay {
         private boolean callConnected;    // true once WebRTC reports in-call (timer started)
         private String callRoom;          // room id of the active call (for adding more users)
         private long[] callRosterIds = new long[0];  // live participant SteamIDs (incl. self)
+        // Current call-box UI state ("", "idle", "ringing", "incoming", "connecting",
+        // "connected"). Single source of truth that renderCallBox() draws from, so
+        // box visibility can follow the chat's expand/collapse state.
+        private String callUi = "";
+        private android.widget.FrameLayout pillWrap;  // wraps the pill so the call badge can overlay it
+        private TextView callBadge;       // green 🎧 + party-count indicator on the pill during a call
+        private android.view.animation.Animation badgePulseAnim;
         // Reverts the "is typing…" status if no message follows within Steam's
         // ~15s typing-notification window.
         private final Runnable clearTyping = new Runnable() {
@@ -203,7 +210,20 @@ public final class BhSteamChatOverlay {
                         ? act.getWindow().getDecorView().getWindowToken() : null;
                 if (token == null) { Log.w(TAG, "attachToWindow: token null"); return false; }
 
-                container = new LinearLayout(act);
+                // Anonymous subclass so the open panel can swallow the Back key
+                // (device button or gamepad B/back) and collapse to the pill,
+                // instead of the key falling through to the game. Only consumed
+                // while expanded — collapsed, Back passes to the game as normal.
+                container = new LinearLayout(act) {
+                    @Override public boolean dispatchKeyEvent(KeyEvent event) {
+                        int kc = event.getKeyCode();
+                        if (expanded && (kc == KeyEvent.KEYCODE_BACK || kc == KeyEvent.KEYCODE_BUTTON_B)) {
+                            if (event.getAction() == KeyEvent.ACTION_UP) setExpanded(false);
+                            return true;  // consume down+up so the game doesn't also act on it
+                        }
+                        return super.dispatchKeyEvent(event);
+                    }
+                };
                 container.setOrientation(LinearLayout.HORIZONTAL);
                 container.setGravity(Gravity.CENTER_VERTICAL);
                 buildPanel();
@@ -262,7 +282,34 @@ public final class BhSteamChatOverlay {
             pill.setBackground(bg);
             pill.setAlpha(opacityFraction());
             pill.setOnTouchListener(new PillTouch());
-            container.addView(pill);
+
+            // Call indicator: a small green 🎧 + party-count badge overlaid on the
+            // pill's inner-top corner, shown (gently pulsing) only while a call is
+            // active. It's a non-clickable sibling above the pill, so touches fall
+            // through to the pill's drag/tap handler. Its alpha is independent of
+            // the pill's fade, so it stays legible when the pill is faded.
+            callBadge = new TextView(act);
+            callBadge.setText("🎧");
+            callBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+            callBadge.setTextColor(0xFFFFFFFF);
+            callBadge.setTypeface(Typeface.DEFAULT_BOLD);
+            callBadge.setPadding(dp(4), dp(1), dp(4), dp(1));
+            GradientDrawable bbg = new GradientDrawable();
+            bbg.setColor(COL_INGAME);  // Steam green
+            bbg.setCornerRadius(dp(8));
+            callBadge.setBackground(bbg);
+            callBadge.setClickable(false);
+            callBadge.setVisibility(View.GONE);
+
+            pillWrap = new android.widget.FrameLayout(act);
+            pillWrap.addView(pill);
+            android.widget.FrameLayout.LayoutParams blp = new android.widget.FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            blp.gravity = Gravity.TOP | Gravity.START;  // inner-top corner (away from the screen edge)
+            callBadge.setLayoutParams(blp);
+            pillWrap.addView(callBadge);
+
+            container.addView(pillWrap);
         }
 
         /** Stored pill opacity as an alpha fraction (0.05..1.0). */
@@ -473,6 +520,9 @@ public final class BhSteamChatOverlay {
             if (exp) ensureChatSubscription();
             if (exp && listCol.getChildCount() == 0) loadFriends();
             if (exp) fitPanelOnScreen();
+            // The call box follows the chat: visible while expanded, minimized to
+            // the pill (call still running) while collapsed.
+            renderCallBox();
         }
 
         /** After the panel lays out, nudge the whole overlay window up if its
@@ -661,7 +711,8 @@ public final class BhSteamChatOverlay {
             if (!ensureMicPermission()) { toast("Grant microphone access, then call again"); return; }
             callPeer = peer;
             callPeerName = name;
-            ensureCallBox().showOutgoingIdle(name);
+            callUi = "idle";
+            renderCallBox();
         }
 
         // ── BhVoiceCallBox.Actions (button taps from the call box) ──────────────
@@ -672,7 +723,8 @@ public final class BhSteamChatOverlay {
             final long peer = callPeer;
             final String name = callPeerName;
             if (peer == 0) { onEnd(); return; }
-            if (callBox != null) callBox.showOutgoingRinging(name);
+            callUi = "ringing";
+            renderCallBox();
             IO.execute(new Runnable() { public void run() {
                 final long self = ensureLocalSteamId();
                 if (self == 0) {
@@ -701,7 +753,8 @@ public final class BhSteamChatOverlay {
             pendingPeerName = name;
             callPeer = peer;
             callPeerName = name;
-            ensureCallBox().showIncoming(name);
+            callUi = "incoming";
+            renderCallBox();   // incoming always pops, even when minimized to the pill
         }
 
         @Override public void onAnswer() {
@@ -710,7 +763,8 @@ public final class BhSteamChatOverlay {
             final long peer = pendingOfferPeer;
             final String room = pendingRoom;
             pendingRoom = null; pendingPeerName = null;
-            if (callBox != null) callBox.showConnecting();
+            callUi = "connecting";
+            renderCallBox();
             IO.execute(new Runnable() { public void run() {
                 final long self = ensureLocalSteamId();
                 post(new Runnable() { public void run() {
@@ -761,35 +815,29 @@ public final class BhSteamChatOverlay {
         public void onVoiceState(final String state, final String detail) {
             post(new Runnable() { public void run() {
                 if ("external".equals(state)) {
-                    voice = null; callRoom = null; callRosterIds = new long[0]; closeCallBox();
-                    callPeer = 0; callPeerName = null;
+                    voice = null; callRoom = null; callRosterIds = new long[0]; callPeer = 0; callPeerName = null;
+                    closeCallBox();
                     toast("Voice call opened in your browser (update Android System WebView for in-app calls)");
                     return;
                 }
                 if ("ended".equals(state)) {
-                    voice = null; callRoom = null; callRosterIds = new long[0]; closeCallBox();
+                    voice = null; callRoom = null; callRosterIds = new long[0];
                     callPeer = 0; callPeerName = null; callMuted = false;
+                    closeCallBox();
                     toast((detail != null && !detail.isEmpty()) ? "Call ended: " + detail : "Call ended");
                     return;
                 }
-                if (callBox == null) return;
                 if ("in-call".equals(state)) {
                     callMuted = detail != null && detail.contains("mut");
-                    if (!callConnected) {
-                        callConnected = true;
-                        // Start the timer immediately with You + the dialed peer,
-                        // then fill in the full resolved roster off-thread.
-                        java.util.List<String> quick = new java.util.ArrayList<>();
-                        quick.add("You");
-                        quick.add(callPeerName != null && !callPeerName.isEmpty() ? callPeerName : "Friend");
-                        callBox.showConnected(quick);
-                        refreshRoster();
-                    }
-                    callBox.setMuted(callMuted);
+                    callConnected = true;
+                    callUi = "connected";
+                    renderCallBox();
                 } else if (!callConnected && "connecting".equals(state)) {
-                    callBox.showConnecting();
+                    callUi = "connecting";
+                    renderCallBox();
                 } else if (!callConnected && "calling".equals(state)) {
-                    callBox.showOutgoingRinging(callPeerName);
+                    callUi = "ringing";
+                    renderCallBox();
                 }
             }});
         }
@@ -798,7 +846,8 @@ public final class BhSteamChatOverlay {
         public void onVoiceRoster(final String idsCsv) {
             post(new Runnable() { public void run() {
                 callRosterIds = parseIdCsv(idsCsv);
-                if (callConnected && callBox != null) refreshRoster();
+                updatePillBadge();                       // refresh the party count on the pill
+                if (callConnected && shouldShowBox()) refreshRoster();
             }});
         }
 
@@ -834,7 +883,8 @@ public final class BhSteamChatOverlay {
                 }
                 final java.util.List<String> names = new java.util.ArrayList<>(map.values());
                 post(new Runnable() { public void run() {
-                    if (callConnected && callBox != null) callBox.showConnected(names);
+                    // Don't re-attach a box that's been minimized to the pill.
+                    if (callConnected && callBox != null && shouldShowBox()) callBox.showConnected(names);
                 }});
             }});
         }
@@ -893,6 +943,82 @@ public final class BhSteamChatOverlay {
         private void closeCallBox() {
             if (callBox != null) { callBox.close(); callBox = null; }
             callConnected = false;
+            callUi = "";
+            updatePillBadge();
+        }
+
+        /** Whether the call box should be on screen right now: an incoming ring
+         *  always shows (so a call is never missed); every other call state shows
+         *  only while the chat panel is expanded, and is minimized to the pill
+         *  (call still running) when collapsed. */
+        private boolean shouldShowBox() {
+            if (callUi == null || callUi.isEmpty()) return false;
+            if ("incoming".equals(callUi)) return true;
+            return expanded;
+        }
+
+        /** Single source of truth for the call box: draw the current callUi state
+         *  if it should be visible, otherwise minimize it to the pill. Always
+         *  refreshes the pill's call indicator. */
+        private void renderCallBox() {
+            updatePillBadge();
+            if (!shouldShowBox()) {
+                if (callBox != null) callBox.hide();   // keep the call running, just hide the UI
+                return;
+            }
+            BhVoiceCallBox b = ensureCallBox();
+            if ("idle".equals(callUi)) {
+                b.showOutgoingIdle(callPeerName);
+            } else if ("ringing".equals(callUi)) {
+                b.showOutgoingRinging(callPeerName);
+            } else if ("incoming".equals(callUi)) {
+                b.showIncoming(callPeerName);
+            } else if ("connecting".equals(callUi)) {
+                b.showConnecting();
+            } else if ("connected".equals(callUi)) {
+                // Show immediately with You + the dialed peer (starts/resumes the
+                // timer), then fill in the full resolved roster off-thread.
+                java.util.List<String> quick = new java.util.ArrayList<>();
+                quick.add("You");
+                if (callPeerName != null && !callPeerName.isEmpty()) quick.add(callPeerName);
+                b.showConnected(quick);
+                b.setMuted(callMuted);
+                refreshRoster();
+            }
+        }
+
+        /** Green pulsing 🎧 + party-count badge on the pill while a call is live,
+         *  so an active call/party is visible even when minimized to the pill. */
+        private void updatePillBadge() {
+            if (callBadge == null) return;
+            boolean active = "ringing".equals(callUi) || "connecting".equals(callUi) || "connected".equals(callUi);
+            if (!active) {
+                callBadge.clearAnimation();
+                callBadge.setVisibility(View.GONE);
+                return;
+            }
+            String label = "🎧";
+            if ("connected".equals(callUi)) {
+                int n = callRosterIds != null ? callRosterIds.length : 0;
+                if (n < 2) n = 2;  // at least you + one other
+                label = "🎧" + n;
+            }
+            callBadge.setText(label);
+            if (callBadge.getVisibility() != View.VISIBLE) {
+                callBadge.setVisibility(View.VISIBLE);
+                callBadge.startAnimation(badgePulse());
+            }
+        }
+
+        private android.view.animation.Animation badgePulse() {
+            if (badgePulseAnim == null) {
+                android.view.animation.AlphaAnimation a = new android.view.animation.AlphaAnimation(1f, 0.35f);
+                a.setDuration(850);
+                a.setRepeatMode(android.view.animation.Animation.REVERSE);
+                a.setRepeatCount(android.view.animation.Animation.INFINITE);
+                badgePulseAnim = a;
+            }
+            return badgePulseAnim;
         }
 
         /** A fresh, unique room id for each call. The room id is communicated to

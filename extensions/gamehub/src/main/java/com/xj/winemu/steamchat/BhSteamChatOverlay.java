@@ -817,8 +817,14 @@ public final class BhSteamChatOverlay {
         /** POST one signal blob to the worker mailbox. Worker-thread. */
         private void postSignal(String room, long to, long from, String payload) {
             try {
+                // to/from MUST be strings: a SteamID64 (~7.7e16) exceeds JS's safe
+                // integer range, so the worker's JSON.parse would round a bare
+                // number and store the ring under a corrupted key the callee's
+                // poll (which uses the exact string id) could never match.
                 String body = new JSONObject()
-                        .put("room", room).put("to", to).put("from", from)
+                        .put("room", room)
+                        .put("to", String.valueOf(to))
+                        .put("from", String.valueOf(from))
                         .put("payload", payload).toString();
                 httpPost(VOICE_BASE + "/voice/signal", body);
             } catch (Throwable ignored) {}

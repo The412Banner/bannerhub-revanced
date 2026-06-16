@@ -332,17 +332,26 @@ jobs:
 
             ## What's new in ${{ needs.build.outputs.version }}
 
-            The headline: a **privacy fix** — BannerHub now fully shuts off **Firebase Crashlytics**, closing a hole where the upstream app was quietly re-enabling crash-reporting collection *at runtime*. Same **GameHub 6.0.8** base (versionCode 119) and stable keystore, so it installs in place over `1.1.0-608` / `1.0.0-608`.
+            The headline: **in-game Steam voice calls** plus a big upgrade to the Steam chat overlay. Same **GameHub 6.0.8** base (versionCode 119) and stable keystore, so it installs in place over `1.2.0-608` / `1.1.0-608` / `1.0.0-608`.
 
-            ### 🔒 Firebase Crashlytics fully disabled (Plan 11)
+            ### 🎧 In-game voice calls (1:1 and party)
 
-            While verifying the privacy patches with a live DNS/SNI capture, we found that GameHub's own startup code was **re-enabling Crashlytics data collection at runtime** (writing `firebase_crashlytics_collection_enabled=true` into the SDK), which **silently overrode** our manifest kill-switch — so Crashlytics was actually live, still phoning home to `firebase-settings.crashlytics.com`, `firebaselogging-pa.googleapis.com` (the Firebase "Firelog" transport), and `firebaseinstallations.googleapis.com`.
+            The Steam overlay can now place **real voice calls** while you're in a game — no root, no extra app. Tap a friend's 🎙 to ring them; the call rides on **WebRTC** served from the BannerHub Cloudflare Worker (a real HTTPS origin, so the mic actually opens) with **Cloudflare Realtime TURN** for cross-network / strict-NAT peers — **device-confirmed across different ISPs**.
 
-            The new **Disable Firebase auto-init** patch stops that runtime re-enable (while leaving FirebaseApp itself initialized, so the app still launches normally). With it, the manifest "off" finally holds — **device-confirmed**: those three Firebase hosts no longer appear in the app's traffic, and the Firebase-driven share of `play.googleapis.com` drops too. Firebase **Analytics** was already dead (hard manifest flag), so this completes the Firebase shutoff. Full details + the honest leftovers in [`PRIVACY.md`](https://github.com/${{ github.repository }}/blob/gamehub-608-build/PRIVACY.md).
+            - **Movable call window** — a draggable call box (independent of the chat panel, so it shows even with the pill collapsed) that collapses to a compact `🎧 N in call` tile with a running timer. Mute + Hang up onboard.
+            - **Incoming-call ring** — Answer / Ignore box that pops automatically, labelled with the **caller's name**, with a **30s auto-dismiss**.
+            - **Ringtone settings** (⚙ in the Friends panel) — built-in **synth tones**, **5 bundled ringtones**, your **own MP3**, or **silent**; with a **volume slider**, **play/pause preview**, and a vibrate toggle.
+            - **Party / group calls** — add more friends to a connected call (peer-to-peer mesh, practical for small parties); live roster. Party members don't need to be friends with each *other*.
+            - **Share-call link** — 🔗 Invite shares a room link so **anyone with a browser** (a PC, another emulator, a non-BannerHub device) can join the call as a guest.
+            - **Pill indicators** — the collapsed 💬 pill shows a green 🎧 party-count badge and a blue unread-message count.
+
+            ### 💬 Steam chat overlay v2
+
+            The friends/chat overlay (still **no root**, under **Banner Tools → Overlay**) gains: a 3-tab **☺ picker** (Unicode **emoji**, Steam **emoticons**, **stickers**); **send image** (hosted via the BannerHub Worker so it doesn't hit Steam's flaky web-upload); **game-invite cards** (rendered from BBCode invites with live/expired state); **typing indicators**; **auto-scroll**; and a collapsible **pill-opacity** slider.
 
             ### ✅ Everything else carries over
 
-            The **in-game Steam friends & chat overlay** (draggable 💬 pill → Steam friends list with presence, unread badges, and inline read/reply; **no root**) under **Banner Tools → Overlay**, the 6.0.8 rebase (all patches re-fingerprinted, device-verified), GOG integration, the BannerHub Explore homepage (update banner + installed-vs-latest readout), PC-accurate controller vibration, recording-compatible audio, the offline component picker, portrait PC-settings, and the rest of the privacy-hardening stack all ship forward from `1.1.0-608` unchanged. There's still **no separate Lite** build, and the **GPU Spoof** and **Legacy renderer (GLES2)** tiles stay retired.
+            The **full Firebase Crashlytics shutoff** (the runtime re-enable hole closed in `1.2.0-608`), the 6.0.8 rebase (all patches re-fingerprinted, device-verified), GOG integration, the BannerHub Explore homepage (update banner + installed-vs-latest readout), PC-accurate controller vibration, the in-game performance overlay (root), recording-compatible audio, the offline component picker, portrait PC-settings, and the rest of the privacy-hardening stack all ship forward from `1.2.0-608` unchanged. There's still **no separate Lite** build, and the **GPU Spoof** and **Legacy renderer (GLES2)** tiles stay retired.
 
             The Banner Tools grid on 6.0.8 stays **Vibration · Game ID · Audio · GOG · Overlay · Root**.
 

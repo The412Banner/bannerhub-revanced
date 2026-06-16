@@ -81,6 +81,8 @@ public final class BhVoiceCallBox {
     private Chronometer timer;   // connected-state call duration
     private LinearLayout buttons;
     private boolean connectedShown;  // timer started; subsequent roster updates must not reset it
+    private boolean collapsed;       // connected state shown as the compact tile
+    private List<String> lastParticipants;  // cached so collapse/expand can re-render
 
     public BhVoiceCallBox(Activity act, Actions actions) {
         this.act = act;
@@ -150,15 +152,11 @@ public final class BhVoiceCallBox {
 
     /** Connected: show the live participant list and (the first time) start the
      *  call timer. Safe to call repeatedly as people join/leave — the timer is
-     *  only started once so it keeps counting across roster updates. */
+     *  only started once so it keeps counting across roster updates. Renders the
+     *  full box or the compact tile depending on {@link #collapsed}. */
     public void showConnected(List<String> participants) {
         ensureAttached();
-        header.setText("🟢  In call");
-        body.setVisibility(View.GONE);
-
-        users.removeAllViews();
-        users.setVisibility(View.VISIBLE);
-        if (participants != null) for (String p : participants) users.addView(participant(safe(p, "Friend")));
+        lastParticipants = participants;
 
         timer.setVisibility(View.VISIBLE);
         if (!connectedShown) {
@@ -166,14 +164,64 @@ public final class BhVoiceCallBox {
             timer.setBase(SystemClock.elapsedRealtime());
         }
         // start() is idempotent and doesn't reset the base; call it every time so
-        // the Chronometer resumes ticking after a hide()/restore() (detach/attach).
+        // the Chronometer resumes ticking after a hide()/restore() (detach/attach)
+        // or a collapse/expand re-layout.
         timer.start();
+
+        if (collapsed) renderTile(participants);
+        else renderFullConnected(participants);
+    }
+
+    /** Full connected box: participant list, timer, Mute / ＋Add / Hang up, and a
+     *  collapse control that shrinks to the tile. */
+    private void renderFullConnected(List<String> participants) {
+        root.setPadding(dp(14), dp(10), dp(14), dp(12));
+        int n = participants != null ? participants.size() : 0;
+        header.setText("🟢  In call" + (n > 0 ? "  ·  " + n : ""));
+        header.setVisibility(View.VISIBLE);
+        header.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        body.setVisibility(View.GONE);
+
+        users.removeAllViews();
+        users.setVisibility(View.VISIBLE);
+        if (participants != null) for (String p : participants) users.addView(participant(safe(p, "Friend")));
+
+        // Move the (continuous) timer into the users column under the list so it
+        // sits in the body; it's reused as-is in the tile too.
+        timer.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
 
         buttons.removeAllViews();
         buttons.addView(button("Mute", COL_PILL, new View.OnClickListener() {
             public void onClick(View v) { actions.onToggleMute(); }
         }));
         buttons.addView(button("＋ Add", COL_ACCENT, new View.OnClickListener() {
+            public void onClick(View v) { actions.onAddUser(); }
+        }));
+        buttons.addView(button("Hang up", COL_RED, new View.OnClickListener() {
+            public void onClick(View v) { actions.onEnd(); }
+        }));
+        buttons.addView(button("—", COL_PILL, new View.OnClickListener() {
+            public void onClick(View v) { collapsed = true; showConnected(lastParticipants); }
+        }));
+    }
+
+    /** Compact tile: 🎧 party-count · timer, with Hang up + ＋Add. Tapping the
+     *  tile (anywhere but the buttons) expands back to the full box. */
+    private void renderTile(List<String> participants) {
+        root.setPadding(dp(10), dp(8), dp(10), dp(8));
+        int n = participants != null ? participants.size() : 0;
+        header.setText("🎧 " + (n > 0 ? n + " in call" : "in call"));
+        header.setVisibility(View.VISIBLE);
+        header.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        body.setVisibility(View.GONE);
+
+        // Tile body = just the running timer (compact).
+        users.removeAllViews();
+        users.setVisibility(View.GONE);
+        timer.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+
+        buttons.removeAllViews();
+        buttons.addView(button("＋", COL_ACCENT, new View.OnClickListener() {
             public void onClick(View v) { actions.onAddUser(); }
         }));
         buttons.addView(button("Hang up", COL_RED, new View.OnClickListener() {
@@ -249,6 +297,10 @@ public final class BhVoiceCallBox {
     public void close() {
         stopTimer();
         connectedShown = false;
+        collapsed = false;
+        lastParticipants = null;
+        if (header != null) header.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        if (root != null) root.setPadding(dp(14), dp(10), dp(14), dp(12));
         if (!attached || wm == null || root == null) { attached = false; return; }
         try { wm.removeView(root); } catch (Throwable ignored) {}
         attached = false;
@@ -369,6 +421,7 @@ public final class BhVoiceCallBox {
     private final class DragTouch implements View.OnTouchListener {
         private float startRawX, startRawY;
         private int startX, startY;
+        private boolean dragged;
 
         @Override public boolean onTouch(View v, MotionEvent e) {
             switch (e.getActionMasked()) {
@@ -377,12 +430,19 @@ public final class BhVoiceCallBox {
                     startRawY = e.getRawY();
                     startX = lp.x;
                     startY = lp.y;
+                    dragged = false;
                     return true;
                 case MotionEvent.ACTION_MOVE:
                     if (lp == null || wm == null || !attached) return true;
-                    lp.x = startX + (int) (e.getRawX() - startRawX);
-                    lp.y = startY + (int) (e.getRawY() - startRawY);
+                    int dx = (int) (e.getRawX() - startRawX), dy = (int) (e.getRawY() - startRawY);
+                    if (Math.abs(dx) > dp(6) || Math.abs(dy) > dp(6)) dragged = true;
+                    lp.x = startX + dx;
+                    lp.y = startY + dy;
                     try { wm.updateViewLayout(root, lp); } catch (Throwable ignored) {}
+                    return true;
+                case MotionEvent.ACTION_UP:
+                    // A tap (no drag) on the collapsed tile expands it back to full.
+                    if (!dragged && collapsed) { collapsed = false; showConnected(lastParticipants); }
                     return true;
                 default:
                     return false;

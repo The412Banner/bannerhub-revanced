@@ -42,6 +42,8 @@ public final class BhVoiceController {
     /** Overlay hook: surface call-state changes (calling/connecting/in-call/ended). */
     public interface Host {
         void onVoiceState(String state, String detail);
+        /** Live participant roster (comma-separated SteamIDs, includes self). */
+        void onVoiceRoster(String idsCsv);
     }
 
     private final Activity act;
@@ -226,6 +228,10 @@ public final class BhVoiceController {
             }
             else if ("ended".equals(st)) { host.onVoiceState("ended", detail == null ? "" : detail); cleanup(); }
             else host.onVoiceState(st, detail == null ? "" : detail);
+        }
+        /** Live roster from the mesh page: comma-separated SteamIDs (incl. self). */
+        @JavascriptInterface public void roster(String idsCsv) {
+            host.onVoiceRoster(idsCsv == null ? "" : idsCsv);
         }
         @JavascriptInterface public void log(String m) { Log.i(TAG, "voicejs: " + m); }
     }

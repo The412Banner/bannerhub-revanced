@@ -212,6 +212,9 @@ public final class BhVoiceCallBox {
         bg.setCornerRadius(dp(16));
         bg.setStroke(dp(1), 0x40FFFFFF);
         root.setBackground(bg);
+        // Drag the whole box anywhere on screen by touching any non-button area
+        // (the action buttons are clickable and consume their own touches first).
+        root.setOnTouchListener(new DragTouch());
 
         header = new TextView(act);
         header.setText("🎙  Voice call");
@@ -219,7 +222,6 @@ public final class BhVoiceCallBox {
         header.setTypeface(Typeface.DEFAULT_BOLD);
         header.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         header.setPadding(0, dp(2), 0, dp(8));
-        header.setOnTouchListener(new DragTouch());  // drag the whole box by the header
         root.addView(header);
 
         body = new TextView(act);
@@ -287,7 +289,7 @@ public final class BhVoiceCallBox {
         return (s == null || s.trim().isEmpty() || s.equals("null")) ? fallback : s;
     }
 
-    // ── drag the box around by its header ────────────────────────────────────
+    // ── drag the box anywhere on screen (any non-button area) ────────────────
     private final class DragTouch implements View.OnTouchListener {
         private float startRawX, startRawY;
         private int startX, startY;

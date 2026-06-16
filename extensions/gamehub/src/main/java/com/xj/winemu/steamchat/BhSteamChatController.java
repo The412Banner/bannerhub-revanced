@@ -34,6 +34,9 @@ public final class BhSteamChatController {
     public static final String RINGTONE_DEFAULT = "asset:basic.mp3";
     /** Vibrate while an incoming call is ringing (default on). */
     public static final String KEY_VIBRATE = "ringtone_vibrate";
+    /** Ringtone volume as a percent 0..100 (default 100). */
+    public static final String KEY_RINGTONE_VOLUME = "ringtone_volume";
+    public static final int RINGTONE_VOLUME_DEFAULT = 100;
 
     private static final BhSteamChatController INSTANCE = new BhSteamChatController();
 
@@ -128,6 +131,23 @@ public final class BhSteamChatController {
     public void setVibrate(Context ctx, boolean on) {
         try {
             prefs(ctx).edit().putBoolean(KEY_VIBRATE, on).apply();
+        } catch (Throwable ignored) {}
+    }
+
+    public int getRingtoneVolume(Context ctx) {
+        try {
+            int v = prefs(ctx).getInt(KEY_RINGTONE_VOLUME, RINGTONE_VOLUME_DEFAULT);
+            if (v < 0) v = 0; if (v > 100) v = 100;
+            return v;
+        } catch (Throwable t) {
+            return RINGTONE_VOLUME_DEFAULT;
+        }
+    }
+
+    public void setRingtoneVolume(Context ctx, int percent) {
+        if (percent < 0) percent = 0; if (percent > 100) percent = 100;
+        try {
+            prefs(ctx).edit().putInt(KEY_RINGTONE_VOLUME, percent).apply();
         } catch (Throwable ignored) {}
     }
 }

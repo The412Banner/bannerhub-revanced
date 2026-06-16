@@ -184,7 +184,8 @@ public final class BhSteamChatOverlay {
         private boolean callMuted;        // local mic muted in the active call
         private boolean callConnected;    // true once WebRTC reports in-call (timer started)
         private String callRoom;          // room id of the active call (for adding more users)
-        private long[] callRosterIds = new long[0];  // live participant SteamIDs (incl. self)
+        private String[] callRosterIds = new String[0];  // live participant ids (SteamIDs + guest ids), incl. self
+        private String previewingToken;   // ringtone token currently previewing in settings (play/pause)
         // Current call-box UI state ("", "idle", "ringing", "incoming", "connecting",
         // "connected"). Single source of truth that renderCallBox() draws from, so
         // box visibility can follow the chat's expand/collapse state.
@@ -714,11 +715,13 @@ public final class BhSteamChatOverlay {
             listCol.addView(customRingtoneRow(current));
 
             listCol.addView(settingsDivider());
+            listCol.addView(volumeRow());
+            listCol.addView(settingsDivider());
             listCol.addView(vibrateRow());
             if (scroll != null) scroll.post(new Runnable() { public void run() { scroll.scrollTo(0, 0); } });
         }
 
-        /** A selectable ringtone row: ● selected / ○ not, tap to choose, optional ▶ preview. */
+        /** A selectable ringtone row: ● selected / ○ not, tap to choose, optional ▶/■ preview. */
         private View ringtoneRow(String label, final String token, String current, boolean canPreview) {
             boolean sel = token.equals(current);
             LinearLayout row = new LinearLayout(act);
@@ -732,18 +735,59 @@ public final class BhSteamChatOverlay {
             lbl.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
             lbl.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
                 BhRingtone.stop();
+                previewingToken = null;
                 BhSteamChatController.get().setRingtone(act, token);
                 renderSettings();
             }});
             row.addView(lbl);
-            if (canPreview) {
-                TextView prev = settingsBtn("▶");
-                prev.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
-                    BhRingtone.preview(act, token);
-                }});
-                row.addView(prev);
-            }
+            if (canPreview) row.addView(previewButton(token));
             return row;
+        }
+
+        /** ▶ play / ■ stop preview toggle for a ringtone token (looping until stopped). */
+        private TextView previewButton(final String token) {
+            boolean playing = token.equals(previewingToken);
+            TextView b = settingsBtn(playing ? "■" : "▶");
+            b.setTextColor(playing ? COL_INGAME : COL_TEXT);
+            b.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+                if (token.equals(previewingToken)) {
+                    BhRingtone.stop();
+                    previewingToken = null;
+                } else {
+                    BhRingtone.preview(act, token, BhSteamChatController.get().getRingtoneVolume(act) / 100f);
+                    previewingToken = token;
+                }
+                renderSettings();
+            }});
+            return b;
+        }
+
+        /** Ringtone volume slider (0..100%), live during preview. */
+        private View volumeRow() {
+            LinearLayout col = new LinearLayout(act);
+            col.setOrientation(LinearLayout.VERTICAL);
+            col.setPadding(0, dp(6), 0, dp(2));
+            final int pct = BhSteamChatController.get().getRingtoneVolume(act);
+            final TextView lbl = new TextView(act);
+            lbl.setText("Ringtone volume — " + pct + "%");
+            lbl.setTextColor(COL_TEXT);
+            lbl.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+            col.addView(lbl);
+            final android.widget.SeekBar bar = new android.widget.SeekBar(act);
+            bar.setMax(100);
+            bar.setProgress(pct);
+            bar.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+                public void onProgressChanged(android.widget.SeekBar sb, int progress, boolean fromUser) {
+                    lbl.setText("Ringtone volume — " + progress + "%");
+                    BhRingtone.setVolume(progress / 100f);   // live while previewing
+                }
+                public void onStartTrackingTouch(android.widget.SeekBar sb) {}
+                public void onStopTrackingTouch(android.widget.SeekBar sb) {
+                    BhSteamChatController.get().setRingtoneVolume(act, sb.getProgress());
+                }
+            });
+            col.addView(bar);
+            return col;
         }
 
         /** Custom-MP3 row: launches the file picker; shows as selected when a custom URI is set. */
@@ -768,12 +812,7 @@ public final class BhSteamChatOverlay {
                 } catch (Throwable t) { toast("Couldn't open the file picker"); }
             }});
             row.addView(lbl);
-            if (sel) {
-                final String token = current;
-                TextView prev = settingsBtn("▶");
-                prev.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { BhRingtone.preview(act, token); }});
-                row.addView(prev);
-            }
+            if (sel) row.addView(previewButton(current));
             return row;
         }
 
@@ -830,6 +869,7 @@ public final class BhSteamChatOverlay {
 
         /** Stop a ringtone PREVIEW (settings) without killing a real incoming ring. */
         private void stopPreviewIfIdle() {
+            previewingToken = null;
             if (pendingRoom == null && voice == null && !callConnected) BhRingtone.stop();
         }
 
@@ -967,7 +1007,8 @@ public final class BhSteamChatOverlay {
             // Ring + vibrate per the user's call settings; auto-dismiss after 30s.
             try {
                 BhRingtone.startRing(act, BhSteamChatController.get().getRingtone(act),
-                        BhSteamChatController.get().isVibrate(act));
+                        BhSteamChatController.get().isVibrate(act),
+                        BhSteamChatController.get().getRingtoneVolume(act) / 100f);
             } catch (Throwable ignored) {}
             MAIN.removeCallbacks(incomingTimeout);
             MAIN.postDelayed(incomingTimeout, 30000);
@@ -1029,7 +1070,7 @@ public final class BhSteamChatOverlay {
             if (voice != null) { try { voice.hangup(); } catch (Throwable ignored) {} voice = null; }
             pendingRoom = null; pendingOfferPeer = 0; pendingPeerName = null;
             callPeer = 0; callPeerName = null; callMuted = false;
-            callRoom = null; callRosterIds = new long[0];
+            callRoom = null; callRosterIds = new String[0];
             closeCallBox();
         }
 
@@ -1037,13 +1078,13 @@ public final class BhSteamChatOverlay {
         public void onVoiceState(final String state, final String detail) {
             post(new Runnable() { public void run() {
                 if ("external".equals(state)) {
-                    voice = null; callRoom = null; callRosterIds = new long[0]; callPeer = 0; callPeerName = null;
+                    voice = null; callRoom = null; callRosterIds = new String[0]; callPeer = 0; callPeerName = null;
                     closeCallBox();
                     toast("Voice call opened in your browser (update Android System WebView for in-app calls)");
                     return;
                 }
                 if ("ended".equals(state)) {
-                    voice = null; callRoom = null; callRosterIds = new long[0];
+                    voice = null; callRoom = null; callRosterIds = new String[0];
                     callPeer = 0; callPeerName = null; callMuted = false;
                     closeCallBox();
                     toast((detail != null && !detail.isEmpty()) ? "Call ended: " + detail : "Call ended");
@@ -1073,35 +1114,38 @@ public final class BhSteamChatOverlay {
             }});
         }
 
-        private static long[] parseIdCsv(String csv) {
-            if (csv == null || csv.isEmpty()) return new long[0];
+        private static String[] parseIdCsv(String csv) {
+            if (csv == null || csv.isEmpty()) return new String[0];
             String[] parts = csv.split(",");
-            long[] out = new long[parts.length];
-            int n = 0;
-            for (String p : parts) {
-                try { long v = Long.parseLong(p.trim()); if (v != 0) out[n++] = v; } catch (Throwable ignored) {}
-            }
-            return java.util.Arrays.copyOf(out, n);
+            java.util.ArrayList<String> out = new java.util.ArrayList<>(parts.length);
+            for (String p : parts) { String t = p.trim(); if (!t.isEmpty()) out.add(t); }
+            return out.toArray(new String[0]);
         }
 
-        /** Resolve callRosterIds → names off-thread (self → "You", others via the
-         *  friends list), then re-render the connected box. Trusts the roster once
-         *  it's populated; falls back to the dialed peer until then. */
+        private static boolean isSteamId(String id) {
+            return id != null && id.matches("\\d{17}");
+        }
+
+        /** Resolve callRosterIds → names off-thread (self → "You", Steam ids via the
+         *  friends list, non-Steam ids → "Guest"), then re-render the connected box.
+         *  Trusts the roster once it's populated; falls back to the dialed peer. */
         private void refreshRoster() {
-            final long[] ids = callRosterIds;
-            final long me = localSteamId;
-            final long peer = callPeer;
+            final String[] ids = callRosterIds;
+            final String me = localSteamId != 0 ? String.valueOf(localSteamId) : "";
+            final String peer = callPeer != 0 ? String.valueOf(callPeer) : "";
             final String peerName = callPeerName;
             IO.execute(new Runnable() { public void run() {
-                java.util.LinkedHashMap<Long, String> map = new java.util.LinkedHashMap<>();
-                if (me != 0) map.put(me, "You");
-                if (ids.length == 0 && peer != 0) {
+                java.util.LinkedHashMap<String, String> map = new java.util.LinkedHashMap<>();
+                if (!me.isEmpty()) map.put(me, "You");
+                if (ids.length == 0 && !peer.isEmpty()) {
                     map.put(peer, peerName != null && !peerName.isEmpty() ? peerName : "Friend");
                 }
-                for (long id : ids) {
-                    if (id == me) { map.put(id, "You"); continue; }
-                    if (id == peer && peerName != null && !peerName.isEmpty()) { map.put(id, peerName); continue; }
-                    map.put(id, resolveFriendName(id, "Friend"));
+                int guest = 0;
+                for (String id : ids) {
+                    if (id.equals(me)) { map.put(id, "You"); continue; }
+                    if (id.equals(peer) && peerName != null && !peerName.isEmpty()) { map.put(id, peerName); continue; }
+                    if (isSteamId(id)) map.put(id, resolveFriendName(Long.parseLong(id), "Friend"));
+                    else { guest++; map.put(id, guest > 1 ? "Guest " + guest : "Guest"); }
                 }
                 final java.util.List<String> names = new java.util.ArrayList<>(map.values());
                 post(new Runnable() { public void run() {
@@ -1109,6 +1153,24 @@ public final class BhSteamChatOverlay {
                     if (callConnected && callBox != null && shouldShowBox()) callBox.showConnected(names);
                 }});
             }});
+        }
+
+        /** 🔗 Invite pressed: share a browser join link for the current room so
+         *  anyone (PC / other emulator / no Steam) can join via the hosted page. */
+        public void onShareLink() {
+            if (callRoom == null) { toast("Start a call first"); return; }
+            // No self/peer in the link → the page mints a guest id for whoever opens it.
+            String url = VOICE_BASE + "/voice/room?room=" + callRoom;
+            try {
+                android.content.Intent send = new android.content.Intent(android.content.Intent.ACTION_SEND);
+                send.setType("text/plain");
+                send.putExtra(android.content.Intent.EXTRA_TEXT, "Join my BannerHub voice call: " + url);
+                android.content.Intent chooser = android.content.Intent.createChooser(send, "Invite to voice call");
+                chooser.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+                act.startActivity(chooser);
+            } catch (Throwable t) {
+                toast("Couldn't open share — link: " + url);
+            }
         }
 
         /** ＋ Add pressed: show a picker of friends not already in the call. */
@@ -1119,9 +1181,10 @@ public final class BhSteamChatOverlay {
                 if (json == null) { json = BhSteamBridge.request("friends.list", "{}", 8000); if (json != null) lastFriendsJson = json; }
                 final java.util.List<Long> ids = new java.util.ArrayList<>();
                 final java.util.List<String> names = new java.util.ArrayList<>();
-                java.util.HashSet<Long> inCall = new java.util.HashSet<>();
-                for (long id : callRosterIds) inCall.add(id);
-                inCall.add(localSteamId); inCall.add(callPeer);
+                java.util.HashSet<String> inCall = new java.util.HashSet<>();
+                for (String id : callRosterIds) inCall.add(id);
+                if (localSteamId != 0) inCall.add(String.valueOf(localSteamId));
+                if (callPeer != 0) inCall.add(String.valueOf(callPeer));
                 if (json != null) {
                     try {
                         JSONArray arr = asArray(json, "friends", "items", "data", "list", "value");
@@ -1129,7 +1192,7 @@ public final class BhSteamChatOverlay {
                             JSONObject f = arr.optJSONObject(i);
                             if (f == null) continue;
                             long id = f.optLong("steamId", 0);
-                            if (id == 0 || inCall.contains(id)) continue;
+                            if (id == 0 || inCall.contains(String.valueOf(id))) continue;
                             String n = firstNonEmpty(f.optString("nickname"), f.optString("displayName"),
                                     f.optString("personaName"), "Friend " + id);
                             ids.add(id); names.add(n);

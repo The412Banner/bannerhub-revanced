@@ -850,12 +850,39 @@ public final class BhSteamChatOverlay {
                     }
                     final long peer = p.optLong("from", 0);
                     final String room = p.optString("room", "");
-                    final String name = p.optString("name", "");
                     if (peer == 0 || room.isEmpty()) continue;
-                    Log.i(TAG, "voice: incoming ring from=" + peer + " room=" + room);
+                    // The ring's "name" is whatever the caller put there (it's the
+                    // CALLEE's name from the caller's conversation, so useless to
+                    // us); resolve the CALLER's name from our own friends list by
+                    // their SteamID (you can only be called by a friend).
+                    final String name = resolveFriendName(peer, "");
+                    Log.i(TAG, "voice: incoming ring from=" + peer + " room=" + room + " name=" + name);
                     post(new Runnable() { public void run() { onIncomingRing(peer, room, name); } });
                 }
             } catch (Throwable ignored) {}
+        }
+
+        /** Display name for a SteamID from our cached friends list (fetching the
+         *  list once if we haven't yet). Worker-thread. */
+        private String resolveFriendName(long steamId, String fallback) {
+            String json = lastFriendsJson;
+            if (json == null) {
+                json = BhSteamBridge.request("friends.list", "{}", 8000);
+                if (json != null) lastFriendsJson = json;
+            }
+            if (json != null) {
+                try {
+                    JSONArray arr = asArray(json, "friends", "items", "data", "list", "value");
+                    if (arr != null) for (int i = 0; i < arr.length(); i++) {
+                        JSONObject f = arr.optJSONObject(i);
+                        if (f == null || f.optLong("steamId", 0) != steamId) continue;
+                        String n = firstNonEmpty(f.optString("nickname"), f.optString("displayName"),
+                                f.optString("personaName"));
+                        if (n != null && !n.isEmpty()) return n;
+                    }
+                } catch (Throwable ignored) {}
+            }
+            return (fallback != null && !fallback.isEmpty()) ? fallback : "Steam friend";
         }
 
         /** Background ring-inbox poll; runs while the overlay is attached. */

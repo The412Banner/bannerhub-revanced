@@ -4348,3 +4348,12 @@ User-requested ⚙ cog in the Friends panel header → an incoming-call settings
 - **Patches**: `steamChatRingtonesAssetPatch` (bundle the 5 MP3s → assets) + `steamChatRingtonePickerManifestPatch` (register picker activity + add VIBRATE perm), both wired into `steamChatOverlayPatch.dependsOn`.
 
 Build run **27646135842** ✅ success, SEVERE-clean. Genshin APK md5 **`d617f9460496521b096542202efca358`** → `/storage/emulated/0/Download/BannerHub-V6-1.3.0-608-pre16-Genshin.apk`. NEXT: test ⚙ ringtone selection/preview + vibrate + ring-on-incoming; then (user-approved, AFTER pre16 test) add **"Share call link" + guest browser-join** so non-BannerHub/PC/other-emulator users can join the WebRTC mesh via the hosted `/voice/room` page (Steam native voice NOT bridgeable). Then merge → stable v1.3.0-608.
+
+## 2026-06-16 — pre16 verified + pre17: share-call link (guest join) + ringtone volume + play/pause preview
+
+pre16 device-tested ✅ ringtones work. pre17 adds:
+- **Share call link / guest browser-join** (user asked: invite non-BannerHub/PC/other-emulator people). 🔗 Invite button (full call box + tile) shares `…/voice/room?room=<id>` via the Android share sheet. Worker (`bannerhub-api` `671bf23`, deployed): the call page mints a random **guest id** when `?self=` is omitted, so anyone with a browser joins the mesh (TURN works for them too). Steam **native** voice still not bridgeable — browser link is the only outsider path. Client roster switched `long[]→String[]` so guest ids (non-numeric) appear; non-Steam ids label as "Guest"/"Guest N".
+- **Ringtone volume slider** (0–100%) in ⚙ settings — live during preview, applied to preview + real incoming ring (media `setVolume` + synth `ToneGenerator` volume); `KEY_RINGTONE_VOLUME` default 100.
+- **Play/pause preview** — the ▶ becomes ■ while previewing (loops until stopped), tracked by `previewingToken`; selecting a tone or leaving settings stops it. (`BhRingtone.preview` now loops, no 5s auto-stop; added `setVolume` for live changes.)
+
+Build run **27647002098** ✅ success, SEVERE-clean. Genshin APK md5 **`5a5d98effb9eb1585b02ab26902ec7c0`** → `/storage/emulated/0/Download/BannerHub-V6-1.3.0-608-pre17-Genshin.apk`. Firmware/components/TURN re-verified intact after the worker guest-id deploy. NEXT: test 🔗 invite (open link on a PC/browser → joins as Guest), volume slider, play/pause preview; then the **app-wide overlay** (Banner Tools toggle to run the overlay before/while in game) + merge → stable v1.3.0-608.

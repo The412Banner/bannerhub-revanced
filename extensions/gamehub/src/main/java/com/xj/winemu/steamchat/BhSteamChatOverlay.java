@@ -173,7 +173,7 @@ public final class BhSteamChatOverlay {
         private Object typingSub;        // live steam:chat-typing subscription handle
         private long lastTypingSentMs;   // throttle for our own friends.send_typing
         private BhVoiceController voice;  // active WebRTC voice call (null when idle)
-        private String pendingRoom;       // pairRoom of a ringing incoming call (null = none)
+        private String pendingRoom;       // room id of a ringing incoming call (null = none)
         private long pendingOfferPeer;    // peer SteamID of the ringing incoming call
         private String pendingPeerName;   // display name of the ringing caller
         private volatile boolean lobbyPolling; // ring-inbox poll loop active
@@ -682,7 +682,7 @@ public final class BhSteamChatOverlay {
                     }});
                     return;
                 }
-                final String room = pairRoom(self, peer);
+                final String room = newRoomId(self);
                 postRing(self, peer, room, name);   // doorbell via the lobby inbox
                 post(new Runnable() { public void run() {
                     if (voice != null) return;
@@ -895,10 +895,15 @@ public final class BhSteamChatOverlay {
             callConnected = false;
         }
 
-        /** pairRoom = sorted SteamID pair "smaller-larger" (matches the hosted
-         *  page's deterministic offerer rule, so both sides derive the same id). */
-        private static String pairRoom(long a, long b) {
-            return a < b ? (a + "-" + b) : (b + "-" + a);
+        /** A fresh, unique room id for each call. The room id is communicated to
+         *  the callee in the ring, so it need not be derivable — and making it
+         *  unique per call means every call starts with an empty signalling
+         *  mailbox. (A deterministic per-pair id reused stale SDP/ICE from a
+         *  previous call and wedged the handshake on "Connecting…".) The mesh
+         *  page picks the offerer per pair by SteamID, independent of room id. */
+        private static String newRoomId(long self) {
+            return "c" + Long.toString(System.currentTimeMillis(), 36)
+                    + Long.toString(Math.abs(new java.util.Random().nextLong()) % 60466176L, 36); // up to 5 base-36 digits
         }
 
         // ── ring inbox (worker /voice/signal + /voice/poll on a "lobby" room) ────

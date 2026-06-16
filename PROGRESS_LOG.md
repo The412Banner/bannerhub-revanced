@@ -4263,3 +4263,19 @@ Fix (user chose to both confirm device-side and ship an app-side fallback):
 - **BhSteamChatOverlay**: handle the `"external"` state (null the call, hide the bar, toast that the call opened in the browser). Added logging to the previously-silent ring path: `voice: lobby poll started` / `… self resolved=` / `… got N signal(s)` / `incoming ring from=` / `ignoring stale ring` / `postRing …`, so incoming-ring delivery is finally diagnosable.
 
 Build run **27477856774** ✅, SEVERE-clean. Genshin APK md5 **`647a930fa1a6d3aa0f34a76869b52905`** → `/storage/emulated/0/Download/BannerHub-V6-1.3.0-608-pre8-Genshin.apk`. Both devices need pre8. With pre8 the call works regardless of WebView age (old WebView → opens in the browser automatically). Optional: sideload Android System WebView ≥120 + select it in Developer options → WebView implementation to keep calls in-app/embedded. NEXT 2-device retest: confirm the ring logs show the incoming call reaching this device, and that audio connects both ways.
+
+## 2026-06-16 — chat v2 pre9: standalone movable voice call box (user UX rework)
+
+User-requested rework of what happens after the 🎙 button. Previously 🎙 immediately rang the callee and showed an in-panel `voiceBar`. Now 🎙 opens a **separate, draggable call window** that is independent of the chat panel, so a call (and an incoming-call prompt) surfaces over the game even when the chat pill is collapsed.
+
+**New `BhVoiceCallBox.java`** — its own `WindowManager` overlay (`TYPE_APPLICATION_PANEL`, `FLAG_NOT_FOCUSABLE | FLAG_NOT_TOUCH_MODAL`, drag the whole box by its header). Renders one of five states and reports button taps via an `Actions` interface:
+
+- **outgoing idle** ("Call {peer}?") — **Close** · **Call**
+- **outgoing ringing** ("Calling {peer}…") — **Cancel**
+- **incoming** ("{peer} is calling…") — **Ignore** · **Answer**
+- **connecting** ("Connecting…") — **Hang up**
+- **connected** (🟢, lists `● You` / `● {peer}` + a running `Chronometer`) — **Mute** · **Hang up**
+
+**`BhSteamChatOverlay`** — `Controller` now also `implements BhVoiceCallBox.Actions`. 🎙 → `startVoiceCall` just opens the box in outgoing-idle (no ring yet); **Call** (`onPlaceCall`) sends the lobby ring + opens the room WebView; an incoming ring pops the box in its incoming state; **Answer** (`onAnswer`) → connecting + opens the room; **Ignore** (`onDecline`) → `{t:"bye"}` + close. The timer starts on the real WebRTC `in-call` event (not on Answer) and is guarded so a later `connecting`/`calling` (e.g. ICE restart) can't wipe it (`callConnected` flag). `Mute` toggles via the existing `BhVoiceController.setMuted`. Close/Cancel/Hang up all route to `endCall` (hangup if a call exists → posts bye → close box). The old in-panel `voiceBar` and its `showVoiceBar`/`showIncomingCall`/`hideVoiceBar`/`pillButton` helpers + `voiceBar`/`voiceText` fields were removed. The WebView-too-old (<120) → browser-fallback path still closes the box and toasts.
+
+Commit `0169a03` (The412Banner, no Claude trailer). Build run **27607924195** ✅ success, SEVERE-clean. Genshin APK md5 **`1c4ed810e6c7e3b45cc9fec668976919`** → `/storage/emulated/0/Download/BannerHub-V6-1.3.0-608-pre9-Genshin.apk`. Both devices need pre9. NEXT 2-device retest: 🎙 → box (Close/Call) → Call → peer's box rings (Answer/Ignore) → Answer → both flip to Connected with a running timer + both names; verify Ignore/Cancel/Hang up/Close all tear down cleanly. Known edge: cancelling in the split-second after Call but before the WebRTC layer is created leaves the callee's incoming box up until they Ignore (the lobby ring self-expires in ~45s) — add an auto-timeout later if needed.

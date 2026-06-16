@@ -191,6 +191,8 @@ public final class BhSteamChatOverlay {
         private String callUi = "";
         private android.widget.FrameLayout pillWrap;  // wraps the pill so the call badge can overlay it
         private TextView callBadge;       // green 🎧 + party-count indicator on the pill during a call
+        private TextView unreadBadge;     // blue unread-message count on the pill while chat is closed
+        private int pillUnread;           // total unread messages across conversations
         private android.view.animation.Animation badgePulseAnim;
         // Reverts the "is typing…" status if no message follows within Steam's
         // ~15s typing-notification window.
@@ -245,6 +247,10 @@ public final class BhSteamChatOverlay {
                 wm.addView(container, lp);
                 attached = true;
                 startLobbyPoll();   // listen for incoming voice rings while attached
+                // Subscribe to chat events even while collapsed so the pill's
+                // unread badge updates without the panel being open.
+                ensureChatSubscription();
+                refreshUnread();
                 Log.i(TAG, "steam chat overlay attached");
                 return true;
             } catch (Throwable t) {
@@ -264,6 +270,7 @@ public final class BhSteamChatOverlay {
             try { BhSteamBridge.unlisten(typingSub); } catch (Throwable ignored) {}
             typingSub = null;
             MAIN.removeCallbacks(clearTyping);
+            MAIN.removeCallbacks(refreshUnreadDebounced);
             try { if (wm != null && container != null) wm.removeView(container); } catch (Throwable ignored) {}
         }
 
@@ -301,6 +308,20 @@ public final class BhSteamChatOverlay {
             callBadge.setClickable(false);
             callBadge.setVisibility(View.GONE);
 
+            // Unread-message count badge, shown only while the chat is closed.
+            // Inner-bottom corner so it never overlaps the call badge (inner-top).
+            unreadBadge = new TextView(act);
+            unreadBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+            unreadBadge.setTextColor(0xFFFFFFFF);
+            unreadBadge.setTypeface(Typeface.DEFAULT_BOLD);
+            unreadBadge.setPadding(dp(5), dp(1), dp(5), dp(1));
+            GradientDrawable ubg = new GradientDrawable();
+            ubg.setColor(COL_ACCENT);  // Steam blue
+            ubg.setCornerRadius(dp(9));
+            unreadBadge.setBackground(ubg);
+            unreadBadge.setClickable(false);
+            unreadBadge.setVisibility(View.GONE);
+
             pillWrap = new android.widget.FrameLayout(act);
             pillWrap.addView(pill);
             android.widget.FrameLayout.LayoutParams blp = new android.widget.FrameLayout.LayoutParams(
@@ -308,6 +329,11 @@ public final class BhSteamChatOverlay {
             blp.gravity = Gravity.TOP | Gravity.START;  // inner-top corner (away from the screen edge)
             callBadge.setLayoutParams(blp);
             pillWrap.addView(callBadge);
+            android.widget.FrameLayout.LayoutParams ulp = new android.widget.FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            ulp.gravity = Gravity.BOTTOM | Gravity.START;  // inner-bottom corner
+            unreadBadge.setLayoutParams(ulp);
+            pillWrap.addView(unreadBadge);
 
             container.addView(pillWrap);
         }
@@ -521,8 +547,14 @@ public final class BhSteamChatOverlay {
             if (exp && listCol.getChildCount() == 0) loadFriends();
             if (exp) fitPanelOnScreen();
             // The call box follows the chat: visible while expanded, minimized to
-            // the pill (call still running) while collapsed.
+            // the pill (call still running) while collapsed. (renderCallBox also
+            // refreshes the pill's call badge.)
             renderCallBox();
+            // Badges only show while collapsed; opening clears the unread badge,
+            // closing re-syncs the count from the server.
+            updateUnreadBadge();
+            if (exp) pillUnread = 0;            // reading the chat clears it locally
+            else refreshUnread();               // re-sync from conversation_summaries
         }
 
         /** After the panel lays out, nudge the whole overlay window up if its
@@ -559,12 +591,21 @@ public final class BhSteamChatOverlay {
                             body = firstNonEmpty(o.optString("message"), o.optString("plainMessage"), o.optString("rawMessage"));
                         } catch (Throwable ignored) {}
                         final long from = who;
+                        final boolean incoming = "Incoming".equalsIgnoreCase(dir);
                         post(new Runnable() {
                             public void run() {
                                 // Only refresh if this message belongs to the conversation on screen.
                                 // Silent: no "Loading…" flash, keep the user's draft, auto-scroll.
                                 if (expanded && openFriendId != 0 && (from == 0 || from == openFriendId)) {
                                     loadHistory(openFriendId, currentTitle, true);
+                                }
+                                // Update the pill's unread badge for messages we're not
+                                // currently reading. Re-sync the authoritative count
+                                // (debounced) so the badge reflects conversation_summaries.
+                                boolean viewing = expanded && openFriendId != 0 && from == openFriendId;
+                                if (incoming && !viewing) {
+                                    MAIN.removeCallbacks(refreshUnreadDebounced);
+                                    MAIN.postDelayed(refreshUnreadDebounced, 700);
                                 }
                             }
                         });
@@ -988,10 +1029,12 @@ public final class BhSteamChatOverlay {
         }
 
         /** Green pulsing 🎧 + party-count badge on the pill while a call is live,
-         *  so an active call/party is visible even when minimized to the pill. */
+         *  so an active call/party is visible when the chat (and call box) are
+         *  closed. Hidden while expanded — the call box itself shows the status. */
         private void updatePillBadge() {
             if (callBadge == null) return;
-            boolean active = "ringing".equals(callUi) || "connecting".equals(callUi) || "connected".equals(callUi);
+            boolean active = !expanded
+                    && ("ringing".equals(callUi) || "connecting".equals(callUi) || "connected".equals(callUi));
             if (!active) {
                 callBadge.clearAnimation();
                 callBadge.setVisibility(View.GONE);
@@ -1009,6 +1052,35 @@ public final class BhSteamChatOverlay {
                 callBadge.startAnimation(badgePulse());
             }
         }
+
+        /** Blue unread-message count on the pill, shown only while the chat is
+         *  closed (you're not looking at it). */
+        private void updateUnreadBadge() {
+            if (unreadBadge == null) return;
+            if (expanded || pillUnread <= 0) { unreadBadge.setVisibility(View.GONE); return; }
+            unreadBadge.setText(pillUnread > 99 ? "99+" : String.valueOf(pillUnread));
+            unreadBadge.setVisibility(View.VISIBLE);
+        }
+
+        /** Recompute total unread from friends.conversation_summaries (authoritative)
+         *  and refresh the pill badge. Worker-thread fetch, UI-thread update. */
+        private void refreshUnread() {
+            IO.execute(new Runnable() { public void run() {
+                if (!BhSteamBridge.isAvailable()) return;
+                final String convJson = BhSteamBridge.request("friends.conversation_summaries", "{}", 8000);
+                post(new Runnable() { public void run() {
+                    parseUnread(convJson);          // fills unreadByFriend
+                    int total = 0;
+                    for (Integer n : unreadByFriend.values()) if (n != null) total += n;
+                    pillUnread = total;
+                    updateUnreadBadge();
+                }});
+            }});
+        }
+
+        private final Runnable refreshUnreadDebounced = new Runnable() {
+            public void run() { refreshUnread(); }
+        };
 
         private android.view.animation.Animation badgePulse() {
             if (badgePulseAnim == null) {
@@ -1123,6 +1195,7 @@ public final class BhSteamChatOverlay {
             lobbyPolling = true;
             lobbyThread = new Thread(new Runnable() { public void run() {
                 long self = 0;
+                int tick = 0;
                 Log.i(TAG, "voice: lobby poll started");
                 while (lobbyPolling) {
                     try {
@@ -1131,6 +1204,9 @@ public final class BhSteamChatOverlay {
                             if (self != 0) Log.i(TAG, "voice: lobby poll self resolved=" + self);
                         }
                         if (self != 0) pollLobbyOnce(self);
+                        // Backstop unread re-sync (~every 24s, only while collapsed)
+                        // so the pill badge catches reads made on another device.
+                        if ((++tick % 8) == 0 && !expanded) refreshUnread();
                     } catch (Throwable ignored) {}
                     try { Thread.sleep(3000); } catch (InterruptedException e) { break; }
                 }

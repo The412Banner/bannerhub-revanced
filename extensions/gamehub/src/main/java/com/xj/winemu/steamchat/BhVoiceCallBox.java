@@ -14,7 +14,10 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.Chronometer;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
+
+import java.util.List;
 
 /**
  * Standalone, draggable voice-call window for the in-game Steam chat overlay.
@@ -53,7 +56,14 @@ public final class BhVoiceCallBox {
         void onAnswer();      // Answer (incoming)
         void onDecline();     // Ignore (incoming)
         void onToggleMute();  // Mute / Unmute (connected)
+        void onAddUser();     // ＋ Add (connected) — open the friend picker
         void onEnd();         // Close / Cancel / Hang up — tear the call down
+    }
+
+    /** Friend-picker callbacks (the "＋ Add" flow during a connected call). */
+    public interface AddPicker {
+        void onPick(int index);  // index into the names list passed to showAddPicker
+        void onCancel();
     }
 
     private final Activity act;
@@ -70,6 +80,7 @@ public final class BhVoiceCallBox {
     private LinearLayout users;  // connected-state participant list
     private Chronometer timer;   // connected-state call duration
     private LinearLayout buttons;
+    private boolean connectedShown;  // timer started; subsequent roster updates must not reset it
 
     public BhVoiceCallBox(Activity act, Actions actions) {
         this.act = act;
@@ -137,28 +148,80 @@ public final class BhVoiceCallBox {
         }));
     }
 
-    /** Both parties connected: list participants + start the call timer. */
-    public void showConnected(String selfName, String peerName) {
+    /** Connected: show the live participant list and (the first time) start the
+     *  call timer. Safe to call repeatedly as people join/leave — the timer is
+     *  only started once so it keeps counting across roster updates. */
+    public void showConnected(List<String> participants) {
         ensureAttached();
         header.setText("🟢  In call");
         body.setVisibility(View.GONE);
 
         users.removeAllViews();
         users.setVisibility(View.VISIBLE);
-        users.addView(participant(safe(selfName, "You")));
-        users.addView(participant(safe(peerName, "Friend")));
+        if (participants != null) for (String p : participants) users.addView(participant(safe(p, "Friend")));
 
-        timer.setBase(SystemClock.elapsedRealtime());
         timer.setVisibility(View.VISIBLE);
-        timer.start();
+        if (!connectedShown) {
+            connectedShown = true;
+            timer.setBase(SystemClock.elapsedRealtime());
+            timer.start();
+        }
 
         buttons.removeAllViews();
         buttons.addView(button("Mute", COL_PILL, new View.OnClickListener() {
             public void onClick(View v) { actions.onToggleMute(); }
         }));
+        buttons.addView(button("＋ Add", COL_ACCENT, new View.OnClickListener() {
+            public void onClick(View v) { actions.onAddUser(); }
+        }));
         buttons.addView(button("Hang up", COL_RED, new View.OnClickListener() {
             public void onClick(View v) { actions.onEnd(); }
         }));
+    }
+
+    /** Swap the connected view for a scrollable friend picker (the "＋ Add"
+     *  flow). The timer keeps running underneath; picking or cancelling is up to
+     *  the controller, which then re-renders the connected view. */
+    public void showAddPicker(final List<String> friendNames, final AddPicker cb) {
+        ensureAttached();
+        header.setText("Add to call");
+        body.setVisibility(View.GONE);
+        timer.setVisibility(View.GONE);  // hidden while picking; not stopped
+
+        users.removeAllViews();
+        users.setVisibility(View.VISIBLE);
+        ScrollView sc = new ScrollView(act);
+        sc.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Math.min(dp(220), pickerMaxH())));
+        LinearLayout list = new LinearLayout(act);
+        list.setOrientation(LinearLayout.VERTICAL);
+        if (friendNames == null || friendNames.isEmpty()) {
+            TextView none = participant("No friends available to add");
+            none.setTextColor(COL_SUBTEXT);
+            list.addView(none);
+        } else {
+            for (int i = 0; i < friendNames.size(); i++) {
+                final int idx = i;
+                TextView row = participant(safe(friendNames.get(i), "Friend"));
+                row.setPadding(dp(2), dp(8), dp(2), dp(8));
+                row.setOnClickListener(new View.OnClickListener() {
+                    public void onClick(View v) { cb.onPick(idx); }
+                });
+                list.addView(row);
+            }
+        }
+        sc.addView(list);
+        users.addView(sc);
+
+        buttons.removeAllViews();
+        buttons.addView(button("Cancel", COL_PILL, new View.OnClickListener() {
+            public void onClick(View v) { cb.onCancel(); }
+        }));
+    }
+
+    private int pickerMaxH() {
+        try { return (int) (act.getResources().getDisplayMetrics().heightPixels * 0.5f); }
+        catch (Throwable t) { return dp(220); }
     }
 
     /** Relabel the connected-state mute button. */
@@ -173,6 +236,7 @@ public final class BhVoiceCallBox {
     /** Remove the box from the window. */
     public void close() {
         stopTimer();
+        connectedShown = false;
         if (!attached || wm == null || root == null) { attached = false; return; }
         try { wm.removeView(root); } catch (Throwable ignored) {}
         attached = false;

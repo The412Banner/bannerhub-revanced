@@ -183,6 +183,8 @@ public final class BhSteamChatOverlay {
         private String callPeerName;      // display name of the active/dialing call peer
         private boolean callMuted;        // local mic muted in the active call
         private boolean callConnected;    // true once WebRTC reports in-call (timer started)
+        private String callRoom;          // room id of the active call (for adding more users)
+        private long[] callRosterIds = new long[0];  // live participant SteamIDs (incl. self)
         // Reverts the "is typing…" status if no message follows within Steam's
         // ~15s typing-notification window.
         private final Runnable clearTyping = new Runnable() {
@@ -684,6 +686,7 @@ public final class BhSteamChatOverlay {
                 postRing(self, peer, room, name);   // doorbell via the lobby inbox
                 post(new Runnable() { public void run() {
                     if (voice != null) return;
+                    callRoom = room;
                     voice = new BhVoiceController(act, room, self, peer, Controller.this);
                     voice.start();
                 }});
@@ -712,6 +715,7 @@ public final class BhSteamChatOverlay {
                 final long self = ensureLocalSteamId();
                 post(new Runnable() { public void run() {
                     if (voice != null) return;
+                    callRoom = room;
                     voice = new BhVoiceController(act, room, self, peer, Controller.this);
                     voice.start();
                 }});
@@ -749,6 +753,7 @@ public final class BhSteamChatOverlay {
             if (voice != null) { try { voice.hangup(); } catch (Throwable ignored) {} voice = null; }
             pendingRoom = null; pendingOfferPeer = 0; pendingPeerName = null;
             callPeer = 0; callPeerName = null; callMuted = false;
+            callRoom = null; callRosterIds = new long[0];
             closeCallBox();
         }
 
@@ -756,13 +761,13 @@ public final class BhSteamChatOverlay {
         public void onVoiceState(final String state, final String detail) {
             post(new Runnable() { public void run() {
                 if ("external".equals(state)) {
-                    voice = null; closeCallBox();
+                    voice = null; callRoom = null; callRosterIds = new long[0]; closeCallBox();
                     callPeer = 0; callPeerName = null;
                     toast("Voice call opened in your browser (update Android System WebView for in-app calls)");
                     return;
                 }
                 if ("ended".equals(state)) {
-                    voice = null; closeCallBox();
+                    voice = null; callRoom = null; callRosterIds = new long[0]; closeCallBox();
                     callPeer = 0; callPeerName = null; callMuted = false;
                     toast((detail != null && !detail.isEmpty()) ? "Call ended: " + detail : "Call ended");
                     return;
@@ -772,7 +777,13 @@ public final class BhSteamChatOverlay {
                     callMuted = detail != null && detail.contains("mut");
                     if (!callConnected) {
                         callConnected = true;
-                        callBox.showConnected("You", callPeerName);  // starts the timer
+                        // Start the timer immediately with You + the dialed peer,
+                        // then fill in the full resolved roster off-thread.
+                        java.util.List<String> quick = new java.util.ArrayList<>();
+                        quick.add("You");
+                        quick.add(callPeerName != null && !callPeerName.isEmpty() ? callPeerName : "Friend");
+                        callBox.showConnected(quick);
+                        refreshRoster();
                     }
                     callBox.setMuted(callMuted);
                 } else if (!callConnected && "connecting".equals(state)) {
@@ -780,6 +791,96 @@ public final class BhSteamChatOverlay {
                 } else if (!callConnected && "calling".equals(state)) {
                     callBox.showOutgoingRinging(callPeerName);
                 }
+            }});
+        }
+
+        /** Live participant roster from the mesh page (CSV of SteamIDs incl. self). */
+        public void onVoiceRoster(final String idsCsv) {
+            post(new Runnable() { public void run() {
+                callRosterIds = parseIdCsv(idsCsv);
+                if (callConnected && callBox != null) refreshRoster();
+            }});
+        }
+
+        private static long[] parseIdCsv(String csv) {
+            if (csv == null || csv.isEmpty()) return new long[0];
+            String[] parts = csv.split(",");
+            long[] out = new long[parts.length];
+            int n = 0;
+            for (String p : parts) {
+                try { long v = Long.parseLong(p.trim()); if (v != 0) out[n++] = v; } catch (Throwable ignored) {}
+            }
+            return java.util.Arrays.copyOf(out, n);
+        }
+
+        /** Resolve callRosterIds → names off-thread (self → "You", others via the
+         *  friends list), then re-render the connected box. Trusts the roster once
+         *  it's populated; falls back to the dialed peer until then. */
+        private void refreshRoster() {
+            final long[] ids = callRosterIds;
+            final long me = localSteamId;
+            final long peer = callPeer;
+            final String peerName = callPeerName;
+            IO.execute(new Runnable() { public void run() {
+                java.util.LinkedHashMap<Long, String> map = new java.util.LinkedHashMap<>();
+                if (me != 0) map.put(me, "You");
+                if (ids.length == 0 && peer != 0) {
+                    map.put(peer, peerName != null && !peerName.isEmpty() ? peerName : "Friend");
+                }
+                for (long id : ids) {
+                    if (id == me) { map.put(id, "You"); continue; }
+                    if (id == peer && peerName != null && !peerName.isEmpty()) { map.put(id, peerName); continue; }
+                    map.put(id, resolveFriendName(id, "Friend"));
+                }
+                final java.util.List<String> names = new java.util.ArrayList<>(map.values());
+                post(new Runnable() { public void run() {
+                    if (callConnected && callBox != null) callBox.showConnected(names);
+                }});
+            }});
+        }
+
+        /** ＋ Add pressed: show a picker of friends not already in the call. */
+        public void onAddUser() {
+            if (callRoom == null) return;
+            IO.execute(new Runnable() { public void run() {
+                String json = lastFriendsJson;
+                if (json == null) { json = BhSteamBridge.request("friends.list", "{}", 8000); if (json != null) lastFriendsJson = json; }
+                final java.util.List<Long> ids = new java.util.ArrayList<>();
+                final java.util.List<String> names = new java.util.ArrayList<>();
+                java.util.HashSet<Long> inCall = new java.util.HashSet<>();
+                for (long id : callRosterIds) inCall.add(id);
+                inCall.add(localSteamId); inCall.add(callPeer);
+                if (json != null) {
+                    try {
+                        JSONArray arr = asArray(json, "friends", "items", "data", "list", "value");
+                        if (arr != null) for (int i = 0; i < arr.length(); i++) {
+                            JSONObject f = arr.optJSONObject(i);
+                            if (f == null) continue;
+                            long id = f.optLong("steamId", 0);
+                            if (id == 0 || inCall.contains(id)) continue;
+                            String n = firstNonEmpty(f.optString("nickname"), f.optString("displayName"),
+                                    f.optString("personaName"), "Friend " + id);
+                            ids.add(id); names.add(n);
+                        }
+                    } catch (Throwable ignored) {}
+                }
+                post(new Runnable() { public void run() {
+                    if (callBox == null) return;
+                    callBox.showAddPicker(names, new BhVoiceCallBox.AddPicker() {
+                        public void onPick(int index) {
+                            if (index < 0 || index >= ids.size()) { refreshRoster(); return; }
+                            final long friend = ids.get(index);
+                            final String fname = names.get(index);
+                            refreshRoster();  // back to the call view
+                            toast("Ringing " + fname + "…");
+                            IO.execute(new Runnable() { public void run() {
+                                long self = ensureLocalSteamId();
+                                postRing(self, friend, callRoom, fname);  // invite into the SAME room
+                            }});
+                        }
+                        public void onCancel() { refreshRoster(); }
+                    });
+                }});
             }});
         }
 

@@ -46,6 +46,8 @@ val steamChatOverlayPatch = bytecodePatch(
         sharedGamehubExtensionPatch,
         steamChatImagePickerManifestPatch,
         steamChatVoiceManifestPatch,
+        steamChatRingtonePickerManifestPatch,
+        steamChatRingtonesAssetPatch,
     )
 
     apply {

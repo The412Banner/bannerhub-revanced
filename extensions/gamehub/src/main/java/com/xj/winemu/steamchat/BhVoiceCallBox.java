@@ -164,8 +164,10 @@ public final class BhVoiceCallBox {
         if (!connectedShown) {
             connectedShown = true;
             timer.setBase(SystemClock.elapsedRealtime());
-            timer.start();
         }
+        // start() is idempotent and doesn't reset the base; call it every time so
+        // the Chronometer resumes ticking after a hide()/restore() (detach/attach).
+        timer.start();
 
         buttons.removeAllViews();
         buttons.addView(button("Mute", COL_PILL, new View.OnClickListener() {
@@ -233,7 +235,17 @@ public final class BhVoiceCallBox {
 
     public boolean isShowing() { return attached; }
 
-    /** Remove the box from the window. */
+    /** Detach the box from the window but keep all state — the call keeps running
+     *  and the timer keeps its base, so a later show*/ restore resumes seamlessly.
+     *  Used when the chat is minimized to its pill. */
+    public void hide() {
+        if (attached && wm != null && root != null) {
+            try { wm.removeView(root); } catch (Throwable ignored) {}
+        }
+        attached = false;
+    }
+
+    /** Remove the box from the window and reset call state (full teardown). */
     public void close() {
         stopTimer();
         connectedShown = false;

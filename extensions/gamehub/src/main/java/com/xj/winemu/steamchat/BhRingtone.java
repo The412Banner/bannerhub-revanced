@@ -51,7 +51,8 @@ public final class BhRingtone {
     private static ToneGenerator tone;
     private static Runnable toneLoop;
     private static Vibrator vibrator;
-    private static int session;   // bumped on every start/stop to cancel async starts
+    private static int session;          // bumped on every start/stop to cancel async starts
+    private static float currentVolume = 1f;  // 0..1, applied to media + synth
 
     private BhRingtone() {}
 
@@ -99,26 +100,35 @@ public final class BhRingtone {
 
     // ── ringing (looping) ───────────────────────────────────────────────────
 
-    public static synchronized void startRing(Context ctx, String token, boolean vibrate) {
+    public static synchronized void startRing(Context ctx, String token, boolean vibrate, float volume) {
         stop();
         final int s = ++session;
+        currentVolume = clampVol(volume);
         if (vibrate) startVibrate(ctx);
         if (token == null || token.equals("silent")) return;
         if (token.startsWith("synth:")) { startSynth(token.substring(6)); return; }
         playMedia(ctx, token, true, s);
     }
 
-    /** Play a selection once (≤5s, no vibrate) for the settings preview. */
-    public static synchronized void preview(Context ctx, String token) {
+    /** Play a selection (looping, no vibrate) for the settings preview; stops on
+     *  the next {@link #stop} (the settings ▶/■ play-pause toggle). */
+    public static synchronized void preview(Context ctx, String token, float volume) {
         stop();
         final int s = ++session;
+        currentVolume = clampVol(volume);
         if (token == null || token.equals("silent")) return;
         if (token.startsWith("synth:")) startSynth(token.substring(6));
-        else playMedia(ctx, token, false, s);
-        MAIN.postDelayed(new Runnable() { public void run() {
-            synchronized (BhRingtone.class) { if (session == s) stop(); }
-        }}, 5000);
+        else playMedia(ctx, token, true, s);
     }
+
+    /** Live volume change (0..1) — affects the currently-playing media tone; synth
+     *  volume is fixed at start so it applies to the next play. */
+    public static synchronized void setVolume(float volume) {
+        currentVolume = clampVol(volume);
+        if (player != null) { try { player.setVolume(currentVolume, currentVolume); } catch (Throwable ignore) {} }
+    }
+
+    private static float clampVol(float v) { return v < 0f ? 0f : (v > 1f ? 1f : v); }
 
     private static void playMedia(final Context ctx, final String token, final boolean loop, final int s) {
         new Thread(new Runnable() { public void run() {
@@ -151,6 +161,7 @@ public final class BhRingtone {
                 synchronized (BhRingtone.class) {
                     if (session != s) { mp.release(); return; }
                     player = mp;
+                    try { mp.setVolume(currentVolume, currentVolume); } catch (Throwable ignore) {}
                     if (!loop) mp.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
                         public void onCompletion(MediaPlayer m) {
                             synchronized (BhRingtone.class) {
@@ -185,7 +196,9 @@ public final class BhRingtone {
 
     private static void startSynth(final String id) {
         try {
-            tone = new ToneGenerator(AudioManager.STREAM_MUSIC, 90);
+            int vol = (int) (currentVolume * 100);
+            if (vol < 1) vol = 1; if (vol > 100) vol = 100;
+            tone = new ToneGenerator(AudioManager.STREAM_MUSIC, vol);
         } catch (Throwable t) { tone = null; return; }
         final int type, dur, interval;
         if ("chime".equals(id))      { type = ToneGenerator.TONE_PROP_BEEP2;  dur = 350;  interval = 2000; }

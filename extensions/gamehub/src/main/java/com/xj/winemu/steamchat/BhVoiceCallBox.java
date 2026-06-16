@@ -57,6 +57,7 @@ public final class BhVoiceCallBox {
         void onDecline();     // Ignore (incoming)
         void onToggleMute();  // Mute / Unmute (connected)
         void onAddUser();     // ＋ Add (connected) — open the friend picker
+        void onShareLink();   // 🔗 Invite — share a browser join link for non-app users
         void onEnd();         // Close / Cancel / Hang up — tear the call down
     }
 
@@ -197,6 +198,9 @@ public final class BhVoiceCallBox {
         buttons.addView(button("＋ Add", COL_ACCENT, new View.OnClickListener() {
             public void onClick(View v) { actions.onAddUser(); }
         }));
+        buttons.addView(button("🔗", COL_PILL, new View.OnClickListener() {
+            public void onClick(View v) { actions.onShareLink(); }
+        }));
         buttons.addView(button("Hang up", COL_RED, new View.OnClickListener() {
             public void onClick(View v) { actions.onEnd(); }
         }));
@@ -223,6 +227,9 @@ public final class BhVoiceCallBox {
         buttons.removeAllViews();
         buttons.addView(button("＋", COL_ACCENT, new View.OnClickListener() {
             public void onClick(View v) { actions.onAddUser(); }
+        }));
+        buttons.addView(button("🔗", COL_PILL, new View.OnClickListener() {
+            public void onClick(View v) { actions.onShareLink(); }
         }));
         buttons.addView(button("Hang up", COL_RED, new View.OnClickListener() {
             public void onClick(View v) { actions.onEnd(); }

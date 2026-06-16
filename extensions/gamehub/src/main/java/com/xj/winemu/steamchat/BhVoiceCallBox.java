@@ -236,7 +236,7 @@ public final class BhVoiceCallBox {
     public boolean isShowing() { return attached; }
 
     /** Detach the box from the window but keep all state — the call keeps running
-     *  and the timer keeps its base, so a later show*/ restore resumes seamlessly.
+     *  and the timer keeps its base, so a later re-show resumes seamlessly.
      *  Used when the chat is minimized to its pill. */
     public void hide() {
         if (attached && wm != null && root != null) {

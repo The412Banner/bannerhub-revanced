@@ -151,7 +151,7 @@ public final class BhSteamChatOverlay {
 
     // ── controller ───────────────────────────────────────────────────────────
 
-    private static final class Controller implements BhVoiceController.Host {
+    private static final class Controller implements BhVoiceController.Host, BhVoiceCallBox.Actions {
         private final Activity act;
         private WindowManager wm;
         private WindowManager.LayoutParams lp;
@@ -178,8 +178,11 @@ public final class BhSteamChatOverlay {
         private String pendingPeerName;   // display name of the ringing caller
         private volatile boolean lobbyPolling; // ring-inbox poll loop active
         private Thread lobbyThread;       // dedicated thread for the ring poll
-        private LinearLayout voiceBar;    // in-call / incoming-call control bar
-        private TextView voiceText;       // call status label in voiceBar
+        private BhVoiceCallBox callBox;   // standalone movable call window (null when idle)
+        private long callPeer;            // peer SteamID of the active/dialing call
+        private String callPeerName;      // display name of the active/dialing call peer
+        private boolean callMuted;        // local mic muted in the active call
+        private boolean callConnected;    // true once WebRTC reports in-call (timer started)
         // Reverts the "is typing…" status if no message follows within Steam's
         // ~15s typing-notification window.
         private final Runnable clearTyping = new Runnable() {
@@ -233,6 +236,7 @@ public final class BhSteamChatOverlay {
             attached = false;
             stopLobbyPoll();
             try { if (voice != null) { voice.hangup(); voice = null; } } catch (Throwable ignored) {}
+            try { if (callBox != null) { callBox.close(); callBox = null; } } catch (Throwable ignored) {}
             try { BhSteamBridge.unlisten(chatSub); } catch (Throwable ignored) {}
             chatSub = null;
             try { BhSteamBridge.unlisten(typingSub); } catch (Throwable ignored) {}
@@ -305,14 +309,9 @@ public final class BhSteamChatOverlay {
             status.setText("Steam friends");
             panel.addView(status);
 
-            // Voice-call control bar (incoming-call prompt / in-call mute+hangup).
-            // Lives in the fixed zone so it stays put while the thread scrolls.
-            voiceBar = new LinearLayout(act);
-            voiceBar.setOrientation(LinearLayout.HORIZONTAL);
-            voiceBar.setGravity(Gravity.CENTER_VERTICAL);
-            voiceBar.setPadding(0, dp(4), 0, dp(6));
-            voiceBar.setVisibility(View.GONE);
-            panel.addView(voiceBar);
+            // Voice calls render in a standalone movable window (BhVoiceCallBox),
+            // not inside the chat panel, so a call/incoming prompt surfaces over
+            // the game even when the chat pill is collapsed.
 
             // Pinned back affordance: lives in the panel's fixed zone (above the
             // ScrollView) so it never scrolls away while a conversation is open.
@@ -652,19 +651,32 @@ public final class BhSteamChatOverlay {
 
         private static final String VOICE_BASE = "https://bannerhub-api.the412banner.workers.dev";
 
-        /** Start an outgoing voice call to the open conversation's friend: ring
-         *  the callee through the lobby inbox, then open our own room WebView.
-         *  (The hosted page does the mic + SDP/ICE; we just attach it.) */
+        /** 🎙 tapped: open the standalone call box in its outgoing-idle state
+         *  (Close / Call). No ring is sent until the user presses Call. */
         private void startVoiceCall(final long peer, final String name) {
             if (peer == 0) return;
-            if (voice != null) { toast("Already in a call"); return; }
+            if (voice != null || (callBox != null && callBox.isShowing())) { toast("Already in a call"); return; }
             if (!ensureMicPermission()) { toast("Grant microphone access, then call again"); return; }
-            showVoiceBar("Calling " + name + "…", true);
+            callPeer = peer;
+            callPeerName = name;
+            ensureCallBox().showOutgoingIdle(name);
+        }
+
+        // ── BhVoiceCallBox.Actions (button taps from the call box) ──────────────
+
+        /** Call pressed: ring the callee through the lobby inbox, then open our
+         *  own room WebView (the hosted page does the mic + SDP/ICE). */
+        @Override public void onPlaceCall() {
+            final long peer = callPeer;
+            final String name = callPeerName;
+            if (peer == 0) { onEnd(); return; }
+            if (callBox != null) callBox.showOutgoingRinging(name);
             IO.execute(new Runnable() { public void run() {
                 final long self = ensureLocalSteamId();
                 if (self == 0) {
                     post(new Runnable() { public void run() {
-                        hideVoiceBar(); toast("Can't start call — Steam not signed in");
+                        toast("Can't start call — Steam not signed in");
+                        endCall();
                     }});
                     return;
                 }
@@ -678,22 +690,24 @@ public final class BhSteamChatOverlay {
             }});
         }
 
-        /** A ring landed in our lobby inbox — surface Accept/Decline. UI thread. */
+        /** A ring landed in our lobby inbox — pop the incoming-call box. UI thread. */
         private void onIncomingRing(long peer, String room, String name) {
             if (voice != null || pendingRoom != null) return;  // already busy / already ringing
             pendingOfferPeer = peer;
             pendingRoom = room;
             pendingPeerName = name;
-            showIncomingCall(peer, name);
+            callPeer = peer;
+            callPeerName = name;
+            ensureCallBox().showIncoming(name);
         }
 
-        private void acceptIncomingCall() {
+        @Override public void onAnswer() {
             if (pendingRoom == null) return;
             if (!ensureMicPermission()) { toast("Grant microphone access, then accept"); return; }
             final long peer = pendingOfferPeer;
             final String room = pendingRoom;
             pendingRoom = null; pendingPeerName = null;
-            showVoiceBar("Connecting…", true);
+            if (callBox != null) callBox.showConnecting();
             IO.execute(new Runnable() { public void run() {
                 final long self = ensureLocalSteamId();
                 post(new Runnable() { public void run() {
@@ -704,11 +718,12 @@ public final class BhSteamChatOverlay {
             }});
         }
 
-        private void declineIncomingCall() {
+        @Override public void onDecline() {
             final long peer = pendingOfferPeer;
             final String room = pendingRoom;
             pendingRoom = null; pendingOfferPeer = 0; pendingPeerName = null;
-            hideVoiceBar();
+            callPeer = 0; callPeerName = null;
+            closeCallBox();
             if (peer != 0 && room != null) {
                 IO.execute(new Runnable() { public void run() {
                     long self = ensureLocalSteamId();
@@ -717,25 +732,66 @@ public final class BhSteamChatOverlay {
             }
         }
 
+        @Override public void onToggleMute() {
+            if (voice == null) return;
+            callMuted = !voice.isMuted();
+            voice.setMuted(callMuted);
+            if (callBox != null) callBox.setMuted(callMuted);
+        }
+
+        /** Close / Cancel / Hang up — tear the call down from any state. */
+        @Override public void onEnd() { endCall(); }
+
+        private void endCall() {
+            // voice.hangup() posts a bye into the peer's room so they get notified;
+            // for a pre-ring Close there's no voice yet and nothing to send (the
+            // lobby ring, if any, self-expires).
+            if (voice != null) { try { voice.hangup(); } catch (Throwable ignored) {} voice = null; }
+            pendingRoom = null; pendingOfferPeer = 0; pendingPeerName = null;
+            callPeer = 0; callPeerName = null; callMuted = false;
+            closeCallBox();
+        }
+
         // BhVoiceController.Host -------------------------------------------------
         public void onVoiceState(final String state, final String detail) {
             post(new Runnable() { public void run() {
                 if ("external".equals(state)) {
-                    voice = null; hideVoiceBar();
+                    voice = null; closeCallBox();
+                    callPeer = 0; callPeerName = null;
                     toast("Voice call opened in your browser (update Android System WebView for in-app calls)");
                     return;
                 }
                 if ("ended".equals(state)) {
-                    voice = null; hideVoiceBar();
+                    voice = null; closeCallBox();
+                    callPeer = 0; callPeerName = null; callMuted = false;
                     toast((detail != null && !detail.isEmpty()) ? "Call ended: " + detail : "Call ended");
                     return;
                 }
-                String label = "in-call".equals(state)
-                        ? "● In call" + (detail != null && detail.contains("mut") ? " · muted" : "")
-                        : "calling".equals(state) ? "Calling…"
-                        : "connecting".equals(state) ? "Connecting…" : state;
-                showVoiceBar(label, true);
+                if (callBox == null) return;
+                if ("in-call".equals(state)) {
+                    callMuted = detail != null && detail.contains("mut");
+                    if (!callConnected) {
+                        callConnected = true;
+                        callBox.showConnected("You", callPeerName);  // starts the timer
+                    }
+                    callBox.setMuted(callMuted);
+                } else if (!callConnected && "connecting".equals(state)) {
+                    callBox.showConnecting();
+                } else if (!callConnected && "calling".equals(state)) {
+                    callBox.showOutgoingRinging(callPeerName);
+                }
             }});
+        }
+
+        // ── call box lifecycle ─────────────────────────────────────────────────
+        private BhVoiceCallBox ensureCallBox() {
+            if (callBox == null) callBox = new BhVoiceCallBox(act, this);
+            return callBox;
+        }
+
+        private void closeCallBox() {
+            if (callBox != null) { callBox.close(); callBox = null; }
+            callConnected = false;
         }
 
         /** pairRoom = sorted SteamID pair "smaller-larger" (matches the hosted
@@ -868,76 +924,6 @@ public final class BhSteamChatOverlay {
                 act.requestPermissions(new String[]{android.Manifest.permission.RECORD_AUDIO}, MIC_REQ);
                 return false;
             } catch (Throwable t) { return true; }  // pre-M / odd host: assume granted
-        }
-
-        // voice bar UI ----------------------------------------------------------
-        private void showVoiceBar(String label, boolean inCall) {
-            if (voiceBar == null) return;
-            voiceBar.removeAllViews();
-            voiceBar.setVisibility(View.VISIBLE);
-            TextView t = new TextView(act);
-            t.setText(label);
-            t.setTextColor(COL_INGAME);
-            t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-            t.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-            voiceBar.addView(t);
-            if (inCall) {
-                TextView mute = pillButton(voice != null && voice.isMuted() ? "Unmute" : "Mute");
-                final String lbl = label;
-                mute.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
-                    if (voice != null) { voice.setMuted(!voice.isMuted()); showVoiceBar(lbl, true); }
-                }});
-                voiceBar.addView(mute);
-                TextView end = pillButton("Hang up");
-                end.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
-                    if (voice != null) { voice.hangup(); voice = null; }
-                    hideVoiceBar();
-                }});
-                voiceBar.addView(end);
-            }
-            fitPanelOnScreen();
-        }
-
-        private void showIncomingCall(long peer, String name) {
-            if (voiceBar == null) return;
-            if (!expanded) setExpanded(true);  // surface the prompt
-            voiceBar.removeAllViews();
-            voiceBar.setVisibility(View.VISIBLE);
-            TextView t = new TextView(act);
-            t.setText("📞 " + ((name != null && !name.isEmpty()) ? name : "Incoming") + " is calling");
-            t.setTextColor(COL_ACCENT);
-            t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-            t.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-            voiceBar.addView(t);
-            TextView acc = pillButton("Accept");
-            acc.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { acceptIncomingCall(); }});
-            voiceBar.addView(acc);
-            TextView dec = pillButton("Decline");
-            dec.setOnClickListener(new View.OnClickListener() { public void onClick(View v) { declineIncomingCall(); }});
-            voiceBar.addView(dec);
-            fitPanelOnScreen();
-        }
-
-        private void hideVoiceBar() {
-            if (voiceBar != null) { voiceBar.removeAllViews(); voiceBar.setVisibility(View.GONE); }
-        }
-
-        /** Small rounded action button for the voice bar. */
-        private TextView pillButton(String label) {
-            TextView b = new TextView(act);
-            b.setText(label);
-            b.setTextColor(COL_TEXT);
-            b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-            b.setPadding(dp(10), dp(4), dp(10), dp(4));
-            GradientDrawable bg = new GradientDrawable();
-            bg.setColor(COL_PILL_BG);
-            bg.setCornerRadius(dp(12));
-            b.setBackground(bg);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            lp.leftMargin = dp(6);
-            b.setLayoutParams(lp);
-            return b;
         }
 
         // ── render (UI thread) ──────────────────────────────────────────────────

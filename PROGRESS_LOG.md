@@ -4438,12 +4438,13 @@ Setup for 6.0.9 (vc121) is done: base uploaded (`base-apk-609`), CI repointed, `
 Smoke-test run **27760047512** (gate=6.0.9) generated the real failure set: **14 patches fail = 9 root fingerprint breakages + 5 cascades** (R8 reshuffled obfuscated anchors again — same family as 607→608). ReVanced exits 0 on skipped patches, so "green" ≠ applied; read the `SEVERE: "X" failed:` lines.
 
 > **WORKING RULE (per user, 2026-06-18):** after EACH patch below is fixed, update BOTH this progress log (check the box + commit anchor + how it was re-pinned) AND the `project_gamehub_609_base` memory file. Do both every time, not in a batch at the end.
+> **ORDER RULE (per user, 2026-06-18):** ALWAYS fix **Bypass login** + **Debug logging** FIRST on every base bump, before the keystone/others.
 
 ### Root failures — need fingerprint re-derivation (9)
-- [ ] 1. **Per-game menu id capture (shared)** — 🔑 KEYSTONE (More-Menu row resolver). Do FIRST; unblocks 4 cascades.
+- [~] 3. **Bypass login** — RE-DERIVED + committed `08decac` (CI apply-test pending). AUTH_IMPL Lfw0→**Lux0**, AUTH_INTERFACE Lcw0→**Lrx0**, AUTH_TOKEN Lt2l→**Lqbm**, GAME_LIB_REPO Ldm7→**Lqv7**, NAVIGATOR Lj8d→**Ljrd**; FakeStateFlow udi/q4g/s3d→**a5j/crg/smd**. Method names (auth a–h, save x, userid h, gates i/s) unchanged. Structurally verified each anchor in `~/gh609-apktool-d`.
+- [~] 4. **Debug logging** — RE-DERIVED + committed `08decac` (CI apply-test pending). Y2D_INTERFACE Lw9c→**Llsc** (err method a→**e**), Y2D_IMPL Ly86→**Lrh6** (method a→**e**), SAVE_REPO Ldm7→**Lqv7** (=GAME_LIB_REPO, method x unchanged), IMPORT_TXN Lza→**Lcb** (method x→**w**).
+- [ ] 1. **Per-game menu id capture (shared)** — 🔑 KEYSTONE (More-Menu row resolver). Unblocks 4 cascades.
 - [ ] 2. **Redirect catalog API** — unblocks `Prefix API path with /v6`.
-- [ ] 3. **Bypass login**
-- [ ] 4. **Debug logging**
 - [ ] 5. **Explore tab hijack**
 - [ ] 6. **Offline component picker — local list**
 - [ ] 7. **PC-accurate vibration**

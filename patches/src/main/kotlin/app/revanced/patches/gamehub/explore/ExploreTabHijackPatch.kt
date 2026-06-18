@@ -58,9 +58,15 @@ private const val CLICK = "Lcom/xj/winemu/explore/BhExploreTabClick;"
 // (verified ~/gh608-apktool-d: kd9 = enum with 5 values a–e; di9.u(Lkd9;)V is
 // the UNIQUE apk-wide method matching param-type Lkd9; + V + "main_menu";
 // sibling di9.w takes Leh9; (plain class), di9.q takes interface Lxh9;).
+// 6.0.8 → 6.0.9: VM `di9`→`ys9`, dispatch `u`→`t`, tab enum `Lkd9;`→`Lrn9;`
+// (verified ~/gh609-apktool-d: rn9 = enum extends Enum, 5 values a–e =
+// HOME(0)/PLAY(1)/LEADERBOARD(2)/LIBRARY(3)/PROFILE(4), byte-identical ordinal
+// mapping to kd9. ys9.t(Lrn9;)V is the UNIQUE apk-wide method matching param-type
+// Lrn9; + V + "main_menu" — sibling ys9.r(Lrn9;)V has NO "main_menu", ys9.v takes
+// Las9; (plain class), rs9.<init> takes Lrn9; but is a ctor w/o "main_menu").
 // The patch is structure-anchored (param-type + "main_menu"), so only this enum
 // letter is hardcoded.
-private const val TAB_ENUM = "Lkd9;"
+private const val TAB_ENUM = "Lrn9;"
 private const val ANCHOR_STRING = "main_menu"
 
 @Suppress("unused")

@@ -54,17 +54,23 @@ val menuGameIdCapturePatch = bytecodePatch(
         // 6.0.4 Lwhl;->S label sget anchor is dropped (label classes moved).
         // 6.0.8: Lc37;->a → La37;->a(Le17;ILdv6;Lhh7;Leh3;I)V; row ctor
         // Ltyc;->Lwyc;(Lm55;,String,Lfv6;) (all 12 More-Menu rows built in a37.a).
+        // 6.0.9: La37;->a → Llc7;->a(Lpa7;ILr47;Lrq7;Lgm3;I)V (Leh3 Composer→Lgm3,
+        // p0 GameDetailArgs Le17→Lpa7); row ctor Lwyc;->Luhd;(Lqd5; icon,String,
+        // Lt47; onClick) built 11× (one More-Menu row dropped in 6.0.9, cf. the
+        // list popup below also losing one). Param sig [Lpa7,I,Lr47,Lrq7,Lgm3,I]
+        // is apk-unique among the 3 (L,I,L,L,Lgm3,I)V composables (ija.m/t2o.v
+        // take different p0); the Luhd ctor anchor confirms the real builder.
         val menuMethod = firstMethod {
-            parameterTypes == listOf("Le17;", "I", "Ldv6;", "Lhh7;", "Leh3;", "I") &&
+            parameterTypes == listOf("Lpa7;", "I", "Lr47;", "Lrq7;", "Lgm3;", "I") &&
                 returnType == "V" &&
                 (implementation?.instructions?.any { ins ->
                     ins.opcode == Opcode.INVOKE_DIRECT &&
                         (ins as? ReferenceInstruction)?.reference
                             ?.let { it is MethodReference &&
-                                    it.definingClass == "Lwyc;" &&
+                                    it.definingClass == "Luhd;" &&
                                     it.name == "<init>" &&
                                     it.parameterTypes.toList() == listOf(
-                                        "Lm55;", "Ljava/lang/String;", "Lfv6;"
+                                        "Lqd5;", "Ljava/lang/String;", "Lt47;"
                                     )
                             } == true
                 } ?: false)
@@ -81,13 +87,17 @@ val menuGameIdCapturePatch = bytecodePatch(
         // which build 0 Lg6c rows).
         // 6.0.8: Ly7c;->f → Lb8c;->f(Lc8c;Lfv6;Ldv6;ZLiyc;Leh3;I)V; tile row
         // ctor Lg6c;->Lj6c; (built 5× in b8c.f).
+        // 6.0.9: Lb8c;->f → Lqqc;->f(Lrqc;Lt47;Lr47;ZLfhd;Lgm3;I)V (Leh3→Lgm3);
+        // tile row ctor Lj6c;->Lxoc;(String,Lqd5; icon,String,Lr47; onClick)
+        // built 5×. Two `f`-named (L,L,L,Z,L,Lgm3,I)V methods exist (qqc.f /
+        // q29.f); the >=4 Lxoc ctor count disambiguates to qqc.f (q29.f builds 0).
         val libraryMenuMethod = firstMethod {
-            parameterTypes == listOf("Lc8c;", "Lfv6;", "Ldv6;", "Z", "Liyc;", "Leh3;", "I") &&
+            parameterTypes == listOf("Lrqc;", "Lt47;", "Lr47;", "Z", "Lfhd;", "Lgm3;", "I") &&
                 returnType == "V" &&
                 (implementation?.instructions?.count { ins ->
                     ins.opcode == Opcode.INVOKE_DIRECT &&
                         (ins as? ReferenceInstruction)?.getReference<MethodReference>()
-                            ?.let { it.definingClass == "Lj6c;" && it.name == "<init>" } == true
+                            ?.let { it.definingClass == "Lxoc;" && it.name == "<init>" } == true
                 } ?: 0) >= 4
         }
         libraryMenuMethod.addInstructions(0, capture)
@@ -111,10 +121,15 @@ val menuGameIdCapturePatch = bytecodePatch(
         // the whole apk), so it pins Levb;->b0 on its own.
         // 6.0.8: Levb;->b0 → Lhvb;->b0(11-param L,Z,9×L→List, globally unique).
         // Lny;/Ljq2; stayed stable; others reshuffled.
+        // 6.0.9: Lhvb;->b0 → Lxdc;->b0(Ljhb;ZLobc;Lobc;Lgj8;Lgj8;Lplb;Ltz;Lnbc;
+        // Lobc;)List — now 10 params (L,Z,8×L): 6.0.9 dropped ONE param + ONE row
+        // (row ctors Lvtc;/Lg7b; ×9 → Lvbc;/Lpcd; ×8). The (L,Z,8×L)→List shape is
+        // still globally unique (only b0 matches; the other List+Z methods are
+        // 2-param or take a String/2nd-Z). Anchored on the param sig alone.
         val pzcMethod = firstMethod {
             parameterTypes == listOf(
-                "Lsza;", "Z", "Lgtb;", "Lgtb;", "Lrg8;", "Lrg8;",
-                "La7b;", "Lny;", "Ljq2;", "Lftb;", "Lgtb;"
+                "Ljhb;", "Z", "Lobc;", "Lobc;", "Lgj8;", "Lgj8;",
+                "Lplb;", "Ltz;", "Lnbc;", "Lobc;"
             ) &&
                 returnType == "Ljava/util/List;"
         }

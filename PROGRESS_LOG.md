@@ -4417,3 +4417,14 @@ Tested on two physical devices on **different networks**. Both directions gave *
 Confirms (a) the cross-build room-code feature works end-to-end across NAT (shared worker mesh + CF TURN, no Steam check), and (b) the pre2 fix — Create/Join drops straight into the room box (code + roster, "waiting for others to join…" → green timer on join) with no stuck "Connecting…" screen.
 
 **Cross-build voice feature is COMPLETE.** Next: merge `feature/voice-room-codes` → `gamehub-608-build` (write What's New first) and cut the v6 release; on the 3.7.5 side merge `voice-chat` → main and cut the 3.7.x release. Open enhancement under discussion: have V6 auto-use the signed-in user's Steam persona name instead of a separately-picked name.
+
+### 2026-06-18 — 🏁 STABLE v1.3.1-608 SHIPPED (Latest)
+
+Merged `feature/voice-room-codes` into the mainline and cut the stable. The room-code cross-build voice feature (device-confirmed both directions across networks) is now released.
+
+- **Merge:** rebased the 6 feature commits onto the live `gamehub-608-build` tip (clearing the hourly download-badge auto-commit that blocks fast-forwards) and FF-merged in (`7534d0f..8e9d10b`).
+- **Release notes (done before cutting):** README "What's new in **v1.3.1-608**" → 🔊 Voice room codes / cross-play; demoted 1.3.0 voice+chat to carryover; bumped the Latest badge + TOC anchor. `release.yml` stable body updated to match (version heading auto-fills). The in-app Explore "What's New" regenerates in CI from the README via `gen_whatsnew.py` — confirmed in the shipped `bh_explore.json` ("WHAT'S NEW IN v1.3.1-608 • Voice room codes — cross-play with BannerHub 3.8.0").
+- **Naming:** the cross-play notes reference **BannerHub 3.8.0** (not 3.7.5) — the current 3.7.5 build does not have the cross-build voice; it ships in the upcoming **3.8.0** stable (BannerHub repo `voice-chat` → main, not yet cut). The `3.7.x` lineage/disclaimer mentions stay as-is.
+- **Build:** `release.yml` `version=1.3.1-608 stable=true` on `gamehub-608-build` → run **27729146589** ✅ success, 0 SEVERE. Published GitHub Release **v1.3.1-608**, marked **Latest**, 13 assets (9 APK + `bh_explore.json` + 3 `.rvp`). Genshin md5 **`27de8e21d78b46a65cd1016ee86b279e`** → `/storage/emulated/0/Download/BannerHub-V6-1.3.1-608-Genshin.apk`. Installs in place over `v1.3.0-608` (same keystore).
+
+**Next on this repo:** none required for v1.3.1. Open enhancement still on the table: V6 auto-use the signed-in Steam persona name instead of a picked name. Counterpart release: cut **BannerHub 3.8.0** on the BannerHub repo so the 3.8.0 cross-play reference has its build.

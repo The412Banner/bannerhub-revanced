@@ -49,9 +49,12 @@ public final class FakeStateFlow {
     // 6.0.8: StateFlow iface is now Lsdi; (fw0.h()/e()/d() return it). wrapper q4g
     // (implements Lsdi;, ctor (Ls3d;)V — q4g is also the type of fw0's 3 StateFlow
     // fields); holder interface s3d; impl udi (implements Ls3d;, ctor (Object)V).
-    private static final String STATE_FLOW_IMPL_CLASS       = "udi";
-    private static final String STATE_FLOW_WRAPPER_CLASS    = "q4g";
-    private static final String STATE_FLOW_HOLDER_INTERFACE = "s3d";
+    // 6.0.9: StateFlow iface is now Ly4j; (ux0.h()/e()/d() return it). wrapper crg
+    // (implements Ly4j;, ctor (Lsmd;)V — crg is also the type of ux0's 3 StateFlow
+    // fields a/b/c); holder interface smd; impl a5j (sole impl of Lsmd; w/ ctor (Object)V).
+    private static final String STATE_FLOW_IMPL_CLASS       = "a5j";
+    private static final String STATE_FLOW_WRAPPER_CLASS    = "crg";
+    private static final String STATE_FLOW_HOLDER_INTERFACE = "smd";
 
     private static volatile Constructor<?> implCtor;
     private static volatile Constructor<?> wrapperCtor;

@@ -87,12 +87,24 @@ import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 //                  save x(GameInfo,LaunchMethod,Continuation), userid getter h())
 //   USERID method g→h          (dm7.h(): iget b:Lcw0; → f()Lt2l; → Lt2l;->a:String)
 //   NAVIGATOR    Lg8d;→Lj8d;   (j8d has b:Lcw0;, gates i/s with the auth-check+login)
-private const val AUTH_IMPL              = "Lfw0;"
-private const val AUTH_INTERFACE         = "Lcw0;"
-private const val AUTH_TOKEN             = "Lt2l;"
-private const val GAME_LIB_REPO          = "Ldm7;"
+// 6.0.9 — full reshuffle from 6.0.8; re-derived against ~/gh609-apktool-d via the
+// structural anchors above (the 6.0.8 letters were all reassigned to unrelated
+// classes by R8). Auth interface method names (a/b/c/d/e/f/g/h) and the save/userid
+// method names are PRESERVED; only class letters changed:
+//   AUTH_IMPL      Lfw0;→Lux0;  (implements Lrx0;, ctor (UserDao,AuthTokenDao,Li90;),
+//                   3 StateFlow fields a/b/c:Lcrg;, getters d/e/h()Ly4j;)
+//   AUTH_INTERFACE Lcw0;→Lrx0;  (interface; a()Z, d/e/h()Ly4j;, f()Lqbm; default)
+//   AUTH_TOKEN     Lt2l;→Lqbm;  (= rx0.f() return; 10-field token S,S,S,S,Long,Long,J,Z,J,J; .a=userId)
+//   GAME_LIB_REPO  Ldm7;→Lqv7;  (ctor (GameLibraryDatabase,Lrx0;); userid getter h()
+//                   reads b:Lrx0;→f()Lqbm;→qbm.a; save x(GameInfo,LaunchMethod,Lpv3;))
+//   NAVIGATOR      Lj8d;→Ljrd;  (b:Lrx0;; gates i/s = iget b:Lrx0;→invoke a()Z→if-nez→login)
+// FakeStateFlow.java letters re-derived too (impl udi→a5j, wrapper q4g→crg, holder s3d→smd).
+private const val AUTH_IMPL              = "Lux0;"
+private const val AUTH_INTERFACE         = "Lrx0;"
+private const val AUTH_TOKEN             = "Lqbm;"
+private const val GAME_LIB_REPO          = "Lqv7;"
 private const val GAME_LIB_REPO_USERID_METHOD = "h"
-private const val NAVIGATOR              = "Lj8d;"
+private const val NAVIGATOR              = "Ljrd;"
 // NAV_INTERCEPTOR in 6.0.4 is Liod;, but its a(...) body no longer holds the
 // auth check inline — it dispatches to coroutine continuation Lhod;->invokeSuspend
 // where the iget+invoke+if-nez pattern actually lives. The apply block below

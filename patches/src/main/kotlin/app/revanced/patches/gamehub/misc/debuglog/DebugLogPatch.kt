@@ -74,14 +74,22 @@ private const val DEBUG_TRACE = "Lapp/revanced/extension/gamehub/debug/DebugTrac
 // builds Lsua;+calls Lioa;->j = decoy); SAVE_REPO Lam7;->Ldm7; (= GAME_LIB_REPO,
 // am7 now a lambda), SAVE_METHOD v->x; IMPORT_TXN class stays Lza; (coincidental)
 // but method w->x (za.x(Object)Object outlined, holds both DAO inserts, dm7 refs it).
-private const val Y2D_INTERFACE = "Lw9c;"   // 6.0.7: Lt9c;  6.0.4: Lxgd;
-private const val Y2D_ERR_METHOD = "a"       // 6.0.4: e
-private const val Y2D_IMPL = "Ly86;"         // 6.0.7: Lz86;  6.0.4: Lj86;
-private const val Y2D_IMPL_METHOD = "a"      // 6.0.4: e
-private const val SAVE_REPO = "Ldm7;"        // 6.0.7: Lam7;  6.0.4: Lvu7;
+// 6.0.9 re-derive (~/gh609-apktool-d): full reshuffle from 6.0.8. Y2D_INTERFACE Lw9c;→Llsc;
+// (= the Throwable+Function0 reporter invoked in SAVE_REPO catch as Llsc;->e(Throwable,Lr47;);
+// Llsc; is now a 10-method logging iface, the caught-error method is `e`, so Y2D_ERR_METHOD a→e).
+// Y2D_IMPL Ly86;→Lrh6; (the sole class IMPLEMENTING Llsc;; its e(Throwable,Lr47;) does
+// iget a:Llsc; then invoke-interface Llsc;->e = delegator; Y2D_IMPL_METHOD a→e, p1=Throwable).
+// SAVE_REPO Ldm7;→Lqv7; (= GAME_LIB_REPO, shared w/ BypassLogin), SAVE_METHOD x unchanged
+// (x(GameInfo,LaunchMethod,Lpv3;)). IMPORT_TXN Lza;→Lcb; (super Luuk; continuation, referenced
+// by qv7; the sole method holding BOTH DAO inserts is now w(Object)Object), IMPORT_TXN_METHOD x→w.
+private const val Y2D_INTERFACE = "Llsc;"    // 6.0.8: Lw9c;  6.0.7: Lt9c;
+private const val Y2D_ERR_METHOD = "e"       // 6.0.8: a  6.0.4: e
+private const val Y2D_IMPL = "Lrh6;"         // 6.0.8: Ly86;  6.0.7: Lz86;
+private const val Y2D_IMPL_METHOD = "e"      // 6.0.8: a  6.0.4: e
+private const val SAVE_REPO = "Lqv7;"        // 6.0.8: Ldm7;  6.0.7: Lam7;
 private const val SAVE_METHOD = "x"          // 6.0.7: v
-private const val IMPORT_TXN = "Lza;"        // 6.0.7: Lza;  6.0.4: Lws7;
-private const val IMPORT_TXN_METHOD = "x"    // 6.0.7: w  6.0.4: invokeSuspend
+private const val IMPORT_TXN = "Lcb;"        // 6.0.8: Lza;  6.0.7: Lza;
+private const val IMPORT_TXN_METHOD = "w"    // 6.0.8: x  6.0.7: w
 private const val GAME_LAUNCH_METHOD_DAO =
     "Lcom/xiaoji/egggame/game/database/dao/GameLaunchMethodDao;"
 private const val GAME_LIBRARY_BASE_DAO =

@@ -336,35 +336,49 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
             if (!(menuList instanceof java.util.List)) return;
             java.util.List list = (java.util.List) menuList;
 
-            // 6.0.7 remap: row Liae→Ltyc, icon Lo05→Ln55, onClick(Function1)
-            // Lpw6→Lgv6, icon-holder Lzz4→Lv45 (field v→l), wrapper Lxrl→Lu3k.
-            Class<?> tycCls = Class.forName("wyc");
-            Class<?> n55Cls = Class.forName("m55");
-            Class<?> gv6Cls = Class.forName("fv6");
+            // 6.0.7: row Liae→Ltyc, icon Lo05→Ln55, onClick(Function1) Lpw6→Lgv6,
+            // icon-holder Lzz4→Lv45 (field v→l), wrapper Lxrl→Lu3k.
+            // 6.0.9 — ICON MODEL CHANGED: row Lwyc→Luhd, ctor (Lqd5 icon, String,
+            // Lt47 onClick). The "icon" param is now a Lqd5 DrawableResource
+            // (extends resource base Lo4h), NOT an ImageVector — so the old
+            // Lv45.l → Lu3k.getValue() unwrap is gone; we load a ready-made
+            // static Lqd5 directly (see loadStaticIcon). onClick Lfv6→Lt47
+            // (Function1: invoke(Object)Object).
+            Class<?> uhdCls = Class.forName("uhd");
+            Class<?> qd5Cls = Class.forName("qd5");
+            Class<?> t47Cls = Class.forName("t47");
 
-            Class<?> v45Cls = Class.forName("f45");
-            // v45.l = a menu icon; static field is an Lu3k wrapper whose
-            // getValue() returns the Ln55 icon (same pattern as 6.0.4 zz4.v).
-            Field iconHolderField = v45Cls.getDeclaredField("l");
-            iconHolderField.setAccessible(true);
-            Object xrlWrapper = iconHolderField.get(null);
-            if (xrlWrapper == null) {
-                Log.w(TAG, "v45.l is null; cannot resolve icon");
-                return;
-            }
-            Object iconValue = xrlWrapper.getClass().getMethod("getValue").invoke(xrlWrapper);
-            if (!n55Cls.isInstance(iconValue)) {
-                Log.w(TAG, "v45.l.getValue() did not return Ln55");
+            Object icon = loadStaticIcon();
+            if (icon == null || !qd5Cls.isInstance(icon)) {
+                Log.w(TAG, "no Lqd5 icon resolved; skipping More-Menu row");
                 return;
             }
 
-            Object click = newFunction1Proxy(gv6Cls);
+            Object click = newFunction1Proxy(t47Cls);
             java.lang.reflect.Constructor<?> ctor =
-                tycCls.getDeclaredConstructor(n55Cls, String.class, gv6Cls);
+                uhdCls.getDeclaredConstructor(qd5Cls, String.class, t47Cls);
             ctor.setAccessible(true);
-            list.add(ctor.newInstance(iconValue, ROW_LABEL, click));
+            list.add(ctor.newInstance(icon, ROW_LABEL, click));
         } catch (Throwable t) {
             Log.w(TAG, "appendBannerToolsRowTo failed", t);
+        }
+    }
+
+    /**
+     * A ready-made {@code Lqd5} DrawableResource for our row's leading icon.
+     * 6.0.9: {@code Leyn.b} is a cached DrawableResource (its clinit does
+     * {@code Lvc5.a.getValue()} check-cast {@code Lqd5}), so we reflect the
+     * static field directly — no {@code getValue()} unwrap, no Composer needed.
+     * Returns null on any failure (callers then skip the row rather than crash).
+     */
+    private static Object loadStaticIcon() {
+        try {
+            Field f = Class.forName("eyn").getDeclaredField("b");
+            f.setAccessible(true);
+            return f.get(null);
+        } catch (Throwable t) {
+            Log.w(TAG, "loadStaticIcon failed", t);
+            return null;
         }
     }
 
@@ -375,25 +389,23 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
             java.util.ArrayList<Object> augmented =
                 new java.util.ArrayList<>((java.util.List<?>) original);
 
-            // 6.0.7 remap: tile row Lscd→Lg6c (ctor String,icon,String,onClick),
-            // icon Lo05→Ln55, onClick(Function0) Lnw6→Lev6, holder Lzz4→Lv45(v→l).
-            Class<?> g6cCls = Class.forName("j6c");
-            Class<?> n55Cls = Class.forName("m55");
-            Class<?> ev6Cls = Class.forName("dv6");
-            Class<?> v45Cls = Class.forName("f45");
+            // 6.0.7: tile row Lscd→Lg6c (ctor String,icon,String,onClick), icon
+            // Lo05→Ln55, onClick(Function0) Lnw6→Lev6, holder Lzz4→Lv45(v→l).
+            // 6.0.9: tile row Lj6c→Lxoc (ctor String action, Lqd5 icon, String
+            // label, Lr47 onClick). Icon is now Lqd5 DrawableResource (load a
+            // static one, no getValue unwrap). onClick Ldv6→Lr47 (Function0).
+            Class<?> xocCls = Class.forName("xoc");
+            Class<?> qd5Cls = Class.forName("qd5");
+            Class<?> r47Cls = Class.forName("r47");
 
-            Field iconField = v45Cls.getDeclaredField("l");
-            iconField.setAccessible(true);
-            Object xrlWrapper = iconField.get(null);
-            if (xrlWrapper == null) return safeReturn(original);
-            Object iconValue = xrlWrapper.getClass().getMethod("getValue").invoke(xrlWrapper);
-            if (!n55Cls.isInstance(iconValue)) return safeReturn(original);
+            Object icon = loadStaticIcon();
+            if (icon == null || !qd5Cls.isInstance(icon)) return safeReturn(original);
 
-            Object click = newFunction0Proxy(ev6Cls);
+            Object click = newFunction0Proxy(r47Cls);
             java.lang.reflect.Constructor<?> ctor =
-                g6cCls.getDeclaredConstructor(String.class, n55Cls, String.class, ev6Cls);
+                xocCls.getDeclaredConstructor(String.class, qd5Cls, String.class, r47Cls);
             ctor.setAccessible(true);
-            augmented.add(ctor.newInstance(ACTION_ID, iconValue, ROW_LABEL, click));
+            augmented.add(ctor.newInstance(ACTION_ID, icon, ROW_LABEL, click));
             return augmented;
         } catch (Throwable t) {
             Log.w(TAG, "appendScdRowToTedList failed", t);
@@ -413,15 +425,17 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
             java.util.ArrayList<Object> augmented =
                 new java.util.ArrayList<>((java.util.List<?>) original);
 
-            // 6.0.7 remap: list-popup row Lz4e→Lstc (ctor Ldwj,Lev6,int),
-            // StringResource Lell→Ldwj, resource base Ltdi→Lshg, onClick
-            // (Function0) Lnw6→Lev6.
-            Class<?> z4eCls = Class.forName("vtc");
-            Class<?> ellCls = Class.forName("kwj");
-            Class<?> tdiCls = Class.forName("vhg");
-            Class<?> nw6Cls = Class.forName("dv6");
+            // 6.0.7: list-popup row Lz4e→Lstc (ctor Ldwj,Lev6,int), StringResource
+            // Lell→Ldwj, resource base Ltdi→Lshg, onClick(Function0) Lnw6→Lev6.
+            // 6.0.9: list-popup row Lvtc→Lpcd (ctor Llok label, Lr47 onClick, int
+            // — NO icon param). StringResource Lkwj→Llok; resource base Lvhg→Lo4h
+            // (a=key, b=locales); onClick Ldv6→Lr47 (Function0).
+            Class<?> pcdCls = Class.forName("pcd");
+            Class<?> lokCls = Class.forName("lok");
+            Class<?> o4hCls = Class.forName("o4h");
+            Class<?> r47Cls = Class.forName("r47");
 
-            // Ldwj is an empty Kotlin subclass of Lshg — allocate via
+            // Llok is an empty Kotlin subclass of Lo4h — allocate via
             // Unsafe (skips ctor) and reflect-set inherited fields. Same
             // technique as the 4 per-feature handlers.
             Class<?> unsafeCls = Class.forName("sun.misc.Unsafe");
@@ -429,17 +443,17 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
             theUnsafe.setAccessible(true);
             Object unsafe = theUnsafe.get(null);
             Object label = unsafeCls.getMethod("allocateInstance", Class.class)
-                .invoke(unsafe, ellCls);
-            Field aField = tdiCls.getDeclaredField("a");
+                .invoke(unsafe, lokCls);
+            Field aField = o4hCls.getDeclaredField("a");
             aField.setAccessible(true);
             aField.set(label, LABEL_SENTINEL);
-            Field bField = tdiCls.getDeclaredField("b");
+            Field bField = o4hCls.getDeclaredField("b");
             bField.setAccessible(true);
             bField.set(label, java.util.Collections.emptySet());
 
-            Object click = newFunction0Proxy(nw6Cls);
+            Object click = newFunction0Proxy(r47Cls);
             java.lang.reflect.Constructor<?> z4eCtor =
-                z4eCls.getDeclaredConstructor(ellCls, nw6Cls, int.class);
+                pcdCls.getDeclaredConstructor(lokCls, r47Cls, int.class);
             z4eCtor.setAccessible(true);
             augmented.add(z4eCtor.newInstance(label, click, 0));
             return augmented;

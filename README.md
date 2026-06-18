@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.3.0-608"><strong>📥 Latest stable: v1.3.0-608</strong></a>
+  <a href="https://github.com/The412Banner/bannerhub-revanced/releases/tag/v1.3.1-608"><strong>📥 Latest stable: v1.3.1-608</strong></a>
   ·
   <a href="#patches-applied">Patches</a>
   ·
@@ -44,14 +44,14 @@
 >
 > **USE AT YOUR OWN RISK.**
 
-**What it does** — removes the login requirement, redirects the catalog API to the BannerHub Cloudflare Worker, ships **preload-free** PC-accurate XInput rumble for Wine games (with a per-game settings dialog injected into both popup menus), adds in-app **GOG** sign-in / library / download-install reachable from a new BannerHub-owned **Explore** tab, mutes the UI feedback sounds (with an optional recording-compatible audio toggle), and rebrands the launcher icon + in-app artwork as BannerHub v6. Nine APK variants install side-by-side on the same device. (On the 6.0.8 base there's **no separate Lite** — XiaoJi's own −46% size pass already makes the full build smaller than the old 6.0.4 Lite, so the Lite concept is absorbed. See [What's new](#whats-new-in-v130-608).)
+**What it does** — removes the login requirement, redirects the catalog API to the BannerHub Cloudflare Worker, ships **preload-free** PC-accurate XInput rumble for Wine games (with a per-game settings dialog injected into both popup menus), adds in-app **GOG** sign-in / library / download-install reachable from a new BannerHub-owned **Explore** tab, mutes the UI feedback sounds (with an optional recording-compatible audio toggle), and rebrands the launcher icon + in-app artwork as BannerHub v6. Nine APK variants install side-by-side on the same device. (On the 6.0.8 base there's **no separate Lite** — XiaoJi's own −46% size pass already makes the full build smaller than the old 6.0.4 Lite, so the Lite concept is absorbed. See [What's new](#whats-new-in-v131-608).)
 
 > ✅ **In-place updates** — BannerHub releases are signed with a stable test keystore ([`keystore/README.md`](keystore/README.md)) so every stable installs on top of the previous one with no uninstall. The 6.0.8 line **shares the same keystore as the 6.0.7 and 6.0.4 lines**, so `v1.0.0-608` installs straight over your existing BannerHub v6 — no uninstall needed when moving from the `-607` or `-604` series. **One-time migration only applies if you're still on `v1.0.0-604` or older** (those used per-run ephemeral keys): uninstall once, then install. From there on, regular Android updates flow normally.
 
 ## Table of contents
 
 1. [AI Disclaimer](#ai-disclaimer)
-2. [What's new in v1.3.0-608](#whats-new-in-v130-608)
+2. [What's new in v1.3.1-608](#whats-new-in-v131-608)
 3. [What this is](#what-this-is)
 4. [Source](#source)
 5. [Variants](#variants)
@@ -73,30 +73,23 @@ This project has no source code — XiaoJi GameHub is closed-source and ships on
 
 Before any **stable release** is published, every change is **manually debugged and tested by me across multiple devices — both rooted and unrooted**. Debugging uses `logcat` output (captured with the [`getlog` Magisk helper](https://github.com/The412Banner/logcat-bridge) on rooted devices, plain `adb logcat` on unrooted) plus the in-app debug log files that the `Debug logging` patch produces. No release is cut until the change has been verified end-to-end on hardware.
 
-## What's new in v1.3.0-608
+## What's new in v1.3.1-608
 
-The headline of this release: **in-game Steam voice calls** plus a big upgrade to the Steam chat overlay. Built on the same **GameHub 6.0.8** base (versionCode 119) and stable keystore as `v1.2.0-608`, so it installs straight over your existing BannerHub v6 — no uninstall.
+The headline of this release: **voice room codes** — create or join a shared in-game voice room by a short code, **cross-compatible with BannerHub 3.8.0**. Built on the same **GameHub 6.0.8** base (versionCode 119) and stable keystore as `v1.3.0-608`, so it installs straight over your existing BannerHub v6 — no uninstall.
 
-### 🎧 In-game voice calls (1:1 and party)
+### 🔊 Voice room codes — cross-play with BannerHub 3.8.0
 
-The Steam overlay can now place **real voice calls** while you're in a game — no root, no extra app. Tap a friend's 🎙 to ring them; the call rides on **WebRTC** served from the BannerHub Cloudflare Worker (a real HTTPS origin, so the mic actually opens) with **Cloudflare Realtime TURN** for cross-network / strict-NAT peers — **device-confirmed across different ISPs**.
+The Steam overlay's **🔊 voice-room screen** can now **create or join a voice room by a short code** — no Steam friends required, no root. Create mints a 5-character code (or type someone else's to join), and the call box drops **straight into the room**: it shows the **room code and who's in it**, with a *"Connecting — waiting for others to join…"* status that flips to a live call timer the moment someone joins (no more being stuck on a Connecting screen).
 
-- **Movable call window** — a draggable call box (independent of the chat panel, so it shows even with the pill collapsed) that you can **collapse to a compact `🎧 N in call` tile** with a running timer. Mute and Hang up onboard.
-- **Incoming-call ring** — callees get an Answer / Ignore box that pops automatically, labelled with the **caller's name**, with a **30s auto-dismiss**.
-- **Ringtone settings** (⚙ in the Friends panel) — pick from built-in **synth tones**, **5 bundled ringtones**, your **own MP3**, or **silent**; with a **volume slider**, **play/pause preview**, and a vibrate toggle.
-- **Party / group calls** — add more friends to a connected call (peer-to-peer mesh, practical for small parties); everyone shows in a live roster. Party members don't need to be friends with each *other*.
-- **Share-call link** — 🔗 Invite shares a room link so **anyone with a browser** (a PC, another emulator, a non-BannerHub device) can join the call as a guest.
-- **Pill indicators** — the collapsed 💬 pill shows a green 🎧 party-count badge and a blue unread-message count.
+- **Cross-play with BannerHub 3.8.0** — a BannerHub v6 user and a BannerHub 3.8.0 user can share the **same voice room and talk, in either direction**. **Device-confirmed both ways across different networks.** Room codes use the same format on both builds, so a code created on one joins on the other.
+- **Names, not "Guest"** — everyone in the room shows by their chosen name in the live roster.
+- **Same engine as 1:1 / party calls** — rides the same **WebRTC** mesh served from the BannerHub Cloudflare Worker with **Cloudflare Realtime TURN**, so it traverses strict NATs across ISPs. Your Steam-native friend / party calls are unchanged.
 
-### 💬 Steam chat overlay v2
+### Carryover from v1.3.0-608
 
-The friends/chat overlay (still **no root**, under **Banner Tools → Overlay**) gains: a 3-tab **☺ picker** (Unicode **emoji**, Steam **emoticons**, **stickers**); **send image** (hosted via the BannerHub Worker so it doesn't hit Steam's flaky web-upload); **game-invite cards** (rendered from BBCode invites with live/expired state); **typing indicators**; **auto-scroll**; and a collapsible **pill-opacity** slider.
+Everything from `v1.3.0-608` ships forward unchanged: **in-game Steam voice calls** (1:1 + party mesh, movable/collapsible call box, incoming-call ring with the caller's name + 30s auto-dismiss, ringtone settings, 🔗 share-call browser-guest link, pill 🎧/unread badges) and the **Steam chat overlay v2** (3-tab emoji/emoticon/sticker picker, send-image via the Worker, game-invite cards, typing indicators, auto-scroll, pill-opacity). Plus the **🔒 full Firebase Crashlytics shutoff** (see [`PRIVACY.md`](PRIVACY.md)), the **GameHub 6.0.8 rebase** (all patches re-fingerprinted, device-verified), **GOG integration**, the **BannerHub Explore homepage** (What's New article, live `bh_explore.json` override, in-app update check + installed-vs-latest readout), **PC-accurate controller vibration** (preload-free — no `libevshim`/`LD_PRELOAD`), the **in-game performance overlay** (root), **recording-compatible audio**, the **offline component picker**, the strict per-game settings store, the synthetic 32-bit ID rewrite for external front-ends (Beacon / ES-DE / RetroHRAI / NeoStation), the always-visible PC Game Settings row, the privacy-hardening stack + public [`PRIVACY.md`](PRIVACY.md), the stable keystore, and the BannerHub v6 visual rebrand. Still **no separate Lite** build, and the **GPU Spoof** + **Legacy renderer (GLES2)** tiles stay retired. The Banner Tools grid stays **Vibration · Game ID · Audio · GOG · Overlay · Root**.
 
-### Carryover from v1.2.0-608
-
-Everything else ships forward unchanged: the **🔒 full Firebase Crashlytics shutoff** (the runtime re-enable hole closed in `v1.2.0-608` — see [`PRIVACY.md`](PRIVACY.md)), the **GameHub 6.0.8 rebase** (all patches re-fingerprinted, device-verified), **GOG integration**, the **BannerHub Explore homepage** (What's New article, live `bh_explore.json` override, in-app update check + installed-vs-latest readout), **PC-accurate controller vibration** (preload-free — no `libevshim`/`LD_PRELOAD`), the **in-game performance overlay** (root), **recording-compatible audio**, the **offline component picker**, the strict per-game settings store, the synthetic 32-bit ID rewrite for external front-ends (Beacon / ES-DE / RetroHRAI / NeoStation), the always-visible PC Game Settings row, the privacy-hardening stack + public [`PRIVACY.md`](PRIVACY.md), the stable keystore, and the BannerHub v6 visual rebrand. Still **no separate Lite** build, and the **GPU Spoof** + **Legacy renderer (GLES2)** tiles stay retired. The Banner Tools grid stays **Vibration · Game ID · Audio · GOG · Overlay · Root**.
-
-> 📜 Past-release notes for `v1.2.0-608`, `v1.1.0-608`, `v1.0.0-608`, the `-607` line (`v1.0.0-607`), and the entire `-604` line (`v1.8.0-604` down through `v1.0.0-604`, plus `v1.0.0-602`, `v1.0.1-601`, `v1.0.0-601`, and `v1.0.1-600`) are preserved on their respective [release pages](https://github.com/The412Banner/bannerhub-revanced/releases). The README keeps only the current release in this section.
+> 📜 Past-release notes for `v1.3.0-608`, `v1.2.0-608`, `v1.1.0-608`, `v1.0.0-608`, the `-607` line (`v1.0.0-607`), and the entire `-604` line (`v1.8.0-604` down through `v1.0.0-604`, plus `v1.0.0-602`, `v1.0.1-601`, `v1.0.0-601`, and `v1.0.1-600`) are preserved on their respective [release pages](https://github.com/The412Banner/bannerhub-revanced/releases). The README keeps only the current release in this section.
 
 ---
 

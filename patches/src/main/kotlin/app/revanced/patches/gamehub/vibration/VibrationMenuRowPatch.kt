@@ -321,9 +321,15 @@ val vibrationMenuRowPatch = bytecodePatch(
         // (L?;Leh3;I)String method; body matches the resolver shape (getClass()
         // head, Ljy8;->v(SR,Composer) helper, new-instance Lyvj;(I) loader).
         // Lkwj; extends resource base Lvhg; (runtime side in BhMenuRowClick).
+        // 6.0.9: resolver Lqk8;->c0 → Ly99;->Z(Llok;,Lgm3;,I)String (method name
+        // c0→Z; Composer Leh3;→Lgm3;; StringResource Lkwj;→Llok;). Verified the
+        // ONLY (L?;Lgm3;I)String method apk-wide; body matches the resolver shape
+        // (getClass() head, Lr29;->T(SR,Composer) helper, new-instance Lznk;(I)
+        // loader). Llok; extends resource base Lvhg;→Lo4h; (runtime side reflects
+        // Class.forName("vhg")→"o4h", field `a` unchanged — see BhMenuRowClick).
         val resolverMethod = firstMethod {
-            definingClass == "Lqk8;" && name == "c0" &&
-                parameterTypes == listOf("Lkwj;", "Leh3;", "I") &&
+            definingClass == "Ly99;" && name == "Z" &&
+                parameterTypes == listOf("Llok;", "Lgm3;", "I") &&
                 returnType == "Ljava/lang/String;"
         }
         // Avoid addInstructionsWithLabels + ExternalLabel — pre15 hit

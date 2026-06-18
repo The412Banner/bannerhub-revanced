@@ -70,10 +70,19 @@ import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 // wrapped in Lb4k;, sput Lssj;->c0). Menu method Lc37;->La37; sig
 // (Le17;ILdv6;Lhh7;Leh3;I)V, row ctor Ltyc;->Lwyc;(Lm55;,String,Lfv6;).
 // a37.a sgets Lssj;->c0:Lb4k; exactly once (confirmed).
-private const val PC_SETTINGS_LABEL_CLASS = "Lssj;"   // 6.0.7: Llsj;  6.0.4: Lmil;
-private const val PC_SETTINGS_LABEL_FIELD = "c0"      // 6.0.4: U  (rqj StringResource idx 0x14)
-private const val LABEL_WRAPPER = "Lb4k;"             // 6.0.7: Lu3k;  6.0.4: Lxrl;
-private const val ROW_DATA = "Lwyc;"                  // 6.0.7: Ltyc;  6.0.4: Liae;  (More-Menu row item)
+// 6.0.9 verified (~/gh609-apktool-d): the label model changed — labels are now
+// lazy Lkwk; wrappers built from an Lr47; (Function0) provider Lwik; whose
+// stored index `a:I` selects the resource. pc_settings = Lwik;(0x15) (the b()
+// case; 0x14→0x15 = one string added upstream); b() builds the StringResource
+// via Lo4h;-><init>("string:features_game_pc_settings", Set). That Lkwk; is
+// cached at Lnkk;->q0:Lkwk; and sget exactly once inside the menu method lc7.a
+// (the gate `if-eqz v51, :cond_55` sits ~6 instrs before it). Menu method
+// La37;->Llc7; sig (Lpa7;ILr47;Lrq7;Lgm3;I)V, row ctor Lwyc;->Luhd;
+// (Lqd5;,String,Lt47;). Wrapper Lb4k;->Lkwk;.
+private const val PC_SETTINGS_LABEL_CLASS = "Lnkk;"   // 6.0.8: Lssj;  6.0.7: Llsj;  6.0.4: Lmil;
+private const val PC_SETTINGS_LABEL_FIELD = "q0"      // 6.0.8: c0  (Lwik StringResource idx 0x15)
+private const val LABEL_WRAPPER = "Lkwk;"             // 6.0.8: Lb4k;  6.0.7: Lu3k;  6.0.4: Lxrl;
+private const val ROW_DATA = "Luhd;"                  // 6.0.8: Lwyc;  6.0.7: Ltyc;  6.0.4: Liae;  (More-Menu row item)
 
 private const val MAX_BACKWARD_SCAN = 40
 
@@ -94,7 +103,7 @@ val showPcGameSettingsRowPatch = bytecodePatch(
         // the presence of the More-Menu row-item constructor (ROW_DATA), which
         // is unique to this method among any signature sig-sharers.
         val menuMethod = firstMethod {
-            parameterTypes == listOf("Le17;", "I", "Ldv6;", "Lhh7;", "Leh3;", "I") &&
+            parameterTypes == listOf("Lpa7;", "I", "Lr47;", "Lrq7;", "Lgm3;", "I") &&
                 returnType == "V" &&
                 (implementation?.instructions?.any { ins ->
                     ins.opcode == Opcode.INVOKE_DIRECT &&
@@ -103,7 +112,7 @@ val showPcGameSettingsRowPatch = bytecodePatch(
                                     it.definingClass == ROW_DATA &&
                                     it.name == "<init>" &&
                                     it.parameterTypes.toList() == listOf(
-                                        "Lm55;", "Ljava/lang/String;", "Lfv6;"
+                                        "Lqd5;", "Ljava/lang/String;", "Lt47;"
                                     )
                             } == true
                 } ?: false)

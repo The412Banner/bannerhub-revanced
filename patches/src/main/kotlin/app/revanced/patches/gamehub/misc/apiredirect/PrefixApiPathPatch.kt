@@ -19,15 +19,18 @@ import app.revanced.patches.gamehub.GAMEHUB_VERSION
 //   6.0.4 → Lcpb;->b(Ln7a;Ljava/lang/String;)V  (string-trim helper Lbml;->s1)
 //   6.0.7 → Lzua;->a(Lgn9;Ljava/lang/String;)V  (method b->a; trim now Lcxj;->G1; 38 call sites)
 //   6.0.8 → Ldva;->a(Ljn9;Ljava/lang/String;)V  (trim now Ljxj;->G1; ~19 call sites)
+//   6.0.9 → Lscb;->a(Lfy9;Ljava/lang/String;)V  (trim now Lkpk;->o1)
 // Structural anchor: a static method `(L<2-3-letter>;Ljava/lang/String;)V`
 // whose body starts with `iget-object` from the builder's URL field then
 // calls a string-trim helper. Body shape is byte-stable across versions.
-// Re-derive via: const-string "simulator/v2/getComponentList" in i6e.smali →
-// the immediately-following `invoke-static {builder, path}, L?;->?(L?;String)V`.
-// 6.0.8 verified (~/gh608-apktool-d/smali_classes3/dva.smali): a(Ljn9;String)V
-// `.locals 3`, body `iget-object p0, p0, Ljn9;->a:Lqwk;` then trim Ljxj;->G1.
-private const val URL_HELPER_CLASS  = "Ldva;"
-private const val URL_BUILDER_TYPE  = "Ljn9;"
+// Re-derive via: const-string "simulator/v2/getComponentList" (6.0.9: in
+// rpe.smali) → the immediately-following `invoke-static {builder, path},
+// L?;->?(L?;String)V`.
+// 6.0.9 verified (~/gh609-apktool-d/smali_classes3/scb.smali): a(Lfy9;String)V
+// `.locals 3`, body `iget-object p0, p0, Lfy9;->a:Lj5m;` then trim Lkpk;->o1
+// (call site rpe.smali:227 `invoke-static {v11, v0}, Lscb;->a(Lfy9;String)V`).
+private const val URL_HELPER_CLASS  = "Lscb;"
+private const val URL_BUILDER_TYPE  = "Lfy9;"
 private const val URL_HELPER_METHOD = "a" // was "b" in 6.0.0–6.0.4
 
 // V6PathPrefix.prefix(String) returns "v6/" + path for relative paths and

@@ -4438,13 +4438,21 @@ Setup for 6.0.9 (vc121) is done: base uploaded (`base-apk-609`), CI repointed, `
 Smoke-test run **27760047512** (gate=6.0.9) generated the real failure set: **14 patches fail = 9 root fingerprint breakages + 5 cascades** (R8 reshuffled obfuscated anchors again — same family as 607→608). ReVanced exits 0 on skipped patches, so "green" ≠ applied; read the `SEVERE: "X" failed:` lines.
 
 > **WORKING RULE (per user, 2026-06-18):** after EACH patch below is fixed, update BOTH this progress log (check the box + commit anchor + how it was re-pinned) AND the `project_gamehub_609_base` memory file. Do both every time, not in a batch at the end.
-> **ORDER RULE (per user, 2026-06-18):** ALWAYS fix **Bypass login** + **Debug logging** FIRST on every base bump, before the keystone/others.
+> **DEVICE-TEST RULE (per user, 2026-06-18):** EVERY patch re-applied/re-derived on a base bump must be **device-tested and confirmed working** before it counts as done — CI apply-confirmed is NOT enough (ReVanced exits 0 on skips; patcher doesn't validate extension `Class.forName` constants).
+>
+> **ORDER RULE (per user, 2026-06-18) — FIXED on every base bump:**
+> 1. **Bypass login** + **Debug logging** FIRST — confirmed working (device-confirmed) before moving on.
+> 2. **Redirect catalog API** (+ **Prefix API path with /v6** cascade) — **with device verification**.
+> 3. **Explore tab hijack** — **with device verification**.
+> 4. THEN the keystone (**Per-game menu id capture**, #1) and all remaining patches.
+>
+> CI "green" ≠ working — steps 2 and 3 each require on-device confirmation, not just an apply-confirmed CI run.
 
 ### Root failures — need fingerprint re-derivation (9)
 - [x] 3. **Bypass login** — ✅ RE-DERIVED + CI APPLY-CONFIRMED (commit `08decac`; run 27762795208) + **🔧 RUNTIME FIX `0870713`** (build pre2 run 27763795675). PATCH anchors: AUTH_IMPL Lfw0→**Lux0**, AUTH_INTERFACE Lcw0→**Lrx0**, AUTH_TOKEN Lt2l→**Lqbm**, GAME_LIB_REPO Ldm7→**Lqv7**, NAVIGATOR Lj8d→**Ljrd**; FakeStateFlow udi/q4g/s3d→**a5j/crg/smd**. ⚠️ EXTENSION runtime `Class.forName` constants ALSO needed bumping (patcher does NOT validate these → apply was green but on-device the added game didn't show): **FakeUserAccount n2l→kbm** (= Lrx0;.b() return, 27-field; stale → get() null → userFlow wraps null → library reader flatMapLatest empty despite row in t_game_library_base — THE reported bug), **FakeAuthToken t2l→qbm** (= Lrx0;.f() return, 10-field). Both ctor sigs byte-identical to 608. Method names (auth a–h, save x, userid h, gates i/s) unchanged. LESSON: on every bump the login fix needs BOTH the patch fingerprints AND the 3 extension class constants (FakeStateFlow/FakeUserAccount/FakeAuthToken). ✅ **DEVICE-CONFIRMED 2026-06-18 on pre2 (run 27763795675, Genshin md5 `56dd62d0c0209637e1773095e046c807`): login bypassed + added local game now shows in library.**
 - [x] 4. **Debug logging** — ✅ RE-DERIVED + **CI APPLY-CONFIRMED** (commit `08decac`; run **27762795208**). Y2D_INTERFACE Lw9c→**Llsc** (err method a→**e**), Y2D_IMPL Ly86→**Lrh6** (method a→**e**), SAVE_REPO Ldm7→**Lqv7** (=GAME_LIB_REPO, method x unchanged), IMPORT_TXN Lza→**Lcb** (method x→**w**).
 - [ ] 1. **Per-game menu id capture (shared)** — 🔑 KEYSTONE (More-Menu row resolver). Unblocks 4 cascades.
-- [ ] 2. **Redirect catalog API** — unblocks `Prefix API path with /v6`.
+- [~] 2. **Redirect catalog API** — 🔧 RE-DERIVED (awaiting CI apply + DEVICE verification). ENV_ENUM_CLASS `Lqnh;`→**`Lyei;`** (smali_classes3/yei.smali, `public final enum`, both catalog hosts in `<clinit>` cn→v5 oversea→v6, Online value built first via `invoke-direct/range {v0 .. v6}` 6-arg `<init>`; ONLY class in apk with both hosts). Register-agnostic patch, only the class constant changed.
 - [ ] 5. **Explore tab hijack**
 - [ ] 6. **Offline component picker — local list**
 - [ ] 7. **PC-accurate vibration**
@@ -4458,7 +4466,7 @@ All 9 threw `Required value was null` (fingerprint matched nothing).
 - [ ] PC Vibration Settings menu row — dep #1
 - [ ] Show Game ID menu row — dep #1
 - [ ] GOG menu row — dep #1
-- [ ] Prefix API path with /v6 — dep #2
+- [~] Prefix API path with /v6 — dep #2; ⚠️ NOT a pure cascade — has its OWN broken fingerprints. RE-DERIVED (awaiting CI apply + DEVICE verification): URL_HELPER_CLASS `Ldva;`→**`Lscb;`**, URL_BUILDER_TYPE `Ljn9;`→**`Lfy9;`**, method `a` unchanged (smali_classes3/scb.smali `a(Lfy9;String)V` `.locals 3`, `iget-object p0, p0, Lfy9;->a:Lj5m;` then trim `Lkpk;->o1`; call site rpe.smali:227). Extension `V6PathPrefix` is pure string helper → NO runtime `Class.forName` stale risk.
 
 ### Applied clean on 6.0.9 (no action)
 All privacy strips (Firebase/Crashlytics/GMS/MobPush/heartbeat/Ad-ID, Aliyun NumberAuth), audio, explore drawables/manifest/version-stamp, file-manager access, app-icon, external launcher, GameID label resource, local game-id assignment. Identical failure set across all 9 variants.

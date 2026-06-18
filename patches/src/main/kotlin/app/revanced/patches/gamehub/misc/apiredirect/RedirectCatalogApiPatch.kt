@@ -24,12 +24,15 @@ import com.android.tools.smali.dexlib2.iface.reference.StringReference
 //   6.0.4 → Lesj;
 //   6.0.7 → Lnnh;
 //   6.0.8 → Lqnh;
+//   6.0.9 → Lyei;
 // Structural anchor (always portable): the unique class that contains BOTH
 // "landscape-api-cn.vgabc.com" and "landscape-api-oversea.vgabc.com" string
 // literals — find via `grep -rl "landscape-api-cn.vgabc.com" smali*/`.
-// 6.0.8 verified: Lqnh; (smali_classes3/qnh.smali), `enum`, both hosts in <clinit>
-// (cn→v5, oversea→v6); the ONLY class in the apk with both hosts.
-private const val ENV_ENUM_CLASS = "Lqnh;"
+// 6.0.9 verified: Lyei; (smali_classes3/yei.smali), `public final enum`, both
+// hosts in <clinit> (cn→v5, oversea→v6), Online value constructed first via
+// invoke-direct/range {v0 .. v6} with the 6-arg <init>; the ONLY class in the
+// apk with both hosts. (6.0.8 was Lqnh;, smali_classes3/qnh.smali.)
+private const val ENV_ENUM_CLASS = "Lyei;"
 
 // Original GameHub 6.0 hosts the patch removes from the Online enum value.
 // They are bare hostnames — t40.smali builds the URL as "<scheme>://<host>",

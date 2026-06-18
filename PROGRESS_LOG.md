@@ -4407,3 +4407,13 @@ Fix (mirrors BannerHub 3.7.5's waiting-room UX, its fix #4): Create/Join now dro
 2 files, additive. Note: the first push was rejected by GitHub email-privacy (GH007); re-authored to the repo's existing noreply address `205237651+The412Banner@users.noreply.github.com`.
 
 **Build + delivery:** commit `e847514` pushed; release.yml prerelease `1.3.0-608-rooms-pre2` → run **27728486541** ✅ success, 0 SEVERE. Genshin artifact → `/storage/emulated/0/Download/BannerHub-V6-1.3.0-608-rooms-pre2-Genshin.apk`, md5 **`efcf065b5cd3e04cb3a12c34ed882453`** (48,607,500 bytes). Fresh CI keystore → uninstall existing v6 first if it won't install in place. NEXT = 2-device cross-build test (v6 🔊 Create ↔ 3.7.5 Join + reverse): room box shows code + roster immediately, upgrades to timer + two-way audio on join, names on both rosters; plus a Steam 🎙 call for no-regression. If clean → merge both branches + cut releases.
+
+### 2026-06-17 (later) — ✅ CROSS-BUILD VOICE DEVICE-CONFIRMED (rooms-pre2)
+
+Tested on two physical devices on **different networks**. Both directions gave **two-way audio**:
+- BannerHub **3.7.5 Create** room → **V6 Join** by code ✅
+- **V6 Create** room → BannerHub **3.7.5 Join** by code ✅
+
+Confirms (a) the cross-build room-code feature works end-to-end across NAT (shared worker mesh + CF TURN, no Steam check), and (b) the pre2 fix — Create/Join drops straight into the room box (code + roster, "waiting for others to join…" → green timer on join) with no stuck "Connecting…" screen.
+
+**Cross-build voice feature is COMPLETE.** Next: merge `feature/voice-room-codes` → `gamehub-608-build` (write What's New first) and cut the v6 release; on the 3.7.5 side merge `voice-chat` → main and cut the 3.7.x release. Open enhancement under discussion: have V6 auto-use the signed-in user's Steam persona name instead of a separately-picked name.

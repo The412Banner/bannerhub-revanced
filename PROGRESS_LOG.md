@@ -4462,10 +4462,10 @@ Smoke-test run **27760047512** (gate=6.0.9) generated the real failure set: **14
 All 9 threw `Required value was null` (fingerprint matched nothing).
 
 ### Cascade failures — should auto-resolve once their root is re-pinned (5)
-- [ ] Banner Tools menu row — dep #1
-- [ ] PC Vibration Settings menu row — dep #1
-- [ ] Show Game ID menu row — dep #1
-- [ ] GOG menu row — dep #1
+- [x] Banner Tools menu row — ✅ CI APPLY-CONFIRMED (commit `ee9cacd`; pre6 run `27770729655`: `INFO: "Banner Tools menu row" succeeded`). LIVE 3-injection patch re-pinned: builders same as keystone (lc7.a/qqc.f/xdc.b0) + ROW_DATA `Lwyc`→`Luhd`, LIST_BUILDER `Lm3c`→`Lbmc`, ctor `(Lm55,String,Lfv6)`→`(Lqd5,String,Lt47)`; tile `Lj6c`→`Lxoc`, collector `Llp0;->R`→`Lxq0;->a0`; finalize `Lny2;->C`→`Lv33;->u`. ⏳ RUNTIME `BhBannerToolsMenuRowClick` NOT yet updated → row won't render correctly on device until done (icon model CHANGED: 609 row "icon" param = `Lqd5` resource descriptor extending `Lo4h`, NOT an ImageVector wrapper — helper needs structural rewrite: load a static `Lqd5` directly instead of `Lkwk.getValue()`). Derived runtime consts: appendBannerToolsRowTo wyc→uhd/m55→qd5/fv6→t47(Function1, invoke(Object)Object); appendScdRowToTedList j6c→xoc/dv6→r47(Function0, invoke()Object)/icon Lqd5; appendLibraryPopupRow vtc→**pcd** (ctor `(Llok;Lr47;I)V` — NO icon param)/kwj→lok/vhg→o4h/onClick r47. ⚠️ DEVICE-VERIFY OWED.
+- [x] PC Vibration Settings menu row — ✅ CI APPLY-CONFIRMED (pre6 `27770729655`: succeeded). Only live anchor = resolver `Lqk8;->c0(Lkwj;,Leh3;,I)String`→`Ly99;->Z(Llok;,Lgm3;,I)String` (name c0→Z); runtime `maybeResolveCustomLabel` `Class.forName("vhg")`→`"o4h"` (field a). DONE both compile+runtime. ⚠️ DEVICE-VERIFY OWED.
+- [x] Show Game ID menu row — ✅ AUTO-CLEARED (pre6: gone from SEVERE). 100% `if(false)` → was pure dependency-cascade on keystone+vibration; no own re-pin needed.
+- [x] GOG menu row — ✅ AUTO-CLEARED (pre6: gone from SEVERE). 100% `if(false)` dependency-cascade.
 - [x] Prefix API path with /v6 — dep #2; ⚠️ NOT a pure cascade — has its OWN broken fingerprints. ✅ RE-DERIVED + CI APPLY-CONFIRMED (run 27765728865) + ✅ **DEVICE-CONFIRMED 2026-06-18 (pre3 Normal, with #2):** URL_HELPER_CLASS `Ldva;`→**`Lscb;`**, URL_BUILDER_TYPE `Ljn9;`→**`Lfy9;`**, method `a` unchanged (smali_classes3/scb.smali `a(Lfy9;String)V` `.locals 3`, `iget-object p0, p0, Lfy9;->a:Lj5m;` then trim `Lkpk;->o1`; call site rpe.smali:227). Extension `V6PathPrefix` is pure string helper → NO runtime `Class.forName` stale risk.
 
 ### Applied clean on 6.0.9 (no action)

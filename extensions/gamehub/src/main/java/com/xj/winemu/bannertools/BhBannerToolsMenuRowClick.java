@@ -365,17 +365,25 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
     }
 
     /**
-     * A ready-made {@code Lqd5} DrawableResource for our row's leading icon.
-     * 6.0.9: {@code Leyn.b} is a cached DrawableResource (its clinit does
-     * {@code Lvc5.a.getValue()} check-cast {@code Lqd5}), so we reflect the
-     * static field directly — no {@code getValue()} unwrap, no Composer needed.
-     * Returns null on any failure (callers then skip the row rather than crash).
+     * A {@code Lqd5} DrawableResource for our row's leading icon.
+     * 6.0.9: the row-icon render path XML-parses the DrawableResource (vector
+     * loader), so a raster (PNG)-backed Lqd5 crashes with SAXParseException
+     * ("Unexpected token: PNG …IHDR") — device-found 2026-06-18 with the first
+     * pick {@code Leyn.b} (a PNG). Fix: reuse the EXACT icon a NATIVE More-Menu
+     * row uses — {@code Lyc5;->x:Lkwk;} is sget'd in lc7.a and its
+     * {@code getValue()} is passed straight into a {@code Luhd} row ctor as the
+     * Lqd5 icon, so it is guaranteed to render in this very menu. Unwrap the
+     * lazy {@code Lkwk} (Function0-backed) to the cached Lqd5; no Composer
+     * needed (the wrapper resolves its provider on first getValue, same as the
+     * app's own static init). Returns null on failure (callers skip the row).
      */
     private static Object loadStaticIcon() {
         try {
-            Field f = Class.forName("eyn").getDeclaredField("b");
+            Field f = Class.forName("yc5").getDeclaredField("x");
             f.setAccessible(true);
-            return f.get(null);
+            Object wrapper = f.get(null);          // Lkwk lazy wrapper
+            if (wrapper == null) return null;
+            return wrapper.getClass().getMethod("getValue").invoke(wrapper);  // Lqd5
         } catch (Throwable t) {
             Log.w(TAG, "loadStaticIcon failed", t);
             return null;

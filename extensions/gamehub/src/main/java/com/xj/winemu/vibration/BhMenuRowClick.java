@@ -354,6 +354,25 @@ public final class BhMenuRowClick implements Function1<Object, Object> {
      * otherwise so the stock resolver path runs unchanged.
      */
     public static String maybeResolveCustomLabel(Object ell) {
+        return resolveCustomLabel(ell, true);
+    }
+
+    /**
+     * Same as {@link #maybeResolveCustomLabel} but with the
+     * {@code kickImportFromDialogOpen} side effect suppressed. Used by the
+     * non-Compose / suspend resolver hooks (the format-args and suspend
+     * variants of {@code Ly99;->Z}): those paths surface resource strings
+     * OUTSIDE composition (e.g. the host's "Share failed: %1$s" toast format
+     * string, fetched from the share coroutine's catch via the suspend+args
+     * resolver), so we want our label overrides to apply there too — but we
+     * must NOT let a stray non-Compose lookup of the import-dialog-title key
+     * launch a SAF file picker behind the user's back.
+     */
+    public static String maybeResolveCustomLabelNoKick(Object ell) {
+        return resolveCustomLabel(ell, false);
+    }
+
+    private static String resolveCustomLabel(Object ell, boolean fireSideEffects) {
         try {
             // 6.0.7: CMP resource base class renamed tdi → shg; 6.0.8: shg → vhg
             // (Lkwj; extends Lvhg;); 6.0.9: vhg → o4h (Llok; extends Lo4h;);
@@ -375,6 +394,75 @@ public final class BhMenuRowClick implements Function1<Object, Object> {
                 label = "Show Game ID";
             } else if ("string:bh_banner_tools_label".equals(key)) {
                 label = "Banner Tools";
+            } else if ("string:bh_vjoy_export_label".equals(key)) {
+                label = "Export to file";
+            } else if ("string:bh_vjoy_import_label".equals(key)) {
+                label = "Import from file";
+            }
+            // VJoy share-flow stock-string OVERRIDES (not new entries; we
+            // hijack the host's own keys before its CVR lookup runs). The
+            // share button now exports to a file; relabel the user-visible
+            // strings to match.
+            //
+            // GAMEHUB 6.0.9 KEY NAMESPACE: 6.0.9 moved the share/dialog strings
+            // from the 6.0.4 `features_vjoy_*` namespace to `common_vjoy_layout_*`
+            // (verified by decoding the CMP strings.commonMain.cvr bundle on the
+            // 6.0.9 base: common_vjoy_layout_func_share = "Share",
+            // common_vjoy_layout_dialog_prepare_share_title = "Publish to Cloud",
+            // common_vjoy_layout_dialog_prepare_share_upload_original =
+            // "Upload original", etc.). The only key still in the OLD namespace
+            // is features_vjoy_main_action_import — kept below.
+            else if ("string:common_vjoy_layout_func_share".equals(key)) {
+                label = "Export";                       // was "Share"
+            } else if ("string:common_vjoy_layout_dialog_prepare_share_title".equals(key)) {
+                label = "Name Profile";                 // was "Publish to Cloud"
+            } else if ("string:common_vjoy_layout_dialog_prepare_share_placeholder".equals(key)) {
+                label = "Profile name";                 // was "Share name"
+            } else if ("string:common_vjoy_layout_dialog_prepare_share_upload_original".equals(key)) {
+                // The "Upload original" checkbox is a cloud-only control whose
+                // value feeds the publish path interceptShare aborts — it does
+                // nothing for a local export. Relabel so the user knows it's inert.
+                label = "This checkbox does nothing.";  // was "Upload original"
+            }
+            // Suppress the "Operation failed, please try again." toast that
+            // fires after interceptShare throws to abort the cloud publish.
+            // 6.0.9 dropped the 6.0.4 share-specific failure string and instead
+            // shows this generic layout-op toast; the local export already
+            // succeeded by this point, so the toast is misleading noise. The
+            // host fetches it from a coroutine catch via a NON-Compose resolver
+            // (the suspend Ly99 variant), so this override only takes effect
+            // because that sibling is hooked to call maybeResolveCustomLabelNoKick
+            // (ExportControlsPatch); the Compose Z hook alone never sees it.
+            // Overriding to "" makes Android skip the empty toast.
+            // NOTE: this key is generic to layout ops, so a genuine non-share
+            // "operation failed" toast is also swallowed — acceptable for a clean
+            // local-export UX, but revisit if it ever hides a real error.
+            else if ("string:common_vjoy_layout_toast_operation_failed".equals(key)) {
+                label = "";
+            }
+            // Import dialog. We hijack the "Apply share code" Confirm tap to
+            // launch a SAF file picker instead of looking up a cloud share
+            // code. Relabel the dialog so the user understands what's happening.
+            else if ("string:features_vjoy_main_action_import".equals(key)) {
+                label = "Import Layout from File";  // was "Import Layout"
+            } else if ("string:common_vjoy_layout_dialog_import_share_code_title".equals(key)) {
+                label = "Import Layout";
+                // The dialog-open action is hijacked at COMPOSITION time: this
+                // resource ONLY resolves when the import dialog is being built,
+                // so use it as the "dialog opening" signal and fire SAF
+                // immediately. SAF takes focus over the briefly-composed
+                // dialog; after the user picks/cancels we dismiss the leftover
+                // dialog via a programmatic BACK. IMPORT_IN_FLIGHT gates against
+                // the dozens of recompositions per dialog show.
+                if (fireSideEffects) {
+                    try {
+                        com.xj.winemu.exportcontrols.BhVjoyShareHook.kickImportFromDialogOpen();
+                    } catch (Throwable t) {
+                        Log.w(TAG, "kickImportFromDialogOpen threw", t);
+                    }
+                }
+            } else if ("string:common_vjoy_layout_dialog_import_share_code_placeholder".equals(key)) {
+                label = "Opening file picker…";
             }
             if (label != null) {
                 Log.i(TAG, "maybeResolveCustomLabel key=" + key + " → '" + label + "'");

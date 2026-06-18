@@ -4376,3 +4376,20 @@ Merged `feature/steam-chat-v2` → `gamehub-608-build` and cut the new stable. T
 **Delivered:** Genshin variant → `/storage/emulated/0/Download/BannerHub-V6-1.3.0-608-Genshin.apk`, md5 **`626156127708d2baa53c7fcb1b6fe9aa`**.
 
 **Pending follow-ups:** update the bannerhub-site v6 page (don't push until user go); the **app-wide overlay** feature (Banner Tools toggle to run the overlay across all BannerHub screens, not just in-game) remains designed-but-unbuilt.
+
+---
+
+## 2026-06-17 — feature/voice-room-codes: cross-compat with BannerHub 3.7.5 voice rooms
+
+Branch `feature/voice-room-codes` off `gamehub-608-build`. Goal: let v6 users **join a BannerHub 3.7.5 room code** (or share a code/link 3.7.5 users can join), and show each other's names.
+
+**Key finding (code-verified, both sides + worker):** the signaling layer is *already* cross-compatible. The worker `/voice/room` mesh page is identity-agnostic — peers discovered via `/voice/roster`, one `RTCPeerConnection` per member, offerer = string compare `SELF<id`, **no Steam check**; `VOICE_ID_RE=/^[a-zA-Z0-9_-]{1,40}$/` accepts both a 3.7.5 short code and v6's SteamID-pair room. A 3.7.5 user and a v6 user in the same `room` string connect and talk today. The only gaps were v6-client-side.
+
+**What v6 was missing (now added):**
+1. **No room-code path** — v6 only ever derived `room` from a sorted SteamID pair and only dialed via Steam friends. Added a "🔊" header button → in-panel **Voice room by code** screen (name + Room code + Create/Join), mirroring 3.7.5's `BhVoiceOverlay`. Create mints a **5-char code from the same alphabet** `abcdefghjkmnpqrstuvwxyz23456789` 3.7.5 uses (interchangeable). Reuses the panel's existing focusable-EditText handling (`setWindowFocusable`).
+2. **No `name=` param** — v6's voice URL sent only `room/self/peer`. `BhVoiceController` now sends `&name=<display>` and **omits `peer`** in code-room mode (full-mesh). Added a second ctor `(act, roomCode, selfId, displayName, host)`; the Steam ctor delegates (sends no name → unchanged behavior, no regression).
+3. **Couldn't display nickname-only peers** — `BhVoiceController.Bridge` had no `rosterNames`, so the worker's name map never reached v6 (3.7.5 peers showed as "Guest"). Added `rosterNames` JS bridge + `Host.onVoiceRosterNames`; `refreshRoster()` now prefers a self-declared nickname over SteamID lookup / "Guest" (snapshotted to the IO thread).
+
+Identity for code rooms is **Steam-independent**: self id = SteamID when signed in else a stable per-install `bh-…` client id (`BhSteamChatController.getVoiceClientId`); display name persisted (`getVoiceName`, default `Player-<id4>`). No new manifest perms (RECORD_AUDIO/MODIFY_AUDIO_SETTINGS already added by `SteamChatVoiceManifestPatch`). Worker + bannerhub-api **untouched**.
+
+Files: `BhVoiceController.java` (+ctor/name/rosterNames), `BhSteamChatController.java` (+voice name/client-id prefs), `BhSteamChatOverlay.java` (+🔊 screen, startRoomCall, rosterNames plumbing). NEXT = build + device test: v6 Create code ↔ 3.7.5 Join (and reverse), confirm two-way audio + names on both rosters.

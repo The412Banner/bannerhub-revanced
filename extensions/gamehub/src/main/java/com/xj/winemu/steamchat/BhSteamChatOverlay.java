@@ -184,7 +184,11 @@ public final class BhSteamChatOverlay {
         private boolean callMuted;        // local mic muted in the active call
         private boolean callConnected;    // true once WebRTC reports in-call (timer started)
         private String callRoom;          // room id of the active call (for adding more users)
+        private boolean codeRoom;         // active call is a shared room-code call (not a Steam 1:1)
         private String[] callRosterIds = new String[0];  // live participant ids (SteamIDs + guest ids), incl. self
+        // Peer-id → self-chosen nickname, reported by the mesh page (rosterNames).
+        // Lets code-room / 3.7.5 peers show their name instead of "Guest".
+        private final java.util.HashMap<String, String> rosterNameMap = new java.util.HashMap<>();
         private String previewingToken;   // ringtone token currently previewing in settings (play/pause)
         // Current call-box UI state ("", "idle", "ringing", "incoming", "connecting",
         // "connected"). Single source of truth that renderCallBox() draws from, so
@@ -196,6 +200,8 @@ public final class BhSteamChatOverlay {
         private int pillUnread;           // total unread messages across conversations
         private android.view.animation.Animation badgePulseAnim;
         private boolean inSettings;       // call-settings screen is showing in the panel
+        private boolean inRoomEntry;      // room-code (join/create) screen is showing in the panel
+        private EditText roomCodeField;   // room-code input on the room-code screen (null otherwise)
         // Auto-dismiss an unanswered incoming call (and stop its ringtone) so it
         // doesn't ring forever if the caller bailed before we answered.
         private final Runnable incomingTimeout = new Runnable() {
@@ -375,6 +381,15 @@ public final class BhSteamChatOverlay {
             LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
             title.setLayoutParams(tlp);
             header.addView(title);
+            TextView room = new TextView(act);
+            room.setText("🔊");
+            room.setTextColor(COL_TEXT);
+            room.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+            room.setPadding(dp(8), dp(2), dp(4), dp(2));
+            room.setOnClickListener(new View.OnClickListener() {
+                public void onClick(View v) { showRoomCode(); }
+            });
+            header.addView(room);
             TextView cog = new TextView(act);
             cog.setText("⚙");
             cog.setTextColor(COL_TEXT);
@@ -391,6 +406,7 @@ public final class BhSteamChatOverlay {
             refresh.setPadding(dp(8), dp(2), dp(4), dp(2));
             refresh.setOnClickListener(new View.OnClickListener() {
                 public void onClick(View v) {
+                    if (inRoomEntry) return;   // don't discard a half-typed code
                     if (inSettings) { showSettings(); return; }
                     if (openFriendId == 0) loadFriends(); else loadHistory(openFriendId, currentTitle);
                 }
@@ -672,6 +688,8 @@ public final class BhSteamChatOverlay {
         private void loadFriends() {
             openFriendId = 0;
             inSettings = false;
+            inRoomEntry = false;
+            roomCodeField = null;
             stopPreviewIfIdle();   // stop any settings ringtone preview
             draft = ""; composerWasFocused = false;  // leaving the conversation
             if (backRow != null) backRow.setVisibility(View.GONE);
@@ -686,6 +704,181 @@ public final class BhSteamChatOverlay {
                     post(new Runnable() { public void run() { parseUnread(convJson); renderFriends(json); } });
                 }
             });
+        }
+
+        // ── voice room by code (cross-compatible with BannerHub 3.7.5) ──────────
+
+        /** Show the room-code screen: set a display name, then Create or Join a
+         *  shared voice room. The mesh connects by room + peer-id with no Steam
+         *  friendship check, so this interops with BannerHub 3.7.5 code rooms and
+         *  browser guests — no Steam friend (or even sign-in) required. */
+        private void showRoomCode() {
+            if (voice != null || callConnected) { toast("You're already in a call"); return; }
+            inRoomEntry = true;
+            inSettings = false;
+            openFriendId = 0;
+            if (backRow != null) backRow.setVisibility(View.VISIBLE);
+            setStatus("Voice room by code");
+            renderRoomEntry();
+        }
+
+        private void renderRoomEntry() {
+            if (listCol == null) return;
+            listCol.removeAllViews();
+            roomCodeField = null;
+
+            listCol.addView(sectionHeader("Voice room by code", false));
+
+            TextView desc = new TextView(act);
+            desc.setText("Share a short code to talk with anyone — BannerHub 3.7.5 users, "
+                    + "other v6 users, or a browser guest. No Steam friend needed.");
+            desc.setTextColor(COL_SUBTEXT);
+            desc.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+            desc.setPadding(0, dp(2), 0, dp(10));
+            listCol.addView(desc);
+
+            TextView nameLbl = new TextView(act);
+            nameLbl.setText("Your name in the room");
+            nameLbl.setTextColor(COL_TEXT);
+            nameLbl.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+            nameLbl.setPadding(0, dp(2), 0, dp(4));
+            listCol.addView(nameLbl);
+
+            final EditText nameField = roomEntryField(voiceDisplayName(), "Your name");
+            nameField.addTextChangedListener(new android.text.TextWatcher() {
+                public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+                public void onTextChanged(CharSequence s, int a, int b, int c) {}
+                public void afterTextChanged(android.text.Editable e) {
+                    BhSteamChatController.get().setVoiceName(act, e.toString());
+                }
+            });
+            listCol.addView(nameField);
+
+            TextView codeLbl = new TextView(act);
+            codeLbl.setText("Room code");
+            codeLbl.setTextColor(COL_TEXT);
+            codeLbl.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+            codeLbl.setPadding(0, dp(10), 0, dp(4));
+            listCol.addView(codeLbl);
+
+            roomCodeField = roomEntryField("", "enter a code, or tap Create");
+            roomCodeField.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                    | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+            roomCodeField.setFilters(new android.text.InputFilter[]{
+                    new android.text.InputFilter.LengthFilter(40) });
+            listCol.addView(roomCodeField);
+
+            LinearLayout row = new LinearLayout(act);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.END);
+            row.setPadding(0, dp(12), 0, 0);
+            TextView join = roomEntryButton("Join", COL_PILL_BG);
+            join.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+                String code = roomCodeField == null ? "" : roomCodeField.getText().toString().trim();
+                if (code.isEmpty()) { toast("Enter a room code, or tap Create"); return; }
+                startRoomCall(code);
+            }});
+            TextView create = roomEntryButton("Create", COL_ACCENT);
+            create.setOnClickListener(new View.OnClickListener() { public void onClick(View v) {
+                String code = randomRoomCode();
+                if (roomCodeField != null) roomCodeField.setText(code);
+                startRoomCall(code);
+            }});
+            row.addView(join);
+            row.addView(create);
+            listCol.addView(row);
+
+            if (scroll != null) scroll.post(new Runnable() { public void run() { scroll.scrollTo(0, 0); } });
+        }
+
+        /** Create or join a shared room-code call: full mesh, nickname identity,
+         *  no fixed peer. {@link BhVoiceController}'s room-code constructor sends
+         *  our self id + name and omits {@code peer}. */
+        private void startRoomCall(final String rawCode) {
+            if (rawCode == null || rawCode.trim().isEmpty()) { toast("Enter a room code or tap Create"); return; }
+            if (voice != null || callConnected) { toast("Already in a call"); return; }
+            if (!ensureMicPermission()) { toast("Grant microphone access, then try again"); return; }
+            final String room = rawCode.trim().toLowerCase();
+            final String self = voiceSelfId();
+            final String nick = voiceDisplayName();
+            rosterNameMap.clear();
+            codeRoom = true;
+            callPeer = 0;
+            callPeerName = null;
+            callMuted = false;
+            callConnected = false;
+            callRoom = room;
+            callRosterIds = new String[0];
+            callUi = "connecting";   // a 1-person room "waits"; becomes connected when a peer joins
+            loadFriends();           // leave the entry screen; the call box is now the focus
+            renderCallBox();
+            voice = new BhVoiceController(act, room, self, nick, Controller.this);
+            voice.start();
+            toast("Room “" + room + "” — tap 🔗 in the call box to share the code");
+        }
+
+        /** Self peer id for code rooms: the SteamID when signed in, else a stable
+         *  per-install client id (so an unsigned user can still join). */
+        private String voiceSelfId() {
+            if (localSteamId != 0) return String.valueOf(localSteamId);
+            return BhSteamChatController.get().getVoiceClientId(act);
+        }
+
+        /** Display name shown in code-room rosters; defaults to a handle off the
+         *  stable client id until the user sets one. */
+        private String voiceDisplayName() {
+            String n = BhSteamChatController.get().getVoiceName(act);
+            if (n != null && !n.trim().isEmpty()) return n.trim();
+            String cid = BhSteamChatController.get().getVoiceClientId(act);
+            String suffix = cid.length() >= 4 ? cid.substring(cid.length() - 4) : cid;
+            return "Player-" + suffix;
+        }
+
+        /** 5-char code from an unambiguous alphabet (no 0/o/1/l/i) — same format
+         *  BannerHub 3.7.5 generates, so codes are interchangeable. */
+        private static String randomRoomCode() {
+            final String alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
+            java.util.Random r = new java.util.Random();
+            StringBuilder sb = new StringBuilder(5);
+            for (int i = 0; i < 5; i++) sb.append(alphabet.charAt(r.nextInt(alphabet.length())));
+            return sb.toString();
+        }
+
+        private EditText roomEntryField(String text, String hint) {
+            EditText f = new EditText(act);
+            f.setText(text == null ? "" : text);
+            f.setHint(hint);
+            f.setTextColor(COL_TEXT);
+            f.setHintTextColor(COL_SUBTEXT);
+            f.setSingleLine(true);
+            f.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(0xFF12151A);
+            bg.setCornerRadius(dp(8));
+            bg.setStroke(dp(1), 0x40FFFFFF);
+            f.setBackground(bg);
+            f.setPadding(dp(10), dp(8), dp(10), dp(8));
+            f.setLayoutParams(new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            return f;
+        }
+
+        private TextView roomEntryButton(String label, int color) {
+            TextView b = new TextView(act);
+            b.setText(label);
+            b.setTextColor(COL_TEXT);
+            b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+            b.setTypeface(Typeface.DEFAULT_BOLD);
+            b.setPadding(dp(16), dp(7), dp(16), dp(7));
+            GradientDrawable bg = new GradientDrawable();
+            bg.setColor(color);
+            bg.setCornerRadius(dp(14));
+            b.setBackground(bg);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.leftMargin = dp(8);
+            b.setLayoutParams(lp);
+            return b;
         }
 
         // ── call settings (⚙) ───────────────────────────────────────────────────
@@ -1071,6 +1264,7 @@ public final class BhSteamChatOverlay {
             pendingRoom = null; pendingOfferPeer = 0; pendingPeerName = null;
             callPeer = 0; callPeerName = null; callMuted = false;
             callRoom = null; callRosterIds = new String[0];
+            codeRoom = false; rosterNameMap.clear();
             closeCallBox();
         }
 
@@ -1079,6 +1273,7 @@ public final class BhSteamChatOverlay {
             post(new Runnable() { public void run() {
                 if ("external".equals(state)) {
                     voice = null; callRoom = null; callRosterIds = new String[0]; callPeer = 0; callPeerName = null;
+                    codeRoom = false; rosterNameMap.clear();
                     closeCallBox();
                     toast("Voice call opened in your browser (update Android System WebView for in-app calls)");
                     return;
@@ -1086,6 +1281,7 @@ public final class BhSteamChatOverlay {
                 if ("ended".equals(state)) {
                     voice = null; callRoom = null; callRosterIds = new String[0];
                     callPeer = 0; callPeerName = null; callMuted = false;
+                    codeRoom = false; rosterNameMap.clear();
                     closeCallBox();
                     toast((detail != null && !detail.isEmpty()) ? "Call ended: " + detail : "Call ended");
                     return;
@@ -1114,6 +1310,24 @@ public final class BhSteamChatOverlay {
             }});
         }
 
+        /** id→nickname map from the mesh page (JSON), so code-room / 3.7.5 peers
+         *  show their chosen name instead of "Guest". */
+        public void onVoiceRosterNames(final String namesJson) {
+            post(new Runnable() { public void run() {
+                if (namesJson == null || namesJson.isEmpty()) return;
+                try {
+                    JSONObject o = new JSONObject(namesJson);
+                    java.util.Iterator<String> it = o.keys();
+                    while (it.hasNext()) {
+                        String k = it.next();
+                        String v = o.optString(k, "");
+                        if (v != null && !v.isEmpty()) rosterNameMap.put(k, v);
+                    }
+                } catch (Throwable ignored) {}
+                if (callConnected && shouldShowBox()) refreshRoster();
+            }});
+        }
+
         private static String[] parseIdCsv(String csv) {
             if (csv == null || csv.isEmpty()) return new String[0];
             String[] parts = csv.split(",");
@@ -1131,9 +1345,11 @@ public final class BhSteamChatOverlay {
          *  Trusts the roster once it's populated; falls back to the dialed peer. */
         private void refreshRoster() {
             final String[] ids = callRosterIds;
-            final String me = localSteamId != 0 ? String.valueOf(localSteamId) : "";
+            final String me = localSteamId != 0 ? String.valueOf(localSteamId) : voiceSelfId();
             final String peer = callPeer != 0 ? String.valueOf(callPeer) : "";
             final String peerName = callPeerName;
+            // Snapshot the name map on the UI thread so the IO worker reads a stable copy.
+            final java.util.HashMap<String, String> nameMap = new java.util.HashMap<>(rosterNameMap);
             IO.execute(new Runnable() { public void run() {
                 java.util.LinkedHashMap<String, String> map = new java.util.LinkedHashMap<>();
                 if (!me.isEmpty()) map.put(me, "You");
@@ -1143,6 +1359,10 @@ public final class BhSteamChatOverlay {
                 int guest = 0;
                 for (String id : ids) {
                     if (id.equals(me)) { map.put(id, "You"); continue; }
+                    // A self-declared nickname (code-room / 3.7.5 peer) wins over any
+                    // SteamID lookup or "Guest" fallback.
+                    String declared = nameMap.get(id);
+                    if (declared != null && !declared.isEmpty()) { map.put(id, declared); continue; }
                     if (id.equals(peer) && peerName != null && !peerName.isEmpty()) { map.put(id, peerName); continue; }
                     if (isSteamId(id)) map.put(id, resolveFriendName(Long.parseLong(id), "Friend"));
                     else { guest++; map.put(id, guest > 1 ? "Guest " + guest : "Guest"); }

@@ -150,4 +150,45 @@ public final class BhSteamChatController {
             prefs(ctx).edit().putInt(KEY_RINGTONE_VOLUME, percent).apply();
         } catch (Throwable ignored) {}
     }
+
+    // ── room-code voice identity (cross-compatible with BannerHub 3.7.5) ─────
+    // A room-code call doesn't go through Steam friends, so it needs its own
+    // display name + a stable peer id. Both are independent of Steam sign-in so a
+    // user who isn't signed in can still join a friend's room.
+
+    /** Display name shown in a code room's roster. Empty until the user sets one
+     *  (the room-code screen prefills a default). */
+    public static final String KEY_VOICE_NAME = "voice_room_name";
+    /** Stable per-install client id used as the self peer id in code rooms. */
+    public static final String KEY_VOICE_CLIENT = "voice_client_id";
+
+    public String getVoiceName(Context ctx) {
+        try {
+            String v = prefs(ctx).getString(KEY_VOICE_NAME, "");
+            return v == null ? "" : v;
+        } catch (Throwable t) {
+            return "";
+        }
+    }
+
+    public void setVoiceName(Context ctx, String name) {
+        try {
+            prefs(ctx).edit().putString(KEY_VOICE_NAME, name == null ? "" : name.trim()).apply();
+        } catch (Throwable ignored) {}
+    }
+
+    /** Stable client id for code rooms; generated and persisted on first use.
+     *  Matches the worker's VOICE_ID_RE ([A-Za-z0-9_-], ≤40). */
+    public String getVoiceClientId(Context ctx) {
+        try {
+            String id = prefs(ctx).getString(KEY_VOICE_CLIENT, "");
+            if (id == null || id.isEmpty()) {
+                id = "bh-" + java.util.UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+                prefs(ctx).edit().putString(KEY_VOICE_CLIENT, id).apply();
+            }
+            return id;
+        } catch (Throwable t) {
+            return "bh-" + System.currentTimeMillis();
+        }
+    }
 }

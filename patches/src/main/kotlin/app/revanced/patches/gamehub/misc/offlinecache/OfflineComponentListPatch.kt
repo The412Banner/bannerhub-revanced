@@ -45,7 +45,17 @@ import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 // a(Ll6e;,ComponentType,I,Lkq3;,I)Object page=200 (0xc8) → b(IIILkq3;)Object;
 // c(Lkq3;)Object present; ComponentType param still the stable anchor).
 // ComponentType stays unobfuscated; method names a/c + shapes unchanged.
-private const val GOF_CLASS = "Ll6e;"
+// 6.0.9: Ll6e;->Lrpe; (verified ~/gh609-apktool-d/smali_classes3/rpe.smali:
+// a(Lrpe;,ComponentType,I,Lpv3;,I)Object page=200 (0xc8) → b(IIILpv3;)Object;
+// b(IIILpv3;)Object impl; c(Lpv3;)Object .locals 11 present). Continuation type
+// Lkq3;→Lpv3; (not anchored — patch keys on size==5 + [1]==ComponentType).
+// ⚠️ EXTENSION FIX (the real "never worked" cause): the success-result wrapper
+// is NOT n55 on 6.0.9. Confirmed via the caller unwrap (as5.smali after the
+// rpe.a call): check-cast Lzi5; (sealed base); instance-of Lyi5; (SUCCESS) →
+// iget Lyi5;->a:Object → check-cast List. So N55_SUCCESS n55→yi5 (Lyi5; extends
+// Lzi5;, field a:Object, ctor(Object); error variant Lxi5;). 608 n55/o55 →
+// 609 yi5/zi5. See OfflineComponentList.java.
+private const val GOF_CLASS = "Lrpe;"
 private const val COMPONENT_TYPE =
     "Lcom/xiaoji/egggame/common/winemu/bean/ComponentType;"
 private const val LIST =

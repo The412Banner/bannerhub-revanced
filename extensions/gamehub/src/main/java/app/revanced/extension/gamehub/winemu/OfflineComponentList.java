@@ -50,10 +50,15 @@ public final class OfflineComponentList {
             "com.xiaoji.egggame.common.winemu.bean.EnvLayerEntity";
     private static final String STATE_ENUM =
             "com.xiaoji.egggame.common.winemu.bean.State";
-    // gof.a's real success wrapper (R8): Ln55; extends sealed Lo55;,
-    // public final a:Object, ctor <init>(Object). zxf.a unwraps n55.a as
-    // List<EnvLayerEntity>. (BaseResult/Lc91; is gof.b-INTERNAL only.)
-    private static final String N55_SUCCESS = "n55";
+    // gof.a's real success wrapper (R8). The caller unwraps it as:
+    //   check-cast <sealed base>; instance-of <SUCCESS>; iget SUCCESS.a:Object;
+    //   check-cast List  (verified in the rpe.a caller, e.g. as5.smali).
+    // 6.0.8: Ln55; (extends sealed Lo55;); 6.0.9: Lyi5; (extends sealed Lzi5;,
+    // public final a:Object, ctor <init>(Object); error variant Lxi5;).
+    // ⚠️ This was the "never worked" bug — the wrong wrapper made newSuccess()
+    // return null → synthesise() null → offline picker fell back to the
+    // (offline-empty) original. Re-derive per base bump from the rpe.a caller.
+    private static final String N55_SUCCESS = "yi5";
 
     private static final Pattern ENTRY = Pattern.compile(
             "<string name=\"COMPONENT:[^\"]*\">(.*?)</string>", Pattern.DOTALL);

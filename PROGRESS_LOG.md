@@ -4457,7 +4457,7 @@ Smoke-test run **27760047512** (gate=6.0.9) generated the real failure set: **14
 - [ ] 6. **Offline component picker — local list**
 - [ ] 7. **PC-accurate vibration**
 - [ ] 8. **Show PC Game Settings row**
-- [ ] 9. **Stub analytics events**
+- [ ] 9. **Stub analytics events** — 🔧 RE-DERIVED (commit `9db00d9`; pre8 run `27773508828`, awaiting CI). String/marker-anchored patch (class reshuffle is a no-op: batch reporter `Lzy5`→`Ll76`, device-perf `Lb34`→`Lvw3`) — failure was an ENDPOINT PATH CHANGE: device-perf `/events/device-performance-config`→**`/events/device-performance-session-summary`**. Only `DEVICE_PERF_SUFFIX` updated; plain `/events` URL + `vgabc.com/events` marker unchanged (marker still catches all dev2/beta/prod variants of both reporters). No runtime extension (rewrites const-strings in place) → no Class.forName stale risk. Device-verify = analytics POSTs go to 127.0.0.1 (no vgabc.com/events egress).
 
 All 9 threw `Required value was null` (fingerprint matched nothing).
 

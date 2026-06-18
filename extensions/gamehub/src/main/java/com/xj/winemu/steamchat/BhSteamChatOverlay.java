@@ -1306,7 +1306,9 @@ public final class BhSteamChatOverlay {
             post(new Runnable() { public void run() {
                 callRosterIds = parseIdCsv(idsCsv);
                 updatePillBadge();                       // refresh the party count on the pill
-                if (callConnected && shouldShowBox()) refreshRoster();
+                // Code rooms refresh the roster even before a peer connects, so
+                // the waiting-room user list fills in as people join.
+                if (shouldShowBox() && (callConnected || codeRoom)) refreshRoster();
             }});
         }
 
@@ -1324,7 +1326,7 @@ public final class BhSteamChatOverlay {
                         if (v != null && !v.isEmpty()) rosterNameMap.put(k, v);
                     }
                 } catch (Throwable ignored) {}
-                if (callConnected && shouldShowBox()) refreshRoster();
+                if (shouldShowBox() && (callConnected || codeRoom)) refreshRoster();
             }});
         }
 
@@ -1370,7 +1372,9 @@ public final class BhSteamChatOverlay {
                 final java.util.List<String> names = new java.util.ArrayList<>(map.values());
                 post(new Runnable() { public void run() {
                     // Don't re-attach a box that's been minimized to the pill.
-                    if (callConnected && callBox != null && shouldShowBox()) callBox.showConnected(names);
+                    if (callBox == null || !shouldShowBox()) return;
+                    if (codeRoom) callBox.showRoom(callRoom, names, callConnected);
+                    else if (callConnected) callBox.showConnected(names);
                 }});
             }});
         }
@@ -1479,14 +1483,29 @@ public final class BhSteamChatOverlay {
             } else if ("incoming".equals(callUi)) {
                 b.showIncoming(callPeerName);
             } else if ("connecting".equals(callUi)) {
-                b.showConnecting();
+                if (codeRoom) {
+                    // Room-code Create/Join: drop straight into the room view
+                    // (code + roster + "waiting for others to join") instead of a
+                    // blocking "Connecting…" screen. Upgrades to the live timer
+                    // the moment a peer connects (onVoiceState "in-call").
+                    java.util.List<String> quick = new java.util.ArrayList<>();
+                    quick.add("You");
+                    b.showRoom(callRoom, quick, false);
+                    refreshRoster();
+                } else {
+                    b.showConnecting();
+                }
             } else if ("connected".equals(callUi)) {
                 // Show immediately with You + the dialed peer (starts/resumes the
                 // timer), then fill in the full resolved roster off-thread.
                 java.util.List<String> quick = new java.util.ArrayList<>();
                 quick.add("You");
-                if (callPeerName != null && !callPeerName.isEmpty()) quick.add(callPeerName);
-                b.showConnected(quick);
+                if (codeRoom) {
+                    b.showRoom(callRoom, quick, true);
+                } else {
+                    if (callPeerName != null && !callPeerName.isEmpty()) quick.add(callPeerName);
+                    b.showConnected(quick);
+                }
                 b.setMuted(callMuted);
                 refreshRoster();
             }

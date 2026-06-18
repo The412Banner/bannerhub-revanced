@@ -84,6 +84,8 @@ public final class BhVoiceCallBox {
     private boolean connectedShown;  // timer started; subsequent roster updates must not reset it
     private boolean collapsed;       // connected state shown as the compact tile
     private List<String> lastParticipants;  // cached so collapse/expand can re-render
+    private String lastRoomCode;            // non-null while showing a room-code call (else a Steam 1:1)
+    private boolean lastRoomConnected;      // room-code call has a live peer (timer running)
 
     public BhVoiceCallBox(Activity act, Actions actions) {
         this.act = act;
@@ -158,6 +160,7 @@ public final class BhVoiceCallBox {
     public void showConnected(List<String> participants) {
         ensureAttached();
         lastParticipants = participants;
+        lastRoomCode = null;   // this is the Steam 1:1 path, not a room-code call
 
         timer.setVisibility(View.VISIBLE);
         if (!connectedShown) {
@@ -207,6 +210,73 @@ public final class BhVoiceCallBox {
         buttons.addView(button("—", COL_PILL, new View.OnClickListener() {
             public void onClick(View v) { collapsed = true; showConnected(lastParticipants); }
         }));
+    }
+
+    /** Room-code call box: always shows the shareable room code and the live
+     *  roster, so Create/Join drops you straight into the room instead of a
+     *  blocking "Connecting…" screen. Before anyone else joins it's a "waiting
+     *  room" ("Connecting — waiting for others to join…", no timer); the moment
+     *  a peer connects it upgrades in place to the green in-call view with a
+     *  running timer. The mic is live throughout. Safe to call repeatedly as the
+     *  roster changes — the timer is only started once. */
+    public void showRoom(String code, List<String> participants, boolean liveConnected) {
+        ensureAttached();
+        lastParticipants = participants;
+        lastRoomCode = code;
+        lastRoomConnected = liveConnected;
+
+        if (liveConnected) {
+            timer.setVisibility(View.VISIBLE);
+            if (!connectedShown) {
+                connectedShown = true;
+                timer.setBase(SystemClock.elapsedRealtime());
+            }
+            timer.start();
+        } else {
+            stopTimer();
+        }
+
+        if (collapsed) { renderTile(participants); return; }
+
+        root.setPadding(dp(14), dp(10), dp(14), dp(12));
+        int n = participants != null ? participants.size() : 0;
+        String codeUp = safe(code, "room").toUpperCase();
+        header.setText((liveConnected ? "🟢  In call" : "🔊  Room") + "  ·  " + codeUp
+                + (n > 0 ? "  ·  " + n : ""));
+        header.setVisibility(View.VISIBLE);
+        header.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        body.setVisibility(View.VISIBLE);
+        body.setText(liveConnected ? "Tap 🔗 to invite more people"
+                                   : "Connecting — waiting for others to join…");
+
+        users.removeAllViews();
+        users.setVisibility(View.VISIBLE);
+        if (participants != null) for (String p : participants) users.addView(participant(safe(p, "Guest")));
+
+        timer.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+
+        buttons.removeAllViews();
+        if (liveConnected) buttons.addView(button("Mute", COL_PILL, new View.OnClickListener() {
+            public void onClick(View v) { actions.onToggleMute(); }
+        }));
+        buttons.addView(button("＋ Add", COL_ACCENT, new View.OnClickListener() {
+            public void onClick(View v) { actions.onAddUser(); }
+        }));
+        buttons.addView(button("🔗", COL_PILL, new View.OnClickListener() {
+            public void onClick(View v) { actions.onShareLink(); }
+        }));
+        buttons.addView(button("Leave", COL_RED, new View.OnClickListener() {
+            public void onClick(View v) { actions.onEnd(); }
+        }));
+        if (liveConnected) buttons.addView(button("—", COL_PILL, new View.OnClickListener() {
+            public void onClick(View v) { collapsed = true; showRoom(lastRoomCode, lastParticipants, lastRoomConnected); }
+        }));
+    }
+
+    /** Re-render the full (non-collapsed) view for whichever call type is live. */
+    private void reExpand() {
+        if (lastRoomCode != null) showRoom(lastRoomCode, lastParticipants, lastRoomConnected);
+        else showConnected(lastParticipants);
     }
 
     /** Compact tile: 🎧 party-count · timer, with Hang up + ＋Add. Tapping the
@@ -306,6 +376,8 @@ public final class BhVoiceCallBox {
         connectedShown = false;
         collapsed = false;
         lastParticipants = null;
+        lastRoomCode = null;
+        lastRoomConnected = false;
         if (header != null) header.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
         if (root != null) root.setPadding(dp(14), dp(10), dp(14), dp(12));
         if (!attached || wm == null || root == null) { attached = false; return; }
@@ -449,7 +521,7 @@ public final class BhVoiceCallBox {
                     return true;
                 case MotionEvent.ACTION_UP:
                     // A tap (no drag) on the collapsed tile expands it back to full.
-                    if (!dragged && collapsed) { collapsed = false; showConnected(lastParticipants); }
+                    if (!dragged && collapsed) { collapsed = false; reExpand(); }
                     return true;
                 default:
                     return false;

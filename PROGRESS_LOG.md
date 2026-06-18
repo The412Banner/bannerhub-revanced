@@ -4433,6 +4433,8 @@ Merged `feature/voice-room-codes` into the mainline and cut the stable. The room
 
 ## 2026-06-18 — GameHub 6.0.9 patch re-derivation worklist (branch `gamehub-609-build`)
 
+> 🏁🏁 **DONE — STABLE `v1.0.0-609` SHIPPED (Latest) 2026-06-18.** Release run `27783457578` (13 assets = 9 APK + bh_explore.json + 3 .rvp, Explore What's New card synced + version stamped). All 9 root patches + cascades + privacy suite + chat/voice overlay device-confirmed on 6.0.9. README + bannerhub-site updated; release-notes prose rewritten; default branch = `gamehub-609-build`. Re-derivation + release complete.
+
 Setup for 6.0.9 (vc121) is done: base uploaded (`base-apk-609`), CI repointed, `GAMEHUB_VERSION` gate bumped 6.0.8→6.0.9, diff written (`gamehub_reports/GAMEHUB_609_vs_608_DIFF.md`). 6.0.9 = feature release (native Team Room + Tencent TRTC voice), **no Wine/DXVK/Turnip/renderer change** → container/imagefs/renderer patches carry over untouched.
 
 Smoke-test run **27760047512** (gate=6.0.9) generated the real failure set: **14 patches fail = 9 root fingerprint breakages + 5 cascades** (R8 reshuffled obfuscated anchors again — same family as 607→608). ReVanced exits 0 on skipped patches, so "green" ≠ applied; read the `SEVERE: "X" failed:` lines.

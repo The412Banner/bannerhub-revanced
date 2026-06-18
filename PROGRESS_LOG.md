@@ -4441,8 +4441,8 @@ Smoke-test run **27760047512** (gate=6.0.9) generated the real failure set: **14
 > **ORDER RULE (per user, 2026-06-18):** ALWAYS fix **Bypass login** + **Debug logging** FIRST on every base bump, before the keystone/others.
 
 ### Root failures — need fingerprint re-derivation (9)
-- [~] 3. **Bypass login** — RE-DERIVED + committed `08decac` (CI apply-test pending). AUTH_IMPL Lfw0→**Lux0**, AUTH_INTERFACE Lcw0→**Lrx0**, AUTH_TOKEN Lt2l→**Lqbm**, GAME_LIB_REPO Ldm7→**Lqv7**, NAVIGATOR Lj8d→**Ljrd**; FakeStateFlow udi/q4g/s3d→**a5j/crg/smd**. Method names (auth a–h, save x, userid h, gates i/s) unchanged. Structurally verified each anchor in `~/gh609-apktool-d`.
-- [~] 4. **Debug logging** — RE-DERIVED + committed `08decac` (CI apply-test pending). Y2D_INTERFACE Lw9c→**Llsc** (err method a→**e**), Y2D_IMPL Ly86→**Lrh6** (method a→**e**), SAVE_REPO Ldm7→**Lqv7** (=GAME_LIB_REPO, method x unchanged), IMPORT_TXN Lza→**Lcb** (method x→**w**).
+- [x] 3. **Bypass login** — ✅ RE-DERIVED + **CI APPLY-CONFIRMED** (commit `08decac`; run **27762795208** — no longer in SEVERE list). AUTH_IMPL Lfw0→**Lux0**, AUTH_INTERFACE Lcw0→**Lrx0**, AUTH_TOKEN Lt2l→**Lqbm**, GAME_LIB_REPO Ldm7→**Lqv7**, NAVIGATOR Lj8d→**Ljrd**; FakeStateFlow udi/q4g/s3d→**a5j/crg/smd**. Method names (auth a–h, save x, userid h, gates i/s) unchanged. Structurally verified each anchor in `~/gh609-apktool-d`. (Device-test still TODO before stable.)
+- [x] 4. **Debug logging** — ✅ RE-DERIVED + **CI APPLY-CONFIRMED** (commit `08decac`; run **27762795208**). Y2D_INTERFACE Lw9c→**Llsc** (err method a→**e**), Y2D_IMPL Ly86→**Lrh6** (method a→**e**), SAVE_REPO Ldm7→**Lqv7** (=GAME_LIB_REPO, method x unchanged), IMPORT_TXN Lza→**Lcb** (method x→**w**).
 - [ ] 1. **Per-game menu id capture (shared)** — 🔑 KEYSTONE (More-Menu row resolver). Unblocks 4 cascades.
 - [ ] 2. **Redirect catalog API** — unblocks `Prefix API path with /v6`.
 - [ ] 5. **Explore tab hijack**

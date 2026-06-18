@@ -4428,3 +4428,40 @@ Merged `feature/voice-room-codes` into the mainline and cut the stable. The room
 - **Build:** `release.yml` `version=1.3.1-608 stable=true` on `gamehub-608-build` → run **27729146589** ✅ success, 0 SEVERE. Published GitHub Release **v1.3.1-608**, marked **Latest**, 13 assets (9 APK + `bh_explore.json` + 3 `.rvp`). Genshin md5 **`27de8e21d78b46a65cd1016ee86b279e`** → `/storage/emulated/0/Download/BannerHub-V6-1.3.1-608-Genshin.apk`. Installs in place over `v1.3.0-608` (same keystore).
 
 **Next on this repo:** none required for v1.3.1. Open enhancement still on the table: V6 auto-use the signed-in Steam persona name instead of a picked name. Counterpart release: cut **BannerHub 3.8.0** on the BannerHub repo so the 3.8.0 cross-play reference has its build.
+
+---
+
+## 2026-06-18 — GameHub 6.0.9 patch re-derivation worklist (branch `gamehub-609-build`)
+
+Setup for 6.0.9 (vc121) is done: base uploaded (`base-apk-609`), CI repointed, `GAMEHUB_VERSION` gate bumped 6.0.8→6.0.9, diff written (`gamehub_reports/GAMEHUB_609_vs_608_DIFF.md`). 6.0.9 = feature release (native Team Room + Tencent TRTC voice), **no Wine/DXVK/Turnip/renderer change** → container/imagefs/renderer patches carry over untouched.
+
+Smoke-test run **27760047512** (gate=6.0.9) generated the real failure set: **14 patches fail = 9 root fingerprint breakages + 5 cascades** (R8 reshuffled obfuscated anchors again — same family as 607→608). ReVanced exits 0 on skipped patches, so "green" ≠ applied; read the `SEVERE: "X" failed:` lines.
+
+> **WORKING RULE (per user, 2026-06-18):** after EACH patch below is fixed, update BOTH this progress log (check the box + commit anchor + how it was re-pinned) AND the `project_gamehub_609_base` memory file. Do both every time, not in a batch at the end.
+
+### Root failures — need fingerprint re-derivation (9)
+- [ ] 1. **Per-game menu id capture (shared)** — 🔑 KEYSTONE (More-Menu row resolver). Do FIRST; unblocks 4 cascades.
+- [ ] 2. **Redirect catalog API** — unblocks `Prefix API path with /v6`.
+- [ ] 3. **Bypass login**
+- [ ] 4. **Debug logging**
+- [ ] 5. **Explore tab hijack**
+- [ ] 6. **Offline component picker — local list**
+- [ ] 7. **PC-accurate vibration**
+- [ ] 8. **Show PC Game Settings row**
+- [ ] 9. **Stub analytics events**
+
+All 9 threw `Required value was null` (fingerprint matched nothing).
+
+### Cascade failures — should auto-resolve once their root is re-pinned (5)
+- [ ] Banner Tools menu row — dep #1
+- [ ] PC Vibration Settings menu row — dep #1
+- [ ] Show Game ID menu row — dep #1
+- [ ] GOG menu row — dep #1
+- [ ] Prefix API path with /v6 — dep #2
+
+### Applied clean on 6.0.9 (no action)
+All privacy strips (Firebase/Crashlytics/GMS/MobPush/heartbeat/Ad-ID, Aliyun NumberAuth), audio, explore drawables/manifest/version-stamp, file-manager access, app-icon, external launcher, GameID label resource, local game-id assignment. Identical failure set across all 9 variants.
+
+**Approach:** mirror `project_gamehub_608_patch_rederivation` re-pin method. Decompiles: `~/gh609-apktool-d` (apktool) + `~/gamehub-6.0.9-jadx` (jadx).
+
+**After all 9 root re-pinned:** rewrite 608-specific release-notes prose in `release.yml` (vc119→121, voice-room narrative), then cut a real 609 build.

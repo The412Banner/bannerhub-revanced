@@ -36,10 +36,17 @@ import com.android.tools.smali.dexlib2.iface.reference.StringReference
 // Anchors: the production /events URL (unique to the batch reporter — the
 // device-perf strings carry the longer .../device-performance-config suffix),
 // and any const-string ending in "/events/device-performance-config".
+//
+// 6.0.9: patch is string/marker-anchored so the R8 class reshuffle is a no-op
+// (batch reporter is now Ll76;, device-perf Lvw3;), BUT the device-perf ENDPOINT
+// PATH CHANGED: ".../events/device-performance-config" -> ".../events/device-
+// performance-session-summary". The plain /events URL + the "vgabc.com/events"
+// marker are unchanged (marker still substring-matches all dev2/beta/prod
+// variants of BOTH reporters). Only DEVICE_PERF_SUFFIX needed updating.
 // =============================================================================
 
 private const val EVENTS_URL = "https://statistic-gamehub-api.vgabc.com/events"
-private const val DEVICE_PERF_SUFFIX = "/events/device-performance-config"
+private const val DEVICE_PERF_SUFFIX = "/events/device-performance-session-summary"
 private const val ANALYTICS_MARKER = "vgabc.com/events"
 private const val LOOPBACK = "http://127.0.0.1"
 

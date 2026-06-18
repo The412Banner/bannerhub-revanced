@@ -28,7 +28,7 @@ public final class FakeAuthToken {
     private static final String FAKE_USER_ID = "99999";
 
     /** R8-mangled class name of the auth-token wrapper. Update on base APK bump. */
-    private static final String AUTH_TOKEN_CLASS = "t2l"; // 6.0.8 (6.0.7 n2l, was wpm); = Lcw0;->f() return type
+    private static final String AUTH_TOKEN_CLASS = "qbm"; // 6.0.9 (6.0.8 t2l, 6.0.7 n2l, was wpm); = Lrx0;->f() return type, 10-field (S,S,S,S,Long,Long,J,Z,J,J), .a=userId. Ctor sig IDENTICAL to 6.0.8 (verified ~/gh609-apktool-d).
 
     private static volatile Object cached;
 

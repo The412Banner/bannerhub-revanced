@@ -26,7 +26,7 @@ public final class FakeUserAccount {
     private static final String FAKE_USER_ID = "99999";
 
     /** R8-mangled class name of the user-account data class. Update on base APK bump. */
-    private static final String USER_ACCOUNT_CLASS = "n2l"; // 6.0.8 (6.0.7 h2l, 6.0.4 rpm); 27-field, = Lcw0;.b() return (n2l was the 6.0.7 TOKEN class — letters shuffled). Device-confirmed: stale h2l made get() return null → library list empty despite row in t_game_library_base.
+    private static final String USER_ACCOUNT_CLASS = "kbm"; // 6.0.9 (6.0.8 n2l, 6.0.7 h2l, 6.0.4 rpm); 27-field (a..z + A), = Lrx0;.b() return (qv7.h() reads Lkbm;->a as userId fallback). Ctor sig IDENTICAL to 6.0.8 (verified in ~/gh609-apktool-d). Device-confirmed pattern: stale class makes get() return null → library list empty despite the row being in t_game_library_base.
 
     private static volatile Object cached;
 

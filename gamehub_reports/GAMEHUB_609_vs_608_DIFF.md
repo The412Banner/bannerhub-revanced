@@ -48,6 +48,21 @@ Evidence:
 
 String-table growth concentrates in `features.home` (teamroom, biggest delta — e.g. EN 31,888 → 44,164 b), `features.cloud` (team chat), `core`, and `features.search`.
 
+## Where Team Room / team voice actually lives in the app (and why it looks "missing")
+
+Investigated 2026-06-18 — there is **no standalone "voice chat room" menu**. The feature is bolted onto GameHub's **cloud "Instant Play"** service and is **locked by default**. Two surfaces:
+
+1. **Entry point = "Team Play" tab on Home → Play screen.** The Play tab bar is a 4-tab enum **Instant · PC · Retro · Team Play** (`features_home_play_tab_{instant,pc,retro,teamplay}`, built in `emk.java`/`fmk.java`). Team Play is where you create/join a room.
+2. **The voice room itself = an in-game cloud OVERLAY, not a page.** It lives in the `features.cloud` module and only renders while inside a cloud Instant-Play session. It is **not openable cold**. Evidence — `cloud_team_*` prefs (read in `dq2.java`, `yr2.java`):
+   - `cloud_team_overlay_locked` → **default `true`** (locked out of the box)
+   - movable overlay offsets: `cloud_team_avatar_offset_*`, `cloud_team_controls_offset_*`, `cloud_team_messages_offset_*`, `cloud_team_input_offset_*`, `cloud_team_overlay_alpha`
+   - voice toggles: `cloud_team_voice_mic_enabled`, `cloud_team_voice_speaker_enabled`
+   - lock UI: `cloud_team_lock_guide_*` (`fjk.java`/`gjk.java`), `cloud_team_position_locked`, `cloud_popup_content_team_lock`, `cloud_team_drawer_guide_message_full`
+
+**Why it's effectively invisible on our builds:** gated behind the cloud Instant-Play product = a **server-side, China-region cloud-gaming service** requiring (a) a logged-in cloud account and (b) Instant-Play **recharge minutes** (`features_home_create_room_recharge_guide_*`). With no cloud account / outside region / no minutes, the Team Play tab is empty and `cloud_team_overlay_locked` never flips → the room never unlocks. Nothing is hidden by us; the feature simply never activates without the paid cloud backend.
+
+**Relevance to v6:** this is upstream's own Tencent-TRTC voice riding on their cloud service, fully independent of our v6 in-game Steam voice overlay (WebRTC via Worker). Because their feature won't even unlock on our builds, the `RECORD_AUDIO`/audio-focus overlap flagged below is moot in practice — our overlay stays the only working in-game voice on a patched 6.0.9.
+
 ## What did NOT change (important for our patches)
 - **No Wine / DXVK / Turnip / renderer `.so` touched.** The only changed *existing* native lib is `libsteamkit_core.so` (8,502,480 → 8,508,808 b, +6,328 b) — same small Steam-stack bump pattern as 607→608. Wine container format, imagefs, and renderer patches are **unaffected**.
 - DEX layout: still **5 dex** (classes.dex + classes2..5). Total bytecode grew (Team Room + Tencent glue); per-dex sizes reshuffled by R8 as usual.

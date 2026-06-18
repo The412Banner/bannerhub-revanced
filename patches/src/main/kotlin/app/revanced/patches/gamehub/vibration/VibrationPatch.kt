@@ -33,6 +33,17 @@ import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 //                   Lrz7; (abstract g()V + h(II)V); h(II)V .locals 3 + const
 //                   0xffff; g()V .locals 1; field f:I (device id); field k:Lb4k;
 //                   (motor mgr). Sibling qz7 (no f:I) is the single-Vibrator decoy.
+//                   6.0.9 Ly98; (base Lrz7;→Laa8;) — verified
+//                   ~/gh609-apktool-d/smali_classes3/y98.smali: extends Laa8;;
+//                   h(II)V .locals 3 + const 0xffff; g()V .locals 1; field f:I
+//                   (device id); field k:Lkwk; (motor mgr); i()List multi-motor.
+//                   Sibling z98 (field f:Z boolean, has Context, h(II)V .locals 2)
+//                   is the single-Vibrator decoy. Method/field names (h/g/f:I)
+//                   preserved — only the class letter reshuffled (Lpz7→Ly98; the
+//                   old Lpz7 letter is now an unrelated string class). Hooks 1
+//                   (GamepadServerManager.onRumble, kept name) & 4 (WineActivity
+//                   .onCreate, kept name, .locals 20 → from16 still valid) and the
+//                   pattern-based winebus.so disk patcher are 6.0.9-unaffected.
 // WINE_ACTIVITY   — the Wine session Activity. Hook 4 (the winebus disk-patch
 //                   trigger) used to anchor the Wine env-vars builder
 //                   (6.0.2 Ldg5;, 6.0.4 Lbg5;->a(...)V .locals 35). In 6.0.7
@@ -42,7 +53,7 @@ import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 //                   a stable, non-obfuscated AppCompatActivity (= a Context)
 //                   whose onCreate runs at game launch, before the Wine
 //                   process maps winebus.so — a strictly more robust anchor.
-private const val PHYSICAL_CLASS = "Lpz7;"   // 6.0.7: Lnz7;  6.0.4: Lab8;
+private const val PHYSICAL_CLASS = "Ly98;"   // 6.0.8: Lpz7;  6.0.7: Lnz7;  6.0.4: Lab8;
 private const val WINE_ACTIVITY =
     "Lcom/xiaoji/egggame/features/winemu/WineActivity;"
 

@@ -197,6 +197,11 @@ jobs:
           java -jar shared/revanced-cli.jar patch shared/GameHub_6.1.0.apk \
             --patches shared/patches.rvp \
             --bypass-verification \
+            `# 610: "Strip cloud gaming" is broken on 6.1.0 (bytecode anchors gone) but its` \
+            `# resource-delete dependency still runs and removes assets/composeResources/` \
+            `# ...features.cloud, which 6.1.0 loads at STARTUP -> MissingResourceException crash.` \
+            `# Disabled until the patch is re-derived / re-scoped for 6.1.0.` \
+            -d "Strip cloud gaming" \
             -e "Change package name" \
               -O 'packageName="${{ matrix.variant.pkg }}"' \
               -O 'updatePermissions=true' \

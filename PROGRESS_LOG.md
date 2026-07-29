@@ -1,5 +1,42 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-07-29 — 📦 GameHub **6.1.0** base APK onboarded (`base-apk-610`) — ⚠️ NATIVE EMULATION RUNTIME IS NOT IN THE APK
+
+Upstream shipped **6.1.0 / versionCode 122** (609 was 121 — sequential, no skip this time). Source APK supplied by user from SD backup `/storage/7B7F-E3AA/APK Backups/Gamehub/v6/GameHub_6.1.0.apk`, copied to `~/GameHub_6.1.0.apk`.
+
+| | 6.0.9 | 6.1.0 |
+|---|---|---|
+| versionCode | 121 | **122** |
+| size | 86,643,386 | **76,567,271** (−10,076,115, −11.6%) |
+| minSdk / targetSdk / compileSdk | 29 / 36 / 36 | 29 / 36 / **37** |
+| dex files | 5 | **4** |
+| `.so` count (arm64-v8a, only ABI) | 25 | **21** |
+| md5 | `ae6f18b5…` | `ad428649b1b7d779e8093c7d27407193` |
+| sha256 | — | `d101aefc02b4a1ada85cbfe03a4fec466f382c88c212f3c70a16e9f8b1c7ee7f` |
+
+**Release `base-apk-610` published** (shell first, then `gh release upload` separately per the 609 rollback lesson — the inline-asset path is still not to be used). Asset verified at exactly 76,567,271 bytes, `state=uploaded`. `unzip -t` clean.
+
+### 🚨 THE HEADLINE: four native runtime libs were REMOVED
+
+Present in 6.0.9, **absent from 6.1.0** (7,035,352 bytes = 6.71 MB of the 10 MB shrink):
+
+| lib | 6.0.9 size | role |
+|---|---|---|
+| `libxserver.so` | 5,065,592 | the X server |
+| `libvfs.so` | 969,496 | virtual filesystem |
+| `libwinemu.so` | 658,320 | **the Wine emulation core** (also the FpsLimit host) |
+| `libgpuinfo.so` | 341,944 | GPU introspection |
+
+Verified absent, not relocated: **zero** hits for `winemu|xserver|libvfs|gpuinfo` anywhere else in the zip (assets, unknown/, any ABI). Only `arm64-v8a` exists as an ABI dir, same as 609. Manifest has **no** split / asset-pack / dynamic-feature markers — plain single APK, so this is not Play Asset Delivery.
+
+**But the loader call survives:** `com/winemu/core/gamepad/GamepadServerManager` still runs `System.loadLibrary("winemu")`, and the whole `com/winemu/core/**` Java layer plus the `com.xiaoji.egggame.common.winemu_core` Compose string bundles are intact. `System.load` (path-based) call sites in 610 all belong to JNA / Tencent IM / liteav / QQ-security loaders — **no winemu-from-disk loader found**. Tencent TRTC voice libs from 609 (`libImSDK`/`libliteavsdk`/`libtxffmpeg`/`libtxsoundtouch`) are all still shipped, so the shrink is NOT the 609 Team-Room stack coming back out.
+
+**⚠️ UNRESOLVED — this is the first thing the 610 diff must bottom out.** `System.loadLibrary` only searches `nativeLibraryDir`, which the app cannot write to, so a component downloaded into `files/` could not satisfy that call as-is. Candidate explanations, none yet confirmed: (a) the runtime moved into the server-driven **component/catalog** pipeline (fits their architecture — imagefs, wine containers, DXVK, Turnip, FEX all already arrive that way) with some loader change not yet located; (b) the PC path pivoted toward cloud (`libhaima_rtc_so.so`, 8.2 MB Haima cloud-gaming RTC, still shipped; there is a `features.cloud/drawable/feature_winemu_ic_ingame_setting_tab.xml`); (c) this build is region/channel-specific. **Do not start the patch re-derivation worklist until this is answered** — if the runtime now arrives via the catalog, our Redirect-catalog-API patch means the **BannerHub Worker must serve it** or patched builds have no emulator at all.
+
+**Authenticity:** `unzip -t` clean, resources + manifest decode cleanly, coherent AGP metadata, compileSdk bumped 36→37 (a repacker would not do that). NOTE: a v1-signature cert comparison against 609 was attempted and was **vacuous** — both APKs are v2/v3-signed only, so there are no `META-INF/*.RSA` files to compare. Signature identity vs. 609 is therefore **not** established here; verify with `apksigner verify --print-certs` on a machine where the SDK build-tools run (the Termux `aapt2`/`apksigner` binaries fail under PRoot — missing ELF interpreter).
+
+Decompiled: `apktool → ~/gh610-apktool-d` (4 smali dirs, exit 0). jadx pass not yet run. **Branch `gamehub-610-build` NOT yet created** — held pending the runtime-delivery question above.
+
 ## 2026-07-29 — 🩹 README download badges were frozen since the 609 cut (badge workflow still pinned to 608)
 
 **Symptom:** the README badges on the default branch had read **59k total / "0" latest** since 2026-06-18 — i.e. the front page advertised zero downloads for `v1.0.0-609` for six weeks.

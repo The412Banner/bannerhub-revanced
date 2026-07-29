@@ -1,5 +1,24 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-07-02 — 🔓 Secret-leak audit: `bh_gog_debug.txt` writes GOG credentials to shared storage (FIX PENDING)
+
+**Trigger:** evaluating whether gamehub-lite's v5.1.7→5.1.8 "redact Steam auth tokens from logs" fix (a `SensitiveLogRedactor` hooked into logcat sinks) should be ported to v6. Answer: **no** — v6's exposure is a *file*, not logcat.
+
+**Method:** on-device inspection of the installed v6 variant (`com.miHoYo.GenshinImpact`, a disguised package name — 58 MB, NOT real Genshin) via the `getlog` root bridge (daemon `127.0.0.1:8765`; note plain `su`/magiskd was down but the bridge gives `uid=0 context=u:r:magisk:s0`).
+
+**Findings:**
+- **logcat = CLEAN.** 5000-line root, package-filtered pull → 0 token/secret hits. A logcat redactor would have nothing to redact here.
+- **THE LEAK = `bh_gog_debug.txt`.** Written by our own extension code to **external, other-app-readable** storage (`/sdcard/Android/data/<pkg>/files/bh_gog_debug.txt`, group `ext_data_rw`). 68-line file, **4 sensitive items (device-confirmed)**:
+  1. GOG **`clientSecret`** (`6934b68e…bca8e195`, file-line 16) — from `GogDownloadManager.java:278` dumping the first 300 chars of the decompressed build manifest (embeds clientId+clientSecret).
+  2. **Fastly CDN secure-link `token`** (`…token=0b51d28…`, time-limited by `nva` expiry) — `:357` + full signed URLs at `:365`/`:391`.
+  3. **gcdn.co `wsSecret`+`wsTime`** (`wsSecret=62369653…`) — `:365`/`:391`.
+  4. `clientId` (semi-public, completes the credential).
+  - OAuth access_token is **NOT** leaked (line 141 writes only `token OK` status). Sink = `writeDebug()` @ `:222-232` via `ctx.getExternalFilesDir(null)`.
+- **Creation chain (it's ours, not the base):** GOG store added by patches `GogManifestPatch`/`GogMenuRowPatch`/`GogLibraryCardPatch` → UI → `BhDownloadService.java:327` → `GogDownloadManager.startDownload()` (builds `dbg` @ :121) → `writeDebug()` at every exit path (:158,175,186,190,207,211,217). Compiled **extension Java** (classes dex), not a patch resource. **UNCONDITIONAL — no DEBUG/BuildConfig gate** (grep empty): a dev diagnostic from the Gen1/Gen2 download debugging that shipped always-on in every variant.
+- **Steam = CLEAN.** Base XiaoJi steamkit keeps real secrets (`access_token`/`login_key`/`guard_data`/`web_token`/`steam_id`) in `files/steam_data/steamkit/accounts.json` mode 0600 **app-private** — correct. `steam-trace.log` (0600) = depot-download telemetry only (its "token"/"password" hits were HL2 asset filenames like `createtokendialog.res`). `bh_steam_chat.xml` (our feature) = UI settings only. No Steam secret on shared storage.
+
+**FIX (not yet applied):** best = **gate `writeDebug` behind a debug flag, off in release** (it's a dev diagnostic → stops writing in prod). Keep-for-support alternative = redact `clientSecret`/`token=`/`wsSecret` from the manifest snippet (:278) + cdn URLs (:365/:391) before append **and** write to app-private `getFilesDir()` (:224) instead of external. Java extension edit + extension-dex rebuild (not smali/resource), low-risk. Verify on a fresh GOG sync via the bridge. TODO: check the other 8 variant packages for the same file on their shared storage.
+
 ## 2026-06-08 — 🔒 Plan 11: Disable Firebase auto-init (Crashlytics runtime-reenable fix) — MERGED to `gamehub-608-build` `61a2a3f`
 
 Live DNS/SNI captures (via the new DNSWatch root app) of patched vs stock 6.0.8 showed BannerHub still

@@ -4613,3 +4613,13 @@ Device test of pre2 Genshin: signature bypass WORKED (journal failure changed `V
 
 ## 2026-07-29 — pre3 GREEN + delivered (all 3 signature gates)
 pre3 run built off `21f0939`. All three pcengine patches `succeeded` on Genshin (+ all variants): force Insecure validation / bypass manager signature check / bypass install-time signature check. Delivered `/sdcard/Download/BannerHub-V6-1.0.0-610-pre3-Patched-Genshin.apk`, md5 `6d8581b2955b41d61f78463cb6c981ae`, cert `10895a31…894ce0ba`. Same package/cert/versionCode as pre2 → installs in place over pre2 (keeps login + imported game). Awaiting device test: does the pcengine plugin now install + PC emulation launch, or is there a gate 4? Live-capture method ready (`bridge logcat -c` → nohup capture → retry → grep :pcengine).
+
+## 2026-07-29 — ✅✅ WORKING: pcengine plugin installs + PC emulation launches on re-signed 6.1.0
+Device-confirmed by user on pre3 (Genshin, cert 10895a31). Journal now shows `installedVersion` (versionName 100-1, vc100, abi arm64-v8a), NO failures. The 3-gate signature bypass is COMPLETE and device-proven — a re-signed BannerHub host loads XiaoJi's genuine ComboLite pcengine plugin.
+- Real plugin CDN (resolved from /game/mobile/v1/plugin/latest): `https://gamehub-cdn.masnet.cn/uploads/plugin/20260729/<hash>.apk` (md5 0ab09364…, sha256 2457a32b…, 22761293 b). If we ever mirror/serve it, this is the artifact.
+- THE RECIPE (3 patches, all in patches/gamehub/pcengine/, anchored on stable strings/non-obfuscated combo classes → survive R8 bumps):
+  1. PcEngineValidationStrategyPatch — PluginFrameworkContext.getValidationStrategy() → Insecure.
+  2. PcEnginePluginSignatureCheckPatch — pcengine manager check (Chinese "插件签名与宿主不一致"), force return null.
+  3. PcEnginePluginInstallVerifyPatch — ComboLite ivi.D0 install validator (English "Plugin signatures do not exactly match host signatures"), force return-void. ← the decisive one; hard-coded, not gated by ValidationStrategy, runs in :pcengine at commit.
+- No gate 4. Package-spoof is fine (plugin resolves renamed host). StripCloudGaming stays disabled on 610.
+NEXT: merge feature/pcengine-signature-bypass → gamehub-610-build (device-proven). Then the rest of the 610 re-derivation (login/redirect/explore/keystone/etc.) + the deferred permission fix + proper StripCloudGaming 610 handling.

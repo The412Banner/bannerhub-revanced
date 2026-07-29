@@ -20,7 +20,10 @@ permissions:
 env:
   # The release event checks out the tag by default; badge data always
   # lives on the default branch, so pin it explicitly.
-  BADGE_BRANCH: gamehub-608-build
+  # ⚠️ On every base-line bump (new gamehub-6XX-build default branch) this
+  # must move with it, together with the two raw URLs in README.md — the
+  # checkout below reads it, so this is the only place to edit here.
+  BADGE_BRANCH: gamehub-609-build
 
 jobs:
   badges:
@@ -30,7 +33,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
         with:
-          ref: gamehub-608-build
+          ref: ${{ env.BADGE_BRANCH }}
 
       - name: Compute download counts and write badge JSON
         env:

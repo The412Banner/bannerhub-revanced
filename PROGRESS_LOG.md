@@ -1,5 +1,15 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-07-29 — 🩹 README download badges were frozen since the 609 cut (badge workflow still pinned to 608)
+
+**Symptom:** the README badges on the default branch had read **59k total / "0" latest** since 2026-06-18 — i.e. the front page advertised zero downloads for `v1.0.0-609` for six weeks.
+
+**Cause:** `.github/workflows/update-badges.yml` pins its checkout + push target to a branch explicitly (the `release: published` event checks out the *tag*, so the branch can't be inferred). That pin was still `gamehub-608-build` from when the badge system was built on the 608 line. When the default branch moved to `gamehub-609-build` at the 609 stable cut, the README's two `raw.githubusercontent.com` URLs moved with it — but the workflow did not. The hourly cron kept computing correct numbers and committing them to `gamehub-608-build`, which nothing reads. Real values on 608 at time of fix: **117k total / 48k latest**.
+
+**Fix:** `BADGE_BRANCH` env → `gamehub-609-build`, and the checkout step now reads `ref: ${{ env.BADGE_BRANCH }}` instead of repeating the literal — one place to edit instead of two that can silently disagree. Comment above the env now names this as a base-line-bump chore alongside the README raw URLs.
+
+**⚠️ Base-bump checklist item:** every new `gamehub-6XX-build` default branch must update `BADGE_BRANCH` **and** the two README badge URLs together. This was already a recorded gotcha when the badge endpoint was introduced; the 609 swap just never triggered it. Stale badge data is silent — the workflow stays green either way, so nothing surfaces the drift.
+
 ## 2026-07-02 — 🔓 Secret-leak audit: `bh_gog_debug.txt` writes GOG credentials to shared storage (FIX PENDING)
 
 **Trigger:** evaluating whether gamehub-lite's v5.1.7→5.1.8 "redact Steam auth tokens from logs" fix (a `SensitiveLogRedactor` hooked into logcat sinks) should be ported to v6. Answer: **no** — v6's exposure is a *file*, not logcat.

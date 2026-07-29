@@ -156,15 +156,15 @@ jobs:
         # side-by-side via different package names, same pattern as the two AnTuTu
         # variants which share "BannerHub v6 AnTuTu".
         variant:
-          - { name: Normal,         pkg: "banner.hub",                 label: "BannerHub v6" }
-          - { name: Normal-GHL,     pkg: "gamehub.lite",               label: "BannerHub v6" }
-          - { name: PuBG,           pkg: "com.tencent.ig",             label: "BannerHub v6 PuBG" }
-          - { name: AnTuTu,         pkg: "com.antutu.ABenchMark",      label: "BannerHub v6 AnTuTu" }
-          - { name: alt-AnTuTu,     pkg: "com.antutu.benchmark.full",  label: "BannerHub v6 AnTuTu" }
-          - { name: PuBG-CrossFire, pkg: "com.tencent.tmgp.cf",        label: "BannerHub v6 PuBG CrossFire" }
-          - { name: Ludashi,        pkg: "com.ludashi.aibench",        label: "BannerHub v6 Ludashi" }
-          - { name: Genshin,        pkg: "com.miHoYo.GenshinImpact",   label: "BannerHub v6 Genshin" }
-          - { name: Original,       pkg: "com.xiaoji.egggame",         label: "BannerHub v6" }
+          - { name: Normal,         pkg: "banner.hub",                 label: "Gamehub" }
+          - { name: Normal-GHL,     pkg: "gamehub.lite",               label: "Gamehub" }
+          - { name: PuBG,           pkg: "com.tencent.ig",             label: "Gamehub PuBG" }
+          - { name: AnTuTu,         pkg: "com.antutu.ABenchMark",      label: "Gamehub AnTuTu" }
+          - { name: alt-AnTuTu,     pkg: "com.antutu.benchmark.full",  label: "Gamehub AnTuTu" }
+          - { name: PuBG-CrossFire, pkg: "com.tencent.tmgp.cf",        label: "Gamehub PuBG CrossFire" }
+          - { name: Ludashi,        pkg: "com.ludashi.aibench",        label: "Gamehub Ludashi" }
+          - { name: Genshin,        pkg: "com.miHoYo.GenshinImpact",   label: "Gamehub Genshin" }
+          - { name: Original,       pkg: "com.xiaoji.egggame",         label: "Gamehub" }
     steps:
       - name: Checkout
         # Needed so the apksigner step can read keystore/bannerhub.keystore.
@@ -202,6 +202,10 @@ jobs:
             `# ...features.cloud, which 6.1.0 loads at STARTUP -> MissingResourceException crash.` \
             `# Disabled until the patch is re-derived / re-scoped for 6.1.0.` \
             -d "Strip cloud gaming" \
+            `# 610 pcengine line = "GameHub", not BannerHub-branded: keep the stock GameHub` \
+            `# launcher icon (disable the BannerHub icon patch) so the app is visibly GameHub,` \
+            `# matching the "Gamehub <variant>" app name. Revisit if this branch becomes full BannerHub v6.` \
+            -d "Change app icon" \
             -e "Change package name" \
               -O 'packageName="${{ matrix.variant.pkg }}"' \
               -O 'updatePermissions=true' \

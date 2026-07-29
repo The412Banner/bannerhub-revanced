@@ -1,5 +1,49 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-07-29 — ✅ RESOLVED: 6.1.0 moved the whole PC emulator into a **downloadable DexClassLoader plugin** (`:pcengine`)
+
+Answers the "where did the runtime go" question from the onboarding entry below. This is an **architecture change, not an R8 reshuffle** — 6.1.0 is not a normal base bump.
+
+### What upstream did
+GameHub 6.1.0 extracted the entire PC emulation engine out of the APK and turned it into a **downloadable, hash-verified plugin** loaded via `DexClassLoader` into a dedicated **`:pcengine`** process.
+
+Evidence, all from `~/gh610-apktool-d` vs `~/gh609-apktool-d`:
+
+| | 6.0.9 | 6.1.0 |
+|---|---|---|
+| `com.xiaoji.egggame.plugin.pcengine.host.*` | **0 classes** | **5** (new) |
+| `com/combo/**` plugin framework | absent | **49 classes** (`core/runtime/{loader,installer,app}`, activity/service/provider/receiver proxies) |
+| `DexClassLoader` uses | **0** | 6 — incl. `com/combo/core/runtime/loader/PluginClassLoader extends DexClassLoader` |
+| `com/winemu/**` classes | 39 | **3** (`CabFile`, `gamepad/GamepadServerManager`, `openapi/Config`) |
+| `com/xiaoji/egggame/common/winemu/**` | **198** | **1** (`service/EmuFileService`) |
+| `android:process=":pcengine"` | — | **new**, hosts 3 activities + 1 service |
+| native runtime `.so` | winemu/xserver/vfs/gpuinfo present | **all 4 removed** (6.71 MB) |
+
+- **`WineActivity` is now an `<activity-alias>`** → `LegacyPcEngineActivityTrampoline`. The real entry points are `PcEnginePluginHostActivity` / `…SettingsHostActivity` / `…DependencyInstallHostActivity`, all in `:pcengine`.
+- **`PcEnginePluginHostService`** drives install with actions `…host.action.INSTALL_PLUGIN` / `COMMIT_PLUGIN_INSTALL` / `HEALTH_PROBE` and extras `INSTALL_CANDIDATE_PATH`, `INSTALL_EXPECTED_ABI`, `INSTALL_EXPECTED_PLUGIN_ID`, `INSTALL_EXPECTED_SCHEMA_VERSION`, **`INSTALL_EXPECTED_SHA256`**, `INSTALL_OPERATION_ID`.
+- **`com.winemu.openapi.Config`** (new, `Parcelable` + `CREATOR`) is the host↔plugin API boundary — it carries the entire launch config: `runMode, exePath, gameRootDir, steamAppId, box64Config, fexConfig, gpuDriver, gpuConfig, dllOverrides, resolution, enableESync, enableMangoHUD, inGameHud, hostCoreMask, envVars, localeCode, …`. Built by `zmv.m(Context,String,String,y63,List)` and `xfu`; consumed by `y9.<init>(Context, Config, m35, wsu)`. Parcelable because it crosses into `:pcengine`.
+- **`EmuFileService`** (the sole survivor of the 198-class `common/winemu` package) is the downloader — handles `download_ext_info` / `checkDownloadInfo`.
+- Full download/install/update UX already exists as strings: `common_game_pc_engine_action_{download,installing,update}`, `…install_required_{launch_game,download_game,open_settings}`, `…compat_update_{title,message,confirm,cancel}`, `…md5_label`, `…launch_failed`.
+
+Residual `System.loadLibrary("winemu")` in `GamepadServerManager` and the `nativeLibraryDir/libvfs.so` path built in `zmv.m` (alongside `WINEMU_ROOT_FS`, `getDataDir()`) are **leftovers pointing at the app's own lib dir**, where those files no longer exist — consistent with the engine having moved out from under them.
+
+### Ruled out along the way
+Not a split/asset-pack base APK (no split markers; `lib/arm64-v8a/` still ships 21 other `.so`). Not a companion app (`EmuFileService` is `exported="false"`; the only `createPackageContext` calls target Google Play Services and Huawei HMS). Not a stripped/repacked file (surgical removal of 36 winemu + 197 common/winemu Kotlin classes, dex 5→4, compileSdk 36→37 — a repacker does none of that).
+
+### 🔴 What this means for BannerHub — read before planning 610
+1. **The Worker almost certainly has to serve the plugin.** Our Redirect-catalog-API patch points the app at the BannerHub Worker. If the pcengine plugin is fetched through the catalog, then **patched 6.1.0 has no emulator at all until the Worker serves it** — and `INSTALL_EXPECTED_SHA256` + `INSTALL_EXPECTED_PLUGIN_ID` + `INSTALL_EXPECTED_ABI` + `INSTALL_EXPECTED_SCHEMA_VERSION` mean we must serve the **genuine artifact**, not a substitute. **Where the plugin URL comes from is the next thing to establish** (not yet traced).
+2. **Patches whose upstream anchors no longer exist in the APK at all:**
+   - **Offline component picker** — `com/xiaoji/egggame/common/winemu/bean/{ComponentType,EnvLayerEntity}` gone with the other 197. (This is the one that first worked on 609.)
+   - **GPU Spoof** — `Lcom/winemu/core/utils/EnvVars;` gone.
+   - **Legacy GLES2 renderer** — `com/winemu/core/server/XServer` gone.
+   - HUD / frame-gen / trans_layer (`Box64Config`, `FEXConfig`, `TemplateFexConfig`) all gone.
+   These are no longer re-derivation targets — whatever they did now happens **inside the plugin**, which is not ours to patch by these means.
+3. **Likely still portable** (app-shell, untouched by the split): Bypass login, Debug logging, Redirect catalog API + `/v6` prefix, Explore tab hijack, the menu/keystone family, privacy/analytics stubs, GOG, Steam chat/voice overlay.
+4. **PC-accurate vibration is ambiguous:** `GamepadServerManager` survives in the main APK with our hook site intact, but the winebus disk-patch targets a container whose ownership has moved.
+
+### Repo state
+Branch **`gamehub-610-build`** created off `gamehub-609-build` and pushed. `ci(610)` bumps `release.yml` to `base-apk-610`/`GameHub_6.1.0.apk`; `patches(610)` bumps `GAMEHUB_VERSION` 6.0.9→6.1.0 (no stray 6.0.9 pins; the 10 by-design 6.0.4 pins untouched). YAML validated. **No smoke-test dispatch yet** — a SEVERE list is not the useful next artifact while item 1 above is open. jadx pass done: `~/gamehub-6.1.0-jadx` (22,480 files, 120 errors = normal R8 noise; 609 had 143).
+
 ## 2026-07-29 — 📦 GameHub **6.1.0** base APK onboarded (`base-apk-610`) — ⚠️ NATIVE EMULATION RUNTIME IS NOT IN THE APK
 
 Upstream shipped **6.1.0 / versionCode 122** (609 was 121 — sequential, no skip this time). Source APK supplied by user from SD backup `/storage/7B7F-E3AA/APK Backups/Gamehub/v6/GameHub_6.1.0.apk`, copied to `~/GameHub_6.1.0.apk`.

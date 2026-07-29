@@ -1,5 +1,14 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-07-29 — 🔓 pcengine plugin signature bypass — 2 patches written (branch `feature/pcengine-signature-bypass`)
+
+Since 6.1.0 loads the PC emulator as a downloadable plugin whose signing cert must equal the HOST's, and every BannerHub build is re-signed with our own key, the genuine XiaoJi-signed plugin is rejected → no emulator. Device-proven via `pc_engine_plugin_manager_journal.json` (11× `Verification` failures 「插件签名与宿主不一致」). Two independent host-side gates, both patched:
+
+1. **`PcEngineValidationStrategyPatch`** (`com/combo` framework gate). Forces `com.combo.core.model.PluginFrameworkContext.getValidationStrategy()` to return `ValidationStrategy.Insecure` (the enum's own permissive value; ships `Strict`). Non-obfuscated class/method → stable anchor. Injects `sget-object p0, …ValidationStrategy;->Insecure… ; return-object p0` at head (method is `.locals 0`, p0=this, safe to overwrite before return).
+2. **`PcEnginePluginSignatureCheckPatch`** (pcengine manager's own gate, NOT governed by ValidationStrategy). The obfuscated manager method (`xy5.G0(File)Ljava/lang/String;` on 6.1.0) returns null on cert-match / the mismatch message otherwise; its sole caller branches `if-eqz`. Force it to return null → always "match". Anchored on the globally-unique mismatch string `插件签名与宿主不一致 host=` (survives R8 renames). Injects `const/4 v0, 0x0 ; return-object v0` at head (`.locals 12`).
+
+Both are `bytecodePatch` auto-discovered (no registry). Kept as 2 separate patches so the first CI run confirms each anchor independently. **Build = CI dispatch on this branch, version `1.0.0-610-pre1`, artifacts-only.** Deliver **Genshin** variant (new patches per rule). ⚠️ Device-test caveat: a fresh install must reach the plugin-download step; login bypass is NOT re-derived on 610 yet, so stock XiaoJi login is required to trigger the download before the bypass can be observed loading it.
+
 ## 2026-07-29 — ✅ RESOLVED: 6.1.0 moved the whole PC emulator into a **downloadable DexClassLoader plugin** (`:pcengine`)
 
 Answers the "where did the runtime go" question from the onboarding entry below. This is an **architecture change, not an R8 reshuffle** — 6.1.0 is not a normal base bump.

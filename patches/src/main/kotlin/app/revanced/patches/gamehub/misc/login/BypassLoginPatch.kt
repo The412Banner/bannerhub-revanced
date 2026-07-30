@@ -1,18 +1,12 @@
 package app.revanced.patches.gamehub.misc.login
 
 import app.revanced.patcher.extensions.addInstructions
-import app.revanced.patcher.extensions.getInstruction
 import app.revanced.patcher.extensions.removeInstruction
 import app.revanced.patcher.firstMethod
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
 import app.revanced.patches.gamehub.GAMEHUB_VERSION
-import app.revanced.util.getReference
-import app.revanced.util.indexOfFirstInstructionOrThrow
 import app.revanced.util.returnEarly
-import com.android.tools.smali.dexlib2.Opcode
-import com.android.tools.smali.dexlib2.iface.instruction.TwoRegisterInstruction
-import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 
 // =========================================================================
 // 6.0.2 R8-mangled class letter map
@@ -99,12 +93,60 @@ import com.android.tools.smali.dexlib2.iface.reference.FieldReference
 //                   reads b:Lrx0;→f()Lqbm;→qbm.a; save x(GameInfo,LaunchMethod,Lpv3;))
 //   NAVIGATOR      Lj8d;→Ljrd;  (b:Lrx0;; gates i/s = iget b:Lrx0;→invoke a()Z→if-nez→login)
 // FakeStateFlow.java letters re-derived too (impl udi→a5j, wrapper q4g→crg, holder s3d→smd).
-private const val AUTH_IMPL              = "Lux0;"
-private const val AUTH_INTERFACE         = "Lrx0;"
-private const val AUTH_TOKEN             = "Lqbm;"
-private const val GAME_LIB_REPO          = "Lqv7;"
+// 6.1.0 — the auth layer was RESTRUCTURED, not merely re-lettered. Full re-derivation
+// against ~/gh610-apktool-d; every anchor below was verified by reading the smali body.
+//
+//   AUTH_INTERFACE  Lrx0;→Lrf1;  (smali_classes3/rf1.smali; 6 StateFlow getters
+//                    b/f/h/l/m/n + DEFAULT methods c()Z k()Z d()Lhfr; i()Lpfr;)
+//   AUTH_IMPL       Lux0;→Lyf1;  (implements Lrf1;; ctor (Ludr;Lqg1;Lui0;Lxdn;)V takes
+//                    the AuthTokenDao Lqg1;; 4 StateFlow + 4 MutableStateFlow fields)
+//   AUTH_TOKEN      Lqbm;→Lpfr;  (= "UserToken"; 10 fields S,S,S,S,Long,Long,J,Z,J,J —
+//                    the SAME shape as 6.0.9, and .a is still userId)
+//   USER model            →Lhfr;  (= "UserProfile", .a = userId)
+//   GAME_LIB_REPO   Lqv7;→Lp5a;  (ctor (GameLibraryDatabase;Lrf1;Liwi;)V)
+//   NAVIGATOR       Ljrd;→Lfch;  (ctor (Landroidx/navigation3/runtime/NavBackStack;Lrf1;…))
+//
+// 🔑 KEY CHANGES vs 6.0.x, beyond the letters:
+// 1. The interface now declares the REAL kotlinx StateFlow, not an obfuscated one.
+//    FakeStateFlow.java therefore no longer needs its 3 mangled letter constants —
+//    it calls the un-obfuscated kotlinx factory. See that file.
+// 2. Method roles moved: isLoggedIn was `a()Z`, now `k()Z` (backed by the `l()`
+//    StateFlow). The token accessor was `f()`, now `i()Lpfr;` (backed by `f()`).
+//    The user accessor was `e()`, now `d()Lhfr;` (backed by `h()`).
+//    ⚠️ There is a SECOND boolean default `c()Z` (backed by `m()`) that is NOT the
+//    login flag — do not patch it by mistake.
+// 3. AUTH_IMPL does NOT override the interface defaults (it implements only the
+//    abstract members), so patching the impl's StateFlow getters propagates to
+//    k()/d()/i() automatically. We patch the impl getters, not both layers.
+// 4. ⚠️ A DECORATOR `Llm;` also implements Lrf1; and wraps another instance of it.
+//    It is NOT the DI-bound implementation — Koin binds Lrf1; → Lyf1;
+//    (ia4.smali:1040-1124, ha4.smali:618-622 construct `new Lyf1;` under
+//    `const-class Lrf1;`), while Llm; is built only inside abstract Lbmr;:456-460.
+//    Patching Lyf1; is therefore correct. Re-check this on the next bump: if the
+//    binding ever moves to the decorator, every getter patch here is bypassed.
+//
+// GAME_LIB_REPO and NAVIGATOR are now located STRUCTURALLY, on un-obfuscated
+// framework/app types in their constructors (GameLibraryDatabase and NavBackStack).
+// R8 cannot rename those, so those two anchors should never need re-pinning again.
+private const val AUTH_IMPL              = "Lyf1;"
+private const val AUTH_INTERFACE         = "Lrf1;"
+private const val AUTH_TOKEN             = "Lpfr;"
 private const val GAME_LIB_REPO_USERID_METHOD = "h"
-private const val NAVIGATOR              = "Ljrd;"
+
+// Structural anchors — unobfuscated ctor parameter types, immune to R8 renaming.
+private const val GAME_LIB_DATABASE = "Lcom/xiaoji/egggame/game/database/GameLibraryDatabase;"
+private const val NAV_BACK_STACK    = "Landroidx/navigation3/runtime/NavBackStack;"
+
+// 6.1.0 impl getters (all `.locals 0`, body = iget-object p0 + return-object p0):
+//   l() → field e = isLoggedIn StateFlow<Boolean>   (backs the k()Z default)
+//   h() → field b = UserProfile StateFlow<Lhfr;>    (backs the d() default)
+//   f() → field c = UserToken   StateFlow<Lpfr;>    (backs the i() default)
+private const val IMPL_IS_LOGGED_IN_FLOW = "l"
+private const val IMPL_USER_FLOW         = "h"
+private const val IMPL_TOKEN_FLOW        = "f"
+
+// The isLoggedIn check the navigator gates call.
+private const val AUTH_IS_LOGGED_IN_METHOD = "k"
 // NAV_INTERCEPTOR in 6.0.4 is Liod;, but its a(...) body no longer holds the
 // auth check inline — it dispatches to coroutine continuation Lhod;->invokeSuspend
 // where the iget+invoke+if-nez pattern actually lives. The apply block below
@@ -137,9 +179,9 @@ val bypassLoginPatch = bytecodePatch(
         // construction so we don't have to grow `.locals`.
         // -----------------------------------------------------------------
         firstMethod {
-            definingClass == AUTH_IMPL && name == "h"
+            definingClass == AUTH_IMPL && name == IMPL_IS_LOGGED_IN_FLOW
         }.apply {
-            removeInstruction(0) // iget-object p0, p0, $AUTH_IMPL->c:Lhzh;
+            removeInstruction(0) // iget-object p0, p0, $AUTH_IMPL->e:StateFlow
             removeInstruction(0) // return-object p0
             // .locals is 0 in the original; we only use p0 so no register grow.
             addInstructions(
@@ -164,14 +206,39 @@ val bypassLoginPatch = bytecodePatch(
         // flatMapLatest hits the userId-keyed query.
         // -----------------------------------------------------------------
         firstMethod {
-            definingClass == AUTH_IMPL && name == "e"
+            definingClass == AUTH_IMPL && name == IMPL_USER_FLOW
         }.apply {
-            removeInstruction(0) // iget-object p0, p0, $AUTH_IMPL->a:Lhzh;
+            removeInstruction(0) // iget-object p0, p0, $AUTH_IMPL->b:StateFlow
             removeInstruction(0) // return-object p0
             addInstructions(
                 0,
                 """
                     invoke-static {}, $FAKE_STATE_FLOW->userFlow()Ljava/lang/Object;
+                    move-result-object p0
+                    return-object p0
+                """,
+            )
+        }
+
+        // -----------------------------------------------------------------
+        // AUTH_IMPL.f() — UserToken StateFlow getter. NEW EDIT FOR 6.1.0.
+        //
+        // On 6.0.x the token was only reachable through the interface's
+        // default accessor, so patching that accessor was sufficient. On
+        // 6.1.0 the token is its own StateFlow on the impl, and the default
+        // `i()Lpfr;` simply reads it. Patching the flow at source covers BOTH
+        // `i()` callers and anything collecting the flow directly — which the
+        // old shape could not reach.
+        // -----------------------------------------------------------------
+        firstMethod {
+            definingClass == AUTH_IMPL && name == IMPL_TOKEN_FLOW
+        }.apply {
+            removeInstruction(0) // iget-object p0, p0, $AUTH_IMPL->c:StateFlow
+            removeInstruction(0) // return-object p0
+            addInstructions(
+                0,
+                """
+                    invoke-static {}, $FAKE_STATE_FLOW->tokenFlow()Ljava/lang/Object;
                     move-result-object p0
                     return-object p0
                 """,
@@ -188,8 +255,16 @@ val bypassLoginPatch = bytecodePatch(
         // `e()` in 6.0.2; the parameterTypes/returnType filter prevents an
         // accidental match against a same-named overload.
         // -----------------------------------------------------------------
+        // GAME_LIB_REPO is located structurally: the only class whose constructor
+        // takes the unobfuscated GameLibraryDatabase. Its userId getter is still
+        // named h() on 6.1.0, and its body was verified as
+        //   iget b:AUTH_INTERFACE -> invoke-interface i()AUTH_TOKEN -> iget AUTH_TOKEN.a
+        val gameLibRepoClass = firstMethod {
+            name == "<init>" && parameterTypes.firstOrNull() == GAME_LIB_DATABASE
+        }.definingClass
+
         firstMethod {
-            definingClass == GAME_LIB_REPO &&
+            definingClass == gameLibRepoClass &&
                 name == GAME_LIB_REPO_USERID_METHOD &&
                 parameterTypes.isEmpty() &&
                 returnType == "Ljava/lang/String;"
@@ -207,22 +282,13 @@ val bypassLoginPatch = bytecodePatch(
         // callers (the various lambdas that read the auth-token's a/b
         // fields directly) see a consistent synthetic identity.
         // -----------------------------------------------------------------
-        firstMethod {
-            definingClass == AUTH_INTERFACE && name == "f"
-        }.apply {
-            repeat(6) { removeInstruction(0) }
-            // FakeAuthToken.get() does the DebugTrace.write internally so
-            // each fire shows "FakeAuthToken.get() called" in logcat.
-            addInstructions(
-                0,
-                """
-                    invoke-static {}, Lapp/revanced/extension/gamehub/login/FakeAuthToken;->get()Ljava/lang/Object;
-                    move-result-object p0
-                    check-cast p0, $AUTH_TOKEN
-                    return-object p0
-                """,
-            )
-        }
+        // ⚠️ 6.1.0: the old edit here patched AUTH_INTERFACE."f" as the token
+        // accessor. On 6.1.0 `f()` is the ABSTRACT StateFlow getter and the token
+        // accessor is the `i()Lpfr;` default — so that edit would now target the
+        // wrong member entirely (and an abstract method has no body to rewrite).
+        // It is intentionally gone: the token is instead faked at source by the
+        // AUTH_IMPL.f() StateFlow patch above, which `i()` reads. That covers both
+        // `i()` callers and direct flow collectors, which the old shape could not.
 
         // -----------------------------------------------------------------
         // NAVIGATOR.i(...) and NAVIGATOR.r(...) — Login navigation gates.
@@ -239,26 +305,62 @@ val bypassLoginPatch = bytecodePatch(
         // patches above: even if AUTH_IMPL.h() weren't reached for some
         // reason, this gate still passes.
         // -----------------------------------------------------------------
-        for (methodName in listOf("i", "s")) {
-            firstMethod {
-                definingClass == NAVIGATOR && name == methodName
-            }.apply {
-                val igetIdx = indexOfFirstInstructionOrThrow {
-                    opcode == Opcode.IGET_OBJECT &&
-                        getReference<FieldReference>()?.let {
-                            it.name == "b" && it.definingClass == NAVIGATOR
-                        } == true
-                }
-                val reg = (getInstruction(igetIdx) as TwoRegisterInstruction).registerA
-                removeInstruction(igetIdx + 2) // move-result vN
-                removeInstruction(igetIdx + 1) // invoke-interface AUTH_INTERFACE->a()Z
-                addInstructions(
-                    igetIdx + 1,
-                    """
-                        const/4 v$reg, 0x1
-                    """,
-                )
-            }
+        // NAVIGATOR is located structurally: the only class whose constructor takes
+        // the unobfuscated androidx NavBackStack. On 6.1.0 its login gates live in
+        // i(Lw01;)V (ONE gate) and j(Lw01;)Z (TWO gates) — three sites in total.
+        //
+        // ⚠️ The 6.0.x implementation looped over a hardcoded method-name list and
+        // took the FIRST `iget b` per method. That would silently leave 6.1.0's
+        // second gate in j() live — a login leak that still reports "succeeded" at
+        // patch time. So instead: find EVERY `invoke-interface AUTH_INTERFACE->k()Z`
+        // in the class and force each one to 1.
+        //
+        // Replacing the invoke+move-result pair (rather than editing the branch) is
+        // also polarity-agnostic — the three sites branch if-eqz / if-nez / if-eqz
+        // respectively, and forcing "logged in = true" is correct for all of them.
+        // Rather than editing each gate's call site, neutralize the check they all
+        // dispatch to: AUTH_INTERFACE.k()Z. This is strictly better than the 6.0.x
+        // approach for three reasons:
+        //   1. It covers ALL gates including 6.1.0's second gate inside j(), which a
+        //      first-match-per-method loop would silently have left live — a login
+        //      leak that still reports "succeeded" at patch time.
+        //   2. It is polarity-agnostic (the three sites branch if-eqz / if-nez /
+        //      if-eqz) and immune to further call sites appearing in a later base.
+        //   3. It needs no class-by-type iteration, only the `firstMethod` lookup
+        //      already used throughout this repo.
+        // Safe because k() is a DEFAULT method on the interface and AUTH_IMPL does
+        // NOT override it (it implements only the abstract members), so every
+        // invoke-interface k()Z lands on this body.
+        //
+        // This is belt-and-braces with the AUTH_IMPL.l() patch above: k()'s original
+        // body reads l().getValue(), which already returns TRUE once l() is faked.
+        // Both layers are kept deliberately — if either anchor breaks on a future
+        // base, the other still holds the gate open.
+        firstMethod {
+            definingClass == AUTH_INTERFACE &&
+                name == AUTH_IS_LOGGED_IN_METHOD &&
+                parameterTypes.isEmpty() &&
+                returnType == "Z"
+        }.apply {
+            // Original body: invoke-interface l() -> getValue() -> check-cast
+            // Boolean -> booleanValue -> return. Replace wholesale with `true`.
+            // `.locals 0` in the original, and p0 is the receiver, so use p0 as the
+            // return register to avoid growing the register count.
+            repeat(implementation?.instructions?.count() ?: 0) { removeInstruction(0) }
+            addInstructions(
+                0,
+                """
+                    const/4 p0, 0x1
+                    return p0
+                """,
+            )
+        }
+
+        // NAVIGATOR is still resolved (and asserted to exist) so that a future base
+        // reshuffle that removes the navigator seam fails loudly here rather than
+        // silently shipping a build with an unguarded login path.
+        firstMethod {
+            name == "<init>" && parameterTypes.firstOrNull() == NAV_BACK_STACK
         }
 
         // -----------------------------------------------------------------

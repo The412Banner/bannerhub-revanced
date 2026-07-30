@@ -7,6 +7,7 @@ import app.revanced.patcher.firstMethod
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
 import app.revanced.patches.gamehub.GAMEHUB_VERSION
+import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 import app.revanced.util.getReference
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
@@ -66,7 +67,23 @@ private const val CLICK = "Lcom/xj/winemu/explore/BhExploreTabClick;"
 // Las9; (plain class), rs9.<init> takes Lrn9; but is a ctor w/o "main_menu").
 // The patch is structure-anchored (param-type + "main_menu"), so only this enum
 // letter is hardcoded.
-private const val TAB_ENUM = "Lrn9;"
+// 6.0.9 → 6.1.0: bottom-nav VM ys9→sac (its base dn1→wb2), tab-select dispatch
+// t()→v(), tab enum Lrn9;→Lh5c;. Verified against ~/gh610-apktool-d:
+//   - Lh5c; is an enum whose <clinit> declares HOME(0) / PLAY(1) / LEADERBOARD(2) /
+//     LIBRARY(3) / PROFILE(4) — a byte-identical ordinal mapping to 6.0.9's Lrn9;,
+//     so CLICK's ordinal-0 assumption still holds.
+//   - sac.v(Lh5c;)V is the ONLY method in the whole APK matching
+//     (one param + returns V + contains "main_menu"), and "main_menu" now occurs
+//     in exactly ONE class app-wide (6.0.9 had two: ys9 and mhc) — so this
+//     fingerprint is stricter on 610, not looser.
+//   - Sibling sac.s(Lh5c;)V takes the same enum but has NO "main_menu";
+//     sac.x(...) DOES contain "main_menu" but takes Lu9c; (a plain class, not the
+//     enum). Both would be mis-targeted without the full predicate.
+// ⚠️ Do NOT "improve" this to a purely structural 5-value-enum anchor: 6.1.0 has
+// TWO such enums (Lh5c; = live nav, Lnd; = the analytics mirror, ex-Laa;), exactly
+// as 6.0.9 did (Lrn9; + Laa;). The enum letter must stay pinned, or the predicate
+// must additionally assert the parameter enum's constant names.
+private const val TAB_ENUM = "Lh5c;"
 private const val ANCHOR_STRING = "main_menu"
 
 @Suppress("unused")
@@ -78,6 +95,12 @@ val exploreTabHijackPatch = bytecodePatch(
         "(w1a.q); fail-safe falls through to the native Explore on any error.",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
+    // This patch injects a call into our extension (BhExploreTabClick), but never
+    // declared the dependency that actually bundles the extension into the APK — it
+    // worked only because some OTHER selected bytecode patch happened to pull it in.
+    // On 6.1.0, where most bytecode patches SEVERE-fail, that implicit coupling is
+    // exactly how you get "patch succeeded, runtime no-op". Declared explicitly.
+    dependsOn(sharedGamehubExtensionPatch)
 
     apply {
         // The tab-select dispatch q(Lyw9;)V — the convergence point for UI taps

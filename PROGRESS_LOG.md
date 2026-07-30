@@ -4988,3 +4988,17 @@ Seeded `egggame.db` by hand (root, app force-stopped, WAL checkpointed, pushed b
 ⚠️ Open sub-questions: whether `is_guest` should be 1 (schema has the column; guest support is first-class on 610) · whether seeding must happen before the Eagerly-shared flows first emit, or whether a later insert propagates (Room invalidation should push it, but verify) · whether the userId must stay `99999` to match `p5a.h()`'s `returnEarly("99999")` (it should — keep them in sync).
 
 📁 Full pre-experiment DB backup (all 18 files incl. wal/shm) at `worker-backups/20260730-genshin-db-experiment/`; the modified copy is under its `work/`. The device now carries the synthetic row, which is what makes the app usable — restoring the backup would put it back to the login gate.
+
+## 2026-07-30 — 🏁 BYPASS LOGIN IS DEVICE-PROVEN (pre14, run 30514868708, commit 559a4d0)
+Installed hash-verified as pre14. **Clean install** (user had uninstalled, so app data was wiped) ⇒ this exercised the seeder's hardest path end to end: decline to create the DB → Room creates it lazily → poll catches it → insert.
+**Result:** `user_account` = 1 row `('99999','BannerHub',0)`, `auth_token` = 1 row — created by the SEEDER, not by hand. The app now opens straight into a usable session: **Profile screen reachable (labelled "Guest Mode"), Settings, Downloads, and the Steam Data Sync panel with "Bind Steam Account"**. No login gate.
+
+### The fix that mattered, after five wrong ones
+Faking the auth interface accessors was never sufficient — the gate is the Room DB. `BhAuthSeed` seeds `user_account` + `auth_token` with raw framework SQLite (Room 3 dropped `getOpenHelper()`/`SupportSQLiteDatabase`), injected into the **auth impl's constructor** (the app-class anchor was rejected by the patcher with `classDef is null`; the ctor is a better moment anyway — it runs just before the Room-backed flows are created). Accessor patches kept as belt-and-braces.
+
+### 📌 Observations worth acting on
+- The app self-describes as **"Guest Mode"** and warns **"Cloud saves are unavailable in Guest Mode"**, even though we seed `is_guest=0`. So that label is driven by something other than the column — likely the absence of a server-validated token. Cloud saves are therefore a real, permanent limitation of this bypass, and should be stated plainly in release notes rather than discovered by users.
+- **"Bind Steam Account" is live**, which makes the shared-identity problem concrete: every BannerHub install currently seeds the SAME `user_id=99999`, so Steam/Epic/GOG bindings and community-config attribution would all collide on one identity. ⇒ the persisted random 9-char id is now a correctness issue, not cosmetics.
+
+⏭️ NEXT: persisted random 9-character user id, applied consistently across ALL SIX pinned sites (BypassLoginPatch `returnEarly`, FakeAuthToken, FakeUserAccount, GogLaunchHelper, GogLibraryCard, BhAuthSeed). ⚠️ `returnEarly` bakes a compile-time constant so that site must become an extension call, and the id MUST be generated once and persisted — if it ever changes, every `t_game_library_base` row (keyed by `user_id`) is orphaned and the library empties.
+⏭️ Also still open on this task: **Debug logging** was never re-derived (2 anchors unmapped: the repo's save method is no longer `x(...)`, and IMPORT_TXN's two Room-DAO insert anchors have no 610 equivalent under those names).

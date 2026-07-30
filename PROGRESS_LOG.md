@@ -4761,3 +4761,19 @@ pre5 install hash-verified as the installed APK (`9b2ed055…` == staged) per th
 Plus the `update_type` enum gate: `"plugin"` → Plugin branch; `""` or anything else → Unknown → silent no-op.
 
 ⏭️ No new APK needed — this was purely server-side. **Retest with the SAME installed pre5 build** (md5 `352ecc2e36755082b478b2b9eb92717a`). Success = journal shows `installedVersion` 100-1 with no failures, and the downloaded artifact's md5 is `a07d9ef8…` (ours) not `0ab09364…` (XiaoJi's).
+
+## 2026-07-30 — ✅ OUR PLUGIN IS LIVE ON DEVICE + 🔴 catalog redirect proven INERT
+### ✅ Phase A's actual goal achieved: patched 6.1.0 installs OUR engine, not XiaoJi's
+Triple-confirmed on pre5 / `com.miHoYo.GenshinImpact` (installed APK sha256 `9b2ed055…` == staged, per the DEBUG RULE):
+1. journal `installedVersion.downloadUrl` = our GitHub release asset
+2. journal `md5`/`lastUpdateMd5` = `a07d9ef8…` (ours), NOT `0ab09364…` (XiaoJi's `gamehub-cdn.masnet.cn` build)
+3. on-disk bytes md5 = `a07d9ef8…`
+Zero journal failures. 📌 The real install path is **`files/plugins/<id>/base.apk`** — `files/plugin_packages/<id>/` exists but is EMPTY, don't look there. Siblings: `pc_engine_active_plugin_identity`, `pc_engine_plugin_operation_results`, `pc_engine_plugin_recovery`, `plugins.xml`.
+
+### 🔴 But the catalog redirect has NO runtime effect on 610 (user: no components under dxvk/vkd3d/GPU drivers)
+- Device `shared_prefs/sp_winemu_unified_resources.xml` (454,344 b → `/sdcard/Download/reg610.xml`): **783 download URLs, ALL `uxdl.mac520.com`** (XiaoJi CDN) + 1 bigeyes.com, **ZERO github.com**.
+- Our Worker is healthy and would be unmistakable: `/v6/simulator/v2/getAllComponentList` → **612 entries, ALL github.com**; the bare 5.x path → also ALL github.com. **No Worker path can produce `uxdl` URLs** ⇒ the app never asked us.
+- 🔑 **Why the plugin manifest worked and this doesn't:** our manifest patch injects an **ABSOLUTE** URL, which `kee.a`'s `http(s)://` branch uses verbatim — bypassing base-URL resolution entirely. Catalog calls use **relative** paths and resolve against the HttpClient's base, which is still XiaoJi's. The absolute-URL trick was load-bearing, not incidental.
+- **Ruled out:** wrong enum value (`f7n.f` IS active; `ne0.b` defaults to it; no `server_environment` override on device) · wrong fields (`f7n.<init>` iputs p3→a p4→b p5→c p6→d; the two vgabc literals load into v5/v6 ⇒ **c=cn host, d=oversea host**, exactly what we rewrite) · dead fields (they ARE read, in `ne0.b()` at `ne0.smali:399`/`:407`, selected by `kg0.a()`, called by `ne0.a()`; `ne0.a()` has 7 callers, `ne0.b()` 4).
+- `ao4.smali` (holds the `simulator/v2/getAllComponentList` literal at :348) references **neither `pe0` nor `f7n`** — it routes through `kee`, whose client is `kee.a:Lvec;`.
+⏭️ NEXT: locate where the Ktor client `Lvec;` gets its base URL (the DI `defaultRequest` config) and repoint it; or reuse the proven absolute-URL trick per catalog call site; or redirect `pe0` **selectively for allowlisted paths only** (never wholesale — it serves login/profile too). Also re-verify whether the `/v6` prefix patch does anything at runtime on 610, since our Worker's 6.x-vs-5.x branching depends on it.

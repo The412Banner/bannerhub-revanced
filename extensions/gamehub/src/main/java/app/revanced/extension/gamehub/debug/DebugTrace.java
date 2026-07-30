@@ -51,6 +51,7 @@ public final class DebugTrace {
     public static void write(String message, Throwable t) {
         try {
             File f = ensureFile();
+            if (f == null) throw new IllegalStateException("no writable trace dir yet");
             try (PrintWriter pw = new PrintWriter(new FileWriter(f, true))) {
                 pw.print(TS.format(new Date()));
                 pw.print(' ');
@@ -60,7 +61,11 @@ public final class DebugTrace {
                 }
             }
         } catch (Throwable e) {
-            Log.e(TAG, "DebugTrace.write failed: " + message, e);
+            // Log the MESSAGE and, crucially, the caller's throwable -- not just our
+            // own file error. Previously the cause only went through the Log.i path
+            // below, which does not surface on this device, so failures were
+            // effectively invisible.
+            Log.e(TAG, message, t != null ? t : e);
             return;
         }
         // Use Log.i — this device's logcat filter strips app-tagged Log.e
@@ -89,13 +94,50 @@ public final class DebugTrace {
                 }
             } catch (Throwable ignored) {
             }
+            // Internal storage as the second choice: always writable, no scoped-storage
+            // rules, and unaffected by the package rename.
             if (chosen == null) {
-                File dir = new File(
-                        Environment.getExternalStorageDirectory(),
-                        "Android/data/com.xiaoji.egggame/files");
-                if (!dir.exists()) dir.mkdirs();
-                chosen = new File(dir, FILE_NAME);
+                try {
+                    Context c = Utils.a();
+                    if (c != null) {
+                        File dir = c.getFilesDir();
+                        if (dir != null) {
+                            if (!dir.exists()) dir.mkdirs();
+                            chosen = new File(dir, FILE_NAME);
+                        }
+                    }
+                } catch (Throwable ignored) {
+                }
             }
+            // Last resort: derive the external path from the ACTUAL package.
+            //
+            // This used to hardcode "Android/data/com.xiaoji.egggame/files", which is
+            // wrong for EVERY build we ship -- all nine variants rename the package,
+            // so it pointed at a directory belonging to a different (absent) app.
+            // Under scoped storage an app may only create its own Android/data dir, so
+            // every write failed with ENOENT... and the broken path was then cached
+            // permanently, silently disabling tracing for the whole process. That is
+            // how the 6.1.0 login investigation lost its diagnostics: the real
+            // exception was swallowed and only DebugTrace's own failure was visible.
+            if (chosen == null) {
+                try {
+                    Context c = Utils.a();
+                    String pkg = (c != null) ? c.getPackageName() : null;
+                    if (pkg != null) {
+                        File dir = new File(
+                                Environment.getExternalStorageDirectory(),
+                                "Android/data/" + pkg + "/files");
+                        if (!dir.exists()) dir.mkdirs();
+                        chosen = new File(dir, FILE_NAME);
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+            // Do NOT cache a null/unusable choice -- without a Context this early we
+            // would otherwise poison the field for the process lifetime. Returning
+            // null lets the logcat path still carry the message, and the next call
+            // retries once a Context exists.
+            if (chosen == null) return null;
             logFile = chosen;
             return chosen;
         }

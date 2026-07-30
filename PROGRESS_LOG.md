@@ -4952,3 +4952,21 @@ Repointing `BADGE_BRANCH` to `gamehub-610-build` means `update-badges.yml` (hour
 
 ### 🔴 Product decision needed: guest mode vs the privacy strip
 `Disable Aliyun NumberAuth` applied 9/9, and the guest entry is drawn BY that SDK — so we removed it ourselves. Keep the strip and lose the built-in guest entry, or exempt the SDK to keep it (at the cost of the Aliyun/carrier UAID surface). Not deciding unilaterally.
+
+## 2026-07-30 — pre12: synthetic models now BUILD, but the library still gates. Two durable findings.
+✅ **Progress:** logcat confirms `SyntheticModel: built pfr` AND `built hfr` — both synthetic models construct. The full chain runs: `yf1.f()`/`lm.f()` → `rf1.i()` → `FakeStateFlow.tokenFlow()` → `FakeAuthToken.get()` → built. Root cause of the previous failure was R8's `getClass()` form of Kotlin non-null checks (see the re-derivation map). **The bytecode side has been correct since the decorator fix; all five failures since were in the extension.**
+❌ **Still gated:** the Library tab continues to show the logged-out empty state, so faking the interface getters is NOT sufficient on 610.
+
+### 🔑 LESSON: Compose resource strings are BASE64-encoded inside `.cvr`
+Every plain grep for on-screen English text fails. `assets/composeResources/<module>/values*/strings.commonMain.cvr` is a line-oriented `string|<key>|<base64>` format. **Decode before searching.** That is why "Log in to view your game library" appeared nowhere in res/, assets/, smali, the plugin, or the Worker. Once decoded:
+- `features_home_library_login_hint` = "Log in to view your game library"
+- `features_home_library_login_now` = "Log In Now"
+- (sibling: `features_home_library_epic_bind_hint`)
+Both live in `com.xiaoji.egggame.features.home`; the resource provider is `qjp` (`smali_classes2/qjp.smali:5899`), reached via its reverse-ordered packed-switch (index N → label `0x1c − N`, so this is index 12).
+
+### 🔎 The auth flows are ROOM-BACKED — likely why getter-faking isn't enough
+`yf1.<init>` builds its StateFlows with `androidx.room3.coroutines.FlowUtil.createFlow(db, …, ["user_account","auth_token"], …)` and shares them `Eagerly`. So auth state derives from the **database**, not from anything we can fake purely at the accessor level.
+⏭️ **The open question, and the next thing to settle:** does the library screen gate on the auth INTERFACE (which we now fake successfully) or does it read the Room `user_account`/`auth_token` tables directly (which we do not touch)? Two cheap ways to decide:
+1. **DB experiment (fastest, needs user consent — it writes to their app data):** insert a `user_account` + `auth_token` row via root and relaunch. If the library populates, the gate is DB-level and the fix is to seed/fake at the DB rather than the accessor.
+2. **Diagnostic build:** now that logcat tracing works, trace which auth members the library path actually calls. One build cycle, no device mutation.
+⚠️ Do NOT keep iterating blind — five build cycles went to this patch already, and the last four were extension bugs found one at a time. Settle the gate location first, then make one targeted change.

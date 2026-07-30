@@ -165,6 +165,15 @@ private const val NAV_BACK_STACK    = "Landroidx/navigation3/runtime/NavBackStac
 private const val IMPL_IS_LOGGED_IN_FLOW = "l"
 private const val IMPL_USER_FLOW         = "h"
 private const val IMPL_TOKEN_FLOW        = "f"
+// The COMBINED user+token flow, read by the interface default c()Z. Distinct from
+// k()Z (isLoggedIn): the ctor builds this one as
+//   stateIn(combine(userAccountFlow, authTokenFlow, ...))
+// i.e. it asserts BOTH a user AND a token, which is the app's notion of a real
+// (non-guest) session. Left unpatched until now on the assumption that it "wasn't
+// the login flag" -- true, but it turns out to be the GUEST flag, which is why the
+// Profile screen kept saying "Guest Mode" even with the DB correctly seeded and the
+// profile override removed.
+private const val IMPL_REAL_SESSION_FLOW = "m"
 
 // The isLoggedIn check the navigator gates call.
 private const val AUTH_IS_LOGGED_IN_METHOD = "k"
@@ -299,6 +308,22 @@ val bypassLoginPatch = bytecodePatch(
         // `i()` callers and anything collecting the flow directly — which the
         // old shape could not reach.
         // -----------------------------------------------------------------
+        // AUTH_IMPL.m() — the combined user+token "real session" flow behind c()Z.
+        firstMethod {
+            definingClass == AUTH_IMPL && name == IMPL_REAL_SESSION_FLOW
+        }.apply {
+            removeInstruction(0) // iget-object p0, p0, $AUTH_IMPL->d:StateFlow
+            removeInstruction(0) // return-object p0
+            addInstructions(
+                0,
+                """
+                    invoke-static {}, $FAKE_STATE_FLOW->boolTrue()Ljava/lang/Object;
+                    move-result-object p0
+                    return-object p0
+                """,
+            )
+        }
+
         firstMethod {
             definingClass == AUTH_IMPL && name == IMPL_TOKEN_FLOW
         }.apply {
@@ -336,6 +361,7 @@ val bypassLoginPatch = bytecodePatch(
         // -----------------------------------------------------------------
         listOf(
             IMPL_IS_LOGGED_IN_FLOW to "boolTrue",
+            IMPL_REAL_SESSION_FLOW to "boolTrue",
             // IMPL_USER_FLOW intentionally absent — see the note above; the seeded
             // DB row is a better profile than anything we can synthesise.
             IMPL_TOKEN_FLOW to "tokenFlow",

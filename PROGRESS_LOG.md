@@ -4684,3 +4684,22 @@ Matters because `release.yml` tags the DEFAULT branch, so cuts will now tag 610 
 **SEVERE 19 → 17, and that reconciles exactly:** only 2 of the original 19 were repairs (catalog + prefix); the manifest redirect was net-new and never in the failure set. So the earlier "19 minus 3" framing was wrong — 17 is the correct expected number, not an anomaly.
 Remaining 17: Bypass login, Debug logging, Explore tab hijack, Per-game menu id capture (shared), Show Game ID menu row, Show PC Game Settings row, GOG menu row, Banner Tools menu row, PC Vibration Settings menu row, Stub analytics events, Disable heartbeat, Disable Firebase auto-init, Recording-compatible audio, PC-accurate vibration, In-game Steam chat overlay, + the 2 DROP-list entries (In-game performance overlay, Offline component picker — local list) which are not re-derivation targets.
 ⚠️ **"Applied" ≠ "works".** Apply-time success only proves the anchors matched and the emitted bytecode is valid. In particular the pcengine manifest redirect CANNOT be device-tested yet: the CF Worker deploy is still pending/gated, so the live Worker does not serve `/game/mobile/v1/plugin/latest` — a patched build would get no manifest and install no engine. Order is: deploy the Worker, THEN device-test.
+
+## 2026-07-30 — 🟢 Worker DEPLOYED (deployment `b9b81005924f474287b26a8d4b74b449`) — device test now unblocked
+Deployed the pcengine-manifest route to the live bannerhub-api Worker, with guardrails. **All checks green.**
+
+### 🔴 The guardrail that mattered: bindings were 6, not 3
+The 77-day-old worker memory listed 3 bindings. Live read showed **6**: `kv_namespace/TOKEN_STORE`, `r2_bucket/CHAT_IMAGES` (bucket `bannerhub-chat-images`), and 4 `secret_text` (`SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `TURN_API_TOKEN`, `TURN_KEY_ID`). Deploying from the remembered list would have **dropped R2 chat-images + both TURN secrets** → broken chat images and broken voice calls for every existing user. Working metadata: declare `kv_namespace` + `r2_bucket` explicitly, `"keep_bindings":["secret_text"]` carries the 4 secrets; pass `compatibility_date`/`compatibility_flags` matching live, omit `usage_model`. **Verified before==after: all 6 preserved.**
+
+### Drift check
+Live script == repo `0f393a8` **byte-for-byte** after stripping CF's multipart envelope (GET returns the script wrapped: boundary + `Content-Disposition` + blank at top, blank + closing boundary at bottom — strip or you see phantom drift) and normalizing the trailing newline. So no live/repo divergence this time (the old `master`-5KB-ahead class of bug, fixed in `3df6494`), and the deploy added only the additive route.
+
+### Rollback (durable, outside /tmp)
+`/data/data/com.termux/files/home/worker-backups/20260730-pcengine-route/` — `ROLLBACK.sh` (executable, re-declares all 6 bindings), `rollback-bannerhub-worker.js` (`cmp`-verified identical to pre-deploy live), `metadata.json`, `settings.json` / `settings-after.json`, `deploy-response.json`.
+
+### Post-deploy verification
+- Existing routes all 200: `/v6/simulator/v2/getImagefsDetail` (1.4.2 reshaped), bare `/simulator/v2/getImagefsDetail` (static passthrough — **different shape, version gate intact**), `/v6/simulator/v2/getContainerList`, `/base/getBaseInfo`, `/devices/getDevicesList`, `/chat/rooms`.
+- New route passes all 10 client-contract checks: `code:200`, `msg`, `time`, `update_type:"plugin"`, `plugin_name:"pcengine"`, `schema_version:"1"` (STRING), md5 `^[a-f0-9]{32}$`, sha256 `^[a-f0-9]{64}$`, `file_size` int, https `apk_url`.
+- Prior builds are structurally unable to reach the new code: the path is 6.1.0-only, exact-match, and the change was 70 insertions / 0 deletions.
+
+⏭️ NEXT: device-test pre4 (run 30503506055). Success criterion = the installed plugin's md5 is **a07d9ef8…** (ours) not **0ab09364…** (XiaoJi's); ground truth `pc_engine_plugin_manager_journal.json` shows installedVersion 100-1 with no failures. Per the DEBUG RULE, verify the installed APK's sha256 against the staged build first.

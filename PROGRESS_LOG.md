@@ -4970,3 +4970,21 @@ Both live in `com.xiaoji.egggame.features.home`; the resource provider is `qjp` 
 1. **DB experiment (fastest, needs user consent — it writes to their app data):** insert a `user_account` + `auth_token` row via root and relaunch. If the library populates, the gate is DB-level and the fix is to seed/fake at the DB rather than the accessor.
 2. **Diagnostic build:** now that logcat tracing works, trace which auth members the library path actually calls. One build cycle, no device mutation.
 ⚠️ Do NOT keep iterating blind — five build cycles went to this patch already, and the last four were extension bugs found one at a time. Settle the gate location first, then make one targeted change.
+
+## 2026-07-30 — 🎯🎯 DB EXPERIMENT CONCLUSIVE: the login gate is ROOM-LEVEL, not accessor-level
+Seeded `egggame.db` by hand (root, app force-stopped, WAL checkpointed, pushed back with `chown 10255:10255` + `chmod 660`, stale `-wal`/`-shm` removed) with ONE row in each table:
+- `user_account`: `user_id='99999'`, `uuid='99999'`, `username='bannerhub'`, `nickname='BannerHub'`, `is_guest=0`, `created_at/updated_at=now`
+- `auth_token`: `user_id='99999'`, `access_token='bh-synthetic-token'`, `is_current=1`, expiries = now+1y
+
+**Result: the Library UNLOCKED immediately.** The screen now shows the real logged-in library chrome — PC Games / Steam Games / Epic Games / Retro Games tabs, an `+ Import` button, and the ordinary "No games. Import/Play." empty state — instead of "Log in to view your game library".
+
+### ⇒ What this means for the patch
+**Faking the auth interface's getters is NOT sufficient on 6.1.0.** `yf1.<init>` builds its StateFlows via `androidx.room3.coroutines.FlowUtil.createFlow(db, …, ["user_account","auth_token"], …)`, and the library path evidently consumes DB-derived state rather than only the accessors we replace. That is why five rounds of accessor/extension fixes all "worked" without changing the screen.
+
+### 🔧 The correct fix (design, not yet implemented)
+**Seed the Room DB instead of (or as well as) faking accessors.** Hook the auth impl's constructor — it already receives the `RoomDatabase` as p1 — and from our extension insert the two rows if absent:
+`RoomDatabase.getOpenHelper().getWritableDatabase().execSQL("INSERT OR IGNORE INTO user_account(...) VALUES(...)")` and the same for `auth_token`.
+🎁 **Every type on that path is UNOBFUSCATED** (`androidx.room3.RoomDatabase`, `SupportSQLiteDatabase`, `execSQL`), so this is a permanently letter-free hook — strictly better than what we have. Keep the existing accessor patches as belt-and-braces (they're already device-proven to execute).
+⚠️ Open sub-questions: whether `is_guest` should be 1 (schema has the column; guest support is first-class on 610) · whether seeding must happen before the Eagerly-shared flows first emit, or whether a later insert propagates (Room invalidation should push it, but verify) · whether the userId must stay `99999` to match `p5a.h()`'s `returnEarly("99999")` (it should — keep them in sync).
+
+📁 Full pre-experiment DB backup (all 18 files incl. wal/shm) at `worker-backups/20260730-genshin-db-experiment/`; the modified copy is under its `work/`. The device now carries the synthetic row, which is what makes the app usable — restoring the backup would put it back to the login gate.

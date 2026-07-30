@@ -288,24 +288,52 @@ val bypassLoginPatch = bytecodePatch(
         // Replace with `FakeStateFlow.userFlow()` so the reader's
         // flatMapLatest hits the userId-keyed query.
         // -----------------------------------------------------------------
-        // ⚠️ DELIBERATELY NOT PATCHING THE USER-PROFILE FLOW ANY MORE.
+        // ✅ RESTORED in pre18, with the consumer actually read this time.
+        //
+        // I removed this in pre15 believing our empty synthetic profile caused the
+        // "Guest Mode" label. pre15 DISPROVED that — the label persisted with the
+        // override gone. Worse, removing it left d() returning NULL whenever the DB
+        // has no user row, which is every install now that seeding is disabled.
+        //
+        // Reading the store-binding gate settles it. AUTH_IMPL.a(Loqb;,Function0)Z
+        // does:
+        //     invoke-interface {p0}, AUTH_INTERFACE->d()   // the UserProfile
+        //     iget-boolean v2, v0, Lhfr;->z:Z             // isGuest
+        // — it reads UserProfile.isGuest DIRECTLY, and treats a null profile as
+        // having no real account. On device that surfaced as
+        //     HomeProfile: ProfileTab ClickBindSteam loggedIn=true guest=true
+        // with the Bind Steam tap doing nothing.
+        //
+        // SyntheticModel builds the profile with the user id in the first String
+        // and every boolean false — so isGuest is false, which is what the gate
+        // wants. A synthetic non-guest profile beats no profile at all.
+        //
+        // ⚠️ Historical note kept because it is still true of 6.0.x, and explains
+        // why this override exists at all:
         //
         // On 6.0.x this had to be faked because the DB had no user row, so the
         // profile flow emitted null and the library reader flat-mapped that to an
-        // empty list. On 6.1.0 we seed a REAL row (see BhAuthSeed), so the
-        // DB-derived profile is already correct AND complete — nickname, username,
-        // is_guest=0, timestamps.
+        // empty list.
         //
-        // Overriding it here made things WORSE, and this was visible on device:
-        // SyntheticModel fills every String except the user id with "", so the
-        // injected profile had no nickname, and the Profile screen fell back to its
-        // `core_profile_guest_name` placeholder — literally "Guest Mode" — plus the
-        // "Cloud saves are unavailable in Guest Mode" banner. Note isGuest (field z)
-        // was ALREADY false in the injected object, so this was never a flag to
-        // flip: it was an empty object shadowing a good one.
-        //
-        // Letting the real flow through is both simpler and more faithful. The
-        // isLoggedIn and token overrides below stay, since nothing renders them.
+        // (The pre15 theory — that the injected profile's empty nickname caused the
+        // "Guest Mode" placeholder — was tested and disproved: the label persisted
+        // with this override removed entirely. The label's source is elsewhere; the
+        // Bind-Steam gate, however, is definitively this profile's isGuest field.)
+        // -----------------------------------------------------------------
+        firstMethod {
+            definingClass == AUTH_IMPL && name == IMPL_USER_FLOW
+        }.apply {
+            removeInstruction(0) // iget-object p0, p0, $AUTH_IMPL->b:StateFlow
+            removeInstruction(0) // return-object p0
+            addInstructions(
+                0,
+                """
+                    invoke-static {}, $FAKE_STATE_FLOW->userFlow()Ljava/lang/Object;
+                    move-result-object p0
+                    return-object p0
+                """,
+            )
+        }
 
         // -----------------------------------------------------------------
         // AUTH_IMPL.f() — UserToken StateFlow getter. NEW EDIT FOR 6.1.0.
@@ -371,8 +399,7 @@ val bypassLoginPatch = bytecodePatch(
         listOf(
             IMPL_IS_LOGGED_IN_FLOW to "boolTrue",
             IMPL_REAL_SESSION_FLOW to "boolTrue",
-            // IMPL_USER_FLOW intentionally absent — see the note above; the seeded
-            // DB row is a better profile than anything we can synthesise.
+            IMPL_USER_FLOW to "userFlow",
             IMPL_TOKEN_FLOW to "tokenFlow",
         ).forEach { (getterName, helper) ->
             firstMethod {

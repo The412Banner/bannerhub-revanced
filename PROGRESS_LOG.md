@@ -4794,3 +4794,22 @@ Chased the base URL to the end. **The host is exonerated; the plugin owns the ca
 ### 🔑 The fix: we own the artifact, so patch the plugin too
 Rewrite the plugin's `landscape-api-{cn,oversea}.vgabc.com` → `bannerhub-api.the412banner.workers.dev`, `apktool b`, re-sign with the v6 keystore, re-upload to release `pcengine-plugin-610`, update the Worker's `PCENGINE_PLUGIN` md5/sha256/fileSize.
 ⚠️ Solve first: (1) **re-download won't trigger on the same version** — device has vc100 and the client compares the manifest's Long-parseable `plugin_version` against it; bumping to "101" while the APK declares vc100 may fail a consistency check, so bump both or clear plugin state. (2) The plugin won't send the **`/v6` prefix**, and our Worker gates the 6.x reshape + EnvListData wrapper on `is60` — without it the plugin gets 5.x-shaped JSON that 6.1.0's kotlinx-strict parser may reject (same class as the historical EnvListData bug). (3) Confirm which of the plugin's many hosts actually serve the catalog before rewriting; leave beta/dev/statistic alone.
+
+## 2026-07-30 — 🏁 PHASE A COMPLETE, FULLY DEVICE-PROVEN: patched 610 runs OUR engine AND OUR catalog
+User confirmed GPU drivers / DXVK / VKD3D visible. Verified objectively on device:
+| | before | after |
+|---|---|---|
+| installed engine md5 | `a07d9ef8…` (our unpatched build) | **`ee4bae17…` (catalog-patched)** |
+| component download hosts | **783 `uxdl.mac520.com`, 0 ours** | **1240 `github.com`, 0 XiaoJi** |
+Both hops work: host → our Worker for the engine manifest; engine → our Worker for the catalog. 🎉 **The feared reply-shape problem did NOT materialize** — our existing `/v6` 6.x reshape + EnvListData wrapper satisfies the 6.1.0 plugin's parser unchanged, so zero server-side format work was needed.
+
+### 🔧 Plugin-patch recipe (reuse on every plugin re-derivation)
+1. Decompile source: `pcengine-work/pcengine-100-1-decompiled`; copy to a build dir.
+2. Patch `smali/xjp/bp6.smali` (plugin env enum). `<init>(I,String,String,String,String)` iputs p3→a p4→b p5→c ⇒ **a = env key, b = cn host, c = oversea host**. Rewrite ONLY the Online value's hosts (lines 37/41) → `bannerhub-api.the412banner.workers.dev/v6`; leave Beta (69/73) and Test/dev2 (101/105). Readers: `xjp/ba.b()` (`ba.smali:532`/`:540`), consumed by `ba.a()` which concatenates `scheme://host+suffix` with a StringBuilder — which is why the inline `/v6` works.
+3. ⛔ **`apktool b` FAILS under PRoot** — aapt2 exits **132 (SIGILL)** on resources. But apktool emits `build/apk/classes*.dex` before failing, so **repack by swapping ONLY the dex into a copy of the original APK** (python `zipfile`, preserve each entry's `compress_type`/`external_attr`, drop `META-INF/*.{SF,RSA,DSA,MF}`), then sign with `apksigner.jar`.
+4. ⚠️ Therefore **versionCode/versionName stay 100 / "100-1"** — the manifest is never rebuilt. An installed device will NOT treat it as an update, and the Worker's `plugin_version` must NOT go above 100 while the APK says 100. Force a re-fetch by **uninstalling the app** (installing over the top keeps the old engine and changes nothing) or deleting `files/plugins/` + the journal.
+5. Update the Worker's `PCENGINE_PLUGIN` apkUrl/md5/sha256/fileSize, deploy, verify.
+
+Artifact: `pcengine-100-1-bannerhub-v6-catalog.apk`, 23,494,479 b, md5 `ee4bae17…`, sha256 `1f381ba7…`, cert `10895a31…`, on release `pcengine-plugin-610` beside the unpatched one (kept as fallback). Worker deploy `86cc1799118f4967b8207d337bcbdc4a`, bannerhub-api `e8ff3cf`. Worker also normalizes duplicate slashes + accepts bare `/v6` (verified `/v6/`, `/v6//`, `/v6///`).
+
+⏭️ Phase A closed. Next per the plan: task 6 (Bypass login + Debug logging) — but first check task 16, since 6.1.0's built-in guest mode may retire the login patch outright (caveat: it renders via the Aliyun NumberAuth SDK our privacy suite stubs). Also still owed: task 11 (`push.permission.MESSAGE`, now genuinely blocking since the line is full BannerHub v6 again), task 15 (release-notes rewrite), task 17 (610 master map).

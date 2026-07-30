@@ -167,10 +167,21 @@ private const val GAME_LIB_DATABASE = "Lcom/xiaoji/egggame/game/database/GameLib
 private const val NAV_BACK_STACK    = "Landroidx/navigation3/runtime/NavBackStack;"
 
 // 6.1.0 impl getters (all `.locals 0`, body = iget-object p0 + return-object p0):
-//   l() → field e = isLoggedIn StateFlow<Boolean>   (backs the k()Z default)
+//   l() → field e = GUEST StateFlow<Boolean>        (backs the k()Z default)
 //   h() → field b = UserProfile StateFlow<Lhfr;>    (backs the d() default)
 //   f() → field c = UserToken   StateFlow<Lpfr;>    (backs the i() default)
-private const val IMPL_IS_LOGGED_IN_FLOW = "l"
+//
+// 🔧 pre20 POLARITY FIX. Earlier bases (and pre8–pre19) labelled this flow
+// "isLoggedIn" and forced it TRUE. On 6.1.0 it is the GUEST flag: yf1's ctor
+// builds field e as stateIn(map(userAccountFlow, tag 8), FALSE) and the app's own
+// "logged in with a real account" signal lives in m()/c() instead (field d =
+// stateIn(combine(userProfile, userToken), FALSE)). Forcing the guest flow TRUE
+// therefore made the app a GUEST, and the navigation-layer full-account gate
+// (fch.j(): reads k()=l().getValue(); "Navigate intercepted guest for
+// full-account key=SteamLogin") dropped the Steam-QR navigation. So this flow is
+// now faked FALSE (not a guest) while m()/c() is faked TRUE (has a full account) —
+// one coherent "full, non-guest account" identity, not per-gate clamps.
+private const val IMPL_IS_GUEST_FLOW = "l"
 // h() backs the interface default d()Lhfr; (UserProfile). Its override was
 // REMOVED in pre19 — d()/UserProfile.isGuest (Lhfr;->z) is NOT on the Bind-Steam
 // path (see the ProfileTab guest fix below), so faking it did nothing. Kept as a
@@ -188,8 +199,13 @@ private const val IMPL_TOKEN_FLOW        = "f"
 // profile override removed.
 private const val IMPL_REAL_SESSION_FLOW = "m"
 
-// The isLoggedIn check the navigator gates call.
-private const val AUTH_IS_LOGGED_IN_METHOD = "k"
+// The GUEST check the navigator gates call. k()Z = l().getValue() (interface
+// default on Lrf1;). fch.i()/fch.j() gate on this: j() intercepts navigation to a
+// full-account destination when k() is TRUE (guest). Forcing it FALSE (not a
+// guest) is what lets the SteamLogin modal through. (Was mislabeled the
+// "isLoggedIn" check pre20 and forced TRUE — the exact inversion that self-blocked
+// Bind-Steam.)
+private const val AUTH_IS_GUEST_METHOD = "k"
 // NAV_INTERCEPTOR in 6.0.4 is Liod;, but its a(...) body no longer holds the
 // auth check inline — it dispatches to coroutine continuation Lhod;->invokeSuspend
 // where the iget+invoke+if-nez pattern actually lives. The apply block below
@@ -287,19 +303,25 @@ val bypassLoginPatch = bytecodePatch(
         // one engine touches the file, plus an on-device integrity_check afterwards.
 
         // -----------------------------------------------------------------
-        // AUTH_IMPL.h() — isLoggedIn StateFlow getter.
+        // AUTH_IMPL.l() — GUEST StateFlow getter (field e). ⚠️ NOT isLoggedIn.
         //
-        // Original body: `iget-object p0, p0, AUTH_IMPL->c:Lhzh;` + return.
-        // The Boolean StateFlow it returns is built in the ctor by combining
-        // UserDao + AuthTokenDao flows; default initial value is FALSE so
-        // every collector sees logged-out at startup.
+        // Original body: `iget-object p0, p0, AUTH_IMPL->e:StateFlow` + return.
+        // yf1's ctor builds field e as
+        //   stateIn(map(createFlow(user_account, auth_token), tag 8), FALSE)
+        // i.e. a Boolean projection of the user row = isGuest, default FALSE.
         //
-        // Replace with `FakeStateFlow.boolTrue()` (a host-compatible
-        // StateFlow holding TRUE). The helper handles the per-version
-        // construction so we don't have to grow `.locals`.
+        // pre20: fake it FALSE (boolFalse), not TRUE. This is the SOURCE of the
+        // fix — it makes k()=l().getValue()=false, which:
+        //   • passes the nav-layer full-account gate (fch.j(): intercepts when
+        //     k() is TRUE) so SteamLogin is not dropped;
+        //   • feeds the ProfileTab reducer (hfk reads rf1.k()) so gek.b (isGuest)
+        //     reduces to false and Bind-Steam takes the real-bind path.
+        // The login-skip does NOT ride this flow — it rides m()/c() (faked TRUE
+        // below) — so making guest false does not re-introduce the login wall.
+        // The helper handles StateFlow construction so we don't grow `.locals`.
         // -----------------------------------------------------------------
         firstMethod {
-            definingClass == AUTH_IMPL && name == IMPL_IS_LOGGED_IN_FLOW
+            definingClass == AUTH_IMPL && name == IMPL_IS_GUEST_FLOW
         }.apply {
             removeInstruction(0) // iget-object p0, p0, $AUTH_IMPL->e:StateFlow
             removeInstruction(0) // return-object p0
@@ -307,7 +329,7 @@ val bypassLoginPatch = bytecodePatch(
             addInstructions(
                 0,
                 """
-                    invoke-static {}, $FAKE_STATE_FLOW->boolTrue()Ljava/lang/Object;
+                    invoke-static {}, $FAKE_STATE_FLOW->boolFalse()Ljava/lang/Object;
                     move-result-object p0
                     return-object p0
                 """,
@@ -315,25 +337,27 @@ val bypassLoginPatch = bytecodePatch(
         }
 
         // -----------------------------------------------------------------
-        // PRIMARY GUEST FIX (pre19) — force ProfileTabModel.isGuest FALSE at
-        // its ONLY writer, so the Bind-Steam gate takes the real-bind path.
+        // ProfileTab isGuest belt-and-suspenders (pre19; KEPT in pre20).
         //
-        // The gate (ofk, "ClickBindSteam") reads gek.b == isGuest directly and
-        // branches: isGuest -> a no-op guest prompt; else (logged in) -> r(),
+        // The Bind-Steam gate (ofk, "ClickBindSteam") reads gek.b == isGuest
+        // directly and branches: isGuest -> a no-op guest prompt; else -> r(),
         // the real store bind. Device log: "ClickBindSteam loggedIn=true
         // guest=true", tap does nothing.
         //
         // gek.b is written in exactly one place: the ProfileTab reducer's
-        // FlowCollector.emit() branch that copies the auth guest StateFlow
-        // (rf1.l()) into Gek.a(oldState, ..., flags=0xFFFFFFD). In that copy the
-        // flags keep every field EXCEPT bit 1 (arg2 = isGuest), which is taken
-        // from the passed register. Forcing that register to 0 makes every
+        // FlowCollector.emit() branch that copies the auth guest signal (rf1.k(),
+        // = l().getValue()) into Gek.a(oldState, ..., flags=0xFFFFFFD). In that
+        // copy the flags keep every field EXCEPT bit 1 (arg2 = isGuest), which is
+        // taken from the passed register. Forcing that register to 0 makes every
         // emitted ProfileTabModel isGuest=false.
         //
-        // This is TERMINAL and surgical: it overrides whatever the guest flow
-        // emits, at the single write site, WITHOUT touching the l()/k()
-        // login-skip overrides (those legitimately want TRUE — l()/k() is the
-        // guest/isLoggedIn seam the nav gates ride; see the auth-map note).
+        // ⚠️ pre20 makes this REDUNDANT but keeps it deliberately. Now that the
+        // SOURCE guest flow (AUTH_IMPL.l() = boolFalse) and the k() seam are FALSE,
+        // the reducer already emits gek.b=false — this clamp no longer contradicts
+        // the source (as it did in pre19, which forced l()/k() TRUE and then
+        // clamped here), it merely reinforces it. Kept as belt-and-suspenders: if a
+        // future base changes how the reducer reads the guest signal, this still
+        // pins isGuest=false at the single write site. Costs one const.
         //
         // Anchored structurally on the unique copy-mask literal, not on the
         // R8 letters of the collector or its emit index.
@@ -435,7 +459,8 @@ val bypassLoginPatch = bytecodePatch(
         // holds, it now yields synthetic values.
         // -----------------------------------------------------------------
         listOf(
-            IMPL_IS_LOGGED_IN_FLOW to "boolTrue",
+            // GUEST flow -> FALSE (not a guest); real-session/full-account -> TRUE.
+            IMPL_IS_GUEST_FLOW to "boolFalse",
             IMPL_REAL_SESSION_FLOW to "boolTrue",
             // IMPL_USER_FLOW ("h") removed in pre19 with its impl-side twin —
             // the UserProfile flow is off the Bind-Steam path, and this Llm;
@@ -508,66 +533,45 @@ val bypassLoginPatch = bytecodePatch(
         // `i()` callers and direct flow collectors, which the old shape could not.
 
         // -----------------------------------------------------------------
-        // NAVIGATOR.i(...) and NAVIGATOR.r(...) — Login navigation gates.
+        // AUTH_INTERFACE.k()Z — the GUEST check the navigator gates dispatch to.
         //
-        // Both methods have the pattern (somewhere in their body):
-        //   iget-object vN, p0, NAVIGATOR->b:AUTH_INTERFACE
-        //   invoke-interface {vN}, AUTH_INTERFACE->a()Z   ← isLoggedIn check
-        //   move-result vN
-        //   if-nez vN, :skipLogin                          ← skips on logged in
-        //   new-instance L<Login intent>;                   ← Login intent build
+        // k() is a DEFAULT method on Lrf1; whose body is `l().getValue()` — so it
+        // reports GUEST, not isLoggedIn. The navigator reads it directly:
+        //   fch.i(): `if (keyReq && this.b.k()) j(key)`   (routes guests aside)
+        //   fch.j(): `if (!k()) return false; … return a(...) || k()`
+        //            → returns TRUE (⇒ "Navigate intercepted guest for
+        //              full-account", navigation dropped) exactly when k() is TRUE.
         //
-        // Replace `invoke-interface a()Z` + `move-result` with `const/4 1`
-        // so the branch always skips. Belt-and-braces with the StateFlow
-        // patches above: even if AUTH_IMPL.h() weren't reached for some
-        // reason, this gate still passes.
+        // pre20 forces it to 0 (NOT a guest). Forcing it to 1 — as every prior base
+        // did under the "isLoggedIn" mislabel — is precisely what made j() intercept
+        // and swallow the SteamLogin modal. This is belt-and-braces with the
+        // AUTH_IMPL.l() = boolFalse source patch above (k()'s own body reads
+        // l().getValue(), already false once l() is faked); both layers are kept so
+        // that if either anchor breaks on a future base the guest flag still reads
+        // false. It does NOT affect login-skip, which rides c()/m() (faked TRUE),
+        // a separate seam.
+        //
+        // Safe because AUTH_IMPL does NOT override k() (it implements only the
+        // abstract members), so every invoke-interface k()Z lands on this body; and
+        // the decorator's k() delegates to the wrapped instance's k(), inheriting it.
         // -----------------------------------------------------------------
-        // NAVIGATOR is located structurally: the only class whose constructor takes
-        // the unobfuscated androidx NavBackStack. On 6.1.0 its login gates live in
-        // i(Lw01;)V (ONE gate) and j(Lw01;)Z (TWO gates) — three sites in total.
-        //
-        // ⚠️ The 6.0.x implementation looped over a hardcoded method-name list and
-        // took the FIRST `iget b` per method. That would silently leave 6.1.0's
-        // second gate in j() live — a login leak that still reports "succeeded" at
-        // patch time. So instead: find EVERY `invoke-interface AUTH_INTERFACE->k()Z`
-        // in the class and force each one to 1.
-        //
-        // Replacing the invoke+move-result pair (rather than editing the branch) is
-        // also polarity-agnostic — the three sites branch if-eqz / if-nez / if-eqz
-        // respectively, and forcing "logged in = true" is correct for all of them.
-        // Rather than editing each gate's call site, neutralize the check they all
-        // dispatch to: AUTH_INTERFACE.k()Z. This is strictly better than the 6.0.x
-        // approach for three reasons:
-        //   1. It covers ALL gates including 6.1.0's second gate inside j(), which a
-        //      first-match-per-method loop would silently have left live — a login
-        //      leak that still reports "succeeded" at patch time.
-        //   2. It is polarity-agnostic (the three sites branch if-eqz / if-nez /
-        //      if-eqz) and immune to further call sites appearing in a later base.
-        //   3. It needs no class-by-type iteration, only the `firstMethod` lookup
-        //      already used throughout this repo.
-        // Safe because k() is a DEFAULT method on the interface and AUTH_IMPL does
-        // NOT override it (it implements only the abstract members), so every
-        // invoke-interface k()Z lands on this body.
-        //
-        // This is belt-and-braces with the AUTH_IMPL.l() patch above: k()'s original
-        // body reads l().getValue(), which already returns TRUE once l() is faked.
-        // Both layers are kept deliberately — if either anchor breaks on a future
-        // base, the other still holds the gate open.
+        // NAVIGATOR is still resolved+asserted below so a future reshuffle that
+        // removes the navigator seam fails loudly rather than shipping unguarded.
         firstMethod {
             definingClass == AUTH_INTERFACE &&
-                name == AUTH_IS_LOGGED_IN_METHOD &&
+                name == AUTH_IS_GUEST_METHOD &&
                 parameterTypes.isEmpty() &&
                 returnType == "Z"
         }.apply {
             // Original body: invoke-interface l() -> getValue() -> check-cast
-            // Boolean -> booleanValue -> return. Replace wholesale with `true`.
+            // Boolean -> booleanValue -> return. Replace wholesale with `false`.
             // `.locals 0` in the original, and p0 is the receiver, so use p0 as the
             // return register to avoid growing the register count.
             repeat(implementation?.instructions?.count() ?: 0) { removeInstruction(0) }
             addInstructions(
                 0,
                 """
-                    const/4 p0, 0x1
+                    const/4 p0, 0x0
                     return p0
                 """,
             )

@@ -46,6 +46,7 @@ public final class FakeStateFlow {
     private static volatile Method factory;
 
     private static volatile Object cachedTrueFlow;
+    private static volatile Object cachedFalseFlow;
     private static volatile Object cachedUserFlow;
 
     private FakeStateFlow() {}
@@ -59,6 +60,26 @@ public final class FakeStateFlow {
             cachedTrueFlow = wrap(Boolean.TRUE);
             DebugTrace.write("FakeStateFlow.boolTrue() built");
             return cachedTrueFlow;
+        }
+    }
+
+    /**
+     * Returns a StateFlow whose constant value is Boolean.FALSE. Cached.
+     *
+     * Added for 6.1.0 (pre20). The auth interface exposes a GUEST StateFlow
+     * (rf1.l(), backing the k()Z default) — NOT an "isLoggedIn" flow as earlier
+     * derivations assumed. Presenting a full (non-guest) account therefore
+     * requires this flow to read FALSE, so the navigation-layer full-account gate
+     * (fch.j(): "Navigate intercepted guest for full-account") does not fire.
+     */
+    public static Object boolFalse() {
+        Object cached = cachedFalseFlow;
+        if (cached != null) return cached;
+        synchronized (FakeStateFlow.class) {
+            if (cachedFalseFlow != null) return cachedFalseFlow;
+            cachedFalseFlow = wrap(Boolean.FALSE);
+            DebugTrace.write("FakeStateFlow.boolFalse() built");
+            return cachedFalseFlow;
         }
     }
 

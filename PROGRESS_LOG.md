@@ -4655,3 +4655,26 @@ XiaoJi's live artifact resolves to `https://gamehub-cdn.masnet.cn/uploads/plugin
 Phase A: (1) repair Redirect catalog API structurally · (2) repair Prefix API path /v6 · (3) NEW pcengine manifest redirect · (4) Worker route, code-only, deploy gated · (5) CI build + device-test the trio.
 Phase B: (6) Bypass login + Debug logging [mandated first; the 3 Class.forName constants aren't apply-time validated] · (7) Explore hijack · (8) menu-id keystone → unblocks 5 menu rows · (9) remainder incl. privacy re-audit vs 610's new multi-OEM push stack · (10) cleanly disable the 2 dropped patches (offline picker, perf overlay — anchors are plugin-side now; remember pre1's lesson that a SEVERE-failed patch can still damage via an already-run resource dependency).
 Phase C: (11) deferred push.permission.MESSAGE one-liner [MUST precede any multi-variant release] · (12) proper StripCloudGaming 610 handling · (13) silent base-bump chores (BADGE_BRANCH, 2 README raw URLs, release.yml tagging the default branch).
+
+## 2026-07-29 — ✅ Phase A built: both API redirects re-derived STRUCTURALLY + pcengine manifest redirect + Worker route
+Commits: this repo `630f301` · bannerhub-api `8b1b5a2` (main). CI run `30503506055`, headSha `630f3013` == pushed SHA (verified), label `1.0.0-610-pre4`, artifact-only.
+
+### 🚨 update_type MUST be "plugin" — the trap that would have faked a redirect failure
+`xy5.i(...)` at smali_classes2/xy5.smali:14042 reads `mvi.a` (`update_type`) → maps to enum `qvi` = **App/Plugin/Unknown** → branches on `.ordinal()`:
+- `"app"` → App → the APP-update path (do NOT send)
+- `"plugin"` → Plugin → ordinal 1 → `:cond_19` = the plugin-install path
+- anything else **including the serializer default `""`** → Unknown → ordinal 2 → bails, **installs nothing**
+Inside `:cond_19` it then **equality-checks `plugin_name` and `schema_version`** and returns early on mismatch. So `update_type:"plugin"` + `plugin_name:"pcengine"` + `schema_version:"1"` (a STRING) are hard requirements. Serving the DTO defaults would have looked exactly like "the redirect didn't work" on device.
+
+### Both redirects now structural — no R8 letters left to re-pin
+- **Redirect catalog API** → the unique `<clinit>` carrying BOTH `landscape-api-{cn,oversea}.vgabc.com`. Ends 7 bumps of letter chasing (mcj→zhj→xrj→esj→nnh→qnh→yei→f7n).
+- **Prefix API path /v6** → the only **static (builder, String) -> void** method carrying BOTH `"http://"` and `"https://"`, which is what the helper structurally IS (the one place deciding absolute-vs-relative). Measured: 33 classes have `"https://"`, 15 have both, exactly **1 method** matches the full shape = `kee.a(Ltgc;Ljava/lang/String;)V`. Framework-typed first params excluded so `com.xiaomi.push.service.x`'s three `(Context,String)V` helpers can't match. History: zdb→ohb→vob→cpb→zua→dva→scb→**kee**.
+- **NEW Redirect PC engine plugin manifest** → anchored on the endpoint path literal (globally unique to `zy5`). ONE inserted `const-string` after `move-result-object`; invoke/move-result deliberately left intact (move-result-object must directly follow its invoke). ⛔ Explicitly NOT a `pe0` host rewrite — `pe0.a()` serves the whole new 6.1.0 API surface (~10 callers incl. login/profile). URL hardcodes `/v6/` so it's Worker-gated independent of the prefix patch, and the prefix patch passes absolute URLs through untouched ⇒ they compose in any combination.
+- CI enables patches by default (`-d` opt-outs, `-e` for parameterized) ⇒ the new patch needed no registration.
+
+### Worker
+`/game/mobile/v1/plugin/latest` added ABOVE the fall-through proxy (verified by char offset: 48703 < 90128) returning `{code:200,msg:'Success',time,data:{…8 snake_case fields…}}` from a documented `PCENGINE_PLUGIN` constant. `node --check` clean. Asset verified: release `pcengine-plugin-610` non-draft, `state=uploaded`, download URL **200 anonymously** through GitHub's redirect chain (client's HttpURLConnection follows redirects). ⛔ **NOT DEPLOYED** — CF deploy is manual/paid/gated, so the live Worker still lacks the route. The device test cannot pass until it's deployed.
+
+### Default branch → gamehub-610-build (user request)
+Matters because `release.yml` tags the DEFAULT branch, so cuts will now tag 610 (still verify headSha after every cut). Repointed in the same commit: `BADGE_BRANCH` (was still 609 — the exact silent rot that froze badges at "0" for 6 weeks), the 2 README badge raw URLs, the README build instruction, and release.yml's 5 blob/tree doc links.
+⚠️ **release.yml's release-notes PROSE is still entirely 609** and would publish false claims on a 610 cut (:314 "a patched build of GameHub 6.0.9", :350 claims the menu chain was re-derived, :359 claims the full v6 feature set is device-verified incl. the offline picker + perf overlay we're dropping, :385 "unmodified 6.0.9 versionCode 121"). Left alone deliberately — that's a rewrite, not a find-and-replace, and the honesty bar from the pre3 notes applies.

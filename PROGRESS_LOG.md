@@ -5019,3 +5019,24 @@ message: database disk image is malformed
 Seed hook removed (`96242ec`); `BhAuthSeed` stays in-tree unreferenced with the lesson recorded. Device `integrity_check` currently reports `ok` with the row intact — luck, not design.
 ⏭️ **pre17 tests whether seeding was ever needed.** Since pre16 we also fake `m()` (the combined user+token flow behind `c()Z`) — the last unfaked auth surface, and one that did NOT exist when I concluded seeding was required. The accessor path may now unlock the library on its own. User always fresh-installs pre-releases, so this is a clean test at no extra cost.
 ⚠️ Do NOT re-enable seeding without (a) using androidx.sqlite's **bundled** driver so exactly one engine touches the file, and (b) an on-device `PRAGMA integrity_check` afterwards.
+
+## 2026-07-30 — 🔎 Guest flag: traced most of the way, and the app told us itself
+pre17 device state: **login bypass works with ZERO db rows** (accessor-only), `integrity_check ok`, no FATAL, seeder never ran. The DB seeding was never necessary — the `m()` fake added in pre16 was the missing piece.
+
+### The app logs its own state, unobfuscated — use this, don't guess
+```
+I HomeProfile: [Android] ProfileTab ClickBindSteam loggedIn=true guest=true
+I SteamGamesViewModel: loginStatus update loggedIn=false steamId=0 account= cacheReady=false ...
+I SteamSessionLifecycle: Steam session idle: no selected or saved Rust account login target
+```
+⇒ `loggedIn=true` (our bypass works) but **`guest=true`**, and the Bind-Steam click handler bails on it. So the guest flag is a REAL functional gate, not just a label — it blocks store binding.
+🔑 **Tags `HomeProfile`, `SteamGamesViewModel`, `SteamSessionLifecycle`, `NetworkModule`, `BITrack`, `EventsReporter` are all UNOBFUSCATED.** This is by far the fastest way to read runtime state on 6.1.0 — three builds of guessing were unnecessary once I looked at the app's own logging.
+
+### Trace so far (each hop verified)
+1. Click handler `efk.invoke()` (`smali_classes3/efk.smali:44`) logs `loggedIn=` from `ofk.K` → `gek.b`, and `guest=` from **`efk.b`** — a field on the lambda itself, NOT from the UI state. (My earlier assumption that `gek.b` was the guest flag was wrong; `gek.b` is loggedIn, which is why patching around it never moved anything.)
+2. `efk.<init>(Z, Lofk;, I)` — the guest boolean is passed IN at construction. Callers: `ofk.smali:2814` and `ofk.smali:7097`.
+3. ⏭️ **NOT YET RESOLVED:** the origin of that boolean at those two call sites (register `v1`/`v0`). One or two hops away.
+📌 Ruled out along the way: `gek`'s guest-ish arg is hard-coded `0x0` at BOTH state-update sites (`ofk:618` ctor, `ofk:1873`); `ofk` never reads `Lhfr;->z` (UserProfile.isGuest) and calls the auth interface only once (`rf1.a(...)` at `:2782`). So the guest state does NOT come from the auth interface or the user profile — which is why faking `k()`, `c()`/`m()`, the token and the DB row all failed to move it.
+
+### Proportionality note
+The app is fully usable: library, Settings, Downloads, Explore, per-game menus all work. The guest flag costs **store binding** (Steam/Epic) and the cloud-save banner. Remaining higher-value work: 11 SEVERE patches, the persisted random user id (needed for store/config attribution anyway), Debug logging, and the release-notes rewrite.

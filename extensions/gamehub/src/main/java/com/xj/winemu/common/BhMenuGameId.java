@@ -36,6 +36,15 @@ public final class BhMenuGameId {
         Pattern.compile("ServerGameId\\(value=(-?\\d+)\\)");
     private static final Pattern P_GAMEID =
         Pattern.compile("gameId=(\\d+)");
+    /**
+     * 6.1.0+: plain-int rendering of the same id, used by the library-LIST popup's
+     * context (GameInfo.serverGameId is an int there, so there is no
+     * ServerGameId(value=N) wrapper in its toString). Deliberately anchored on the
+     * full `serverGameId=` label rather than a loose `GameId=`, so it cannot be
+     * satisfied by the neighbouring `libraryGameId=` token.
+     */
+    private static final Pattern P_SERVER_PLAIN =
+        Pattern.compile("serverGameId=(-?\\d+)");
 
     private static volatile String sCapturedGameId;
 
@@ -125,6 +134,17 @@ public final class BhMenuGameId {
             String s = String.valueOf(menuData);
             if (s != null) {
                 Matcher m = P_SERVER.matcher(s);
+                if (m.find()) return m.group(1);
+                // GameHub 6.1.0: the library-LIST popup's context renders its id as
+                // a PLAIN INT, not the ServerGameId(value=N) wrapper:
+                //   LandHeroMenuContext(gameInfo=GameInfo(id=…, userId=…,
+                //                       serverGameId=12345, …), libraryGameId=…)
+                // (verified: the field is `int` in 6.1.0's GameInfo). Without this
+                // the third capture site applies cleanly and resolves nothing —
+                // P_SERVER needs the wrapper and P_GAMEID needs a lowercase
+                // `gameId=`, which neither `serverGameId=` nor `libraryGameId=`
+                // provides. Must be tried BEFORE P_GAMEID.
+                m = P_SERVER_PLAIN.matcher(s);
                 if (m.find()) return m.group(1);
                 m = P_GAMEID.matcher(s);
                 if (m.find()) return m.group(1);

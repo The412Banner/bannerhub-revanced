@@ -60,17 +60,34 @@ val menuGameIdCapturePatch = bytecodePatch(
         // list popup below also losing one). Param sig [Lpa7,I,Lr47,Lrq7,Lgm3,I]
         // is apk-unique among the 3 (L,I,L,L,Lgm3,I)V composables (ija.m/t2o.v
         // take different p0); the Luhd ctor anchor confirms the real builder.
+        // 6.1.0: Lqqc-era letters all reshuffled AND the signature GAINED a param.
+        // M1 is now Lbj9;->a(Ljg9;ILkotlin/jvm/functions/Function0;ZLe0a;
+        //                    Landroidx/compose/runtime/Composer;I)V  — 7 params
+        // (a `Z` was inserted at index 3). p0 Lpa7;→Ljg9; = GameDetailArgs
+        // ("GameDetailArgs(gameId=" in jg9). Row data Luhd;→Ltzg;, built 11× here
+        // and nowhere else in the APK.
+        // 🔑 6.1.0 un-obfuscated the library types, so Lqd5;/Lt47;/Lgm3; become
+        // real names (DrawableResource / Function1 / Composer) that R8 can no
+        // longer rename — see project_gamehub_610_rederivation_map.
+        // ⚠️ Ltzg; also gained a 4-arg ctor overload (DrawableResource,String,
+        // Function1,Z). Keep the exact 3-arg param list below, or the count logic
+        // in dependent patches shifts from 11 to 12.
         val menuMethod = firstMethod {
-            parameterTypes == listOf("Lpa7;", "I", "Lr47;", "Lrq7;", "Lgm3;", "I") &&
+            parameterTypes == listOf(
+                "Ljg9;", "I", "Lkotlin/jvm/functions/Function0;", "Z", "Le0a;",
+                "Landroidx/compose/runtime/Composer;", "I",
+            ) &&
                 returnType == "V" &&
                 (implementation?.instructions?.any { ins ->
                     ins.opcode == Opcode.INVOKE_DIRECT &&
                         (ins as? ReferenceInstruction)?.reference
                             ?.let { it is MethodReference &&
-                                    it.definingClass == "Luhd;" &&
+                                    it.definingClass == "Ltzg;" &&
                                     it.name == "<init>" &&
                                     it.parameterTypes.toList() == listOf(
-                                        "Lqd5;", "Ljava/lang/String;", "Lt47;"
+                                        "Lorg/jetbrains/compose/resources/DrawableResource;",
+                                        "Ljava/lang/String;",
+                                        "Lkotlin/jvm/functions/Function1;",
                                     )
                             } == true
                 } ?: false)
@@ -91,13 +108,23 @@ val menuGameIdCapturePatch = bytecodePatch(
         // tile row ctor Lj6c;->Lxoc;(String,Lqd5; icon,String,Lr47; onClick)
         // built 5×. Two `f`-named (L,L,L,Z,L,Lgm3,I)V methods exist (qqc.f /
         // q29.f); the >=4 Lxoc ctor count disambiguates to qqc.f (q29.f builds 0).
+        // 6.1.0: Lqqc;->f → Ljzf;->f(Lkzf;Lkotlin/jvm/functions/Function1;
+        //   Lkotlin/jvm/functions/Function0;ZLandroidx/compose/ui/Modifier;
+        //   Landroidx/compose/runtime/Composer;I)V  — still 7 params, and note
+        // Lfhd; was simply Modifier all along (now spelled out).
+        // p0 Lrqc;→Lkzf; = LocalGameDetailState ("LocalGameDetailState(coverImage="
+        // in kzf). Tile row ctor Lxoc;→Loxf;, built 5× here.
         val libraryMenuMethod = firstMethod {
-            parameterTypes == listOf("Lrqc;", "Lt47;", "Lr47;", "Z", "Lfhd;", "Lgm3;", "I") &&
+            parameterTypes == listOf(
+                "Lkzf;", "Lkotlin/jvm/functions/Function1;", "Lkotlin/jvm/functions/Function0;",
+                "Z", "Landroidx/compose/ui/Modifier;",
+                "Landroidx/compose/runtime/Composer;", "I",
+            ) &&
                 returnType == "V" &&
                 (implementation?.instructions?.count { ins ->
                     ins.opcode == Opcode.INVOKE_DIRECT &&
                         (ins as? ReferenceInstruction)?.getReference<MethodReference>()
-                            ?.let { it.definingClass == "Lxoc;" && it.name == "<init>" } == true
+                            ?.let { it.definingClass == "Loxf;" && it.name == "<init>" } == true
                 } ?: 0) >= 4
         }
         libraryMenuMethod.addInstructions(0, capture)
@@ -126,10 +153,26 @@ val menuGameIdCapturePatch = bytecodePatch(
         // (row ctors Lvtc;/Lg7b; ×9 → Lvbc;/Lpcd; ×8). The (L,Z,8×L)→List shape is
         // still globally unique (only b0 matches; the other List+Z methods are
         // 2-param or take a String/2nd-Z). Anchored on the param sig alone.
+        // 6.1.0: Lxdc;->b0 → Lokh;->k(Llke;ZLwmf;Lwmf;Lkna;Lkna;Lcef;Ls40;Lvmf;
+        //   Lwmf;)Ljava/util/List; — still the globally-unique (L,Z,8×L)→List shape,
+        // so the param-sig-alone anchor still pins it. p0 Ljhb;→Llke; =
+        // LandHeroMenuContext ("LandHeroMenuContext(gameInfo=" in lke); row ctor
+        // Lpcd;→Lctg;, built 8× here.
+        // ⚠️ Lokh; hosts a SIBLING list-popup builder `l(...)` with 5 rows (was
+        // Lxdc;->d0). Any looser anchor would inject into the wrong surface.
+        //
+        // 🚨 RUNTIME TRAP (610): this site will APPLY and capture NOTHING unless
+        // BhMenuGameId also gains a `serverGameId=` pattern. Llke;.toString()
+        // renders `LandHeroMenuContext(gameInfo=GameInfo(id=…, serverGameId=<int>,
+        // …))` — P_SERVER wants `ServerGameId(value=N)` and P_GAMEID wants a
+        // lowercase `gameId=`, so neither matches; and the reflective
+        // `Class.forName("…game.di.model.game.GameInfo")` fallback is dead because
+        // 6.1.0 obfuscated that class to Lv0a;. M1 is unaffected (its
+        // GameDetailArgs.toString does carry `gameId=ServerGameId(value=N)`).
         val pzcMethod = firstMethod {
             parameterTypes == listOf(
-                "Ljhb;", "Z", "Lobc;", "Lobc;", "Lgj8;", "Lgj8;",
-                "Lplb;", "Ltz;", "Lnbc;", "Lobc;"
+                "Llke;", "Z", "Lwmf;", "Lwmf;", "Lkna;", "Lkna;",
+                "Lcef;", "Ls40;", "Lvmf;", "Lwmf;",
             ) &&
                 returnType == "Ljava/util/List;"
         }

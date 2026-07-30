@@ -327,9 +327,26 @@ val vibrationMenuRowPatch = bytecodePatch(
         // (getClass() head, Lr29;->T(SR,Composer) helper, new-instance Lznk;(I)
         // loader). Llok; extends resource base Lvhg;→Lo4h; (runtime side reflects
         // Class.forName("vhg")→"o4h", field `a` unchanged — see BhMenuRowClick).
+        // 6.1.0: 🎁 THIS ANCHOR IS NOW PERMANENT. GameHub 6.1.0 inverted its R8
+        // keep-rules — the Compose-resources library is no longer obfuscated, so the
+        // resolver we have been re-pinning every single bump (Lxd3;->l1 → Lok8;->c0
+        // → … → Ly99;->Z) is simply
+        //   org.jetbrains.compose.resources.StringResourcesKt->stringResource(
+        //       StringResource, Composer, I)String
+        // R8 cannot rename any part of that, so there should be nothing to re-derive
+        // here on future bases. Likewise StringResource's base class field `a` is
+        // reachable without Class.forName on an obfuscated name.
+        // ⚠️ There is a SECOND overload in the same class taking a vararg
+        // `[Ljava/lang/Object;` for format args — the exact 3-param list below is
+        // what excludes it.
         val resolverMethod = firstMethod {
-            definingClass == "Ly99;" && name == "Z" &&
-                parameterTypes == listOf("Llok;", "Lgm3;", "I") &&
+            definingClass == "Lorg/jetbrains/compose/resources/StringResourcesKt;" &&
+                name == "stringResource" &&
+                parameterTypes == listOf(
+                    "Lorg/jetbrains/compose/resources/StringResource;",
+                    "Landroidx/compose/runtime/Composer;",
+                    "I",
+                ) &&
                 returnType == "Ljava/lang/String;"
         }
         // Avoid addInstructionsWithLabels + ExternalLabel — pre15 hit

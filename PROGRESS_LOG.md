@@ -5002,3 +5002,20 @@ Faking the auth interface accessors was never sufficient — the gate is the Roo
 
 ⏭️ NEXT: persisted random 9-character user id, applied consistently across ALL SIX pinned sites (BypassLoginPatch `returnEarly`, FakeAuthToken, FakeUserAccount, GogLaunchHelper, GogLibraryCard, BhAuthSeed). ⚠️ `returnEarly` bakes a compile-time constant so that site must become an extension call, and the id MUST be generated once and persisted — if it ever changes, every `t_game_library_base` row (keyed by `user_id`) is orphaned and the library empties.
 ⏭️ Also still open on this task: **Debug logging** was never re-derived (2 anchors unmapped: the repo's save method is no longer `x(...)`, and IMPORT_TXN's two Room-DAO insert anchors have no 610 equivalent under those names).
+
+## 2026-07-30 — 🚨 REVERTED: the DB seeder CORRUPTED the database (pre14–pre16). Disabled in pre17.
+```
+FATAL EXCEPTION: android.database.SQLException: Error code: 11,
+message: database disk image is malformed
+    at androidx.sqlite.driver.bundled.BundledSQLiteStatementKt.nativeReset
+```
+**Cause:** Room 3 does NOT use the framework SQLite — it ships its own **bundled** engine (`androidx.sqlite.driver.bundled`). `BhAuthSeed` opened `egggame.db` with `android.database.sqlite.SQLiteDatabase` (the FRAMEWORK engine). Two different SQLite implementations writing the same WAL-mode file ⇒ corruption. The app crashed on first launch after every fresh install and only worked on relaunch because Room recovered the file.
+
+### 🔴 Two process failures worth more than the bug itself
+1. **I wrote three safety rules for that seeder and all three guarded the wrong risk.** They covered whether we CREATE the database; none asked WHICH SQLite implementation writes it — the only question that mattered. The answer was visible in the app's own stack frames (`BundledSQLiteStatementKt`) at any point before shipping.
+2. **I declared pre14 "device-proven" while it was already crashing.** I checked the seeder log and the DB rows, saw what I hoped to see, and never grepped `FATAL`. The rows I found were the POST-RECOVERY state. ⇒ **Rule: a device test is not a pass until logcat has been checked for FATAL/crash, not merely for the string you were hoping to find.** Confirmation of the intended effect is not the same as absence of harm.
+
+### Current state
+Seed hook removed (`96242ec`); `BhAuthSeed` stays in-tree unreferenced with the lesson recorded. Device `integrity_check` currently reports `ok` with the row intact — luck, not design.
+⏭️ **pre17 tests whether seeding was ever needed.** Since pre16 we also fake `m()` (the combined user+token flow behind `c()Z`) — the last unfaked auth surface, and one that did NOT exist when I concluded seeding was required. The accessor path may now unlock the library on its own. User always fresh-installs pre-releases, so this is a clean test at no extra cost.
+⚠️ Do NOT re-enable seeding without (a) using androidx.sqlite's **bundled** driver so exactly one engine touches the file, and (b) an on-device `PRAGMA integrity_check` afterwards.

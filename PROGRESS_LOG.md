@@ -4851,3 +4851,23 @@ The auth layer was **restructured on 6.1.0**, not merely re-lettered. Verified i
 
 ### 🤖 5 grouped subagents launched in parallel (user-approved) to derive the other patch clusters
 B menu keystone + 5 rows · C analytics/privacy (+ audit of 6.1.0's NEW multi-OEM push stack) · D Explore tab hijack · E audio + vibration (incl. a feasibility verdict on PC-accurate vibration now that container ownership moved into the plugin) · F Steam chat overlay. Grouped by SHARED ANCHOR rather than one-per-patch, because the 5 menu rows all cascade off the keystone and login/debug share the auth map — per-patch agents would have re-derived the same classes repeatedly. All are briefed to return letter maps + proposed edits ONLY (no commits), and to state whether each anchor is still actually REACHED at runtime, given the catalog-redirect lesson that CI success proves nothing.
+
+## 2026-07-30 — ✅ Group A auth letter map COMPLETE (Bypass login + Debug logging)
+Remaining anchors resolved, all verified by reading 6.1.0 smali bodies:
+| role | 6.0.9 | **6.1.0** | anchor |
+|---|---|---|---|
+| GAME_LIB_REPO | `Lqv7;` | **`Lp5a;`** | `p5a.smali:134` ctor `(GameLibraryDatabase;Lrf1;Liwi;)V` — **`GameLibraryDatabase` is UNOBFUSCATED ⇒ permanent structural anchor**; field `b:Lrf1;` unchanged |
+| userId method | `h()` | **`h()` UNCHANGED** | `p5a.smali:11370`: `iget b:Lrf1;` → `Lrf1;->i()Lpfr;` → `Lpfr;->a:String`. Independently confirms `i()`=token getter, `pfr.a`=userId |
+| NAVIGATOR | `Ljrd;` | **`Lfch;`** | `fch.smali:35` ctor `(Landroidx/navigation3/runtime/NavBackStack;Lrf1;…)` — **`NavBackStack` UNOBFUSCATED ⇒ permanent structural anchor** |
+| nav login gates | `i`+`s`, 1 each | **`i(Lw01;)V` 1 gate @1601 · `j(Lw01;)Z` TWO gates @1792 + @1845** | 3 call sites of `Lrf1;->k()Z` |
+| impl isLoggedIn flow | `h()` | **`yf1.l()`** → field `e` | `yf1.smali:683` |
+| impl user flow | `e()` | **`yf1.h()`** → field `b` | `yf1.smali:645` |
+| impl token flow | — | **`yf1.f()`** → field `c` | `yf1.smali:552` |
+| impl other-bool flow | — | `yf1.m()` → field `d` (backs `c()`, NOT login) | `yf1.smali:694` |
+
+✅ All four impl getters are the exact 2-instruction shape (`.locals 0` / iget-object p0 / return-object p0) the 609 patch already expects → the existing edit transfers unchanged.
+✅ `yf1` does NOT override the interface defaults `c/d/i/k` (implements only a,b,e,f,g,h,j,l,m,n,o) → patching the impl's StateFlow getters propagates to `k()`/`d()`/`i()`; no need to patch both layers.
+✅ **Decorator trap RESOLVED:** DI binds `Lrf1;`→**`Lyf1;`** (`ia4.smali:1040-1124`, `ha4.smali:618-622` build `new Lyf1;` under `const-class Lrf1;`). `Llm;` is constructed only inside abstract `Lbmr;:456-460` and is NOT the DI-bound impl ⇒ patching `yf1` is correct.
+🚨 **NEW TRAP to encode in the patch:** 609's navigator loop was `listOf("i","s")` taking the FIRST `iget b` per method. On 610 `j()` has **TWO** gates, so first-match-only would silently leave one live — the exact "applies but doesn't work" shape we hit with the catalog redirect. Patch every `invoke-interface Lrf1;->k()Z` + `move-result` pair instead of anchoring on the iget; that's also polarity-agnostic (the 3 sites branch `if-eqz`, `if-nez`, `if-eqz`).
+🎁 Two structural anchors are now available that can never be re-lettered: `GameLibraryDatabase` (repo) and `NavBackStack` (navigator). Use them instead of R8 letters.
+⏭️ Next: write the patch edits; re-check whether `FakeStateFlow.java` can drop its reflection now that StateFlow is the real kotlinx type on 610; then `DebugLogPatch.kt` (shares these anchors).

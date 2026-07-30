@@ -4718,3 +4718,25 @@ So the GameHub-identity framing from `0ffda36` is retired. Reversed its identity
 
 Per-artifact dex verification (both variants): our manifest URL PRESENT · worker host PRESENT · `pe0` host PRESENT (untouched by design) · Online-enum `landscape-api-cn.vgabc.com` ABSENT (replaced) · Beta-enum hosts PRESENT (kept on purpose).
 Device state at staging time: `com.miHoYo.GenshinImpact` and `com.xiaoji.egggame` NOT installed (pre3 Genshin and the stock 6.1.0 are both gone); `gamehub.lite` installed at vc121 (a 609 build); no pcengine plugin state under either installed package.
+
+## 2026-07-30 — 🐛 "Failed to install the PC engine plugin" — latent manifest bug found + fixed; pre5 staged
+User screenshot (21:09, AIO-Graphics-Test-32bit in Library) showed the toast **"Failed to install the PC engine plugin."** App was uninstalled before I could read live state, so this was diagnosed statically.
+
+### Root cause found in the bytecode: the manifest reply must ECHO the request
+`xy5.i(...)` calls `zy5.a(pluginName, schemaVersion, pluginVersion, cont)` to fetch the manifest, then — after mapping `update_type` to the App/Plugin/Unknown enum and taking the Plugin branch (`:cond_19`) — compares the RESPONSE's `plugin_name` (`mvi.b`) and `schema_version` (`mvi.d`) against **the very registers it passed as request arguments**, not against constants. Mismatch ⇒ silent bail ⇒ exactly this toast, with nothing pointing at the manifest.
+Our Worker HARDCODED `plugin_name:"pcengine"` / `schema_version:"1"`, which only works if those are the exact wire values the client sends. **Fix: echo both back from the query string**, keeping the constants as fallback for manual curls. Commit `27dfd27`, deployed `48eb38f730084b679e47cc1653d0a580`.
+Verified live: `?plugin_name=ZZZTEST&schema_version=9` → echoed verbatim; `?plugin_name=com.xiaoji.egggame.plugin.pcengine` → echoed verbatim; no params → falls back to defaults. `time` increments between calls (not cached). **All 6 bindings preserved**; existing routes (`/v6/` + bare 5.x imagefs, chat, baseInfo) still 200. Rollback at `worker-backups/20260730-echo-params/`.
+⚠️ Honest caveat: this is a REAL bug that produces this exact symptom, but it is not yet PROVEN to be the one the user hit. Other candidates remain (download/redirect failure, ComboLite install). Needs the live capture below.
+
+### Device findings while triaging
+- `com.xiaoji.egggame.plugin.pcengine` is installed as a **standalone app** (vc100, versionName 100-1, installed 2026-07-29 08:31) — a leftover from the pre3 plugin-retrieval work. ComboLite loads from `files/plugin_packages/`, not from an installed package, so it shouldn't matter, but it's noise: **recommend uninstalling before the next test.**
+- `com.miHoYo.Yuanshen` (vc32208010) is the REAL Genshin game, NOT our variant — our Genshin variant is `com.miHoYo.GenshinImpact`, so no collision. But `com.antutu.ABenchMark` IS installed (vc1, the real AnTuTu) and **does** collide with our AnTuTu variant package.
+- ⚠️ `bridge` returns inconsistent/empty results for multi-package `dumpsys` loops — use one simple command per call.
+
+### pre5 built + staged (run 30504941894, sha 1248e090 == HEAD)
+GREEN. `Redirect catalog API` / `Prefix API path with /v6` / `Redirect PC engine plugin manifest` / **`Change app icon`** all 9x. SEVERE still 17.
+`/sdcard/Download/BannerHub-V6-1.0.0-610-pre5-Patched-Genshin.apk` — md5 `352ecc2e36755082b478b2b9eb92717a`, 58,940,295 b, cert `10895a31…894ce0ba`, manifest URL confirmed present in dex. This one carries the restored BannerHub icon + "BannerHub v6 Genshin" label.
+
+### 🆕 6.1.0 GUEST MODE — built-in login bypass (new, absent in 609)
+String `android_features_auth_guest_mode_entry` = 游客模式，先体验一下 ("Guest mode, try it first", id 0x7f110032) + drawable `android_features_auth_ic_guest_entry`. Built programmatically in `mi.b(...)` (`smali_classes2/mi.smali:298`) as a LinearLayout + icon + 14sp TextView, and **registered onto the Aliyun one-tap login screen** via `com.mobile.auth.gatewayauth.PhoneNumberAuthHelper` + `AuthRegisterViewConfig$Builder` (mi.smali:23/206/210). Click handler `Lii;` invokes a caller-supplied `Function0`, checks its Boolean, may Toast, then continues via `mi.c(...)`. Callers: `li.smali:1265`, `:2443`; other refs `bgp.smali`, `smali_classes3/i27.smali`.
+🚨 **CONFLICT: guest mode is rendered BY the Aliyun NumberAuth SDK, which our privacy suite stubs.** One of the 5 still-applying manifest-level privacy patches targets Aliyun NumberAuth — if that SDK is neutered the guest entry may never render, i.e. our own privacy hardening could destroy the built-in login bypass. Verify before assuming guest mode can retire the "Bypass login" patch.

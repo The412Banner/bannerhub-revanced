@@ -216,15 +216,20 @@ val bypassLoginPatch = bytecodePatch(
         // device-proven to execute, and if a future base changes how the DB is
         // read they may carry the bypass on their own.
         // -----------------------------------------------------------------
+        // Injected into the AUTH IMPL CONSTRUCTOR rather than the application class.
+        // The app-class anchor (Lcom/xiaoji/egggame/AndroidApp;->onCreate) is correct
+        // in principle -- unobfuscated name, and DisableMobPushPatch already mutates
+        // that very class -- but the patcher rejected the injection there with
+        // "PatchException: classDef is null". Not worth fighting: the auth impl is a
+        // class this patch already mutates successfully three times over, and its
+        // constructor is an even better moment than onCreate, because it runs just
+        // BEFORE the Room-backed auth flows are created, so the seeded rows are
+        // present for the very first emission instead of arriving via invalidation.
+        // BhAuthSeed.seed() resolves its own Context via ActivityThread, so no
+        // Context parameter is needed here.
         firstMethod {
-            definingClass == "Lcom/xiaoji/egggame/AndroidApp;" &&
-                name == "onCreate" &&
-                parameterTypes.isEmpty() &&
-                returnType == "V"
-        }.addInstructions(
-            0,
-            "invoke-static {p0}, $AUTH_SEED->seed(Landroid/content/Context;)V",
-        )
+            definingClass == AUTH_IMPL && name == "<init>"
+        }.addInstructions(0, "invoke-static {}, $AUTH_SEED->seed()V")
 
         // -----------------------------------------------------------------
         // AUTH_IMPL.h() — isLoggedIn StateFlow getter.

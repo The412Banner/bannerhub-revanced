@@ -59,17 +59,55 @@ public final class BhAuthSeed {
     private static final long RETRY_DELAY_MS = 1500L;
 
     private static volatile boolean done;
+    private static volatile boolean started;
 
     private BhAuthSeed() {}
 
-    /** Entry point injected into the application class's onCreate. */
+    /**
+     * Zero-arg entry point. Resolves its own Context via ActivityThread, so it can
+     * be injected anywhere convenient rather than only where a Context is in scope.
+     *
+     * The original design hooked the application class's onCreate and passed p0.
+     * That anchor is correct in principle -- the class name is unobfuscated and
+     * another patch already mutates it -- but the patcher rejected the injection
+     * with "classDef is null". Rather than fight the tooling, this is injected into
+     * a class the login patch already mutates successfully, which needs no Context
+     * parameter.
+     */
+    public static void seed() {
+        if (done) return;
+        // Resolve the Context INSIDE the retry loop, not here: this is injected into
+        // a constructor that may run exactly once, so bailing on a momentarily-null
+        // Context would mean never seeding at all.
+        startSeeding(null);
+    }
+
+    /** @return the Application context, or null if the process isn't far enough along. */
+    private static Context resolveAppContext() {
+        try {
+            Class<?> at = Class.forName("android.app.ActivityThread");
+            Object app = at.getMethod("currentApplication").invoke(null);
+            return (app instanceof Context) ? (Context) app : null;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** Entry point taking an explicit Context (may be null -- it will be resolved). */
     public static void seed(final Context ctx) {
-        if (ctx == null || done) return;
-        // Off the main thread: this is disk I/O in Application.onCreate.
+        if (done) return;
+        startSeeding(ctx);
+    }
+
+    private static void startSeeding(final Context supplied) {
+        if (started) return;
+        started = true;
+        // Off the main thread: this is disk I/O on a constructor path.
         new Thread(new Runnable() {
             @Override public void run() {
                 for (int attempt = 1; attempt <= MAX_ATTEMPTS && !done; attempt++) {
-                    if (trySeed(ctx, attempt)) return;
+                    Context ctx = (supplied != null) ? supplied : resolveAppContext();
+                    if (ctx != null && trySeed(ctx, attempt)) return;
                     try {
                         Thread.sleep(RETRY_DELAY_MS);
                     } catch (InterruptedException ie) {

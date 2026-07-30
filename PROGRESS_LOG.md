@@ -4813,3 +4813,17 @@ Both hops work: host → our Worker for the engine manifest; engine → our Work
 Artifact: `pcengine-100-1-bannerhub-v6-catalog.apk`, 23,494,479 b, md5 `ee4bae17…`, sha256 `1f381ba7…`, cert `10895a31…`, on release `pcengine-plugin-610` beside the unpatched one (kept as fallback). Worker deploy `86cc1799118f4967b8207d337bcbdc4a`, bannerhub-api `e8ff3cf`. Worker also normalizes duplicate slashes + accepts bare `/v6` (verified `/v6/`, `/v6//`, `/v6///`).
 
 ⏭️ Phase A closed. Next per the plan: task 6 (Bypass login + Debug logging) — but first check task 16, since 6.1.0's built-in guest mode may retire the login patch outright (caveat: it renders via the Aliyun NumberAuth SDK our privacy suite stubs). Also still owed: task 11 (`push.permission.MESSAGE`, now genuinely blocking since the line is full BannerHub v6 again), task 15 (release-notes rewrite), task 17 (610 master map).
+
+## 2026-07-30 — 🔍 Guest-mode investigation COMPLETE. Verdict: do NOT rely on it; keep re-deriving `Bypass login`.
+Traced the whole chain statically:
+1. **Gate** (`smali/xi.smali:680-716`): passed to `li.a(F,Z,Z)` as p3 = *"NOT already-logged-in AND NOT `auth_has_logged_in_before`"* (`xdn.a(key,false)`). ⇒ **only ever offered to a never-logged-in install**; after one successful login the pref flips and the entry is gone permanently.
+2. **Render** (`mi.b`, `mi.smali:298`): programmatic LinearLayout + guest icon + 14sp TextView (`游客模式，先体验一下`), registered onto the **Aliyun one-tap login screen** via `PhoneNumberAuthHelper` + `AuthRegisterViewConfig$Builder` (rootViewId `0x12b`).
+3. **Tap** (`ii.smali`): invokes `Function0` = `fi(Ref$BooleanRef, mode 3)` whose `invoke()` just returns `Ref$BooleanRef.element` — the **"I agree to the terms" checkbox**. False ⇒ Toast + abort.
+4. **Action** (`mi.c`, `:680`): debounce, `setAuthListener`, `mi.d()` dismisses the Aliyun page, then `tryEmit(new qi())` where **`qi` = `GuestModeClick(agreedChecked=true)`** (implements `ti`; siblings `oi`=`Canceled`, `pi`=`Error`).
+5. **Handler** (`o3.emit`, `smali_classes3/o3.smali:6443`): analytics (`sqb("domestic"|"overseas")` → `bju.A` — **that string is only an analytics label, NOT a region gate**), re-checks `rf1.k()` + `auth_has_logged_in_before`, then updates auth UI state via `ei.a(...)` on a `MutableStateFlow`.
+
+**Why it can't replace our patch:** (a) conditional — pre-first-login only, whereas ours must work unconditionally; (b) 🚨 it is drawn *by* the Aliyun SDK our privacy suite stubs, so enabling one likely disables the other — we'd be trading a privacy patch for a login bypass; (c) it emits a UI-state signal, not a session — nothing mints credentials, so there's no equivalent of the FakeStateFlow/FakeUserAccount/FakeAuthToken fakes our patch installs.
+✅ Not region-gated, so it is a real upstream feature.
+⏭️ Only open question needs a DEVICE test, not more smali: on a fresh never-logged-in install of our build, does the entry appear and does the resulting state allow library + add-local-game? Cheap to fold into the next clean install. Treat as a bonus, never a dependency.
+
+⏭️ NEXT: task 6 — re-derive `Bypass login` + `Debug logging` (shared GAME_LIB_REPO anchor). 15 patches to re-derive, 2 to disable.

@@ -11,28 +11,30 @@ import app.revanced.util.getReference
 import app.revanced.util.indexOfFirstInstructionOrThrow
 import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
+import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
 import com.android.tools.smali.dexlib2.iface.reference.StringReference
 
 // The Environment enum that holds the catalog API host pairs (cn + oversea)
 // for Online / Beta / Test. The Online value's two host literals are the redirect
 // targets — its <clinit> initializer is where we swap.
 //
-// R8-mangled letter, update on each base APK bump:
-//   6.0.0 → Lmcj;
-//   6.0.1 → Lzhj;
-//   6.0.2 → Lxrj;
-//   6.0.4 → Lesj;
-//   6.0.7 → Lnnh;
-//   6.0.8 → Lqnh;
-//   6.0.9 → Lyei;
-// Structural anchor (always portable): the unique class that contains BOTH
-// "landscape-api-cn.vgabc.com" and "landscape-api-oversea.vgabc.com" string
-// literals — find via `grep -rl "landscape-api-cn.vgabc.com" smali*/`.
-// 6.0.9 verified: Lyei; (smali_classes3/yei.smali), `public final enum`, both
-// hosts in <clinit> (cn→v5, oversea→v6), Online value constructed first via
-// invoke-direct/range {v0 .. v6} with the 6-arg <init>; the ONLY class in the
-// apk with both hosts. (6.0.8 was Lqnh;, smali_classes3/qnh.smali.)
-private const val ENV_ENUM_CLASS = "Lyei;"
+// ─── Anchored STRUCTURALLY as of 6.1.0 — no more per-bump letter re-pins. ───
+// This patch used to hardcode the R8-mangled class letter and needed editing on
+// every single base APK bump:
+//   6.0.0 → Lmcj;   6.0.1 → Lzhj;   6.0.2 → Lxrj;   6.0.4 → Lesj;
+//   6.0.7 → Lnnh;   6.0.8 → Lqnh;   6.0.9 → Lyei;   6.1.0 → Lf7n;
+// Seven re-pins was enough. The anchor the old comment already described is now
+// the actual implementation: locate the unique <clinit> containing BOTH host
+// literals. Verified on 6.1.0 that exactly ONE class in the APK carries both
+// (smali_classes3/f7n.smali) — the enum values are constructed in order, so the
+// FIRST occurrence of each literal belongs to the Online value (cn→v5 at :39,
+// oversea→v6 at :43; Beta follows at :75/:79 with the -beta hosts, which we
+// deliberately leave alone). 6-arg <init>(I,String,String,String,String,String).
+//
+// If this ever stops matching, upstream renamed or restructured the hosts
+// themselves — re-confirm with:
+//   grep -rl "landscape-api-cn.vgabc.com" smali*/
+// and check the hit also contains landscape-api-oversea.vgabc.com.
 
 // Original GameHub 6.0 hosts the patch removes from the Online enum value.
 // They are bare hostnames — t40.smali builds the URL as "<scheme>://<host>",
@@ -54,7 +56,8 @@ val redirectCatalogApiPatch = bytecodePatch(
         "executeScript) from landscape-api-{cn,oversea}.vgabc.com to the BannerHub Cloudflare " +
         "Worker, which serves the curated catalog from the412banner.github.io/bannerhub-api " +
         "and falls back to vgabc for unallowlisted paths. Patches the two host string literals " +
-        "in the Online enum value's <clinit> initializer in mcj.smali. Beta + Test enum values, " +
+        "in the Online enum value's <clinit> initializer, located structurally as the unique " +
+        "class carrying both hosts (no R8 letter to re-pin). Beta + Test enum values, " +
         "the analytics hosts (landscape-api-*-*.vgabc.com/events), the clientapi host " +
         "(clientgsw.vgabc.com), and the component CDN (zlyer-cdn-comps-en.bigeyes.com) are " +
         "intentionally left untouched.",
@@ -69,7 +72,13 @@ val redirectCatalogApiPatch = bytecodePatch(
         // numbers — we locate by StringReference, then preserve whatever register
         // each instruction targets.
         firstMethod {
-            definingClass == ENV_ENUM_CLASS && name == "<clinit>"
+            name == "<clinit>" &&
+                implementation?.instructions?.let { instructions ->
+                    val literals = instructions.mapNotNull { instruction ->
+                        ((instruction as? ReferenceInstruction)?.reference as? StringReference)?.string
+                    }.toSet()
+                    ORIGINAL_CN_HOST in literals && ORIGINAL_OVERSEA_HOST in literals
+                } == true
         }.apply {
             // Replace cnHost literal.
             val cnIdx = indexOfFirstInstructionOrThrow {

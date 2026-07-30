@@ -317,7 +317,7 @@ jobs:
 
             > **No separate Lite builds on the 6.0.9 base.** XiaoJi's own −46% size pass plus the privacy/size strips folded into every variant make the full 6.0.9 build (~55 MB) smaller than the old 6.0.4 Lite — so a distinct Lite would strip nothing extra. The Lite concept is absorbed.
 
-            🔒 **Privacy-hardened** — upstream telemetry/analytics channels stripped at the bytecode level. Full list of killed channels (and the honest leftovers) in [`PRIVACY.md`](https://github.com/${{ github.repository }}/blob/gamehub-609-build/PRIVACY.md).
+            🔒 **Privacy-hardened** — upstream telemetry/analytics channels stripped at the bytecode level. Full list of killed channels (and the honest leftovers) in [`PRIVACY.md`](https://github.com/${{ github.repository }}/blob/gamehub-610-build/PRIVACY.md).
 
             <details>
             <summary><strong>✨ Everything BannerHub v6 offers (click to expand)</strong></summary>
@@ -381,9 +381,9 @@ jobs:
 
             ### Install notes
 
-            - **Signing**: stable BannerHub test keystore. A one-time uninstall is only needed if upgrading from `v1.0.0-604` or older (cert changed then); every release since installs in place, including over any `…-608` build. Fingerprints in [`keystore/README.md`](https://github.com/${{ github.repository }}/blob/gamehub-609-build/keystore/README.md).
+            - **Signing**: stable BannerHub test keystore. A one-time uninstall is only needed if upgrading from `v1.0.0-604` or older (cert changed then); every release since installs in place, including over any `…-608` build. Fingerprints in [`keystore/README.md`](https://github.com/${{ github.repository }}/blob/gamehub-610-build/keystore/README.md).
             - Base APK is unmodified XiaoJi GameHub 6.0.9 (versionCode 121) — only the bytecode/resources the patches need are touched.
-            - The `.rvp` / `.rve` bundles are attached for use with `revanced-cli` directly. Built with ReVanced CLI 6.0.0; APKs from `gamehub-609-build`.
+            - The `.rvp` / `.rve` bundles are attached for use with `revanced-cli` directly. Built with ReVanced CLI 6.0.0; APKs from `gamehub-610-build`.
 
             </details>
 
@@ -409,7 +409,7 @@ jobs:
             | **Change package & app name** *(per variant)* | Per-variant package + launcher label so all 9 variants install side-by-side (`Original` keeps `com.xiaoji.egggame`). |
             | **Privacy/size strips** | Removes the Aliyun carrier-login (NumberAuth) SDK and the Haima cloud-gaming stack from **every** variant. (On 6.0.9 the old Lite-only font + AVIF/HEIC codec strips are moot — XiaoJi already dropped them in its own −46 % size pass.) |
 
-            *Per-patch mechanics, smali anchors, and version-by-version letter maps are in the [README's Patches applied section](https://github.com/${{ github.repository }}/blob/gamehub-609-build/README.md#patches-applied) and the [patch sources](https://github.com/${{ github.repository }}/tree/gamehub-609-build/patches/src/main/kotlin/app/revanced/patches/gamehub).*
+            *Per-patch mechanics, smali anchors, and version-by-version letter maps are in the [README's Patches applied section](https://github.com/${{ github.repository }}/blob/gamehub-610-build/README.md#patches-applied) and the [patch sources](https://github.com/${{ github.repository }}/tree/gamehub-610-build/patches/src/main/kotlin/app/revanced/patches/gamehub).*
 
             </details>
 
@@ -417,7 +417,7 @@ jobs:
 
             **Voice-chat testing:** huge thanks to **Glitch** and **Stevolit** for the many cross-network test calls that helped get in-game 1:1 + party voice working and confirmed across different ISPs/NATs. 🙏
 
-            PC-accurate controller vibration (including the preload-free rework) is built on **[TideGear](https://github.com/TideGear)**'s [GameHub-Vibration-Fix](https://github.com/TideGear/GameHub-Vibration-Fix) (PR #80 + PR #91), adapted with explicit permission, deriving from [GameNative](https://github.com/utkarshdalal/GameNative) (PR #1214). Full project credits (DXVK, VKD3D-Proton, Box64, FEX, Mesa Turnip, ReVanced, etc.) are in the [README Credits section](https://github.com/${{ github.repository }}/blob/gamehub-609-build/README.md#credits).
+            PC-accurate controller vibration (including the preload-free rework) is built on **[TideGear](https://github.com/TideGear)**'s [GameHub-Vibration-Fix](https://github.com/TideGear/GameHub-Vibration-Fix) (PR #80 + PR #91), adapted with explicit permission, deriving from [GameNative](https://github.com/utkarshdalal/GameNative) (PR #1214). Full project credits (DXVK, VKD3D-Proton, Box64, FEX, Mesa Turnip, ReVanced, etc.) are in the [README Credits section](https://github.com/${{ github.repository }}/blob/gamehub-610-build/README.md#credits).
           files: |
             apks/BannerHub-V6-*.apk
             shared/*.rvp

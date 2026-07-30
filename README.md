@@ -10,8 +10,8 @@
 
 <p align="center">
   <a href="https://discord.gg/n8S4G2WZQ4"><img src="https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white&style=for-the-badge" alt="Join the The412Banner Discord"/></a>
-  <a href="https://github.com/The412Banner/bannerhub-revanced/releases"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FThe412Banner%2Fbannerhub-revanced%2Fgamehub-609-build%2F.github%2Fbadges%2Fdownloads-total.json&style=for-the-badge" alt="Total downloads"/></a>
-  <a href="https://github.com/The412Banner/bannerhub-revanced/releases/latest"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FThe412Banner%2Fbannerhub-revanced%2Fgamehub-609-build%2F.github%2Fbadges%2Fdownloads-latest.json&style=for-the-badge" alt="Latest release downloads"/></a>
+  <a href="https://github.com/The412Banner/bannerhub-revanced/releases"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FThe412Banner%2Fbannerhub-revanced%2Fgamehub-610-build%2F.github%2Fbadges%2Fdownloads-total.json&style=for-the-badge" alt="Total downloads"/></a>
+  <a href="https://github.com/The412Banner/bannerhub-revanced/releases/latest"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FThe412Banner%2Fbannerhub-revanced%2Fgamehub-610-build%2F.github%2Fbadges%2Fdownloads-latest.json&style=for-the-badge" alt="Latest release downloads"/></a>
 </p>
 
 <p align="center">
@@ -367,7 +367,7 @@ Available for ad-hoc CLI use; have no effect on the released APKs unless explici
 ```sh
 git clone https://github.com/The412Banner/bannerhub-revanced.git
 cd bannerhub-revanced
-git checkout gamehub-609-build
+git checkout gamehub-610-build
 
 # 1. Build the patch bundle
 ./gradlew build

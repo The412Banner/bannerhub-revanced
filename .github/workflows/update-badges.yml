@@ -23,7 +23,7 @@ env:
   # ⚠️ On every base-line bump (new gamehub-6XX-build default branch) this
   # must move with it, together with the two raw URLs in README.md — the
   # checkout below reads it, so this is the only place to edit here.
-  BADGE_BRANCH: gamehub-609-build
+  BADGE_BRANCH: gamehub-610-build
 
 jobs:
   badges:

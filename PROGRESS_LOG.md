@@ -4777,3 +4777,20 @@ Zero journal failures. 📌 The real install path is **`files/plugins/<id>/base.
 - **Ruled out:** wrong enum value (`f7n.f` IS active; `ne0.b` defaults to it; no `server_environment` override on device) · wrong fields (`f7n.<init>` iputs p3→a p4→b p5→c p6→d; the two vgabc literals load into v5/v6 ⇒ **c=cn host, d=oversea host**, exactly what we rewrite) · dead fields (they ARE read, in `ne0.b()` at `ne0.smali:399`/`:407`, selected by `kg0.a()`, called by `ne0.a()`; `ne0.a()` has 7 callers, `ne0.b()` 4).
 - `ao4.smali` (holds the `simulator/v2/getAllComponentList` literal at :348) references **neither `pe0` nor `f7n`** — it routes through `kee`, whose client is `kee.a:Lvec;`.
 ⏭️ NEXT: locate where the Ktor client `Lvec;` gets its base URL (the DI `defaultRequest` config) and repoint it; or reuse the proven absolute-URL trick per catalog call site; or redirect `pe0` **selectively for allowlisted paths only** (never wholesale — it serves login/profile too). Also re-verify whether the `/v6` prefix patch does anything at runtime on 610, since our Worker's 6.x-vs-5.x branching depends on it.
+
+## 2026-07-30 — 🎯 CATALOG ROOT CAUSE: it's fetched BY THE PLUGIN, so no host patch can reach it
+Chased the base URL to the end. **The host is exonerated; the plugin owns the catalog.**
+
+### Host side is definitively NOT the problem
+- Exactly ONE base-URL source exists: `beh.smali:123` and `:164` set `mvq.d = ne0.a()` (sole reader `svq.smali:2247`). `ne0.a()` → `ne0.b()` → `f7n.c` (cn) / `f7n.d` (oversea) — **precisely the fields our Redirect-catalog patch rewrites.**
+- `f7n.f` (= Online) IS the active env (`ne0.b` defaults to it), and there's no `server_environment` override in the app's data.
+- So the host's base URL genuinely IS our Worker after patching. The catalog simply never goes through it.
+- Tell: `ao4` passes a **relative** path to `kee.c`, whereas `zy5` (plugin manifest) passed `pe0.a(...)`'s **absolute** URL. That asymmetry is exactly why only the manifest redirect took effect.
+
+### The plugin has its own catalog client
+`/sdcard/Download/pcengine-100-1-decompiled` contains **all** the catalog endpoints — including the 4 that "vanished" from the host: `simulator/v2/{getAllComponentList,getComponentList,getContainerList,getDefaultComponent}` and `simulator/executeScript`, plus configList/shareConfig/getTabList/getGameLoadingPromptList — **and its own host literals**: `landscape-api-{cn,oversea}.vgabc.com`, `landscape-api-{beta,cn-beta,oversea-beta}.vgabc.com`, `api-{cn,international}-gamehub.xiaoji.com`, `clientgsw.vgabc.com`, `dev2-*`, `statistic-gamehub-api.vgabc.com`. It runs in `:pcengine`, shares the app data dir, and writes `sp_winemu_unified_resources.xml` itself — hence 783 uxdl URLs and zero github.
+⇒ Earlier note that those 4 endpoints "moved into the plugin with the launch path" was right; the consequence — that the catalog redirect becomes unreachable — wasn't drawn.
+
+### 🔑 The fix: we own the artifact, so patch the plugin too
+Rewrite the plugin's `landscape-api-{cn,oversea}.vgabc.com` → `bannerhub-api.the412banner.workers.dev`, `apktool b`, re-sign with the v6 keystore, re-upload to release `pcengine-plugin-610`, update the Worker's `PCENGINE_PLUGIN` md5/sha256/fileSize.
+⚠️ Solve first: (1) **re-download won't trigger on the same version** — device has vc100 and the client compares the manifest's Long-parseable `plugin_version` against it; bumping to "101" while the APK declares vc100 may fail a consistency check, so bump both or clear plugin state. (2) The plugin won't send the **`/v6` prefix**, and our Worker gates the 6.x reshape + EnvListData wrapper on `is60` — without it the plugin gets 5.x-shaped JSON that 6.1.0's kotlinx-strict parser may reject (same class as the historical EnvListData bug). (3) Confirm which of the plugin's many hosts actually serve the catalog before rewriting; leave beta/dev/statistic alone.

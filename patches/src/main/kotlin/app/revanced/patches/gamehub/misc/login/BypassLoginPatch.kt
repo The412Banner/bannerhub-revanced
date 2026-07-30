@@ -6,6 +6,7 @@ import app.revanced.patcher.firstMethod
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
 import app.revanced.patches.gamehub.GAMEHUB_VERSION
+import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 import app.revanced.util.returnEarly
 
 // =========================================================================
@@ -175,6 +176,8 @@ private const val AUTH_IS_LOGGED_IN_METHOD = "k"
 @Suppress("unused")
 private const val NAV_INTERCEPTOR        = "Liod;"
 
+// Seeds the Room DB with a synthetic account -- the real gate on 6.1.0.
+private const val AUTH_SEED = "Lcom/xj/winemu/login/BhAuthSeed;"
 private const val FAKE_STATE_FLOW = "Lapp/revanced/extension/gamehub/login/FakeStateFlow;"
 // =========================================================================
 
@@ -184,8 +187,45 @@ val bypassLoginPatch = bytecodePatch(
     description = "Bypasses the login requirement by replacing the auth-session StateFlow getters with synthetic always-true / always-non-null values, plus short-circuiting the navigator gates and the navigation interceptor.",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
+    // This patch injects calls into our extension (FakeStateFlow, FakeAuthToken,
+    // BhAuthSeed) but never declared the dependency that actually bundles the
+    // extension into the APK -- it worked only because some OTHER selected patch
+    // happened to pull it in. That is the same latent coupling found in the Explore
+    // patch, and on 6.1.0 (where many bytecode patches fail) it is exactly how you
+    // get "patch succeeded, runtime no-op". Declared explicitly.
+    dependsOn(sharedGamehubExtensionPatch)
 
     apply {
+        // -----------------------------------------------------------------
+        // SEED THE DATABASE — the actual gate on 6.1.0.
+        //
+        // Device-proven: faking the auth interface's getters is NOT enough. The
+        // auth impl builds its StateFlows from the Room `user_account` /
+        // `auth_token` tables (FlowUtil.createFlow), and the Library consumes
+        // DB-derived state — so with an empty DB it renders "Log in to view your
+        // game library" no matter how convincing the accessors are. Hand-seeding
+        // one row into each table unlocked the Library instantly.
+        //
+        // Anchored on the application class, whose name is NOT obfuscated
+        // (com.xiaoji.egggame.AndroidApp) — the same anchor DisableMobPushPatch
+        // has used across every base. onCreate runs before anything queries the
+        // library, and the seeder itself polls because Room creates the file
+        // lazily. p0 is the Application, i.e. a Context.
+        //
+        // The accessor patches below are KEPT as belt-and-braces: they are
+        // device-proven to execute, and if a future base changes how the DB is
+        // read they may carry the bypass on their own.
+        // -----------------------------------------------------------------
+        firstMethod {
+            definingClass == "Lcom/xiaoji/egggame/AndroidApp;" &&
+                name == "onCreate" &&
+                parameterTypes.isEmpty() &&
+                returnType == "V"
+        }.addInstructions(
+            0,
+            "invoke-static {p0}, $AUTH_SEED->seed(Landroid/content/Context;)V",
+        )
+
         // -----------------------------------------------------------------
         // AUTH_IMPL.h() — isLoggedIn StateFlow getter.
         //

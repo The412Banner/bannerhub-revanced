@@ -128,6 +128,26 @@ import app.revanced.util.returnEarly
 // GAME_LIB_REPO and NAVIGATOR are now located STRUCTURALLY, on un-obfuscated
 // framework/app types in their constructors (GameLibraryDatabase and NavBackStack).
 // R8 cannot rename those, so those two anchors should never need re-pinning again.
+// 🚨🚨 6.1.0 DECORATOR — DEVICE-PROVEN REQUIRED, not optional.
+// `Llm;` also implements AUTH_INTERFACE and WRAPS another instance of it
+// (`a:Lrf1;` + its own StateFlow fields b/c/d/e/f/g). I initially dismissed it
+// because Koin binds Lrf1; -> Lyf1; (ia4.smali:1040-1124, ha4.smali:618-622) —
+// that was WRONG. The decorator is what the UI actually consumes, and it
+// OVERRIDES EVERY getter we patch, returning its OWN fields rather than
+// delegating:  l() -> lm.e ,  h() -> lm.b ,  f() -> lm.c
+// so patching AUTH_IMPL alone is silently bypassed.
+//
+// Device symptom that exposed it (pre8): the app entered the UI fine and was NOT
+// stuck at a login gate — because `lm.k()` DOES delegate to the interface default
+// we patch — but the Library tab rendered its logged-out empty state ("Log in to
+// view your game library") because the USER StateFlow was never faked. Exactly
+// the "patch applies 9/9, CI green, does nothing" shape this base keeps producing.
+// Confirmed by the absence of any DebugTrace output: our injected calls never ran.
+//
+// To re-derive: it is the class that IMPLEMENTS AUTH_INTERFACE **and** takes
+// AUTH_INTERFACE in its constructor. (Don't anchor on the ctor alone — two classes
+// have `<init>(Lrf1;)V` on 6.1.0; only this one implements the interface.)
+private const val AUTH_DECORATOR         = "Llm;"
 private const val AUTH_IMPL              = "Lyf1;"
 private const val AUTH_INTERFACE         = "Lrf1;"
 private const val AUTH_TOKEN             = "Lpfr;"
@@ -255,6 +275,40 @@ val bypassLoginPatch = bytecodePatch(
         // `e()` in 6.0.2; the parameterTypes/returnType filter prevents an
         // accidental match against a same-named overload.
         // -----------------------------------------------------------------
+        // -----------------------------------------------------------------
+        // THE DECORATOR — same three StateFlow getters, same 2-instruction shape
+        // (`.locals 0` / iget-object p0 / return-object p0), but reading its own
+        // fields (l()->e, h()->b, f()->c). This is the instance the UI consumes,
+        // so WITHOUT these three edits the whole patch is a no-op on the library
+        // screen even though it applies cleanly. See the AUTH_DECORATOR note above.
+        //
+        // Both layers are patched deliberately: whichever instance a given consumer
+        // holds, it now yields synthetic values.
+        // -----------------------------------------------------------------
+        listOf(
+            IMPL_IS_LOGGED_IN_FLOW to "boolTrue",
+            IMPL_USER_FLOW to "userFlow",
+            IMPL_TOKEN_FLOW to "tokenFlow",
+        ).forEach { (getterName, helper) ->
+            firstMethod {
+                definingClass == AUTH_DECORATOR &&
+                    name == getterName &&
+                    parameterTypes.isEmpty() &&
+                    returnType == "Lkotlinx/coroutines/flow/StateFlow;"
+            }.apply {
+                removeInstruction(0) // iget-object p0, p0, $AUTH_DECORATOR-><field>
+                removeInstruction(0) // return-object p0
+                addInstructions(
+                    0,
+                    """
+                        invoke-static {}, $FAKE_STATE_FLOW->$helper()Ljava/lang/Object;
+                        move-result-object p0
+                        return-object p0
+                    """,
+                )
+            }
+        }
+
         // GAME_LIB_REPO is located structurally: the only class whose constructor
         // takes the unobfuscated GameLibraryDatabase. Its userId getter is still
         // named h() on 6.1.0, and its body was verified as

@@ -358,7 +358,19 @@ public final class BhMenuRowClick implements Function1<Object, Object> {
             // 6.0.7: CMP resource base class renamed tdi → shg; 6.0.8: shg → vhg
             // (Lkwj; extends Lvhg;); 6.0.9: vhg → o4h (Llok; extends Lo4h;);
             // field `a` (the "string:<key>" id holder, b=locales Set) unchanged.
-            Field aField = Class.forName("o4h").getDeclaredField("a");
+            //
+            // 6.1.0 — NO MORE LETTERS HERE. This threw on device:
+            //   W BhMenuRowClick: NoSuchFieldException: No field a in class Lo4h;
+            // Note it was NoSuchField, not ClassNotFound: R8 reused the letter
+            // `o4h` for an unrelated class on 6.1.0, so the lookup "succeeded" and
+            // then failed on the field — a letter-reuse hazard that makes a stale
+            // constant look almost-right. The base class is `Liil;` on 6.1.0, but we
+            // no longer need to name it: 6.1.0 stopped obfuscating the CMP resources
+            // package, so `StringResource` itself has a real name and its SUPERCLASS
+            // is the base that declares `a`. That is stable across future bases.
+            Field aField = Class.forName("org.jetbrains.compose.resources.StringResource")
+                    .getSuperclass()
+                    .getDeclaredField("a");
             aField.setAccessible(true);
             Object key = aField.get(ell);
             if (key == null) return null;

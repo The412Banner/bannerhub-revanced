@@ -4871,3 +4871,24 @@ Remaining anchors resolved, all verified by reading 6.1.0 smali bodies:
 🚨 **NEW TRAP to encode in the patch:** 609's navigator loop was `listOf("i","s")` taking the FIRST `iget b` per method. On 610 `j()` has **TWO** gates, so first-match-only would silently leave one live — the exact "applies but doesn't work" shape we hit with the catalog redirect. Patch every `invoke-interface Lrf1;->k()Z` + `move-result` pair instead of anchoring on the iget; that's also polarity-agnostic (the 3 sites branch `if-eqz`, `if-nez`, `if-eqz`).
 🎁 Two structural anchors are now available that can never be re-lettered: `GameLibraryDatabase` (repo) and `NavBackStack` (navigator). Use them instead of R8 letters.
 ⏭️ Next: write the patch edits; re-check whether `FakeStateFlow.java` can drop its reflection now that StateFlow is the real kotlinx type on 610; then `DebugLogPatch.kt` (shares these anchors).
+
+## 2026-07-30 — ✅ Bypass login + Explore tab hijack APPLIED (9/9 each). SEVERE 17 → 15.
+Run `30510645954` (sha `d27bafa`) green: `Bypass login` 9/9, `Explore tab hijack` 9/9. ⚠️ **APPLIED, not device-proven** — neither has been run on hardware.
+
+### 🐛 My own bug, worth remembering: an anchor I called "permanent" wasn't unique
+First attempt (`db718d3`) failed 9/9 with `Required value was null` — an error several steps from the cause. `GameLibraryDatabase` as first ctor param matches **8 classes** on 610 (aqb, bif, g1a, ic9, p5a, qhf, xf9, yhf); `firstMethod` bound to `aqb`, then found no userId getter there. The **(GameLibraryDatabase, AUTH_INTERFACE) PAIR** is what's unique. `NavBackStack` first-param genuinely is unique. Also: dexlib2 exposes `parameterTypes` as **CharSequence**, which never `==` a String literal — compare with `.toString()`. Fixed in `d27bafa`.
+
+### What changed in Bypass login beyond letters
+- Navigator gates are no longer edited call-site-by-call-site. 610 has **THREE** login checks (1 in `i()`, **2** in `j()`) vs one per method on 609, so the old first-match-per-method loop would have left one live. Now the shared `k()Z` interface default they all dispatch to is neutralized — one edit, covers all, polarity-agnostic, immune to new call sites. Kept alongside the `l()` StateFlow patch so either anchor alone holds.
+- The token is faked at its StateFlow source (`yf1.f()`), which also covers direct collectors. The old `AUTH_INTERFACE."f"` edit was REMOVED — on 610 `f()` is the abstract StateFlow getter, so it would have targeted the wrong member.
+- 🎁 `FakeStateFlow.java` **lost all 3 obfuscated constants** — `StateFlowKt.MutableStateFlow(Object)` survives R8 un-obfuscated.
+
+### Explore tab hijack
+Tab enum `Lrn9;`→`Lh5c;` (ordinals byte-identical). Also declared the `sharedGamehubExtensionPatch` dependency it always needed but never had — it worked only because another selected patch happened to bundle the extension, which on 610 (most bytecode patches failing) is exactly how you get "succeeded, runtime no-op".
+
+### 🗺️ All 5 derivation agents returned — full map + traps recorded in memory `project_gamehub_610_rederivation_map`
+**HEADLINE: 6.1.0 INVERTED its R8 keep-rules.** Compose/kotlin-functions/StringResource/DrawableResource/java.util.List/CollectionsKt/StringResourcesKt/kotlin.Lazy AND the whole coroutines+Flow ABI are now kept with REAL NAMES, while XiaoJi's own kept classes collapsed 1474 → 40. ⇒ most pinned letters in the remaining patches can become permanent FQNs. Side effect: the row-list `add` changed `invoke-virtual` → `invoke-interface`.
+**Three NEW instances of "applies but never runs":** the host `GamepadServerManager.onRumble` is a dead stub (no libwinemu, zero callers, `close()` throws) · `WineActivity` is gone from the dex but survives as a manifest `<activity-alias>` (so grepping the manifest misleads you) · BannerTools has been injecting inside a **conditional branch since ≥6.0.9** (pre-existing latent bug).
+**Landmine:** naively stubbing the remaining `heartbeat/game/start` gate would **ClassCastException at game launch** — it's a launch interceptor whose result is branched, not discarded.
+**Free wins:** `GameIdDisplayMenuRowPatch` + `GogMenuRowPatch` need NO edit (already `if(false)`, they only cascade off the keystone) · `DisableFirebaseAutoInit` is a one-line re-anchor · `DisableHeartbeat` should be dropped (`use = false`), its target left with the emulator.
+**Agents corrected two of my briefs:** `libsteamkit_core.so` did NOT leave the host (it's in BOTH), and the vendor push SDKs were already in 6.0.9 — 610 only *registered* them at the manifest level (so that fix is a resource patch).

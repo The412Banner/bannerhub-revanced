@@ -182,11 +182,22 @@ private const val NAV_BACK_STACK    = "Landroidx/navigation3/runtime/NavBackStac
 // now faked FALSE (not a guest) while m()/c() is faked TRUE (has a full account) —
 // one coherent "full, non-guest account" identity, not per-gate clamps.
 private const val IMPL_IS_GUEST_FLOW = "l"
-// h() backs the interface default d()Lhfr; (UserProfile). Its override was
-// REMOVED in pre19 — d()/UserProfile.isGuest (Lhfr;->z) is NOT on the Bind-Steam
-// path (see the ProfileTab guest fix below), so faking it did nothing. Kept as a
-// named constant for the letter map / future re-derivation.
-@Suppress("unused")
+// h() = the UserProfile StateFlow (field b), backing the interface default
+// d()Lhfr;. Faked pre8–pre18, REMOVED in pre19 (judged "off the Bind-Steam
+// path" — true for that gate), and RESTORED in pre21 because it is the LIBRARY
+// grid's READ-KEY, which is a different consumer entirely:
+//   hzi (library VM) collects p5a.M() =
+//     transformLatest(rf1.h()) { profile ->
+//       SELECT * FROM t_game_library_base WHERE user_id = profile.a }
+//   (a5a.invokeSuspend case 0: `String str = hfr.a` is bound as the `?`).
+// Left unfaked, h() emitted the REAL DB user_account row, whose user_id is EMPTY
+// on our bypassed session, so the grid queried user_id="" and matched nothing —
+// while the WRITE path (p5a.h() = returnEarly("99999") below) stored every row
+// under "99999". Device-proven: an imported local game sat in
+// t_game_library_base under user_id='99999' but never rendered. Faking h() with
+// FakeStateFlow.userFlow() (an hfr whose .a = "99999", the SAME constant
+// FakeAuthToken and p5a.h() already use) makes read-key == write-key == "99999",
+// so the existing row surfaces with no re-import.
 private const val IMPL_USER_FLOW         = "h"
 private const val IMPL_TOKEN_FLOW        = "f"
 // The COMBINED user+token flow, read by the interface default c()Z. Distinct from
@@ -439,6 +450,31 @@ val bypassLoginPatch = bytecodePatch(
         }
 
         // -----------------------------------------------------------------
+        // AUTH_IMPL.h() — UserProfile StateFlow getter (field b). RESTORED pre21.
+        //
+        // This is the LIBRARY GRID's read-key (see IMPL_USER_FLOW note above):
+        // hzi collects p5a.M() = transformLatest(rf1.h()){ profile -> query
+        // t_game_library_base WHERE user_id = profile.a }. Unfaked, profile.a was
+        // "" and the grid matched none of the rows the save path had written under
+        // p5a.h()="99999". userFlow() emits an hfr with .a="99999" so read-key ==
+        // write-key. Same 2-instruction .locals-0 shape as l()/m()/f().
+        // -----------------------------------------------------------------
+        firstMethod {
+            definingClass == AUTH_IMPL && name == IMPL_USER_FLOW
+        }.apply {
+            removeInstruction(0) // iget-object p0, p0, $AUTH_IMPL->b:StateFlow
+            removeInstruction(0) // return-object p0
+            addInstructions(
+                0,
+                """
+                    invoke-static {}, $FAKE_STATE_FLOW->userFlow()Ljava/lang/Object;
+                    move-result-object p0
+                    return-object p0
+                """,
+            )
+        }
+
+        // -----------------------------------------------------------------
         // GAME_LIB_REPO userId getter (name == GAME_LIB_REPO_USERID_METHOD).
         //
         // Returns the user-id string used by Save (xm7.u in 6.0.0 / hp7
@@ -462,9 +498,12 @@ val bypassLoginPatch = bytecodePatch(
             // GUEST flow -> FALSE (not a guest); real-session/full-account -> TRUE.
             IMPL_IS_GUEST_FLOW to "boolFalse",
             IMPL_REAL_SESSION_FLOW to "boolTrue",
-            // IMPL_USER_FLOW ("h") removed in pre19 with its impl-side twin —
-            // the UserProfile flow is off the Bind-Steam path, and this Llm;
-            // decorator is not the DI-bound instance anyway (Koin -> Lyf1;).
+            // IMPL_USER_FLOW ("h") RESTORED pre21 — it is the library grid's
+            // read-key (p5a.M() -> rf1.h() -> UserProfile.a). userFlow() carries
+            // hfr.a="99999" to match the write-key p5a.h()="99999". Patched on the
+            // decorator too: whichever rf1 instance a consumer holds must agree, and
+            // p5a's injected `b` may be either the impl or this wrapper.
+            IMPL_USER_FLOW to "userFlow",
             IMPL_TOKEN_FLOW to "tokenFlow",
         ).forEach { (getterName, helper) ->
             firstMethod {

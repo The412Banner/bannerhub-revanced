@@ -4827,3 +4827,27 @@ Traced the whole chain statically:
 ⏭️ Only open question needs a DEVICE test, not more smali: on a fresh never-logged-in install of our build, does the entry appear and does the resulting state allow library + add-local-game? Cheap to fold into the next clean install. Treat as a bonus, never a dependency.
 
 ⏭️ NEXT: task 6 — re-derive `Bypass login` + `Debug logging` (shared GAME_LIB_REPO anchor). 15 patches to re-derive, 2 to disable.
+
+## 2026-07-30 — 🔑 Group A (Bypass login + Debug logging): 610 auth letter map, partially derived
+The auth layer was **restructured on 6.1.0**, not merely re-lettered. Verified in `~/gh610-apktool-d`:
+| role | 6.0.9 | **6.1.0** | evidence |
+|---|---|---|---|
+| AUTH_INTERFACE | `Lrx0;` | **`Lrf1;`** | `smali_classes3/rf1.smali:1`; 6 StateFlow getters `b/f/h/l/m/n` + defaults `c()Z k()Z d()Lhfr; i()Lpfr;` |
+| AUTH_IMPL | `Lux0;` | **`Lyf1;`** | `yf1.smali:6` implements `Lrf1;`; 4 StateFlow + 4 MutableStateFlow fields; ctor `(Ludr;Lqg1;Lui0;Lxdn;)V` takes the AuthTokenDao |
+| AUTH_TOKEN | `Lqbm;` | **`Lpfr;`** = `UserToken` | 10 fields `(S,S,S,S,Long,Long,J,Z,J,J)`, **`.a` = userId** — same shape as 609, so the patch's field assumption holds |
+| user model | — | **`Lhfr;`** = `UserProfile` | `.a` = userId |
+| isLoggedIn | `a()Z` | **`k()Z`** (reads `l()`) | `rf1.smali:117`; corroborated by the guest-mode gate using `rf1.k()` |
+| other bool | — | `c()Z` (reads `m()`) | `rf1.smali:13` — NOT the login flag |
+| token getter | `f()` | **`i()Lpfr;`** (reads `f()`) | `rf1.smali:87` |
+| user getter | `e()` | **`d()Lhfr;`** (reads `h()`) | `rf1.smali:48` |
+| AuthTokenDao | — | **`Lqg1;`** | ctor `(RoomDatabase)`, ops on `Lrg1;` |
+| AuthTokenEntity | — | **`Lrg1;`** | 11 fields, `a`=id(J), **`b`=userId** — note the DOMAIN token uses `.a` for userId, the ENTITY uses `.b`; don't mix them up |
+
+### Two findings that change the patch itself, not just its constants
+1. 🔑 **StateFlow is now the REAL `kotlinx.coroutines.flow.StateFlow`/`MutableStateFlow`**, not an obfuscated wrapper. The whole reason `FakeStateFlow.java` used reflection on 6.0.x was to build a host-compatible flow without growing `.locals`; on 610 we can likely use `MutableStateFlow` directly, making its 3 obfuscated letter constants unnecessary. Verify before rewriting.
+2. 🚨 **NEW DECORATOR `Llm;`** — also implements `Lrf1;` and holds `a:Lrf1;`, i.e. it wraps another auth interface. **Trap:** if consumers get `lm` rather than `yf1`, patching `yf1`'s getters is bypassed — precisely the "applies but does nothing" failure we already hit with the catalog redirect. Must determine which is injected before trusting the map.
+
+⏭️ Still to derive: GAME_LIB_REPO + its no-arg String userId getter (609 `Lqv7;`/`h()`), NAVIGATOR + its 2 login gates (609 `Ljrd;`/`i`+`s`), and which of `yf1`/`lm` is injected. Then DebugLogPatch (shares these anchors).
+
+### 🤖 5 grouped subagents launched in parallel (user-approved) to derive the other patch clusters
+B menu keystone + 5 rows · C analytics/privacy (+ audit of 6.1.0's NEW multi-OEM push stack) · D Explore tab hijack · E audio + vibration (incl. a feasibility verdict on PC-accurate vibration now that container ownership moved into the plugin) · F Steam chat overlay. Grouped by SHARED ANCHOR rather than one-per-patch, because the 5 menu rows all cascade off the keystone and login/debug share the auth map — per-patch agents would have re-derived the same classes repeatedly. All are briefed to return letter maps + proposed edits ONLY (no commits), and to state whether each anchor is still actually REACHED at runtime, given the catalog-redirect lesson that CI success proves nothing.

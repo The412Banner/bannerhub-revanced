@@ -5092,3 +5092,6 @@ The E-vs-F switch is `ag4==null?` at `:goto_15`(11244); `ag4` (part plan) is bui
 
 ### ✅ `-seq.apk` BUILT + VERIFIED + STAGED 2026-07-30
 `pcengine-100-1-bannerhub-v6-seq.apk` md5 `69d5ee71b66a1395ed726ff3c296121b`, sha256 `aeb601a7…`, size 23494479, v6-signed. Dex-verified in FINAL signed apk: 10508=original `if-nez v2,:cond_16` (goto reverted), Edit A (bucket coerce max+min=0x1), Edit B (`if-lt v14,v15`), bp6=our Worker; other buckets untouched. Uploaded (200); `-singlestream`/`-catalog` kept as fallbacks. Worker staged bannerhub-api `main` `5c81feb0` (NOT deployed; live still `9c4c357e`; rollback `git revert 5c81feb`). ⏭️ awaiting deploy go-ahead → fresh-reinstall pre21 → retry. Watch for `R() Incomplete part file: index=0` = single stream also truncates ⇒ pivot to R2.
+
+### ✅ WORKER DEPLOYED (seq plugin) 2026-07-30 18:48Z (user-approved)
+Deploy `c3aebd084e964b19b7a8284ff5c4caae`, from `main`@`5c81feb0`. Drift clean. All 6 bindings preserved. Manifest serves seq apkUrl + md5 `69d5ee71…` + sha256 `aeb601a7…` (brief ~40s propagation lag then stable). Existing routes 200 (getImagefsDetail 1.4.2/`6bcdc256…`/github; base/devices/chat). No rollback; rollback dir `worker-backups/20260730-184627-pcengine-seq-deploy/`. ⏭️ user fresh-reinstalls pre21 → re-pulls seq plugin → device-test the single-sequential imagefs download.

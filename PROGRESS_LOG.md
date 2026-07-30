@@ -4740,3 +4740,24 @@ GREEN. `Redirect catalog API` / `Prefix API path with /v6` / `Redirect PC engine
 ### 🆕 6.1.0 GUEST MODE — built-in login bypass (new, absent in 609)
 String `android_features_auth_guest_mode_entry` = 游客模式，先体验一下 ("Guest mode, try it first", id 0x7f110032) + drawable `android_features_auth_ic_guest_entry`. Built programmatically in `mi.b(...)` (`smali_classes2/mi.smali:298`) as a LinearLayout + icon + 14sp TextView, and **registered onto the Aliyun one-tap login screen** via `com.mobile.auth.gatewayauth.PhoneNumberAuthHelper` + `AuthRegisterViewConfig$Builder` (mi.smali:23/206/210). Click handler `Lii;` invokes a caller-supplied `Function0`, checks its Boolean, may Toast, then continues via `mi.c(...)`. Callers: `li.smali:1265`, `:2443`; other refs `bgp.smali`, `smali_classes3/i27.smali`.
 🚨 **CONFLICT: guest mode is rendered BY the Aliyun NumberAuth SDK, which our privacy suite stubs.** One of the 5 still-applying manifest-level privacy patches targets Aliyun NumberAuth — if that SDK is neutered the guest entry may never render, i.e. our own privacy hardening could destroy the built-in login bypass. Verify before assuming guest mode can retire the "Bypass login" patch.
+
+## 2026-07-30 — 🎯 ROOT CAUSE: `plugin_version` must be the numeric version CODE (device-diagnosed, fixed, deployed)
+pre5 install hash-verified as the installed APK (`9b2ed055…` == staged) per the DEBUG RULE, then the journal gave the answer outright — 9 identical entries:
+`{"kind":"Verification","message":"服务端插件版本号不合法: 100-1"}` = **"server plugin version number is invalid: 100-1"**.
+
+**Cause:** the client runs Kotlin **`toLongOrNull()` on `plugin_version`** (`xy5.smali:14181`, at `:cond_1b` — reached only after the `plugin_name` and `schema_version` equality checks PASS, which incidentally proves the echo fix was working). The plugin's versionName `100-1` is not Long-parseable; its versionCode is `100`. **Fix = `plugin_version:"100"`.** bannerhub-api `2e3de83`, deploy `0a86fe8b343e4cd99a593f8bb6aecd29`, rollback `worker-backups/20260730-version-code-fix/`, all 6 bindings preserved, live reply verified to parse as a Long.
+
+**It was never a signing / download / which-APK problem.** The client bailed during manifest validation and never attempted a download — so the user's suggestion of also hosting the original re-signed plugin to "see which one gets through" would have failed identically for both copies. Worth remembering: the toast is generic and names nothing, so **read the journal, never guess from the toast.**
+
+### 📜 Full manifest-validation contract discovered in xy5.smali (use this before inventing field values)
+| line | message (translated) | requirement |
+|---|---|---|
+| :24584 | server plugin name mismatch, **expected `pcengine`**, actual … | `plugin_name` literally `pcengine` |
+| :24576 | server schemaVersion=… | `schema_version` must match what the client sent |
+| :24580 | server plugin version number is invalid: … | `plugin_version` **Long-parseable** (version CODE) |
+| :25142 | server did not return plugin download URL | `apk_url` non-empty |
+| :25631 | server returned illegal SHA-256 | `^[a-f0-9]{64}$` |
+| :25775 | server returned illegal MD5 | `^[a-f0-9]{32}$` |
+Plus the `update_type` enum gate: `"plugin"` → Plugin branch; `""` or anything else → Unknown → silent no-op.
+
+⏭️ No new APK needed — this was purely server-side. **Retest with the SAME installed pre5 build** (md5 `352ecc2e36755082b478b2b9eb92717a`). Success = journal shows `installedVersion` 100-1 with no failures, and the downloaded artifact's md5 is `a07d9ef8…` (ours) not `0ab09364…` (XiaoJi's).

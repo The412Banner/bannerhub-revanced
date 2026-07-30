@@ -259,8 +259,19 @@ val bypassLoginPatch = bytecodePatch(
         // takes the unobfuscated GameLibraryDatabase. Its userId getter is still
         // named h() on 6.1.0, and its body was verified as
         //   iget b:AUTH_INTERFACE -> invoke-interface i()AUTH_TOKEN -> iget AUTH_TOKEN.a
+        // ⚠️ GameLibraryDatabase alone is NOT unique — 8 classes take it as their
+        // first ctor param on 6.1.0 (aqb, bif, g1a, ic9, p5a, qhf, xf9, yhf), and
+        // `firstMethod` returns the FIRST match, which is not the repo. That mistake
+        // failed as "Required value was null" from the userId lookup below, several
+        // steps removed from the actual cause. The (database, AUTH_INTERFACE) PAIR is
+        // what identifies the repo uniquely — only p5a takes the auth interface second.
+        // `.toString()` because dexlib2 exposes parameterTypes as CharSequence, which
+        // does not compare equal to a String literal.
         val gameLibRepoClass = firstMethod {
-            name == "<init>" && parameterTypes.firstOrNull() == GAME_LIB_DATABASE
+            name == "<init>" &&
+                parameterTypes.size >= 2 &&
+                parameterTypes[0].toString() == GAME_LIB_DATABASE &&
+                parameterTypes[1].toString() == AUTH_INTERFACE
         }.definingClass
 
         firstMethod {
@@ -359,8 +370,12 @@ val bypassLoginPatch = bytecodePatch(
         // NAVIGATOR is still resolved (and asserted to exist) so that a future base
         // reshuffle that removes the navigator seam fails loudly here rather than
         // silently shipping a build with an unguarded login path.
+        // NavBackStack as first ctor param IS unique on 6.1.0 (only the navigator),
+        // unlike GameLibraryDatabase above.
         firstMethod {
-            name == "<init>" && parameterTypes.firstOrNull() == NAV_BACK_STACK
+            name == "<init>" &&
+                parameterTypes.isNotEmpty() &&
+                parameterTypes[0].toString() == NAV_BACK_STACK
         }
 
         // -----------------------------------------------------------------

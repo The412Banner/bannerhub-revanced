@@ -4918,3 +4918,20 @@ I expected `Banner Tools menu row` and `Show PC Game Settings row` to cascade gr
 - **DROP, don't fix (3):** Disable heartbeat (target left with the emulator) · In-game performance overlay · Offline component picker (both plugin-side).
 - **Real work (4):** Debug logging (2 anchors unmapped) · In-game Steam chat overlay (blocked on the suspend-ABI change) · PC-accurate vibration + Recording-compatible audio (targets inside the PLUGIN ⇒ need a plugin-patch path).
 ⚠️ Still zero device proof for ANY of this session's patch work. Also unfixed: Banner Tools injects inside a conditional branch (pre-existing since ≥6.0.9), so its row may not appear even now that it applies; and its runtime helper still holds 6.0.9 letters that no CI result can catch.
+
+## 2026-07-30 — 🔎 pre8 device findings: guest option gone (OUR patch), login bypass NOT working, D3 trap CONFIRMED LIVE
+Installed build hash-verified as pre8 (`4bc50de0…`) per the DEBUG RULE.
+
+### 1. ✅ EXPLAINED — the guest option disappeared because WE removed it
+`Disable Aliyun NumberAuth` applied **9/9** in pre8. Guest mode is rendered BY that SDK (`mi.b` registers the entry onto Aliyun's `PhoneNumberAuthHelper` one-tap screen via `AuthRegisterViewConfig`), so stripping the SDK removes the button. **This is the exact conflict flagged during the guest-mode investigation, now observed on device.** It was visible on pre5 only because most patches were still SEVERE-failing then. ⇒ A real product decision is now unavoidable: keep the privacy strip and lose the built-in guest entry, or exempt the Aliyun SDK to keep it. Not resolving unilaterally.
+
+### 2. 🐛 CONFIRMED LIVE — trap D3 (stale 6.0.9 letters in the RUNTIME extension)
+```
+W BhMenuRowClick: java.lang.NoSuchFieldException: No field a in class Lo4h;
+```
+`o4h` is the 6.0.9 Compose-resource base class; on 610 it is `Liil;`. Note the class `o4h` STILL EXISTS on 610 (R8 reused the letter for something unrelated), so it fails as *NoSuchField* rather than ClassNotFound — a letter-reuse hazard worth remembering. **This is exactly group B's trap D3: the patch applies, CI is green, and the row's label lookup fails at runtime.** The full D3 list still to fix: `BhMenuRowClick.java:361` o4h→iil; `BhBannerToolsMenuRowClick.java` uhd→tzg, qd5/t47/r47/lok/o4h→FQNs, xoc→oxf, pcd→ctg, `yc5.x`→`r37.H`.
+
+### 3. ❌ Login bypass is NOT working, and the reason is NOT a failed patch
+`Bypass login` applied 9/9, but logcat shows **zero** traces from `FakeStateFlow`/`FakeAuthToken`/`FakeUserAccount` — while `BhMenuRowClick` logs fine from the same extension bundle, proving our extensions DO reach logcat. ⇒ **the patched auth getters are never called on the path that shows the login screen.**
+🔍 Leading hypothesis: 610's **NEW `com.xiaoji.egggame.features.onboarding` Compose module** (confirmed present, absent in 609) gates first-run entry and may not consult the auth interface at all. Corroborating: the guest-mode gate we traced reads the **preference** `auth_has_logged_in_before`, not the StateFlow — so 610 has at least one auth-adjacent decision made outside the interface we patch.
+⏭️ NEXT: capture logcat WITH the login screen in the foreground to identify the deciding activity/class, then re-derive against that rather than the auth interface. Do NOT assume more StateFlow patching will help.

@@ -2,7 +2,6 @@ package app.revanced.extension.gamehub.login;
 
 import app.revanced.extension.gamehub.debug.DebugTrace;
 
-import java.lang.reflect.Constructor;
 
 /**
  * Constructs a synthetic user-account so AUTH_INTERFACE.e() and .b() return a
@@ -16,7 +15,9 @@ import java.lang.reflect.Constructor;
  *   6.0.1 → adm
  *   6.0.2 → fpm
  *   6.0.4 → rpm  (current)
- * 27 fields (a..z plus A). Constructor sig is stable across versions:
+ * NOTE: the constructor signature is NOT stable across versions — 6.1.0
+ * changed it, which is why construction is now shape-based via SyntheticModel
+ * rather than pinned to an exact parameter list.
  *   (String,String,String,String,String,String,I,I,Z,String,I,I,I,I,I,J,
  *    String,String,I,I,String,J,I,String,String,J,J)V
  * Smali ctor body asserts non-null on p1 (a) and p18 (q, the 17th Java arg).
@@ -26,7 +27,11 @@ public final class FakeUserAccount {
     private static final String FAKE_USER_ID = "99999";
 
     /** R8-mangled class name of the user-account data class. Update on base APK bump. */
-    private static final String USER_ACCOUNT_CLASS = "kbm"; // 6.0.9 (6.0.8 n2l, 6.0.7 h2l, 6.0.4 rpm); 27-field (a..z + A), = Lrx0;.b() return (qv7.h() reads Lkbm;->a as userId fallback). Ctor sig IDENTICAL to 6.0.8 (verified in ~/gh609-apktool-d). Device-confirmed pattern: stale class makes get() return null → library list empty despite the row being in t_game_library_base.
+    // 6.1.0: Lkbm; -> Lhfr; (= "UserProfile", .a = userId). Its ctor GAINED a param
+    //   on 6.1.0 (27 -> 28: a boolean before the trailing two longs), which is what
+    //   broke the old exact-signature lookup and silently emptied the Library.
+    //   History: 6.0.9 kbm, 6.0.8 n2l, 6.0.7 h2l, 6.0.4 rpm.
+    private static final String USER_ACCOUNT_CLASS = "hfr";
 
     private static volatile Object cached;
 
@@ -36,42 +41,8 @@ public final class FakeUserAccount {
         if (u != null) return u;
         synchronized (FakeUserAccount.class) {
             if (cached != null) return cached;
-            try {
-                Class<?> userClass = Class.forName(USER_ACCOUNT_CLASS);
-                Constructor<?> ctor = userClass.getDeclaredConstructor(
-                        String.class, String.class, String.class, String.class,
-                        String.class, String.class,
-                        int.class, int.class, boolean.class,
-                        String.class,
-                        int.class, int.class, int.class, int.class, int.class,
-                        long.class,
-                        String.class, String.class,
-                        int.class, int.class,
-                        String.class,
-                        long.class,
-                        int.class,
-                        String.class, String.class,
-                        long.class, long.class);
-                ctor.setAccessible(true);
-                cached = ctor.newInstance(
-                        FAKE_USER_ID, "", "", "", "", "",
-                        0, 0, false,
-                        "",
-                        0, 0, 0, 0, 0,
-                        0L,
-                        "", "",
-                        0, 0,
-                        "",
-                        0L,
-                        0,
-                        "", "",
-                        0L, 0L);
-                DebugTrace.write("FakeUserAccount: built synthetic " + USER_ACCOUNT_CLASS + " a=" + FAKE_USER_ID);
-                return cached;
-            } catch (Throwable e) {
-                DebugTrace.write("FakeUserAccount: construction failed", e);
-                return null;
-            }
+            cached = SyntheticModel.build(USER_ACCOUNT_CLASS, FAKE_USER_ID);
+            return cached;
         }
     }
 }

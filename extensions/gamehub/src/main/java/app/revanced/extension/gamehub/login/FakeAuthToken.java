@@ -4,7 +4,6 @@ import android.util.Log;
 
 import app.revanced.extension.gamehub.debug.DebugTrace;
 
-import java.lang.reflect.Constructor;
 
 /**
  * Constructs a synthetic auth-token wrapper so AUTH_INTERFACE.f() returns a
@@ -16,7 +15,9 @@ import java.lang.reflect.Constructor;
  *   6.0.1 → fdm
  *   6.0.2 → kpm
  *   6.0.4 → wpm  (current)
- * Constructor sig is stable across versions: (S,S,S,S,Long,Long,J,Z,J,J)V.
+ * NOTE: the constructor signature is NOT stable across versions — 6.1.0
+ * changed it, which is why construction is now shape-based via SyntheticModel
+ * rather than pinned to an exact parameter list.
  * The first two String args are non-null asserted via getClass() in <init>.
  *
  * On a base APK bump, find the new letter via BypassLoginPatch.kt's
@@ -28,7 +29,10 @@ public final class FakeAuthToken {
     private static final String FAKE_USER_ID = "99999";
 
     /** R8-mangled class name of the auth-token wrapper. Update on base APK bump. */
-    private static final String AUTH_TOKEN_CLASS = "qbm"; // 6.0.9 (6.0.8 t2l, 6.0.7 n2l, was wpm); = Lrx0;->f() return type, 10-field (S,S,S,S,Long,Long,J,Z,J,J), .a=userId. Ctor sig IDENTICAL to 6.0.8 (verified ~/gh609-apktool-d).
+    // 6.1.0: Lqbm; -> Lpfr; (= "UserToken"; AUTH_INTERFACE.i() return type; 10 fields
+    //   S,S,S,S,Long,Long,J,Z,J,J with .a = userId — same shape as 6.0.9).
+    //   History: 6.0.9 qbm, 6.0.8 t2l, 6.0.7 n2l, earlier wpm.
+    private static final String AUTH_TOKEN_CLASS = "pfr";
 
     private static volatile Object cached;
 
@@ -38,23 +42,8 @@ public final class FakeAuthToken {
         if (t != null) return t;
         synchronized (FakeAuthToken.class) {
             if (cached != null) return cached;
-            try {
-                Class<?> tokenClass = Class.forName(AUTH_TOKEN_CLASS);
-                Constructor<?> ctor = tokenClass.getDeclaredConstructor(
-                        String.class, String.class, String.class, String.class,
-                        Long.class, Long.class,
-                        long.class, boolean.class,
-                        long.class, long.class);
-                ctor.setAccessible(true);
-                cached = ctor.newInstance(
-                        FAKE_USER_ID, "", null, null, null, null,
-                        0L, false, 0L, 0L);
-                DebugTrace.write("FakeAuthToken: built synthetic " + AUTH_TOKEN_CLASS + " a=" + FAKE_USER_ID);
-                return cached;
-            } catch (Throwable e) {
-                DebugTrace.write("FakeAuthToken: construction failed", e);
-                return null;
-            }
+            cached = SyntheticModel.build(AUTH_TOKEN_CLASS, FAKE_USER_ID);
+            return cached;
         }
     }
 }

@@ -1,13 +1,21 @@
 package app.revanced.patches.gamehub.misc.login
 
 import app.revanced.patcher.extensions.addInstructions
+import app.revanced.patcher.extensions.getInstruction
 import app.revanced.patcher.extensions.removeInstruction
 import app.revanced.patcher.firstMethod
 import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
 import app.revanced.patches.gamehub.GAMEHUB_VERSION
 import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
+import app.revanced.util.getReference
+import app.revanced.util.indexOfFirstInstructionOrThrow
+import app.revanced.util.indexOfFirstLiteralInstructionOrThrow
 import app.revanced.util.returnEarly
+import com.android.tools.smali.dexlib2.Opcode
+import com.android.tools.smali.dexlib2.iface.instruction.RegisterRangeInstruction
+import com.android.tools.smali.dexlib2.iface.instruction.WideLiteralInstruction
+import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 
 // =========================================================================
 // 6.0.2 R8-mangled class letter map
@@ -163,6 +171,11 @@ private const val NAV_BACK_STACK    = "Landroidx/navigation3/runtime/NavBackStac
 //   h() → field b = UserProfile StateFlow<Lhfr;>    (backs the d() default)
 //   f() → field c = UserToken   StateFlow<Lpfr;>    (backs the i() default)
 private const val IMPL_IS_LOGGED_IN_FLOW = "l"
+// h() backs the interface default d()Lhfr; (UserProfile). Its override was
+// REMOVED in pre19 — d()/UserProfile.isGuest (Lhfr;->z) is NOT on the Bind-Steam
+// path (see the ProfileTab guest fix below), so faking it did nothing. Kept as a
+// named constant for the letter map / future re-derivation.
+@Suppress("unused")
 private const val IMPL_USER_FLOW         = "h"
 private const val IMPL_TOKEN_FLOW        = "f"
 // The COMBINED user+token flow, read by the interface default c()Z. Distinct from
@@ -188,6 +201,30 @@ private const val NAV_INTERCEPTOR        = "Liod;"
 // Seeds the Room DB with a synthetic account -- the real gate on 6.1.0.
 private const val AUTH_SEED = "Lcom/xj/winemu/login/BhAuthSeed;"
 private const val FAKE_STATE_FLOW = "Lapp/revanced/extension/gamehub/login/FakeStateFlow;"
+
+// -------------------------------------------------------------------------
+// ProfileTab (Home > Profile) state — the ACTUAL Bind-Steam gate on 6.1.0.
+//
+//   PROFILE_MODEL     Lgek;  "ProfileTabModel". Its toString proves the field
+//                     roles: .a = isLoggedIn, .b = isGuest.
+//   PROFILE_COLLECTOR Lhfk;  the FlowCollector.emit() that reduces the auth
+//                     StateFlows into PROFILE_MODEL (one packed-switch case per
+//                     source flow). NOT pinned by letter below — located by the
+//                     copy-mask literal instead.
+//
+// The gate (ofk, "ClickBindSteam") reads gek.b directly:
+//   iget-boolean vN, Lgek;->b:Z  +  if-eqz -> real bind r()  /  else guest no-op.
+// Device log: "HomeProfile: ProfileTab ClickBindSteam loggedIn=true guest=true".
+//
+// gek.b's SOLE writer is the emit() branch that copies one unboxed Boolean (from
+// the auth guest StateFlow, rf1.l()) into Gek.a(state, ...) as arg2. That copy
+// call's flags int is 0xFFFFFFD: every field is kept from the old state EXCEPT
+// bit 1 (0x2 = arg2 = field b = isGuest), which is applied from the argument.
+// The mask is unique to this branch, so it is our structural anchor.
+private const val PROFILE_MODEL   = "Lgek;"
+@Suppress("unused")
+private const val PROFILE_COLLECTOR = "Lhfk;"
+private const val GUEST_COPY_MASK = 0xFFFFFFDL
 // =========================================================================
 
 @Suppress("unused")
@@ -278,63 +315,64 @@ val bypassLoginPatch = bytecodePatch(
         }
 
         // -----------------------------------------------------------------
-        // AUTH_IMPL.e() — current-user StateFlow getter.
+        // PRIMARY GUEST FIX (pre19) — force ProfileTabModel.isGuest FALSE at
+        // its ONLY writer, so the Bind-Steam gate takes the real-bind path.
         //
-        // Original body: `iget-object p0, p0, AUTH_IMPL->a:Lhzh;` + return.
-        // Underlying StateFlow emits null when no UserEntity is in Room;
-        // the library-list reader then `flatMapLatest`s null to an empty
-        // Flow and the imported game never appears.
+        // The gate (ofk, "ClickBindSteam") reads gek.b == isGuest directly and
+        // branches: isGuest -> a no-op guest prompt; else (logged in) -> r(),
+        // the real store bind. Device log: "ClickBindSteam loggedIn=true
+        // guest=true", tap does nothing.
         //
-        // Replace with `FakeStateFlow.userFlow()` so the reader's
-        // flatMapLatest hits the userId-keyed query.
-        // -----------------------------------------------------------------
-        // ✅ RESTORED in pre18, with the consumer actually read this time.
+        // gek.b is written in exactly one place: the ProfileTab reducer's
+        // FlowCollector.emit() branch that copies the auth guest StateFlow
+        // (rf1.l()) into Gek.a(oldState, ..., flags=0xFFFFFFD). In that copy the
+        // flags keep every field EXCEPT bit 1 (arg2 = isGuest), which is taken
+        // from the passed register. Forcing that register to 0 makes every
+        // emitted ProfileTabModel isGuest=false.
         //
-        // I removed this in pre15 believing our empty synthetic profile caused the
-        // "Guest Mode" label. pre15 DISPROVED that — the label persisted with the
-        // override gone. Worse, removing it left d() returning NULL whenever the DB
-        // has no user row, which is every install now that seeding is disabled.
+        // This is TERMINAL and surgical: it overrides whatever the guest flow
+        // emits, at the single write site, WITHOUT touching the l()/k()
+        // login-skip overrides (those legitimately want TRUE — l()/k() is the
+        // guest/isLoggedIn seam the nav gates ride; see the auth-map note).
         //
-        // Reading the store-binding gate settles it. AUTH_IMPL.a(Loqb;,Function0)Z
-        // does:
-        //     invoke-interface {p0}, AUTH_INTERFACE->d()   // the UserProfile
-        //     iget-boolean v2, v0, Lhfr;->z:Z             // isGuest
-        // — it reads UserProfile.isGuest DIRECTLY, and treats a null profile as
-        // having no real account. On device that surfaced as
-        //     HomeProfile: ProfileTab ClickBindSteam loggedIn=true guest=true
-        // with the Bind Steam tap doing nothing.
-        //
-        // SyntheticModel builds the profile with the user id in the first String
-        // and every boolean false — so isGuest is false, which is what the gate
-        // wants. A synthetic non-guest profile beats no profile at all.
-        //
-        // ⚠️ Historical note kept because it is still true of 6.0.x, and explains
-        // why this override exists at all:
-        //
-        // On 6.0.x this had to be faked because the DB had no user row, so the
-        // profile flow emitted null and the library reader flat-mapped that to an
-        // empty list.
-        //
-        // (The pre15 theory — that the injected profile's empty nickname caused the
-        // "Guest Mode" placeholder — was tested and disproved: the label persisted
-        // with this override removed entirely. The label's source is elsewhere; the
-        // Bind-Steam gate, however, is definitively this profile's isGuest field.)
+        // Anchored structurally on the unique copy-mask literal, not on the
+        // R8 letters of the collector or its emit index.
         // -----------------------------------------------------------------
         firstMethod {
-            definingClass == AUTH_IMPL && name == IMPL_USER_FLOW
+            name == "emit" &&
+                parameterTypes.size == 2 &&
+                implementation?.instructions?.any {
+                    (it as? WideLiteralInstruction)?.wideLiteral == GUEST_COPY_MASK
+                } == true
         }.apply {
-            removeInstruction(0) // iget-object p0, p0, $AUTH_IMPL->b:StateFlow
-            removeInstruction(0) // return-object p0
-            addInstructions(
-                0,
-                """
-                    invoke-static {}, $FAKE_STATE_FLOW->userFlow()Ljava/lang/Object;
-                    move-result-object p0
-                    return-object p0
-                """,
-            )
+            val maskIdx = indexOfFirstLiteralInstructionOrThrow(GUEST_COPY_MASK)
+            // The Gek.a(...) copy is the first range-invoke after the mask load.
+            val copyIdx = indexOfFirstInstructionOrThrow(maskIdx) {
+                opcode == Opcode.INVOKE_STATIC_RANGE &&
+                    getReference<MethodReference>()?.let {
+                        it.definingClass == PROFILE_MODEL && it.name == "a"
+                    } == true
+            }
+            // Gek.a(Gek state, Z isLoggedIn, Z isGuest, ...): the range starts at
+            // p0=state, so p2 (isGuest, field b) is startRegister + 2.
+            val guestReg =
+                getInstruction<RegisterRangeInstruction>(copyIdx).startRegister + 2
+            addInstructions(copyIdx, "const v$guestReg, 0x0")
         }
 
+        // -----------------------------------------------------------------
+        // AUTH_IMPL.e() — current-user StateFlow getter.
+        //
+        // ❌ OVERRIDE REMOVED in pre19. h() backs the interface default
+        // d()Lhfr; (UserProfile). The prior fix (d3ea3720) faked this flow so
+        // d()'s UserProfile.isGuest (Lhfr;->z) would read false, on the theory
+        // that the Bind-Steam gate consulted it. It does NOT: the gate reads
+        // ProfileTabModel.isGuest (gek.b), fed by rf1.l() through the collector
+        // patched above — the d()/UserProfile path is never on it. And the
+        // decorator copy of it (Llm;) is off-path too: Koin binds Lrf1; -> Lyf1;
+        // (ia4.smali:84), so the ProfileTab never holds the Llm; instance.
+        // The override was therefore dead code and is gone; the token,
+        // isLoggedIn and real-session flow patches below remain.
         // -----------------------------------------------------------------
         // AUTH_IMPL.f() — UserToken StateFlow getter. NEW EDIT FOR 6.1.0.
         //
@@ -399,7 +437,9 @@ val bypassLoginPatch = bytecodePatch(
         listOf(
             IMPL_IS_LOGGED_IN_FLOW to "boolTrue",
             IMPL_REAL_SESSION_FLOW to "boolTrue",
-            IMPL_USER_FLOW to "userFlow",
+            // IMPL_USER_FLOW ("h") removed in pre19 with its impl-side twin —
+            // the UserProfile flow is off the Bind-Steam path, and this Llm;
+            // decorator is not the DI-bound instance anyway (Koin -> Lyf1;).
             IMPL_TOKEN_FLOW to "tokenFlow",
         ).forEach { (getterName, helper) ->
             firstMethod {

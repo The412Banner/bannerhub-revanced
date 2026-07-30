@@ -5040,3 +5040,27 @@ I SteamSessionLifecycle: Steam session idle: no selected or saved Rust account l
 
 ### Proportionality note
 The app is fully usable: library, Settings, Downloads, Explore, per-game menus all work. The guest flag costs **store binding** (Steam/Epic) and the cloud-save banner. Remaining higher-value work: 11 SEVERE patches, the persisted random user id (needed for store/config attribution anyway), Debug logging, and the release-notes rewrite.
+
+## 2026-07-30 — 🏁 Bind Steam UNBLOCKED (pre20), library import fixed (pre21), imagefs "invalid" root-caused to the PLUGIN downloader
+
+### Correction: `gek.b` IS isGuest (the entry above had a/b backwards)
+`gek` toString (`gek.java:162`) = `ProfileTabModel(isLoggedIn=a, isGuest=b)` ⇒ **`gek.a`=isLoggedIn, `gek.b`=isGuest**. DEVICE-PROVEN by pre19 (forcing `gek.b` false → `HomeProfile … guest=false`). The Bind-Steam gate reads `gek.b` (fed from `rf1.l()`), NOT `d()`/`Lhfr;->z`. The prior "gek.b=loggedIn" note was wrong.
+
+### The fix = restore a real FULL account (user's directive), not clamp guest
+610 auth-map was INVERTED: `l()`/`k()` = **GUEST** (not isLoggedIn); real logged-in = `m()`/`c()`. Bypass-login was forcing `l()`/`k()` TRUE to skip login = self-inflicting guest.
+- **pre18** (`d3ea3720`): overrode `d()`/`Lhfr;->z` — INERT (gate never reads it). `guest=true`, silent no-op.
+- **pre19** (`d61c1f55`): forced `gek.b` false at its only writer `hfk` case 1 (mask `0xFFFFFFD`) → device `guest=false` ✅, but a 2nd gate `Core_Navigation: intercepted guest for full-account` (`fch.j()` reads `k()`) still dropped the SteamLogin sheet.
+- **pre20** (`97b650fa`): guest `l()`/`k()`→FALSE, full-account `m()`/`c()`→TRUE (login-skip preserved). Gate map (`fch.smali` m()): login WALL `~:457` reads `c()`=`m()`=has-full-account; steam gate `~:481` via `j()` reads `k()`=`l()`=guest. `y3u.x()` = process-identity guard (main vs :pcengine), NOT a gate. **DEVICE-PROVEN: tapping "Bind Steam Account" opens the real STEAM Login/QR screen** (user screenshots).
+
+### Steam pipeline = 100% direct-to-Valve, zero backend
+Plugin `libsteamkit_core.so` does auth+depot natively vs Valve (JNA bus; topics `auth.start_qr_login`/`auth.login_saved_account`; `download.start_install` → `filesDir/Steam/steamapps/common/<game>` → mounted into `xj_winemu`). Our Worker is NOT on the Steam path. Only app-patch prereq for Steam downloads = clear guest → reach the QR; the USER then scans a real Steam QR. `y3u.x()` download capability gate = just a process check, not a blocker.
+
+### pre21 (`b432748`): imported local game missing from library = user_id mismatch
+DB dump `db_game_library.db` → `t_game_library_base`: the imported row is written under **`user_id=99999`**, but the session user_id is empty, so the library grid query (keyed on the auth read-key) never matches it. Fix: fake the UserProfile read-key `h()` to `99999` so read-key == write-key. Existing imports then appear WITHOUT re-import.
+
+### imagefs "Install ImageFs failed: package invalid" = the PLUGIN's multi-part downloader, NOT our API
+- **API/asset VERIFIED CORRECT** (user suspected the API; ruled out with proof): full 173,024,718-byte github asset `imagefs_142.zst` md5 = declared **`6bcdc256…`**; on-device catalog entry has our URL/md5/size; catalog-patched plugin `ee4bae17…` installed; download URL healthy (HTTP/2 **206**, `accept-ranges: bytes`, ~1 h token). Asset untouched since **June 6** — yesterday's bannerhub-api commits didn't touch it.
+- **Real cause:** 6.1.0's `:pcengine` plugin downloads the imagefs via a **3-part PARALLEL chunked download** (`imagefs.zst.part0/1/2`), stopping at **~80–90% at a DIFFERENT offset each attempt** → validates the truncated file → "package invalid". **6.0.9's HOST downloader (single stream) downloads the identical file fine.** Not disk (200 GB free), not OOM (process only froze AFTER the failure).
+- **FIX DIRECTION (user's call): force the plugin to download in ONE continuous stream like old builds.** We re-sign the plugin, so a plugin **smali patch** (chunk-count→1 / raise the multi-part size threshold above 173 MB, + OkHttp timeout bump if a single stream would also time out) is in our control ⇒ fixes it for ALL 6.1.0 users, no per-device seed. Deep-dive of the plugin's OkHttp downloader IN PROGRESS (also checking a user hypothesis: a plugin-only guard/`subData` validation the host ignores, or a re-sign side effect).
+
+⏭️ NEXT: deep-dive report → patch plugin downloader to single-stream → repack (dex-swap, apktool b fails under PRoot) + re-sign v6 → re-host on release `pcengine-plugin-610` + bump Worker `PCENGINE_PLUGIN` md5/sha256/size → clear plugin state to force re-fetch → device-test the full launch (imagefs → container → run).

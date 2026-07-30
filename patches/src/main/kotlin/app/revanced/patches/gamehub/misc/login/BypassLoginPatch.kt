@@ -225,20 +225,29 @@ val bypassLoginPatch = bytecodePatch(
         // device-proven to execute, and if a future base changes how the DB is
         // read they may carry the bypass on their own.
         // -----------------------------------------------------------------
-        // Injected into the AUTH IMPL CONSTRUCTOR rather than the application class.
-        // The app-class anchor (Lcom/xiaoji/egggame/AndroidApp;->onCreate) is correct
-        // in principle -- unobfuscated name, and DisableMobPushPatch already mutates
-        // that very class -- but the patcher rejected the injection there with
-        // "PatchException: classDef is null". Not worth fighting: the auth impl is a
-        // class this patch already mutates successfully three times over, and its
-        // constructor is an even better moment than onCreate, because it runs just
-        // BEFORE the Room-backed auth flows are created, so the seeded rows are
-        // present for the very first emission instead of arriving via invalidation.
-        // BhAuthSeed.seed() resolves its own Context via ActivityThread, so no
-        // Context parameter is needed here.
-        firstMethod {
-            definingClass == AUTH_IMPL && name == "<init>"
-        }.addInstructions(0, "invoke-static {}, $AUTH_SEED->seed()V")
+        // 🚨 DB SEEDING IS DISABLED — IT CORRUPTED THE DATABASE ON DEVICE.
+        //
+        // pre14-pre16 shipped a seeder that opened egggame.db with the FRAMEWORK
+        // SQLite (android.database.sqlite.SQLiteDatabase). Room 3 does not use the
+        // framework SQLite: it ships its own BUNDLED engine
+        // (androidx.sqlite.driver.bundled). Two different SQLite implementations
+        // writing the same WAL-mode file produced, on device:
+        //
+        //   FATAL EXCEPTION: android.database.SQLException: Error code: 11,
+        //   message: database disk image is malformed
+        //       at androidx.sqlite.driver.bundled.BundledSQLiteStatementKt.nativeReset
+        //
+        // The app crashed on first launch after install and worked on relaunch only
+        // because Room recovered the file. That is data corruption, not a cosmetic
+        // crash, and it is not an acceptable cost for a login bypass.
+        //
+        // The seeder's own safety rules covered the wrong risk: they guarded against
+        // CREATING the database, and said nothing about which SQLite implementation
+        // writes it. BhAuthSeed is left in the tree (unreferenced) with that lesson
+        // recorded, in case a bundled-driver rewrite is ever wanted.
+        //
+        // Not re-enabling without: using androidx.sqlite's BUNDLED driver so exactly
+        // one engine touches the file, plus an on-device integrity_check afterwards.
 
         // -----------------------------------------------------------------
         // AUTH_IMPL.h() — isLoggedIn StateFlow getter.

@@ -63,6 +63,18 @@ final class SyntheticModel {
                 if (!userIdPlaced && t == String.class) {
                     args[i] = userId;
                     userIdPlaced = true;
+                } else if (t == String.class) {
+                    // EMPTY STRING, NEVER NULL. Kotlin non-null parameters are
+                    // enforced inside the constructor, and R8 compiles those checks
+                    // down to a bare `invoke-virtual {pN} Object->getClass()` rather
+                    // than an Intrinsics call — so they are invisible if you grep for
+                    // `checkNotNullParameter` (which is exactly how I missed them).
+                    // Passing null to such a parameter throws NPE from INSIDE the
+                    // constructor, surfacing only as InvocationTargetException.
+                    // Device-diagnosed on 6.1.0: UserToken guards params 1-2 and
+                    // UserProfile guards 1 and 18 — all String — so filling every
+                    // String with "" satisfies them without caring which are guarded.
+                    args[i] = "";
                 } else {
                     args[i] = zeroFor(t);
                 }

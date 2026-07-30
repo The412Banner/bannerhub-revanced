@@ -4892,3 +4892,29 @@ Tab enum `Lrn9;`→`Lh5c;` (ordinals byte-identical). Also declared the `sharedG
 **Landmine:** naively stubbing the remaining `heartbeat/game/start` gate would **ClassCastException at game launch** — it's a launch interceptor whose result is branched, not discarded.
 **Free wins:** `GameIdDisplayMenuRowPatch` + `GogMenuRowPatch` need NO edit (already `if(false)`, they only cascade off the keystone) · `DisableFirebaseAutoInit` is a one-line re-anchor · `DisableHeartbeat` should be dropped (`use = false`), its target left with the emulator.
 **Agents corrected two of my briefs:** `libsteamkit_core.so` did NOT leave the host (it's in BOTH), and the vendor push SDKs were already in 6.0.9 — 610 only *registered* them at the manifest level (so that fix is a resource patch).
+
+## 2026-07-30 — ✅ Keystone applied; the cascade fired. SEVERE 15 → **11** (run `30511025155`, `10d93c6`)
+Green 9/9: **`Per-game menu id capture (shared)`** · `PC Vibration Settings menu row` · **`Show Game ID menu row`** · **`GOG menu row`** — the last two with **NO edits of their own**, purely as a dependency cascade off the keystone, as predicted.
+
+### Keystone re-derivation
+| site | 6.0.9 | 6.1.0 |
+|---|---|---|
+| M1 game-detail More Menu | `Llc7;->a` | **`Lbj9;->a`** — signature GAINED a `Z` at index 3 (7 params) |
+| M2 library-tile popup | `Lqqc;->f` | **`Ljzf;->f`** |
+| M3 library-list popup | `Lxdc;->b0` | **`Lokh;->k`** (still the globally-unique `(L,Z,8×L)→List` shape) |
+Row data `uhd`/`xoc`/`pcd` → `tzg`/`oxf`/`ctg`. All three signatures verified independently against the decompile rather than taken on trust from the agent report (they were accurate).
+
+### 🚨 The part that actually mattered: the RUNTIME half
+M3 would have applied 9/9 and captured **nothing**. 6.1.0 renders that context's id as a **plain int**: `LandHeroMenuContext(gameInfo=GameInfo(id=…, serverGameId=12345, …))`. `P_SERVER` wants the `ServerGameId(value=N)` wrapper, `P_GAMEID` wants a lowercase `gameId=`, and the reflective `GameInfo` fallback is dead (class now obfuscated to `Lv0a;`). Added `P_SERVER_PLAIN` anchored on the FULL `serverGameId=` label — deliberately not a loose `GameId=`, which the adjacent `libraryGameId=` token would have satisfied and captured the WRONG number. Confirmed the field really is an `int` in 610's GameInfo first. **Fourth "applies but does nothing" trap on this base.**
+
+### 🎁 One anchor is now permanent
+The vibration menu resolver has been re-pinned on EVERY bump (`Lxd3;->l1` → `Lok8;->c0` → … → `Ly99;->Z`). Because 6.1.0 stopped obfuscating the Compose-resources library it is simply `org.jetbrains.compose.resources.StringResourcesKt->stringResource(StringResource,Composer,I)`. R8 cannot rename it ⇒ should never need re-deriving again. (The exact 3-param list excludes the vararg format-args overload.)
+
+### 🐛 My own miss
+I expected `Banner Tools menu row` and `Show PC Game Settings row` to cascade green too. They did **not** — the agent report specified *additional* per-patch edits for both (the `INVOKE_VIRTUAL`→`INVOKE_INTERFACE` opcode change; 4 consts + the M1 predicate) which I skipped. **Cascade only applies to patches with no live anchors of their own** (i.e. the two whose bodies are already `if (false)`).
+
+### The remaining 11, triaged
+- **Mapped, just needs the edit (4):** Banner Tools menu row · Show PC Game Settings row · Disable Firebase auto-init (one-line) · Stub analytics events (delete the dead block).
+- **DROP, don't fix (3):** Disable heartbeat (target left with the emulator) · In-game performance overlay · Offline component picker (both plugin-side).
+- **Real work (4):** Debug logging (2 anchors unmapped) · In-game Steam chat overlay (blocked on the suspend-ABI change) · PC-accurate vibration + Recording-compatible audio (targets inside the PLUGIN ⇒ need a plugin-patch path).
+⚠️ Still zero device proof for ANY of this session's patch work. Also unfixed: Banner Tools injects inside a conditional branch (pre-existing since ≥6.0.9), so its row may not appear even now that it applies; and its runtime helper still holds 6.0.9 letters that no CI result can catch.

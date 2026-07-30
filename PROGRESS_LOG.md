@@ -4703,3 +4703,18 @@ Live script == repo `0f393a8` **byte-for-byte** after stripping CF's multipart e
 - Prior builds are structurally unable to reach the new code: the path is 6.1.0-only, exact-match, and the change was 70 insertions / 0 deletions.
 
 ⏭️ NEXT: device-test pre4 (run 30503506055). Success criterion = the installed plugin's md5 is **a07d9ef8…** (ours) not **0ab09364…** (XiaoJi's); ground truth `pc_engine_plugin_manager_journal.json` shows installedVersion 100-1 with no failures. Per the DEBUG RULE, verify the installed APK's sha256 against the staged build first.
+
+## 2026-07-30 — 🎯 SCOPE CHANGE: the 610 line is full BannerHub v6 again (commit `cbd2fc1`)
+User: *"we were only making this for the community to have a working vanilla gamehub with performance package names, this is work to build a full bannerhub v6 again now."*
+So the GameHub-identity framing from `0ffda36` is retired. Reversed its identity half: 9 variant labels `"Gamehub …"` → `"BannerHub v6 …"`, and **`Change app icon` re-enabled** (adaptive icon, Wine container header, auth/splash). `-d "Strip cloud gaming"` stays — still genuinely broken on 6.1.0. (The lone remaining "Change app icon" hit in release.yml is the docs table at :404, not a flag.)
+**Consequences:** the re-derivation backlog is now REQUIRED rather than optional · the deferred `push.permission.MESSAGE` fix is genuinely blocking again (multi-variant BannerHub releases are back) · release-notes prose needs BannerHub framing restored *on top of* the 609→610 rewrite it already needed.
+⚠️ pre4 (run 30503506055) predates this commit → those APKs still show stock GameHub icon + "Gamehub <variant>" label. Cosmetic only; does not affect the manifest-redirect test.
+
+### Staged for device test (both from run 30503506055, cert `10895a31…894ce0ba`)
+| variant | file | md5 | note |
+|---|---|---|---|
+| Genshin | `/sdcard/Download/BannerHub-V6-1.0.0-610-pre4-Patched-Genshin.apk` | `57e322fc11b9ce860edde557d00656dc` | ✅ **use this** — pkg `com.miHoYo.GenshinImpact` is free, clean install, no plugin state ⇒ guaranteed to exercise our manifest endpoint |
+| Normal | `/sdcard/Download/BannerHub-V6-1.0.0-610-pre4-Patched-Normal.apk` | `c895052cfbf0ce6f6fbc33277726deb6` | ⛔ **do not install** — `banner.hub` already installed at vc78 / 145 MB signed with the **AOSP testkey** (`a40da80a…`), not our v6 key ⇒ cert mismatch, install refuses; would need uninstalling that app and losing its data |
+
+Per-artifact dex verification (both variants): our manifest URL PRESENT · worker host PRESENT · `pe0` host PRESENT (untouched by design) · Online-enum `landscape-api-cn.vgabc.com` ABSENT (replaced) · Beta-enum hosts PRESENT (kept on purpose).
+Device state at staging time: `com.miHoYo.GenshinImpact` and `com.xiaoji.egggame` NOT installed (pre3 Genshin and the stock 6.1.0 are both gone); `gamehub.lite` installed at vc121 (a 609 build); no pcengine plugin state under either installed package.

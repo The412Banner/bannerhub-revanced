@@ -116,16 +116,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release download base-apk-610 \
-            --pattern "GameHub_6.1.0.apk" \
+          gh release download base-apk-611 \
+            --pattern "GameHub_6.1.1.apk" \
             --repo ${{ github.repository }} \
-            --output GameHub_6.1.0.apk
+            --output GameHub_6.1.1.apk
 
       - name: Stage shared artifacts
         run: |
           mkdir -p shared
           cp revanced-cli.jar shared/
-          cp GameHub_6.1.0.apk shared/
+          cp GameHub_6.1.1.apk shared/
           cp $(find patches/build/libs -name "*.rvp" ! -name "*-javadoc*" ! -name "*-sources*" | head -1) shared/patches.rvp
           # Side-channel artefacts that ship in the final release
           cp patches/build/libs/*.rvp shared/ 2>/dev/null || true
@@ -194,7 +194,7 @@ jobs:
           # parsed as a Java float suffix and triggers NumberFormatException
           # before the patch ever runs). The quotes also make values with
           # spaces (e.g. "BannerHub v6 PuBG CrossFire") a non-issue.
-          java -jar shared/revanced-cli.jar patch shared/GameHub_6.1.0.apk \
+          java -jar shared/revanced-cli.jar patch shared/GameHub_6.1.1.apk \
             --patches shared/patches.rvp \
             --bypass-verification \
             `# 610: "Strip cloud gaming" is broken on 6.1.0 (bytecode anchors gone) but its` \

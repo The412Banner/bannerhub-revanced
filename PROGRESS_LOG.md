@@ -1,5 +1,27 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-08-03 — 🆕 GameHub 6.1.1 (vc123) onboarded — base APK + `gamehub-611-build` (new DEFAULT) + first patch-apply pass
+
+**Housekeeping (done):**
+- **`base-apk-611`** pre-release created, asset `GameHub_6.1.1.apk` (76,715,233 B, sha256 `664037e338bc84a815f1b84747fe1d647b96664604107413656291ea645a3fc1`, md5 `bdbf223c9f36bbd862fa39c6a2841a60`).
+- **`gamehub-611-build`** branch cut from `origin/gamehub-610-build` (real tip `f31f3ae`; my local 610 was stale/diverged — reset first). Now the **repo default branch**.
+- `release.yml` bumped `base-apk-610`→`611` / `GameHub_6.1.0.apk`→`6.1.1.apk` (commit `03ec7cb`).
+- `patches/.../gamehub/Constants.kt` `GAMEHUB_VERSION` `6.1.0`→`6.1.1` (commit `0d889ac`) so patches aren't version-skipped.
+
+**6.1.1 vs 6.1.0 (small delta):** AndroidManifest byte-identical; only `libsteamkit_core.so` changed natively (+19.8 KB, Steam client); Compose/androidx lib bump; `features.game` strings + a Compose-resources module rename. Obfuscation seed mostly stable but XiaoJi single-letter classes reshuffled (fetcher `zy5`→`oz5`, pcengine manager `ivi`→`pyi`).
+
+**🔴 PC-engine change (the important one):** 6.1.1 REMOVED the pcengine manager's host-vs-plugin **signing-certificate** comparison (strings `Plugin signatures do not exactly match host signatures` / `Unable to read host signatures` gone; `getApkContentsSigners` cert-compare gone from `pyi`). Replaced by a **SHA-256 / identity / version integrity model** vs a committed manifest record (`expectedSha256`, `expectedPluginId`, `expectedSchemaVersion`, `expectedAbi`, `expectedVersionCode`, `expectedInstalledPath` + `pc_engine_active_plugin_identity` + recovery marker). Plugin CONTRACT (package `com.xiaoji.egggame.plugin.pcengine`, endpoint `game/mobile/v1/plugin/latest`, `plugin_name`/`schema_version`) is UNCHANGED ⇒ our Worker `-h1e` plugin serving still applies.
+
+**CI patch-apply pass** (dispatched `release.yml` workflow_dispatch, prerelease/artifact-only, `gamehub-611-build`):
+- pre1 run `30822653383` (before the version bump) = all patches version-SKIPPED (compatibleWith mismatch, no `--force`). Green build ≠ patches applied.
+- pre2 run `30823844691` (after bump) = fingerprints ran. **~29 apply · 19 fail · 10 legacy 6.0.4-pinned skipped.**
+- pcengine outcomes: ✅ `force Insecure validation` + ✅ `Redirect PC engine plugin manifest` apply; ❌ `bypass manager signature check` + ❌ `bypass install-time signature check` fail (fingerprint-null — the checks they bypass were removed → **retire these two**).
+- 19 fails (all `PatchException: Required value was null` or dependency cascade). **KEYSTONE = `Per-game menu id capture (shared)`** (cascades to Banner Tools / GOG / PC-Vibration / Show-Game-ID menu rows). Others: Bypass login, Debug logging, Disable Firebase auto-init, Disable heartbeat, Explore tab hijack, In-game perf overlay, In-game Steam chat overlay, Offline component picker, PC-accurate vibration, Recording-compatible audio, Show PC Game Settings row, Stub analytics events.
+- 10 legacy still `"6.0.4"`-pinned (renderer x3, GPU-spoof x3, GOG library card, OTA, Mute UI sounds) — left pinned; known-broken on 6.1.x.
+
+**⏭️ NEXT (resume order):** (1) retire the 2 dead pcengine sig patches, keep the 2 that apply; (2) device-validate the new plugin-integrity model against our Worker manifest (the real install risk); (3) re-derive the 19 fails, keystone `Per-game menu id capture` first, per the 610 re-derivation map + `fix-bypass-debug-first` order; (4) decide on the 10 legacy 6.0.4 patches. No stable cut until re-derivation lands and a device test passes.
+
+
 ## 2026-07-29 — 🔓 pcengine plugin signature bypass — 2 patches written (branch `feature/pcengine-signature-bypass`)
 
 Since 6.1.0 loads the PC emulator as a downloadable plugin whose signing cert must equal the HOST's, and every BannerHub build is re-signed with our own key, the genuine XiaoJi-signed plugin is rejected → no emulator. Device-proven via `pc_engine_plugin_manager_journal.json` (11× `Verification` failures 「插件签名与宿主不一致」). Two independent host-side gates, both patched:

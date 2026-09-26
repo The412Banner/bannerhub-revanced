@@ -12,6 +12,7 @@ import com.android.tools.smali.dexlib2.Opcode
 import com.android.tools.smali.dexlib2.iface.instruction.FiveRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.OneRegisterInstruction
 import com.android.tools.smali.dexlib2.iface.instruction.ReferenceInstruction
+import com.android.tools.smali.dexlib2.iface.instruction.RegisterRangeInstruction
 import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 
 // =========================================================================
@@ -48,8 +49,15 @@ import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 // (lc7.a calls Lbmc;->add ×12; xdc.b0 finalizes via Lv33;->u(List)Lbmc;). M2
 // collector Llp0;->R([Object)List → Lxq0;->a0([Object)ArrayList (name R→a0); M3
 // finalize Lny2;->C → Lv33;->u. Patch checks neither's return type.
-private const val ROW_DATA      = "Luhd;"
-private const val LIST_BUILDER  = "Lbmc;"
+// 6.3.1 (~/gh631-apktool-d, keystone map in MenuGameIdCapturePatch): ROW_DATA
+// Luhd;->Lcpm;(DrawableResource,String,Function1) ×12 in Lwhd;->a. The list
+// builder is no longer a lettered class: whd.a does CollectionsKt.createListBuilder()
+// → java.util.List.add(Object)Z (invoke-INTERFACE ×13) → CollectionsKt.build(List).
+// M2 (Lxmk;->f) collects rows via CollectionsKt.listOfNotNull([Object)List; M3
+// (Lbp20;->v) finalizes via CollectionsKt.build(List)List. All three collector
+// anchors are now un-obfuscated kotlin stdlib names → stable across R8 reshuffles.
+private const val ROW_DATA      = "Lcpm;"
+private const val COLLECTIONS   = "Lkotlin/collections/CollectionsKt;"
 private const val CLICK_HANDLER =
     "Lcom/xj/winemu/bannertools/BhBannerToolsMenuRowClick;"
 
@@ -77,8 +85,18 @@ val bannerToolsMenuRowPatch = bytecodePatch(
         // (Steam restructure; row ctor Liae(Lo05,String,Lpw6)→Ltyc(Ln55,
         // String,Lgv6); 6.0.4 Lwhl;->S label sget anchor dropped). The Ltyc
         // ctor anchor uniquely picks c37 (param sig is shared by su/v90 too).
+        // 6.3.1: Lwhd;->a(Lwed;ILkotlin/jvm/functions/Function0;ZLj0e;Composer;I)V
+        // (same anchor as the keystone). Rows go through a kotlin buildList:
+        // createListBuilder() → List.add ×13 (every one inside a per-row gate)
+        // → CollectionsKt.build(vBuilder). We inject right BEFORE that single
+        // unconditional build() call, so our row is appended regardless of
+        // which native rows were gated off (the old "after the last add()"
+        // site sat inside the last row's if-block).
         val menuMethod = firstMethod {
-            parameterTypes == listOf("Lpa7;", "I", "Lr47;", "Lrq7;", "Lgm3;", "I") &&
+            parameterTypes == listOf(
+                "Lwed;", "I", "Lkotlin/jvm/functions/Function0;", "Z", "Lj0e;",
+                "Landroidx/compose/runtime/Composer;", "I",
+            ) &&
                 returnType == "V" &&
                 (implementation?.instructions?.any { ins ->
                     ins.opcode == Opcode.INVOKE_DIRECT &&
@@ -87,36 +105,40 @@ val bannerToolsMenuRowPatch = bytecodePatch(
                                     it.definingClass == ROW_DATA &&
                                     it.name == "<init>" &&
                                     it.parameterTypes.toList() == listOf(
-                                        "Lqd5;", "Ljava/lang/String;", "Lt47;"
+                                        "Lorg/jetbrains/compose/resources/DrawableResource;",
+                                        "Ljava/lang/String;",
+                                        "Lkotlin/jvm/functions/Function1;",
                                     )
                             } == true
                 } ?: false)
         }
 
         val instructions = menuMethod.implementation!!.instructions.toList()
-        val lastAddIdx = instructions.indexOfLast { ins ->
-            ins.opcode == Opcode.INVOKE_VIRTUAL &&
+        val buildIdx = instructions.indexOfLast { ins ->
+            ins.opcode == Opcode.INVOKE_STATIC &&
                 (ins as? ReferenceInstruction)?.getReference<MethodReference>()
                     ?.let {
-                        it.definingClass == LIST_BUILDER &&
-                            it.name == "add" &&
-                            it.parameterTypes.toList() == listOf("Ljava/lang/Object;") &&
-                            it.returnType == "Z"
+                        it.definingClass == COLLECTIONS &&
+                            it.name == "build" &&
+                            it.parameterTypes.toList() == listOf("Ljava/util/List;")
                     } == true
         }
-        require(lastAddIdx >= 0) {
-            "BannerToolsMenuRowPatch: no $LIST_BUILDER;->add(Object)Z in menu method body"
+        require(buildIdx >= 0) {
+            "BannerToolsMenuRowPatch: no CollectionsKt.build(List) in menu method body"
         }
-        // The list builder is the INSTANCE register of the add() call
-        // (invoke-virtual {vBuilder, vRow}, Lj3c;->add) — 6.0.7 keeps it in
-        // v3, not the hardcoded v4 the 6.0.4 patch used. Derive it.
-        val builderReg = (instructions[lastAddIdx] as FiveRegisterInstruction).registerC
+        // The list builder is the sole argument register of build() — either
+        // invoke form, depending on how high R8 allocated the register.
+        val builderReg = when (val buildIns = instructions[buildIdx]) {
+            is FiveRegisterInstruction -> buildIns.registerC
+            is RegisterRangeInstruction -> buildIns.startRegister
+            else -> error("BannerToolsMenuRowPatch: unexpected build() invoke form ${buildIns.opcode}")
+        }
         val site1Call = if (builderReg <= 15) {
             "invoke-static {v$builderReg}, $CLICK_HANDLER->appendBannerToolsRowTo(Ljava/lang/Object;)V"
         } else {
             "invoke-static/range {v$builderReg .. v$builderReg}, $CLICK_HANDLER->appendBannerToolsRowTo(Ljava/lang/Object;)V"
         }
-        menuMethod.addInstructions(lastAddIdx + 1, site1Call)
+        menuMethod.addInstructions(buildIdx, site1Call)
 
         // ── Injection 2: library-tile popup (6.0.7 Ly7c;->f) ───────────────
         // 6.0.4 Lted;->f(Lued;..Lv83;I)V → Ly7c;->f(Lz7c;Lgv6;Lev6;ZLfyc;Leh3;I)V
@@ -125,19 +147,28 @@ val bannerToolsMenuRowPatch = bytecodePatch(
         // row list via filled-new-array {…},[Lg6c; then Llp0;->R([Object)
         // ArrayList. We inject right after that R() call (same shape as the
         // old Lqs2;->H site: move-result-object holds the row list).
+        // 6.3.1: Lxmk;->f(Lymk;Function1;Function0;ZModifier;Composer;I)V (keystone
+        // M2). Tile rows Lxoc;→Lblk;(String,String,Function0,DrawableResource) ×5,
+        // collected via CollectionsKt.listOfNotNull([Object)List (the lettered
+        // Lxq0;->a0 collector is gone). We inject right after that call's
+        // move-result-object, same shape as before.
         val libraryMenuMethod = firstMethod {
-            parameterTypes == listOf("Lrqc;", "Lt47;", "Lr47;", "Z", "Lfhd;", "Lgm3;", "I") &&
+            parameterTypes == listOf(
+                "Lymk;", "Lkotlin/jvm/functions/Function1;", "Lkotlin/jvm/functions/Function0;",
+                "Z", "Landroidx/compose/ui/Modifier;",
+                "Landroidx/compose/runtime/Composer;", "I",
+            ) &&
                 returnType == "V" &&
                 (implementation?.instructions?.count { ins ->
                     ins.opcode == Opcode.INVOKE_DIRECT &&
                         (ins as? ReferenceInstruction)?.getReference<MethodReference>()
-                            ?.let { it.definingClass == "Lxoc;" && it.name == "<init>" } == true
+                            ?.let { it.definingClass == "Lblk;" && it.name == "<init>" } == true
                 } ?: 0) >= 4 &&
                 (implementation?.instructions?.any { ins ->
                     ins.opcode == Opcode.INVOKE_STATIC &&
                         (ins as? ReferenceInstruction)?.getReference<MethodReference>()
                             ?.let {
-                                it.definingClass == "Lxq0;" && it.name == "a0" &&
+                                it.definingClass == COLLECTIONS && it.name == "listOfNotNull" &&
                                     it.parameterTypes.toList() == listOf("[Ljava/lang/Object;")
                             } == true
                 } ?: false)
@@ -148,16 +179,16 @@ val bannerToolsMenuRowPatch = bytecodePatch(
             ins.opcode == Opcode.INVOKE_STATIC &&
                 (ins as? ReferenceInstruction)?.getReference<MethodReference>()
                     ?.let {
-                        it.definingClass == "Lxq0;" && it.name == "a0" &&
+                        it.definingClass == COLLECTIONS && it.name == "listOfNotNull" &&
                             it.parameterTypes.toList() == listOf("[Ljava/lang/Object;")
                     } == true
         }
         require(arraysAsListIdx >= 0) {
-            "BannerToolsMenuRowPatch: Lxq0;->a0 row-list build not found in qqc.f()"
+            "BannerToolsMenuRowPatch: CollectionsKt.listOfNotNull row-list build not found in xmk.f()"
         }
         val moveResultIns = libInstructions[arraysAsListIdx + 1]
         require(moveResultIns.opcode == Opcode.MOVE_RESULT_OBJECT) {
-            "BannerToolsMenuRowPatch: expected move-result-object after Lqs2;->H"
+            "BannerToolsMenuRowPatch: expected move-result-object after listOfNotNull"
         }
         val listReg = (moveResultIns as OneRegisterInstruction).registerA
         val callSmali = if (listReg <= 15) {
@@ -181,10 +212,14 @@ val bannerToolsMenuRowPatch = bytecodePatch(
         // fails). 6.0.4 finalized via virtual Lx9d;->i()Lx9d;; 6.0.7 uses the
         // STATIC Lny2;->C(Ljava/util/List;)Lj3c; (row builder Lx9d→Lj3c),
         // followed by move-result-object + return-object.
+        // 6.3.1: Lbp20;->v(Ln1j;ZLy7k;Ly7k;Lj7j;Lj7j;Lhnh;Lxv;Lx7k;Ly7k;)List (keystone
+        // M3, globally-unique shape). Rows Lctg;→Ldzl;(StringResource,Function0,I) ×8
+        // into a buildList; finalize is CollectionsKt.build(List)List → move-result
+        // → return-object, so the old Lv33;->u anchor becomes the stdlib name.
         val pzcMethod = firstMethod {
             parameterTypes == listOf(
-                "Ljhb;", "Z", "Lobc;", "Lobc;", "Lgj8;", "Lgj8;",
-                "Lplb;", "Ltz;", "Lnbc;", "Lobc;"
+                "Ln1j;", "Z", "Ly7k;", "Ly7k;", "Lj7j;", "Lj7j;",
+                "Lhnh;", "Lxv;", "Lx7k;", "Ly7k;",
             ) &&
                 returnType == "Ljava/util/List;"
         }
@@ -193,10 +228,10 @@ val bannerToolsMenuRowPatch = bytecodePatch(
         val finalizeIdx = pzcInstructions.indexOfLast { ins ->
             ins.opcode == Opcode.INVOKE_STATIC &&
                 (ins as? ReferenceInstruction)?.getReference<MethodReference>()
-                    ?.let { it.definingClass == "Lv33;" && it.name == "u" } == true
+                    ?.let { it.definingClass == COLLECTIONS && it.name == "build" } == true
         }
         require(finalizeIdx >= 0) {
-            "BannerToolsMenuRowPatch: no Lv33;->u() finalize call in b0()"
+            "BannerToolsMenuRowPatch: no CollectionsKt.build() finalize call in bp20.v()"
         }
         val pzcReturnIdx = (finalizeIdx until pzcInstructions.size).firstOrNull { i ->
             pzcInstructions[i].opcode == Opcode.RETURN_OBJECT

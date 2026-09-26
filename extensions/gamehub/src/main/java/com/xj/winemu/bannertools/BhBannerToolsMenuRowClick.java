@@ -46,6 +46,21 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
     private static final String ROW_LABEL = "Banner Tools";
     private static final String ACTION_ID = "local_detail_menu_banner_tools";
     static final String LABEL_SENTINEL = "string:bh_banner_tools_label";
+    static final String LABEL_SENTINEL_KEY = "bh_banner_tools_label";
+
+    // ── 6.3.1 host letter map (re-derive on every base bump; see the patch
+    // headers in patches/.../gamehub/common/MenuGameIdCapturePatch.kt) ──
+    // 6.0.9 → 6.3.1: uhd→cpm, xoc→blk, pcd→dzl, yc5.x→ena.L; qd5/t47/r47/lok are
+    // now the real library names (un-obfuscated since 6.1.0).
+    private static final String MORE_MENU_ROW_CLS = "cpm";   // MoreMenuItem(DrawableResource,String,Function1)
+    private static final String TILE_ROW_CLS      = "blk";   // LocalDetailMoreMenuItem(String,String,Function0,DrawableResource)
+    private static final String LIST_ROW_CLS      = "dzl";   // MenuItemData(Function0,StringResource,boolean)
+    private static final String ICON_HOLDER_CLS   = "ena";   // Lena;->L:Lkotlin/Lazy; = drawable:core_icon_pc
+    private static final String ICON_HOLDER_FIELD = "L";
+    private static final String DRAWABLE_RES_CLS  = "org.jetbrains.compose.resources.DrawableResource";
+    private static final String STRING_RES_CLS    = "org.jetbrains.compose.resources.StringResource";
+    private static final String FUNCTION0_CLS     = "kotlin.jvm.functions.Function0";
+    private static final String FUNCTION1_CLS     = "kotlin.jvm.functions.Function1";
 
     // Tile spec: short label + drawable name resolved at runtime via
     // Resources.getIdentifier() (R class belongs to the foreign GameHub pkg).
@@ -344,13 +359,17 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
             // Lv45.l → Lu3k.getValue() unwrap is gone; we load a ready-made
             // static Lqd5 directly (see loadStaticIcon). onClick Lfv6→Lt47
             // (Function1: invoke(Object)Object).
-            Class<?> uhdCls = Class.forName("uhd");
-            Class<?> qd5Cls = Class.forName("qd5");
-            Class<?> t47Cls = Class.forName("t47");
+            // 6.3.1: row Luhd→Lcpm "MoreMenuItem(iconRes, label, onClick, d)". The
+            // library types are un-obfuscated since 6.1.0: icon is
+            // org.jetbrains.compose.resources.DrawableResource, onClick is
+            // kotlin.jvm.functions.Function1 — only the row class letter moves.
+            Class<?> uhdCls = Class.forName(MORE_MENU_ROW_CLS);
+            Class<?> qd5Cls = Class.forName(DRAWABLE_RES_CLS);
+            Class<?> t47Cls = Class.forName(FUNCTION1_CLS);
 
             Object icon = loadStaticIcon();
             if (icon == null || !qd5Cls.isInstance(icon)) {
-                Log.w(TAG, "no Lqd5 icon resolved; skipping More-Menu row");
+                Log.w(TAG, "no DrawableResource icon resolved; skipping More-Menu row");
                 return;
             }
 
@@ -379,11 +398,15 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
      */
     private static Object loadStaticIcon() {
         try {
-            Field f = Class.forName("yc5").getDeclaredField("x");
+            // 6.3.1: the native "PC Game Settings" row (first row in Lwhd;->a)
+            // takes its icon from Lena;->L:Lkotlin/Lazy; = drawable:core_icon_pc
+            // (an .xml vector, so it survives the vector-only loader). The lazy
+            // wrapper is plain kotlin.Lazy now.
+            Field f = Class.forName(ICON_HOLDER_CLS).getDeclaredField(ICON_HOLDER_FIELD);
             f.setAccessible(true);
-            Object wrapper = f.get(null);          // Lkwk lazy wrapper
+            Object wrapper = f.get(null);          // kotlin.Lazy<DrawableResource>
             if (wrapper == null) return null;
-            return wrapper.getClass().getMethod("getValue").invoke(wrapper);  // Lqd5
+            return wrapper.getClass().getMethod("getValue").invoke(wrapper);  // DrawableResource
         } catch (Throwable t) {
             Log.w(TAG, "loadStaticIcon failed", t);
             return null;
@@ -402,18 +425,21 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
             // 6.0.9: tile row Lj6c→Lxoc (ctor String action, Lqd5 icon, String
             // label, Lr47 onClick). Icon is now Lqd5 DrawableResource (load a
             // static one, no getValue unwrap). onClick Ldv6→Lr47 (Function0).
-            Class<?> xocCls = Class.forName("xoc");
-            Class<?> qd5Cls = Class.forName("qd5");
-            Class<?> r47Cls = Class.forName("r47");
+            // 6.3.1: tile row Lxoc→Lblk "LocalDetailMoreMenuItem(id, icon, label,
+            // onClick)" — ctor PARAM ORDER is (String id, String label, Function0
+            // onClick, DrawableResource icon) (fields a=id b=icon c=label d=onClick).
+            Class<?> xocCls = Class.forName(TILE_ROW_CLS);
+            Class<?> qd5Cls = Class.forName(DRAWABLE_RES_CLS);
+            Class<?> r47Cls = Class.forName(FUNCTION0_CLS);
 
             Object icon = loadStaticIcon();
             if (icon == null || !qd5Cls.isInstance(icon)) return safeReturn(original);
 
             Object click = newFunction0Proxy(r47Cls);
             java.lang.reflect.Constructor<?> ctor =
-                xocCls.getDeclaredConstructor(String.class, qd5Cls, String.class, r47Cls);
+                xocCls.getDeclaredConstructor(String.class, String.class, r47Cls, qd5Cls);
             ctor.setAccessible(true);
-            augmented.add(ctor.newInstance(ACTION_ID, icon, ROW_LABEL, click));
+            augmented.add(ctor.newInstance(ACTION_ID, ROW_LABEL, click, icon));
             return augmented;
         } catch (Throwable t) {
             Log.w(TAG, "appendScdRowToTedList failed", t);
@@ -438,32 +464,28 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
             // 6.0.9: list-popup row Lvtc→Lpcd (ctor Llok label, Lr47 onClick, int
             // — NO icon param). StringResource Lkwj→Llok; resource base Lvhg→Lo4h
             // (a=key, b=locales); onClick Ldv6→Lr47 (Function0).
-            Class<?> pcdCls = Class.forName("pcd");
-            Class<?> lokCls = Class.forName("lok");
-            Class<?> o4hCls = Class.forName("o4h");
-            Class<?> r47Cls = Class.forName("r47");
+            // 6.3.1: list-popup row Lpcd→Ldzl "MenuItemData(textRes, b, onClick)",
+            // primary ctor (Function0 onClick, StringResource textRes, boolean b);
+            // native rows pass b=true (synthetic mask 0x6 → bit 0x4 set). The label
+            // is the REAL org.jetbrains.compose.resources.StringResource now, with a
+            // public (String id, String key, Set items) ctor — super Lpms; stores
+            // id in field `a`, which is what maybeResolveCustomLabel reads — so no
+            // Unsafe allocation is needed any more.
+            Class<?> pcdCls = Class.forName(LIST_ROW_CLS);
+            Class<?> lokCls = Class.forName(STRING_RES_CLS);
+            Class<?> r47Cls = Class.forName(FUNCTION0_CLS);
 
-            // Llok is an empty Kotlin subclass of Lo4h — allocate via
-            // Unsafe (skips ctor) and reflect-set inherited fields. Same
-            // technique as the 4 per-feature handlers.
-            Class<?> unsafeCls = Class.forName("sun.misc.Unsafe");
-            Field theUnsafe = unsafeCls.getDeclaredField("theUnsafe");
-            theUnsafe.setAccessible(true);
-            Object unsafe = theUnsafe.get(null);
-            Object label = unsafeCls.getMethod("allocateInstance", Class.class)
-                .invoke(unsafe, lokCls);
-            Field aField = o4hCls.getDeclaredField("a");
-            aField.setAccessible(true);
-            aField.set(label, LABEL_SENTINEL);
-            Field bField = o4hCls.getDeclaredField("b");
-            bField.setAccessible(true);
-            bField.set(label, java.util.Collections.emptySet());
+            java.lang.reflect.Constructor<?> labelCtor =
+                lokCls.getDeclaredConstructor(String.class, String.class, java.util.Set.class);
+            labelCtor.setAccessible(true);
+            Object label = labelCtor.newInstance(
+                LABEL_SENTINEL, LABEL_SENTINEL_KEY, java.util.Collections.emptySet());
 
             Object click = newFunction0Proxy(r47Cls);
             java.lang.reflect.Constructor<?> z4eCtor =
-                pcdCls.getDeclaredConstructor(lokCls, r47Cls, int.class);
+                pcdCls.getDeclaredConstructor(r47Cls, lokCls, boolean.class);
             z4eCtor.setAccessible(true);
-            augmented.add(z4eCtor.newInstance(label, click, 0));
+            augmented.add(z4eCtor.newInstance(click, label, true));
             return augmented;
         } catch (Throwable t) {
             Log.w(TAG, "appendLibraryPopupRow failed", t);

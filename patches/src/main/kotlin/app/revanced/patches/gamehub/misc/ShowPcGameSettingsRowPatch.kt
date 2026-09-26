@@ -79,10 +79,17 @@ import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 // (the gate `if-eqz v51, :cond_55` sits ~6 instrs before it). Menu method
 // La37;->Llc7; sig (Lpa7;ILr47;Lrq7;Lgm3;I)V, row ctor Lwyc;->Luhd;
 // (Lqd5;,String,Lt47;). Wrapper Lb4k;->Lkwk;.
-private const val PC_SETTINGS_LABEL_CLASS = "Lnkk;"   // 6.0.8: Lssj;  6.0.7: Llsj;  6.0.4: Lmil;
-private const val PC_SETTINGS_LABEL_FIELD = "q0"      // 6.0.8: c0  (Lwik StringResource idx 0x15)
-private const val LABEL_WRAPPER = "Lkwk;"             // 6.0.8: Lb4k;  6.0.7: Lu3k;  6.0.4: Lxrl;
-private const val ROW_DATA = "Luhd;"                  // 6.0.8: Lwyc;  6.0.7: Ltyc;  6.0.4: Liae;  (More-Menu row item)
+// 6.3.1 verified (~/gh631-apktool-d): the lazy wrapper is now plain kotlin.Lazy
+// (library types un-obfuscated since 6.1.0). Label = Lekx;->x:Lkotlin/Lazy;
+// (λ Lqix;(0x13) → "string:features_game_pc_settings"), sget exactly once in the
+// menu method Lwhd;->a(Lwed;ILkotlin/jvm/functions/Function0;ZLj0e;Composer;I)V;
+// the gate `if-eqz v32, :cond_65` sits right after createListBuilder(), ~9 instrs
+// before the label sget (the row icon Lena;->L = core_icon_pc is in between).
+// Row ctor Luhd;→Lcpm;(DrawableResource,String,Function1), built 12× here.
+private const val PC_SETTINGS_LABEL_CLASS = "Lekx;"   // 6.0.9: Lnkk;  6.0.8: Lssj;  6.0.7: Llsj;  6.0.4: Lmil;
+private const val PC_SETTINGS_LABEL_FIELD = "x"       // 6.0.9: q0  6.0.8: c0
+private const val LABEL_WRAPPER = "Lkotlin/Lazy;"     // 6.0.9: Lkwk;  6.0.8: Lb4k;  6.0.7: Lu3k;  6.0.4: Lxrl;
+private const val ROW_DATA = "Lcpm;"                  // 6.0.9: Luhd;  6.0.8: Lwyc;  6.0.7: Ltyc;  6.0.4: Liae;  (More-Menu row item)
 
 private const val MAX_BACKWARD_SCAN = 40
 
@@ -103,7 +110,10 @@ val showPcGameSettingsRowPatch = bytecodePatch(
         // the presence of the More-Menu row-item constructor (ROW_DATA), which
         // is unique to this method among any signature sig-sharers.
         val menuMethod = firstMethod {
-            parameterTypes == listOf("Lpa7;", "I", "Lr47;", "Lrq7;", "Lgm3;", "I") &&
+            parameterTypes == listOf(
+                "Lwed;", "I", "Lkotlin/jvm/functions/Function0;", "Z", "Lj0e;",
+                "Landroidx/compose/runtime/Composer;", "I",
+            ) &&
                 returnType == "V" &&
                 (implementation?.instructions?.any { ins ->
                     ins.opcode == Opcode.INVOKE_DIRECT &&
@@ -112,7 +122,9 @@ val showPcGameSettingsRowPatch = bytecodePatch(
                                     it.definingClass == ROW_DATA &&
                                     it.name == "<init>" &&
                                     it.parameterTypes.toList() == listOf(
-                                        "Lqd5;", "Ljava/lang/String;", "Lt47;"
+                                        "Lorg/jetbrains/compose/resources/DrawableResource;",
+                                        "Ljava/lang/String;",
+                                        "Lkotlin/jvm/functions/Function1;",
                                     )
                             } == true
                 } ?: false)

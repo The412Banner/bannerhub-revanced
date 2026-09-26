@@ -72,9 +72,16 @@ val menuGameIdCapturePatch = bytecodePatch(
         // ⚠️ Ltzg; also gained a 4-arg ctor overload (DrawableResource,String,
         // Function1,Z). Keep the exact 3-arg param list below, or the count logic
         // in dependent patches shifts from 11 to 12.
+        // 6.3.1: Lbj9;->a → Lwhd;->a(Lwed;ILkotlin/jvm/functions/Function0;ZLj0e;
+        //   Landroidx/compose/runtime/Composer;I)V — same 7-param shape, apk-unique
+        //   (only whd.a has (L,I,Function0,Z,Lj0e,Composer,I)V). p0 Ljg9;→Lwed; =
+        //   GameDetailArgs ("GameDetailArgs(gameId=" in wed). Row data
+        //   Ltzg;→Lcpm;(DrawableResource,String,Function1), now built 12× here
+        //   (6.3.x added one More-Menu row) — dependents that count rows must
+        //   expect 12.
         val menuMethod = firstMethod {
             parameterTypes == listOf(
-                "Ljg9;", "I", "Lkotlin/jvm/functions/Function0;", "Z", "Le0a;",
+                "Lwed;", "I", "Lkotlin/jvm/functions/Function0;", "Z", "Lj0e;",
                 "Landroidx/compose/runtime/Composer;", "I",
             ) &&
                 returnType == "V" &&
@@ -82,7 +89,7 @@ val menuGameIdCapturePatch = bytecodePatch(
                     ins.opcode == Opcode.INVOKE_DIRECT &&
                         (ins as? ReferenceInstruction)?.reference
                             ?.let { it is MethodReference &&
-                                    it.definingClass == "Ltzg;" &&
+                                    it.definingClass == "Lcpm;" &&
                                     it.name == "<init>" &&
                                     it.parameterTypes.toList() == listOf(
                                         "Lorg/jetbrains/compose/resources/DrawableResource;",
@@ -114,9 +121,15 @@ val menuGameIdCapturePatch = bytecodePatch(
         // Lfhd; was simply Modifier all along (now spelled out).
         // p0 Lrqc;→Lkzf; = LocalGameDetailState ("LocalGameDetailState(coverImage="
         // in kzf). Tile row ctor Lxoc;→Loxf;, built 5× here.
+        // 6.3.1: Ljzf;->f → Lxmk;->f(Lymk;Function1;Function0;ZModifier;Composer;I)V.
+        //   p0 Lkzf;→Lymk; = LocalGameDetailState ("LocalGameDetailState(coverImage="
+        //   in ymk). Tile row ctor Loxf;→Lblk;(String,String,Function0,
+        //   DrawableResource) — param ORDER changed, only class+name are anchored —
+        //   built 5× here. A sibling Lnws;->d(Lows;…) shares the 7-param shape with a
+        //   different p0; the explicit p0 type keeps this unique.
         val libraryMenuMethod = firstMethod {
             parameterTypes == listOf(
-                "Lkzf;", "Lkotlin/jvm/functions/Function1;", "Lkotlin/jvm/functions/Function0;",
+                "Lymk;", "Lkotlin/jvm/functions/Function1;", "Lkotlin/jvm/functions/Function0;",
                 "Z", "Landroidx/compose/ui/Modifier;",
                 "Landroidx/compose/runtime/Composer;", "I",
             ) &&
@@ -124,7 +137,7 @@ val menuGameIdCapturePatch = bytecodePatch(
                 (implementation?.instructions?.count { ins ->
                     ins.opcode == Opcode.INVOKE_DIRECT &&
                         (ins as? ReferenceInstruction)?.getReference<MethodReference>()
-                            ?.let { it.definingClass == "Loxf;" && it.name == "<init>" } == true
+                            ?.let { it.definingClass == "Lblk;" && it.name == "<init>" } == true
                 } ?: 0) >= 4
         }
         libraryMenuMethod.addInstructions(0, capture)
@@ -169,10 +182,15 @@ val menuGameIdCapturePatch = bytecodePatch(
         // `Class.forName("…game.di.model.game.GameInfo")` fallback is dead because
         // 6.1.0 obfuscated that class to Lv0a;. M1 is unaffected (its
         // GameDetailArgs.toString does carry `gameId=ServerGameId(value=N)`).
+        // 6.3.1: Lokh;->k → Lbp20;->v(Ln1j;ZLy7k;Ly7k;Lj7j;Lj7j;Lhnh;Lxv;Lx7k;
+        //   Ly7k;)Ljava/util/List; — still the globally-unique (L,Z,8×L)→List shape
+        //   (1 method in the apk). p0 Llke;→Ln1j; = LandHeroMenuContext
+        //   ("LandHeroMenuContext(gameInfo=" in n1j); row ctor Lctg;→Ldzl;
+        //   (StringResource,Function0,I), built 8× here.
         val pzcMethod = firstMethod {
             parameterTypes == listOf(
-                "Llke;", "Z", "Lwmf;", "Lwmf;", "Lkna;", "Lkna;",
-                "Lcef;", "Ls40;", "Lvmf;", "Lwmf;",
+                "Ln1j;", "Z", "Ly7k;", "Ly7k;", "Lj7j;", "Lj7j;",
+                "Lhnh;", "Lxv;", "Lx7k;", "Ly7k;",
             ) &&
                 returnType == "Ljava/util/List;"
         }

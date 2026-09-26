@@ -83,7 +83,19 @@ private const val CLICK = "Lcom/xj/winemu/explore/BhExploreTabClick;"
 // TWO such enums (Lh5c; = live nav, Lnd; = the analytics mirror, ex-Laa;), exactly
 // as 6.0.9 did (Lrn9; + Laa;). The enum letter must stay pinned, or the predicate
 // must additionally assert the parameter enum's constant names.
-private const val TAB_ENUM = "Lh5c;"
+// 6.1.0 → 6.3.1: bottom-nav VM sac→akg (smali_classes4/akg.smali, super Loa3;),
+// tab-select dispatch v()→w(Lkgg;)V (:1847 — the CAS loop over akg.v
+// MutableStateFlow<jjg> that copies the tab into the nav state and emits
+// "main_menu" when the tab is kgg.d = LIBRARY), tab enum Lh5c;→Lkgg;
+// (smali_classes3/kgg.smali: enum a..e = HOME(0) / COMMUNITY(1) / LEADERBOARD(2) /
+// LIBRARY(3) / PROFILE(4) — ordinal 1 was renamed PLAY→COMMUNITY upstream, but
+// ordinal 0 is still HOME = the Explore bar item, so CLICK's ordinal check holds).
+// "main_menu" occurs in exactly two classes on 6.3.1: akg (ctor default-tab seed
+// :278, w() :1940, y(Lyig;)V :2300 — y takes a plain class, not the enum) and
+// iak (a Composable with 17 params). akg.w is therefore the ONLY
+// (one param == Lkgg;, returns V, contains "main_menu") method app-wide; siblings
+// akg.s(Lkgg;)V / akg.u(Lkgg;)V carry no "main_menu".
+private const val TAB_ENUM = "Lkgg;"
 private const val ANCHOR_STRING = "main_menu"
 
 @Suppress("unused")

@@ -51,7 +51,23 @@ import com.android.tools.smali.dexlib2.iface.reference.StringReference
 // the cut point is the first MONITOR_ENTER, which is structural (not name-based).
 // =============================================================================
 
-private const val ANCHOR_STRING = "FirebaseCrashlytics component is not present."
+// 6.1.0+: the helper no longer inlines the `requireNotNull(FirebaseApp.get(Crashlytics))`
+// check — it calls FirebaseCrashlytics.getInstance() directly, so the "component is
+// not present." string now lives ONLY inside com.google.firebase.crashlytics.
+// FirebaseCrashlytics itself and the old anchor resolves to nothing (SEVERE on
+// 6.1.x and 6.3.1 alike).
+// 6.3.1 (~/gh631-apktool-d, smali_classes3/com/xiaoji/egggame/AndroidApp.smali):
+// the helper is `a()V` (:206–585), called from onCreate (:5209). It still does
+// FirebaseApp.g(ctx)/getInstance()/a() (:229–259), then `monitor-enter` (:280) and
+// putBoolean("firebase_data_collection_default_enabled", true) (:304), then
+// FirebaseCrashlytics.getInstance() (:392) + "firebase_crashlytics_collection_enabled"
+// (:424) under further monitors. Re-anchored on the never-obfuscated
+// SharedPreferences KEY "firebase_data_collection_default_enabled", which occurs
+// in exactly one method of AndroidApp (app-wide it also appears in the Firebase
+// SDK's own Lvw8;/Luw8; storage classes, which the definingClass check excludes).
+// The cut is still the first MONITOR_ENTER: after the FirebaseApp init, before
+// the re-enable, lock-balanced.
+private const val ANCHOR_STRING = "firebase_data_collection_default_enabled"
 
 @Suppress("unused")
 val disableFirebaseAutoInitPatch = bytecodePatch(
@@ -62,8 +78,8 @@ val disableFirebaseAutoInitPatch = bytecodePatch(
         "switches). Returns right after FirebaseApp init but before the collection re-enable, so " +
         "FirebaseApp still initializes (other code needs it) while Crashlytics stays off — removing " +
         "the residual firebase-settings.crashlytics.com / firebaselogging-pa.googleapis.com / " +
-        "firebaseinstallations.googleapis.com traffic. Anchored on the app class + a stable Firebase " +
-        "error string; cut at the first monitor-enter.",
+        "firebaseinstallations.googleapis.com traffic. Anchored on the app class + the stable " +
+        "firebase_data_collection_default_enabled preference key; cut at the first monitor-enter.",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
 

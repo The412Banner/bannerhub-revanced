@@ -31,7 +31,10 @@ public final class FakeUserAccount {
     //   on 6.1.0 (27 -> 28: a boolean before the trailing two longs), which is what
     //   broke the old exact-signature lookup and silently emptied the Library.
     //   History: 6.0.9 kbm, 6.0.8 n2l, 6.0.7 h2l, 6.0.4 rpm.
-    private static final String USER_ACCOUNT_CLASS = "hfr";
+    // 6.3.1: Lhfr; -> Ljqz; (toString "UserProfile(userId="; 32-param ctor whose
+    //   FIRST param is userId; .D:Z = isGuest, which the auth interface's k()Z now
+    //   reads directly — SyntheticModel zero-fills it to false = not a guest).
+    private static final String USER_ACCOUNT_CLASS = "jqz";
 
     private static volatile Object cached;
 

@@ -41,10 +41,34 @@ import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 // local registers are undefined at entry, so the original body must write v0
 // before any read — our clobber can't be observed. Same idiom the vibration
 // ENV_BUILDER hook uses.
+//
+// 6.3.1 (also 6.1.0+): WineActivity is GONE from the host dex — the manifest
+// only keeps it as an <activity-alias> onto LegacyPcEngineActivityTrampoline
+// (AndroidManifest.xml:136), so the old fingerprints resolve to nothing. The
+// Wine session now runs in the downloadable pcengine plugin, hosted by the
+// kept, manifest-declared, `:pcengine`-process Activity
+// com.xiaoji.egggame.plugin.pcengine.host.PcEnginePluginHostActivity
+// (smali/com/xiaoji/egggame/plugin/pcengine/host/PcEnginePluginHostActivity.smali,
+// AndroidManifest.xml:133 android:process=":pcengine"). It extends
+// com.combo.core.component.activity.BaseHostActivity (a ComponentActivity —
+// p0 IS an Activity, so attach(Activity) stays type-correct) and forwards
+// every lifecycle callback to the plugin's EngineWinePluginActivity, so the
+// timing matches the old WineActivity hooks. It does NOT override onResume
+// (only BaseHostActivity does, .locals 0, shared with the pcengine
+// settings/dependency-install/recommendation host activities), so the attach
+// hook moves to its own `onStart()V` (final, .locals 3, :1699) — exact class,
+// no class-name gate needed in the extension; attach() already defers via
+// decor.post() until the window token exists, so onStart-vs-onResume is
+// immaterial. Detach stays on `onDestroy()V` (final, .locals 4, :1322). Both
+// bodies write v0 before reading it (`const/4 v0` / `move-result v0`), so the
+// from16 clobber at index 0 is still safe. Each name is unique on the class.
+// Runtime caveat: the overlay now lives in `:pcengine` while its toggle UI is
+// written in the main process — MODE_PRIVATE SharedPreferences are not
+// multi-process-coherent, so a stale toggle is possible until the process dies.
 // =========================================================================
 
 private const val WINE_ACTIVITY =
-    "Lcom/xiaoji/egggame/features/winemu/WineActivity;"
+    "Lcom/xiaoji/egggame/plugin/pcengine/host/PcEnginePluginHostActivity;"
 
 private const val OVERLAY =
     "Lcom/xj/winemu/perf/BhPerfOverlay;"
@@ -63,10 +87,11 @@ val perfOverlayPatch = bytecodePatch(
     dependsOn(sharedGamehubExtensionPatch)
 
     apply {
-        // attach on resume (decor view exists; idempotent via view tag)
+        // attach on start (6.3.1: the host activity has no onResume override;
+        // decor view exists after onCreate; idempotent via view tag)
         firstMethod {
             definingClass == WINE_ACTIVITY &&
-                name == "onResume" &&
+                name == "onStart" &&
                 parameterTypes.isEmpty() &&
                 returnType == "V"
         }.addInstructions(

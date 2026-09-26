@@ -53,9 +53,42 @@ import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 //                   a stable, non-obfuscated AppCompatActivity (= a Context)
 //                   whose onCreate runs at game launch, before the Wine
 //                   process maps winebus.so — a strictly more robust anchor.
-private const val PHYSICAL_CLASS = "Ly98;"   // 6.0.8: Lpz7;  6.0.7: Lnz7;  6.0.4: Lab8;
+//
+// 6.3.1 (also 6.1.0+): the Wine runtime moved out of the host APK into the
+// downloadable pcengine plugin, and the rumble path went with it.
+//   • Hooks 2/3 (PHYSICAL_CLASS.h/g): NO host equivalent. The only
+//     android.os.VibratorManager users in 631 are Lb50; (a synthetic API
+//     bridge) and Lh7r; (a Compose haptics SuspendLambda) — there is no
+//     gamepad device class, no `const 0xffff` rumble scaler, no
+//     getAndroidDeviceId. They live in the plugin dex (separate R8 map, `xjp/`
+//     prefix), which this host-only patch pipeline cannot reach.
+//   • Hook 1 (GamepadServerManager.onRumble): the kept class survives in the
+//     host (smali_classes2/com/winemu/core/gamepad/GamepadServerManager.smali)
+//     but `onRumble(III)V` is a `private final` `.locals 0 / return-void`
+//     STUB (:54-59) — R8 keep-rule residue for the JNI surface, no libwinemu.so
+//     in the host, and being private it has no callers. Hooking it applies and
+//     does nothing.
+//   ⇒ hooks 1–3 are gated behind HOST_HAS_RUMBLE_PATH (false) rather than
+//     re-derived; PHYSICAL_CLASS keeps its last known host letter for the
+//     record only. Re-enable only via a plugin-side patch path.
+//   • Hook 4: WineActivity is GONE from the host dex (manifest keeps only an
+//     <activity-alias> onto LegacyPcEngineActivityTrampoline,
+//     AndroidManifest.xml:136). Re-anchored on the kept `:pcengine` host
+//     Activity com.xiaoji.egggame.plugin.pcengine.host.PcEnginePluginHostActivity
+//     `onCreate(Bundle)V` (.locals 7, :1029 of
+//     smali/com/xiaoji/egggame/plugin/pcengine/host/PcEnginePluginHostActivity.smali).
+//     It extends BaseHostActivity → ComponentActivity, so p0 IS a Context; it
+//     fires in `:pcengine` on every launch before the plugin maps winebus.so;
+//     its first instruction is `sget-object v0`, so the from16 clobber at index
+//     0 stays safe (and with .locals 7 p0=v7 the shim is merely harmless).
+//     The AtomicBoolean-gated disk scan still covers the plugin's Wine because
+//     `:pcengine` shares the app's files dir. Cross-process caveat: the toggle
+//     is written by the settings activity in the main process while this runs
+//     in `:pcengine`; MODE_PRIVATE prefs are not multi-process-coherent.
+private const val HOST_HAS_RUMBLE_PATH = false
+private const val PHYSICAL_CLASS = "Ly98;"   // last host letter (6.0.9); plugin-only since 6.1.0
 private const val WINE_ACTIVITY =
-    "Lcom/xiaoji/egggame/features/winemu/WineActivity;"
+    "Lcom/xiaoji/egggame/plugin/pcengine/host/PcEnginePluginHostActivity;"
 
 private const val VIB_HANDLER =
     "Lcom/xj/winemu/vibration/BhVibrationController;"
@@ -89,8 +122,9 @@ val vibrationPatch = bytecodePatch(
         // our handler; if it returns true we early-return (we handled the
         // rumble), otherwise fall through to the stock path. The method is
         // @Keep so R8 doesn't touch its signature; class name is stable.
+        // 6.3.1: host copy is a dead stub, real one is in the plugin — gated.
         // -----------------------------------------------------------------
-        firstMethod {
+        if (HOST_HAS_RUMBLE_PATH) firstMethod {
             definingClass == GAMEPAD_SERVER_MANAGER && name == "onRumble"
         }.apply {
             addInstructions(
@@ -115,8 +149,9 @@ val vibrationPatch = bytecodePatch(
         // per-vibrator blending (the single-motor `low*0.80 + high*0.33`
         // blend we want to skip on multi-motor pads).
         // 6.0.4: Lab8;->g(II)V → 6.0.7: Lnz7;->h(II)V.
+        // 6.3.1: plugin-only (no host device class) — gated.
         // -----------------------------------------------------------------
-        firstMethod {
+        if (HOST_HAS_RUMBLE_PATH) firstMethod {
             definingClass == PHYSICAL_CLASS &&
                 name == "h" &&
                 parameterTypes == listOf("I", "I") &&
@@ -142,8 +177,9 @@ val vibrationPatch = bytecodePatch(
         // Lfc8;->G), so hook 2 doesn't catch the release. We notify the
         // keepalive map here, then fall through to the original cleanup.
         // 6.0.4: Lab8;->f()V → 6.0.7: Lnz7;->g()V.
+        // 6.3.1: plugin-only (no host device class) — gated.
         // -----------------------------------------------------------------
-        firstMethod {
+        if (HOST_HAS_RUMBLE_PATH) firstMethod {
             definingClass == PHYSICAL_CLASS &&
                 name == "g" &&
                 parameterTypes.isEmpty() &&
@@ -181,6 +217,9 @@ val vibrationPatch = bytecodePatch(
         // call is correct. onCreate is `.locals 19`, so `p0` (this) is a high
         // register; materialise it via move-object/from16 (v0 is clobbered but
         // the method re-initialises it, so prepending at index 0 is safe).
+        // 6.3.1: WINE_ACTIVITY = PcEnginePluginHostActivity (see header);
+        // onCreate(Bundle)V .locals 7, first insn `sget-object v0` — same
+        // idiom, still safe.
         // -----------------------------------------------------------------
         firstMethod {
             definingClass == WINE_ACTIVITY &&

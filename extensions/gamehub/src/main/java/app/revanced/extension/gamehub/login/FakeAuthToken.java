@@ -32,7 +32,9 @@ public final class FakeAuthToken {
     // 6.1.0: Lqbm; -> Lpfr; (= "UserToken"; AUTH_INTERFACE.i() return type; 10 fields
     //   S,S,S,S,Long,Long,J,Z,J,J with .a = userId — same shape as 6.0.9).
     //   History: 6.0.9 qbm, 6.0.8 t2l, 6.0.7 n2l, earlier wpm.
-    private static final String AUTH_TOKEN_CLASS = "pfr";
+    // 6.3.1: Lpfr; -> Lxuz; (toString "UserToken(userId=", same 10-field ctor
+    //   (S,S,S,S,Long,Long,J,Z,J,J); .a = userId is still the first String param).
+    private static final String AUTH_TOKEN_CLASS = "xuz";
 
     private static volatile Object cached;
 

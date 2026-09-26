@@ -24,10 +24,34 @@ import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 //
 //   onResume()V  -> BhSteamChatOverlay.attach(this)   [idempotent via view-map]
 //   onDestroy()V -> BhSteamChatOverlay.detach(this)
+//
+// 6.3.1 (also 6.1.0+): WineActivity is GONE from the host dex (manifest keeps
+// only an <activity-alias> onto LegacyPcEngineActivityTrampoline,
+// AndroidManifest.xml:136). Re-anchored, exactly like PerfOverlayPatch, on the
+// kept `:pcengine` host Activity
+// com.xiaoji.egggame.plugin.pcengine.host.PcEnginePluginHostActivity
+// (smali/com/xiaoji/egggame/plugin/pcengine/host/PcEnginePluginHostActivity.smali):
+// attach on its own `onStart()V` (final, .locals 3, :1699 — it has no onResume
+// override, and attach() already defers via decor.post() until the window
+// token exists), detach on `onDestroy()V` (final, .locals 4, :1322). Both
+// write v0 before reading it, so the from16 clobber at index 0 stays safe.
+// Exact class => no class-name gate needed in the extension.
+//
+// ⚠️ RUNTIME CAVEAT (not a fingerprint problem): the hook now applies, but
+// BhSteamBridge's live path is dead on 6.3.1 —
+// Class.forName("com.xiaoji.egggame.common.steam_sdk.bridge.SteamBridgeClient")
+// has 0 hits in the host smali (class is R8-renamed), `listenJson` /
+// `executeRaw` method names have 0 hits (renamed with it), and
+// org.koin.core.Koin no longer exposes getInstanceRegistry() (631 keeps only
+// getScopeRegistry(); the registry is the letter field Koin.d). The overlay
+// will attach and report "not resolved". Fixing it is a structural rewrite of
+// BhSteamBridge (Koin field walk for the singleton + a ContinuationImpl
+// subclass for the suspend ABI), not a rename — see the 610 re-derivation
+// notes.
 // =========================================================================
 
 private const val WINE_ACTIVITY =
-    "Lcom/xiaoji/egggame/features/winemu/WineActivity;"
+    "Lcom/xiaoji/egggame/plugin/pcengine/host/PcEnginePluginHostActivity;"
 
 private const val OVERLAY =
     "Lcom/xj/winemu/steamchat/BhSteamChatOverlay;"
@@ -51,9 +75,10 @@ val steamChatOverlayPatch = bytecodePatch(
     )
 
     apply {
+        // 6.3.1: onStart — the host activity has no onResume override.
         firstMethod {
             definingClass == WINE_ACTIVITY &&
-                name == "onResume" &&
+                name == "onStart" &&
                 parameterTypes.isEmpty() &&
                 returnType == "V"
         }.addInstructions(

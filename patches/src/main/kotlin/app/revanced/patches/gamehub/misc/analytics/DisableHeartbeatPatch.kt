@@ -35,6 +35,19 @@ import com.android.tools.smali.dexlib2.iface.reference.StringReference
 // when viewing the playtime UI), not automatic egress, so it is intentionally
 // LEFT ACTIVE here. Re-add a getUserPlayTimeList stub only with the real 6.0.7
 // success type + an on-device test.
+//
+// 6.1.0+ / 6.3.1: NO TARGET — GATED (`use = false`). WineGameUsageTracker left the
+// host with the emulator: on ~/gh631-apktool-d "heartbeat/game/update" and
+// "heartbeat/game/end" have ZERO hits, and the only "heartbeat/game/start" is a
+// const-string returned by a synthetic Function0 dispatch lambda
+// (smali_classes5/ut0.smali:201, `invoke()Object` — a URL-path supplier, NOT a
+// SuspendLambda.invokeSuspend), so neither fingerprint above can resolve. The
+// automatic playtime telemetry this patch existed to stop is gone upstream.
+// ⚠️ Do NOT re-point the start stub at that lambda or at its consumer: on 6.1.0 the
+// remaining start path is a game-LAUNCH interceptor whose result is check-cast
+// and branched (success continues the launch, failure ABORTS it) — returning
+// Unit.INSTANCE there is a ClassCastException at launch. Re-enable only with a
+// re-derived target and an on-device launch test.
 // =============================================================================
 
 private const val UNIT = "Lkotlin/Unit;"
@@ -51,7 +64,12 @@ val disableHeartbeatPatch = bytecodePatch(
         "(heartbeat/game/{start,update,end}) so no playtime telemetry is sent and no " +
         "per-tick work runs. Anchored on the stable URL-path strings, not class letters. " +
         "On 6.0.7 the user-initiated getUserPlayTimeList read is left active (its result " +
-        "wrapper changed and is crash-risky to fabricate); the automatic egress is stopped.",
+        "wrapper changed and is crash-risky to fabricate); the automatic egress is stopped. " +
+        "Opt-in only since 6.1.0: the tracker no longer exists in the host (its remaining " +
+        "heartbeat/game/start string is a launch-gate URL supplier, not this telemetry).",
+    // 6.1.0+: target removed upstream — see the header. Applying the fingerprints
+    // above can only fail, so the patch is opt-in until a real target is re-derived.
+    use = false,
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
 

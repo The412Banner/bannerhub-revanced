@@ -156,11 +156,51 @@ import com.android.tools.smali.dexlib2.iface.reference.MethodReference
 // To re-derive: it is the class that IMPLEMENTS AUTH_INTERFACE **and** takes
 // AUTH_INTERFACE in its constructor. (Don't anchor on the ctor alone — two classes
 // have `<init>(Lrf1;)V` on 6.1.0; only this one implements the interface.)
-private const val AUTH_DECORATOR         = "Llm;"
-private const val AUTH_IMPL              = "Lyf1;"
-private const val AUTH_INTERFACE         = "Lrf1;"
-private const val AUTH_TOKEN             = "Lpfr;"
-private const val GAME_LIB_REPO_USERID_METHOD = "h"
+//
+// 6.3.1 (r8-map-id e2596808…) — re-derived against ~/gh631-apktool-d. Same
+// 6.1.0 SHAPE (interface + impl + decorator, 6 abstract StateFlow getters), new
+// letters, and TWO semantic shifts worth knowing:
+//   AUTH_INTERFACE  Lrf1;→Lm62;  (smali_classes3/m62.smali: abstract b/f/h/l/n/o()
+//                    StateFlow; defaults c()Z = n().getValue(), d()Ljqz; = h(),
+//                    i()Lxuz; = f(), k()Z — see below. NEW: a(Lj0g;Function0)Z, a
+//                    "needs full account?" gate that reads d().D (isGuest) and, for
+//                    a guest, queues a login request into the impl's MutableStateFlow
+//                    f; a fake profile with D=false takes the non-guest path.)
+//   AUTH_IMPL       Lyf1;→Lt62;  (the class implementing Lm62; whose ctor takes the
+//                    RoomDatabase + an Ln72; token source; builds field b =
+//                    stateIn(map(createFlow("user_account","auth_token"))) = profile,
+//                    c = token, d = stateIn(combine(b,c), FALSE) = real session,
+//                    e = stateIn(map(b, tag 8), FALSE) = guest; f/g/h/i are
+//                    MutableStateFlow(null) — login-request plumbing, not ours.)
+//   AUTH_DECORATOR  Llm;→Lh10;   (implements Lm62; AND takes Lm62; in its ctor;
+//                    snapshots wrapped.h()/f()/l()/o()/b() into its own b/c/e/f/g
+//                    and forces n() = MutableStateFlow(TRUE) (field d). k() delegates.)
+//   AUTH_TOKEN      Lpfr;→Lxuz;  (= "UserToken", same 10-field S,S,S,S,Long,Long,J,Z,J,J
+//                    ctor; .a = userId)
+//   USER model      Lhfr;→Ljqz;  (= "UserProfile", 32 fields; .a = userId, .D:Z = isGuest)
+//   GAME_LIB_REPO   Lp5a;→Lq7e;  (still structural: the ONLY ctor whose params start
+//                    (GameLibraryDatabase, Lm62;) — 8 classes take the database first,
+//                    only q7e takes the auth interface second)
+//   NAVIGATOR       Lfch;→Lw3n;  (ctor (NavBackStack, Lm62;, …); three classes now take
+//                    NavBackStack first — p61/q61 are synthetic Compose lambdas — so the
+//                    navigator predicate below ALSO asserts params[1] == AUTH_INTERFACE)
+// Semantic shift 1: the interface default k()Z no longer reads l().getValue(); it
+//   reads d()?.D — i.e. isGuest now comes off the UserProfile row itself, not the
+//   derived guest StateFlow. Our fake UserProfile (SyntheticModel zero-fills
+//   booleans → D=false) plus the wholesale k() rewrite below both yield "not a
+//   guest", and l() (= field e) is still the map-of-profile guest projection, so
+//   faking it FALSE stays coherent.
+// Semantic shift 2: the real-session flow getter was renamed m()→n() (impl field d;
+//   the c()Z default reads n()). IMPL_REAL_SESSION_FLOW updated. The decorator's
+//   own n() is a MutableStateFlow(TRUE) already, so patching it is a no-op there.
+// Repo userId getter: h()→k() (q7e.k(): token.a trimmed, else profile.a — the only
+//   no-arg String method on q7e).
+// FakeAuthToken.java / FakeUserAccount.java letters updated to xuz / jqz.
+private const val AUTH_DECORATOR         = "Lh10;"
+private const val AUTH_IMPL              = "Lt62;"
+private const val AUTH_INTERFACE         = "Lm62;"
+private const val AUTH_TOKEN             = "Lxuz;"
+private const val GAME_LIB_REPO_USERID_METHOD = "k"
 
 // Structural anchors — unobfuscated ctor parameter types, immune to R8 renaming.
 private const val GAME_LIB_DATABASE = "Lcom/xiaoji/egggame/game/database/GameLibraryDatabase;"
@@ -208,7 +248,9 @@ private const val IMPL_TOKEN_FLOW        = "f"
 // the login flag" -- true, but it turns out to be the GUEST flag, which is why the
 // Profile screen kept saying "Guest Mode" even with the DB correctly seeded and the
 // profile override removed.
-private const val IMPL_REAL_SESSION_FLOW = "m"
+// 6.3.1: renamed m()→n() (t62 field d = stateIn(combine(b, c), FALSE); Lm62;->c()Z
+// reads n()). l()/h()/f() kept their names and field roles (e/b/c).
+private const val IMPL_REAL_SESSION_FLOW = "n"
 
 // The GUEST check the navigator gates call. k()Z = l().getValue() (interface
 // default on Lrf1;). fch.i()/fch.j() gate on this: j() intercepts navigation to a
@@ -248,10 +290,21 @@ private const val FAKE_STATE_FLOW = "Lapp/revanced/extension/gamehub/login/FakeS
 // call's flags int is 0xFFFFFFD: every field is kept from the old state EXCEPT
 // bit 1 (0x2 = arg2 = field b = isGuest), which is applied from the argument.
 // The mask is unique to this branch, so it is our structural anchor.
-private const val PROFILE_MODEL   = "Lgek;"
+//
+// 6.3.1: PROFILE_MODEL Lgek;→Lfar; ("ProfileTabModel(isLoggedIn=", ", isGuest=" —
+// still fields a/b). The model grew to 35 fields, so its copy `Lfar;->a(...)` now
+// carries TWO flag ints (…ZZZII). The isGuest-only copy therefore passes
+// flags1 = -0x3 (every bit set except bit 1 = arg2 = field b) and flags2 = 0x1f.
+// GUEST_COPY_MASK is now -3 (`const/16 v45, -0x3`, smali_classes4/jar.smali:3625,
+// the ONLY -0x3 literal in that class; the copy follows at :3743 as
+// invoke-static/range {v8 .. v46} → guest arg = v10 = start + 2, unchanged).
+// PROFILE_COLLECTOR Lhfk;→Ljar; (FlowCollector over sar.U, the ProfileTab VM's
+// MutableStateFlow<far>). Because -3 is a far more common literal than 0xFFFFFFD,
+// the emit() predicate below additionally requires an invoke of PROFILE_MODEL.a.
+private const val PROFILE_MODEL   = "Lfar;"
 @Suppress("unused")
-private const val PROFILE_COLLECTOR = "Lhfk;"
-private const val GUEST_COPY_MASK = 0xFFFFFFDL
+private const val PROFILE_COLLECTOR = "Ljar;"
+private const val GUEST_COPY_MASK = -3L
 // =========================================================================
 
 @Suppress("unused")
@@ -378,6 +431,14 @@ val bypassLoginPatch = bytecodePatch(
                 parameterTypes.size == 2 &&
                 implementation?.instructions?.any {
                     (it as? WideLiteralInstruction)?.wideLiteral == GUEST_COPY_MASK
+                } == true &&
+                // 6.3.1: the mask is -3, which other emit() bodies may also load —
+                // require the ProfileTabModel copy call in the same method.
+                implementation?.instructions?.any {
+                    it.opcode == Opcode.INVOKE_STATIC_RANGE &&
+                        it.getReference<MethodReference>()?.let { ref ->
+                            ref.definingClass == PROFILE_MODEL && ref.name == "a"
+                        } == true
                 } == true
         }.apply {
             val maskIdx = indexOfFirstLiteralInstructionOrThrow(GUEST_COPY_MASK)
@@ -621,10 +682,15 @@ val bypassLoginPatch = bytecodePatch(
         // silently shipping a build with an unguarded login path.
         // NavBackStack as first ctor param IS unique on 6.1.0 (only the navigator),
         // unlike GameLibraryDatabase above.
+        // 6.3.1: no longer unique — two synthetic Compose lambdas (p61, q61) also
+        // take NavBackStack first. The navigator (w3n) is the only one that takes
+        // the auth interface second, so assert the (NavBackStack, AUTH_INTERFACE)
+        // pair, mirroring the repo lookup above.
         firstMethod {
             name == "<init>" &&
-                parameterTypes.isNotEmpty() &&
-                parameterTypes[0].toString() == NAV_BACK_STACK
+                parameterTypes.size >= 2 &&
+                parameterTypes[0].toString() == NAV_BACK_STACK &&
+                parameterTypes[1].toString() == AUTH_INTERFACE
         }
 
         // -----------------------------------------------------------------

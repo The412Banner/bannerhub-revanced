@@ -55,6 +55,32 @@ import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 // iget Lyi5;->a:Object → check-cast List. So N55_SUCCESS n55→yi5 (Lyi5; extends
 // Lzi5;, field a:Object, ctor(Object); error variant Lxi5;). 608 n55/o55 →
 // 609 yi5/zi5. See OfflineComponentList.java.
+//
+// 6.3.1 (also 6.1.0+): TARGET RESTRUCTURED + EXTENSION DEAD → GATED.
+// • The stable anchor is gone: `Lcom/xiaoji/egggame/common/winemu/bean/
+//   ComponentType;` has 0 references in the 631 host smali (no class file, no
+//   `/ComponentType;` descriptor anywhere), so the size==5 + [1]==ComponentType
+//   fingerprint cannot resolve. EnvLayerEntity, EnvListData, State and
+//   BaseResult are all R8-renamed too — they survive ONLY as kotlinx-
+//   serialization descriptor / cast-message strings (e.g. Le8b; <clinit>
+//   "com.xiaoji.egggame.common.winemu.bean.EnvLayerEntity", Lg8b; toString
+//   "EnvLayerEntity(blurb=").
+// • The per-type PAGED feed this patch replaced (gof.a → gof.b(type,1,page))
+//   no longer exists as such. The host's component feed is now a single
+//   all-components fetch: `Luq7;->c(Lrjs;)Object` (.locals 3) → withContext(IO,
+//   `Ltq7;` SuspendLambda) → const-string "simulator/v2/getAllComponentList"
+//   (smali_classes3/tq7.smali:348, the only hit in the APK), unwrapped as
+//   BaseResult<EnvListData<EnvLayerEntity>> (tq7.smali:796). The container
+//   list (`simulator/v2/getContainerList`) is a separate single hit. No
+//   ComponentType/page params anywhere on that path — filtering by type is
+//   done client-side after the fetch.
+// • The extension is dead regardless: OfflineComponentList.java builds its
+//   offline result via Class.forName(EnvLayerEntity / State) + the `yi5`
+//   success wrapper, none of which exist on 631; a port is a structural
+//   rewrite (obfuscated bean ctors + wrapper discovery), not a rename.
+// ⇒ `use = false`. The body below is left as the last known-good (6.0.9)
+//   anchor logic so a future port has the shape to diff against; enabling it
+//   with `-e` on 6.3.1 will fail loudly at the first fingerprint.
 private const val GOF_CLASS = "Lrpe;"
 private const val COMPONENT_TYPE =
     "Lcom/xiaoji/egggame/common/winemu/bean/ComponentType;"
@@ -69,7 +95,11 @@ val offlineComponentListPatch = bytecodePatch(
         "components (from sp_winemu_unified_resources, filtered by " +
         "ComponentType) so GPU driver / DXVK / VKD3D / FEXCore / Box64 / " +
         "container pickers list them offline; online it reflectively invokes " +
-        "the original suspend impl unchanged. Register-safe, fail-safe.",
+        "the original suspend impl unchanged. Register-safe, fail-safe. " +
+        "GATED on 6.1.0+: the per-type paged feed and the kept bean classes it " +
+        "relies on no longer exist in the host (see file header).",
+    // 6.3.1: target restructured + extension dead (see header) — not applied.
+    use = false,
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
     dependsOn(sharedGamehubExtensionPatch)

@@ -31,6 +31,18 @@ import com.android.tools.smali.dexlib2.iface.reference.StringReference
 //
 // Anchored on the const-string literal (survives R8 renames); the toggle UI
 // lives in the Banner Tools dialog's "Audio" tile.
+//
+// 6.3.1 (also 6.1.0+): TARGET LEFT THE HOST. PulseAudioComponent moved into
+// the downloadable pcengine plugin with the rest of the Wine runtime:
+// `load-module module-aaudio-sink` has 0 hits in the 631 host smali (all five
+// dex dirs; the bare `module-aaudio-sink` too), so the literal fingerprint
+// resolves to nothing and there is nothing host-side to re-anchor on. The
+// anchor logic itself is still right for the plugin dex (the 610 notes found
+// it register-identical under Lxjp/x46;), but this pipeline patches only the
+// host APK, so the patch is gated (`use = false`) instead of re-derived.
+// Re-enable only via a plugin-side patch path. Note: the companion
+// "Recording-compatible audio settings activity" (audioManifestPatch) still
+// applies on its own, so the Banner Tools → Audio toggle exists but is inert.
 // =========================================================================
 
 private const val SINK_LINE  = "load-module module-aaudio-sink"
@@ -47,7 +59,11 @@ val pulseAudioRecordingModePatch = bytecodePatch(
         "When the global toggle (Banner Tools → Audio) is on, appends pm=0 to " +
         "the module-aaudio-sink config line so the AAudio stream leaves the " +
         "MMAP fast path and sits on the normal mixer the recorder taps. " +
-        "Default off — stock low-latency audio, no change for non-recorders.",
+        "Default off — stock low-latency audio, no change for non-recorders. " +
+        "GATED on 6.1.0+: PulseAudioComponent lives in the pcengine plugin, " +
+        "not the host APK, so the anchor cannot resolve here.",
+    // 6.3.1: target is plugin-only (see header) — not applied by default.
+    use = false,
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
     dependsOn(sharedGamehubExtensionPatch, audioManifestPatch)

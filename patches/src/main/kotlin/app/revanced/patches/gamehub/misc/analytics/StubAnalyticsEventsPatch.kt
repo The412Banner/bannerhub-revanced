@@ -43,21 +43,28 @@ import com.android.tools.smali.dexlib2.iface.reference.StringReference
 // performance-session-summary". The plain /events URL + the "vgabc.com/events"
 // marker are unchanged (marker still substring-matches all dev2/beta/prod
 // variants of BOTH reporters). Only DEVICE_PERF_SUFFIX needed updating.
+//
+// 6.1.0+ / 6.3.1: the DEVICE-PERFORMANCE reporter is GONE from the host — zero
+// hits for "device-performance" anywhere in ~/gh631-apktool-d (it left with the
+// emulator). Its block below is removed (it was the `Required value was null`).
+// The /events batch reporter is still there and still string-anchored:
+// smali_classes3/azb.smali `a(Ljava/util/Collection;ContinuationImpl)Object`
+// (:37) holds the dev2 (:595) / beta (:615) / prod (:623) /events URLs — the
+// prod URL is unique app-wide (1 file), so the first fingerprint binds unchanged.
 // =============================================================================
 
 private const val EVENTS_URL = "https://statistic-gamehub-api.vgabc.com/events"
-private const val DEVICE_PERF_SUFFIX = "/events/device-performance-session-summary"
 private const val ANALYTICS_MARKER = "vgabc.com/events"
 private const val LOOPBACK = "http://127.0.0.1"
 
 @Suppress("unused")
 val stubAnalyticsEventsPatch = bytecodePatch(
     name = "Stub analytics events",
-    description = "Redirects XiaoJi's analytics-event POST URLs (the /events batch reporter " +
-        "and /events/device-performance-config) to http://127.0.0.1 so no telemetry reaches " +
-        "statistic-gamehub-api.vgabc.com. Anchored on the stable URL strings (all dev2/beta/prod " +
-        "environment variants are redirected); the reporters' own error paths swallow the " +
-        "connection-refused, so nothing crashes.",
+    description = "Redirects XiaoJi's analytics-event POST URL (the /events batch reporter) " +
+        "to http://127.0.0.1 so no telemetry reaches statistic-gamehub-api.vgabc.com. Anchored " +
+        "on the stable URL strings (all dev2/beta/prod environment variants are redirected); the " +
+        "reporter's own error path swallows the connection-refused, so nothing crashes. The " +
+        "device-performance reporter no longer exists in the host (6.1.0+).",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
 
@@ -84,24 +91,11 @@ val stubAnalyticsEventsPatch = bytecodePatch(
             }
         }
 
-        // /events/device-performance-config reporter (Lb34;->invokeSuspend).
-        firstMethod {
-            implementation?.instructions?.any { ins ->
-                (ins as? ReferenceInstruction)?.reference
-                    ?.let { it is StringReference && it.string.endsWith(DEVICE_PERF_SUFFIX) } == true
-            } == true
-        }.apply {
-            val idxs = implementation!!.instructions.toList().withIndex().filter { (_, ins) ->
-                (ins as? ReferenceInstruction)?.reference
-                    ?.let { it is StringReference && it.string.contains(ANALYTICS_MARKER) } == true
-            }.map { it.index }
-            require(idxs.isNotEmpty()) {
-                "StubAnalyticsEventsPatch: no device-performance-config URL const-string"
-            }
-            idxs.reversed().forEach { i ->
-                val reg = getInstruction<OneRegisterInstruction>(i).registerA
-                addInstruction(i + 1, "const-string v$reg, \"$LOOPBACK\"")
-            }
-        }
+        // /events/device-performance-* reporter — REMOVED on 6.1.0+ (see header).
+        // Up to 6.0.9 this was a second block anchored on any const-string ending
+        // in "/events/device-performance-config" (6.0.7, Lb34;->invokeSuspend) /
+        // "/events/device-performance-session-summary" (6.0.9, Lvw3;), redirecting
+        // its ANALYTICS_MARKER strings the same way. No such string exists in the
+        // 6.3.1 host, so there is nothing to redirect.
     }
 }

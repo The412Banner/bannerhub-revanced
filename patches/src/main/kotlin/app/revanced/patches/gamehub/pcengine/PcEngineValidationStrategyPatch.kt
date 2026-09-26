@@ -29,9 +29,13 @@ import app.revanced.patches.gamehub.GAMEHUB_VERSION
 // (PluginManager.getValidationStrategy() delegates to it). Force that accessor
 // to return `Insecure` so the framework skips the cert match entirely.
 //
-// This is only HALF the fix: the pcengine manager (`xy5`) has its OWN, separate
-// cert check that is NOT governed by ValidationStrategy — see
-// PcEnginePluginSignatureCheckPatch (GATE 2). Both are required.
+// Up to 6.1.0 this was only HALF the fix: the pcengine manager had its OWN
+// host-vs-plugin cert compare (bypassed by the former GATE 2/3 patches
+// PcEnginePluginSignatureCheckPatch / PcEnginePluginInstallVerifyPatch). 6.1.1
+// REMOVED that compare in favour of SHA-256/identity/schema integrity checks
+// against a committed record (6.3.1: `z5p`), so those two patches were retired
+// on the 631 line; this one is the sole remaining signature gate, and the combo
+// installer (6.3.1 `xjh`) still runs its `containsAll` cert check behind it.
 //
 // Anchored on non-obfuscated `com/combo` class + method names (the framework is
 // a vendored library and is not renamed by R8), plus the stable enum-constant

@@ -48,6 +48,14 @@ public final class DebugTrace {
     public static void markLaunchInsert()   { write("GameLaunchMethodDao.insert PRE"); }
     public static void markLibraryInsert()  { write("GameLibraryBaseDao.insert PRE"); }
 
+    /**
+     * One-register catch probe: traces a caught Throwable without the caller
+     * having to materialize a message string. Used where the only free register
+     * at the probe site is the Throwable itself (the 6.3.1 library-save catch
+     * handler passes it in v0, so a `const-string v0` would clobber it).
+     */
+    public static void writeCaught(Throwable t) { write("save CATCH", t); }
+
     public static void write(String message, Throwable t) {
         try {
             File f = ensureFile();

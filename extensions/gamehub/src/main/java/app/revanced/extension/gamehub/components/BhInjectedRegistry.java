@@ -145,13 +145,15 @@ public final class BhInjectedRegistry {
      */
     public static String nameConflict(Context ctx, String name) {
         if (name == null || name.isEmpty()) return "Name is empty";
-        try {
-            SharedPreferences unified = ctx.getSharedPreferences(UNIFIED_PREFS, Context.MODE_PRIVATE);
-            if (unified.contains("COMPONENT:" + name)) {
-                return "A catalog component is already called \"" + name + "\"";
-            }
-        } catch (Throwable t) {
-            Log.w(TAG, "unified registry check failed", t);
+        // Read the plugin registry FILE, never this process's SharedPreferences
+        // copy of it: that copy is loaded once and never sees rows the plugin
+        // adds later or rows we purge on Remove (a removed component stayed
+        // "already there" until the app was force-stopped).
+        String row = unifiedRow(ctx, name);
+        if (row != null) {
+            boolean injected = row.contains("&quot;id&quot;:-") || row.contains("\"id\":-");
+            return (injected ? "An injected component is still registered as \"" : "A catalog component is already called \"")
+                    + name + "\"";
         }
         if (pluginPrefs(ctx).contains(name)) {
             return "An injected component is already called \"" + name + "\"";
@@ -364,6 +366,19 @@ public final class BhInjectedRegistry {
     private static final java.util.regex.Pattern UNIFIED_ROW = java.util.regex.Pattern.compile(
             "[ \\t]*<string name=\"COMPONENT:([^\"]*)\">(.*?)</string>[ \\t]*\\r?\\n?",
             java.util.regex.Pattern.DOTALL);
+
+    /** Fresh read of {@code COMPONENT:<name>} from the plugin registry file; null when absent. */
+    public static String unifiedRow(Context ctx, String name) {
+        try {
+            File f = unifiedFile(ctx);
+            if (!f.isFile()) return null;
+            java.util.regex.Matcher m = UNIFIED_ROW.matcher(readFully(f));
+            while (m.find()) if (name.equals(m.group(1))) return m.group(2);
+        } catch (Throwable t) {
+            Log.w(TAG, "unified registry read failed", t);
+        }
+        return null;
+    }
 
     /** Drops {@code COMPONENT:<name>} from the plugin registry file. */
     public static boolean purgeUnifiedRow(Context ctx, String name) {

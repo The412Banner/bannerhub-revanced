@@ -85,7 +85,10 @@ public final class BhSteamBridge {
         sResolving = true;
         BG.execute(new Runnable() {
             public void run() {
-                try { resolve(); } catch (Throwable t) { BhSteamLog.w("bridge: async resolve failed", t); }
+                try {
+                    resolve();
+                    if (sMode == Mode.RELAY) drainDeferred();
+                } catch (Throwable t) { BhSteamLog.w("bridge: async resolve failed", t); }
                 finally { sResolving = false; }
             }
         });
@@ -236,9 +239,48 @@ public final class BhSteamBridge {
 
     private static final class Sub {
         final String topic;
+        final EventListener listener;                    // the overlay's callback (kept for deferred subscribes)
         volatile BhSteamRelayClient.EventListener l;   // null while a main-thread subscribe is still pending
         volatile boolean cancelled;
-        Sub(String t, BhSteamRelayClient.EventListener l) { this.topic = t; this.l = l; }
+        Sub(String t, EventListener listener, BhSteamRelayClient.EventListener l) { this.topic = t; this.listener = listener; this.l = l; }
+    }
+
+    /**
+     * Subscriptions requested before the relay was attached. The overlay asks
+     * for its two event topics ~100 ms before a cold relay resolves (device-seen
+     * 2026-09-27 03:13: "listen … deferred" at .229, "mode RELAY" at .411) and,
+     * holding a non-null handle, never asks again — so they must be made here,
+     * right after a successful resolve, or chat events never arrive.
+     */
+    private static final java.util.List<Sub> sDeferred = new java.util.ArrayList<Sub>();
+
+    /** BG thread only. Subscribes one pending handle; returns true when done or dead. */
+    private static boolean subscribePending(final Sub pending) {
+        if (pending.cancelled) return true;
+        if (!isChatAvailable()) return false;
+        BhSteamRelayClient.EventListener l = new BhSteamRelayClient.EventListener() {
+            public void onEvent(String payloadJson) { if (!pending.cancelled) pending.listener.onEvent(payloadJson); }
+        };
+        String err = BhSteamRelayClient.get().subscribe(pending.topic, l);
+        if (err != null) {
+            BhSteamRelayClient.get().unsubscribe(pending.topic, l);
+            sLastError = "listen: " + err;
+            BhSteamLog.w("listen " + pending.topic + " failed: " + err);
+            return true;
+        }
+        if (pending.cancelled) { BhSteamRelayClient.get().unsubscribe(pending.topic, l); return true; }
+        pending.l = l;
+        BhSteamLog.i("listening on " + pending.topic + " via relay (async)");
+        return true;
+    }
+
+    /** BG thread only. Called after every resolve that ends in RELAY mode. */
+    private static void drainDeferred() {
+        java.util.List<Sub> todo;
+        synchronized (sDeferred) { todo = new java.util.ArrayList<Sub>(sDeferred); sDeferred.clear(); }
+        for (Sub p : todo) {
+            if (!subscribePending(p)) synchronized (sDeferred) { sDeferred.add(p); }
+        }
     }
 
     /**
@@ -254,29 +296,16 @@ public final class BhSteamBridge {
             // (yet) attached the subscription is simply not made — the overlay
             // re-calls ensureChatSubscription on every refresh, so it catches up
             // once the relay resolves (resolveAsync below).
-            final Sub pending = new Sub(topic, null);
+            final Sub pending = new Sub(topic, listener, null);
             BG.execute(new Runnable() {
                 public void run() {
                     try {
-                        if (pending.cancelled) return;
-                        if (!isChatAvailable()) {
+                        if (!subscribePending(pending)) {
                             sLastError = "listen: chat relay unavailable (" + sRelayWhy + ")";
-                            BhSteamLog.i("listen " + topic + " deferred — " + sLastError);
-                            return;
+                            BhSteamLog.i("listen " + topic + " deferred until the relay attaches");
+                            synchronized (sDeferred) { sDeferred.add(pending); }
+                            resolveAsync();   // make sure a resolve is in flight; drainDeferred() follows it
                         }
-                        BhSteamRelayClient.EventListener l = new BhSteamRelayClient.EventListener() {
-                            public void onEvent(String payloadJson) { if (!pending.cancelled) listener.onEvent(payloadJson); }
-                        };
-                        String err = BhSteamRelayClient.get().subscribe(topic, l);
-                        if (err != null) {
-                            BhSteamRelayClient.get().unsubscribe(topic, l);
-                            sLastError = "listen: " + err;
-                            BhSteamLog.w("listen " + topic + " failed: " + err);
-                            return;
-                        }
-                        if (pending.cancelled) { BhSteamRelayClient.get().unsubscribe(topic, l); return; }
-                        pending.l = l;
-                        BhSteamLog.i("listening on " + topic + " via relay (async)");
                     } catch (Throwable t) {
                         BhSteamLog.w("listen " + topic + " crashed", t);
                     }
@@ -296,7 +325,7 @@ public final class BhSteamBridge {
             return null;
         }
         BhSteamLog.i("listening on " + topic + " via relay");
-        return new Sub(topic, l);
+        return new Sub(topic, listener, l);
     }
 
     /** Stop a {@link #listen} subscription. */
@@ -304,6 +333,7 @@ public final class BhSteamBridge {
         if (handle instanceof Sub) {
             final Sub s = (Sub) handle;
             s.cancelled = true;
+            synchronized (sDeferred) { sDeferred.remove(s); }
             final BhSteamRelayClient.EventListener l = s.l;
             if (l == null) return;                       // never subscribed (or still pending) — nothing to undo
             if (isMainThread()) {

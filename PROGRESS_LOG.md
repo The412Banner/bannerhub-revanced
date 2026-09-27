@@ -1,5 +1,18 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-09-27 — 🔁 Steam · Friends overlay transport rewritten for 6.3.1 (relay + invite-IPC fallback) — BUILT, NOT device-tested
+
+**Symptom:** overlay showed `Bridge: FAILED @ Class.forName SteamBridgeClient: ClassNotFoundException`. Root causes (smali-verified): the bridge is R8-renamed (`Ltwv;`, `c` = executeRaw `(String,String,x3w,kotlin.time.Duration,ContinuationImpl)`, `d` = listenJson → `eq3 implements kotlinx.coroutines.flow.Flow`), `Koin.getInstanceRegistry()` is gone (`Koin.d:Lm35;`, an R8-merged class whose `(Koin)` ctor fills two `ConcurrentHashMap`s), and — decisively — the bridge is a MAIN-process-only Koin singleton while the overlay runs in `:pcengine`. All command strings/topics the overlay sends still exist verbatim.
+
+**New transport (BhSteamBridge public surface unchanged → `BhSteamChatOverlay` untouched):**
+- **RELAY (full chat):** `BhSteamRelayService` (main process, registered by new `steamRelayServicePatch`, no `android:process`) attaches to the bridge structurally — `GlobalContext.INSTANCE.get()` → Koin fields whose type has a `(Koin)` ctor → their `ConcurrentHashMap` values → `SingleInstanceFactory` cached instance (the `volatile` field) → the class declaring the executeRaw + listenJson shapes; no R8 letter hardcoded. Suspend ABI via a Java subclass of the KEPT `kotlin.coroutines.jvm.internal.ContinuationImpl` (`invokeSuspend` unwraps with `Result.exceptionOrNull-impl`; `IntrinsicsKt.getCOROUTINE_SUSPENDED()` resolved through the multifile facade parent); `Duration` from `DurationKt.toDuration(ms, MILLISECONDS)` + `Duration.box-impl`; error kind = enum's first constant ("Message"); bridge failures (`q2x{y3w{kind,message}}`) → `SessionNotReady`/`NotConnected`/… strings. Flows collected by a Java `FlowCollector`. Messenger: `EXEC(cmd,json,timeout_ms)` → paged `REPLY{ok,result|error,error_kind}`; `SUBSCRIBE(topic)` → pushed `EVENT(topic,json)`; pages of 96 K chars (< 1 MB Binder). Client = `BhSteamRelayClient` (`:pcengine`, request_id correlation, re-subscribe on reconnect).
+- **IPC (friends only):** `BhSteamIpcClient` over XiaoJi's `SteamFriendsChatAndroidService` + action `com.xiaoji.egggame.steam.action.OVERLAY_INVITE_IPC` (`what` 1 status → `readiness` Available|SignedOut|Connecting|Offline|Unavailable + `steam_id`; 2 friends → one `what=100` reply per 100-friend page, `friends_json` fields = exactly what the overlay parses). Presence polled every `PRESENCE_POLL_MS` = 30 s. Status: `friends only — chat relay unavailable: <why>`.
+- **NONE:** `FAILED @ relay: … · invite IPC: …`. Non-RELAY sessions re-probe the relay every 15 s (cold main process attaches lazily).
+- Stub module gained compile-only kept-name stubs: `kotlin.coroutines.{Continuation,CoroutineContext}`, `kotlin.coroutines.jvm.internal.{BaseContinuationImpl,ContinuationImpl}`, `kotlinx.coroutines.flow.{Flow,FlowCollector}`.
+- Compile-read: javac over the four transport classes against the stubs + minimal android/org.json stubs = clean; emitted descriptors match the runtime ABI (`invokeSuspend(Object)Object`, `emit(Object,Continuation)Object`).
+
+**⏭️ Device checklist:** `logcat -s BH_STEAM` (expect `relay: attached ok (twv.c/d, kind=Message)` then `bridge: mode RELAY`); first-open latency (relay bind + STATUS); presence refresh (IPC mode: 30 s poll; RELAY: live); send + receive a message with a friend (`steam:chat-message` EVENT arrives). If `relay: attach FAILED … not created yet` → open Steam in GameHub first (IPC mode meanwhile).
+
 ## 2026-08-03 — 🆕 GameHub 6.1.1 (vc123) onboarded — base APK + `gamehub-611-build` (new DEFAULT) + first patch-apply pass
 
 **Housekeeping (done):**

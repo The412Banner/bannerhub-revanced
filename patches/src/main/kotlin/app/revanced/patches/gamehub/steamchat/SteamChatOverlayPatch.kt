@@ -8,46 +8,57 @@ import app.revanced.patches.gamehub.GAMEHUB_VERSION
 import app.revanced.patches.gamehub.misc.extension.sharedGamehubExtensionPatch
 
 // =========================================================================
-// In-game Steam Chat overlay (READ-ONLY PROTOTYPE).
+// In-game Steam · Friends overlay.
 //
 // Attaches a Banner-owned classic-View pill + slide-out panel over the Wine
-// game surface that surfaces your Steam friends list + presence, and a
-// friend's recent message history on tap — pulled from GameHub's in-process
-// Steam client via the steam_sdk bridge (Koin-singleton SteamBridgeClient,
-// JSON-RPC over JNA). Request/response only; live push is a later increment.
-// Gated by the Banner Tools -> Steam Chat master toggle.
+// game surface: Steam friends list + presence, per-friend message history,
+// send/receive (text, emoticons, stickers, images), voice rooms. Gated by
+// the Banner Tools -> Steam Chat master toggle. The overlay only ever talks
+// to BhSteamBridge.request(cmd, json, timeoutMs) / listen(topic, cb); every
+// command string it sends (friends.list, friends.conversation_summaries,
+// friends.message_history, friends.mark_conversation_read,
+// friends.send_message, friends.send_typing, friends.chat_emoticons,
+// friends.chat_stickers, friends.send_sticker, auth.bootstrap_snapshot,
+// apps.app_details) and topic (steam:chat-message, steam:chat-typing) exists
+// verbatim in 6.3.1's typed friends repository.
 //
-// Same hook surface + register idiom as the perf overlay: WineActivity is NOT
-// obfuscated (com.xiaoji.egggame.features.winemu.WineActivity); we anchor its
-// lifecycle and materialise `this` into v0 via move-object/from16 so the
-// invoke-static is valid even when the method has .locals > 15.
+// Hook surface (6.3.1, also 6.1.0+): WineActivity is GONE from the host dex
+// (manifest keeps only an <activity-alias> onto
+// LegacyPcEngineActivityTrampoline). Anchored, exactly like PerfOverlayPatch,
+// on the kept `:pcengine` host Activity
+// com.xiaoji.egggame.plugin.pcengine.host.PcEnginePluginHostActivity:
+// attach on its own `onStart()V` (it has no onResume override; attach()
+// already defers via decor.post() until the window token exists), detach on
+// `onDestroy()V`. Both write v0 before reading it, so the from16 clobber at
+// index 0 stays safe. Exact class => no class-name gate in the extension.
 //
-//   onResume()V  -> BhSteamChatOverlay.attach(this)   [idempotent via view-map]
-//   onDestroy()V -> BhSteamChatOverlay.detach(this)
-//
-// 6.3.1 (also 6.1.0+): WineActivity is GONE from the host dex (manifest keeps
-// only an <activity-alias> onto LegacyPcEngineActivityTrampoline,
-// AndroidManifest.xml:136). Re-anchored, exactly like PerfOverlayPatch, on the
-// kept `:pcengine` host Activity
-// com.xiaoji.egggame.plugin.pcengine.host.PcEnginePluginHostActivity
-// (smali/com/xiaoji/egggame/plugin/pcengine/host/PcEnginePluginHostActivity.smali):
-// attach on its own `onStart()V` (final, .locals 3, :1699 — it has no onResume
-// override, and attach() already defers via decor.post() until the window
-// token exists), detach on `onDestroy()V` (final, .locals 4, :1322). Both
-// write v0 before reading it, so the from16 clobber at index 0 stays safe.
-// Exact class => no class-name gate needed in the extension.
-//
-// ⚠️ RUNTIME CAVEAT (not a fingerprint problem): the hook now applies, but
-// BhSteamBridge's live path is dead on 6.3.1 —
-// Class.forName("com.xiaoji.egggame.common.steam_sdk.bridge.SteamBridgeClient")
-// has 0 hits in the host smali (class is R8-renamed), `listenJson` /
-// `executeRaw` method names have 0 hits (renamed with it), and
-// org.koin.core.Koin no longer exposes getInstanceRegistry() (631 keeps only
-// getScopeRegistry(); the registry is the letter field Koin.d). The overlay
-// will attach and report "not resolved". Fixing it is a structural rewrite of
-// BhSteamBridge (Koin field walk for the singleton + a ContinuationImpl
-// subclass for the suspend ABI), not a rename — see the 610 re-derivation
-// notes.
+// TRANSPORT (6.3.1 design — the reason the 6.0.x in-process bridge died):
+// the host's Steam bridge (R8 `twv`, ex-SteamBridgeClient; `c` = executeRaw
+// typed (String,String,<enum>,kotlin.time.Duration,ContinuationImpl), `d` =
+// listenJson returning a kotlinx Flow) is a Koin singleton that exists ONLY
+// in the MAIN process, while this overlay runs in `:pcengine`. BhSteamBridge
+// therefore picks the best of three transports at first use and re-probes
+// every 15 s until it has chat:
+//   RELAY  BhSteamRelayClient (:pcengine) -> BhSteamRelayService (main
+//          process, registered by steamRelayServicePatch). The service finds
+//          the bridge structurally (GlobalContext.INSTANCE.get() -> the Koin
+//          field with a (Koin) ctor -> its ConcurrentHashMaps ->
+//          SingleInstanceFactory cached instances -> the class declaring the
+//          executeRaw/listenJson shapes; no R8 letter hardcoded), drives the
+//          suspend ABI with a ContinuationImpl subclass (kotlin/kotlinx keep
+//          their names on 6.3.x) and collects Flows with a Java
+//          FlowCollector. Messenger: EXEC(cmd,json,timeout) -> paged
+//          REPLY{ok,result|error,error_kind}; SUBSCRIBE(topic) -> pushed
+//          EVENT(topic,json). Full chat.
+//   IPC    BhSteamIpcClient over XiaoJi's own cross-process
+//          SteamFriendsChatAndroidService / OVERLAY_INVITE_IPC Messenger
+//          (what 1 status -> readiness + steam_id, what 2 friends -> paged
+//          friends_json whose fields match the overlay's parser). Friends +
+//          presence (polled every 30 s) + own SteamID only; status reads
+//          "friends only — chat relay unavailable: <why>".
+//   NONE   "FAILED @ ..." with both reasons.
+// Every Binder payload is paged (relay ~192 KB pages, IPC 100 friends/page)
+// under the 1 MB transaction limit. logcat tag: BH_STEAM.
 // =========================================================================
 
 private const val WINE_ACTIVITY =
@@ -60,14 +71,15 @@ private const val OVERLAY =
 val steamChatOverlayPatch = bytecodePatch(
     name = "In-game Steam chat overlay",
     description = "Adds a draggable pill + slide-out panel over the Wine game " +
-        "surface that shows your Steam friends list, presence, and a friend's " +
-        "recent message history (read-only). Reads GameHub's in-process Steam " +
-        "client via the steam_sdk JSON-RPC bridge. Off by default; toggle from " +
-        "Banner Tools -> Steam Chat.",
+        "surface with your Steam friends list, presence, and chat. On 6.3.1 the " +
+        "overlay (:pcengine) reaches GameHub's main-process Steam bridge through " +
+        "the Banner relay service, falling back to XiaoJi's invite IPC for " +
+        "friends/presence only. Off by default; toggle from Banner Tools -> Steam Chat.",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
     dependsOn(
         sharedGamehubExtensionPatch,
+        steamRelayServicePatch,
         steamChatImagePickerManifestPatch,
         steamChatVoiceManifestPatch,
         steamChatRingtonePickerManifestPatch,

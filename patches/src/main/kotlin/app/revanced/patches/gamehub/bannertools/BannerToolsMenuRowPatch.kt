@@ -6,6 +6,7 @@ import app.revanced.patcher.patch.bytecodePatch
 import app.revanced.patches.gamehub.GAMEHUB_PACKAGE
 import app.revanced.patches.gamehub.GAMEHUB_VERSION
 import app.revanced.patches.gamehub.common.menuGameIdCapturePatch
+import app.revanced.patches.gamehub.components.componentManagerManifestPatch
 import app.revanced.patches.gamehub.vibration.vibrationMenuRowPatch
 import app.revanced.util.getReference
 import com.android.tools.smali.dexlib2.Opcode
@@ -75,9 +76,17 @@ val bannerToolsMenuRowPatch = bytecodePatch(
     // (BhMenuRowClick.maybeResolveCustomLabel) that resolves our Injection-3
     // sentinel key. menuGameIdCapturePatch populates BhMenuGameId so the
     // per-feature handlers' invoke() can read the active gameId.
-    // bannerToolsDrawablesPatch ships the 4 vector drawables that the
+    // bannerToolsDrawablesPatch ships the bh_bt_* vector drawables that the
     // dialog tile row inflates via Resources.getIdentifier().
-    dependsOn(menuGameIdCapturePatch, vibrationMenuRowPatch, bannerToolsDrawablesPatch)
+    // componentManagerManifestPatch registers the two activities behind the
+    // "Components" tile (a dead-launch of an unregistered Activity would
+    // crash the dialog's dispatch).
+    dependsOn(
+        menuGameIdCapturePatch,
+        vibrationMenuRowPatch,
+        bannerToolsDrawablesPatch,
+        componentManagerManifestPatch,
+    )
 
     apply {
         // ── Injection 1: game-details More Menu (6.0.7 Lc37;->a) ────────────

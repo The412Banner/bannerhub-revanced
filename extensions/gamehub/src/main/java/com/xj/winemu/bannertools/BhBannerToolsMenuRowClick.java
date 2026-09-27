@@ -73,6 +73,9 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
     // XServer (device-confirmed SIGABRT), so the renderer patches are pinned to
     // 6.0.4 and the tile would just dead-launch an unregistered activity. Keep
     // this array in lock-step with dispatch(int).
+    // "Components" (6.3.1) opens the Component Manager — inject / list /
+    // remove PC-engine components (GPU driver, DXVK, VKD3D, translator,
+    // library) from a .tzst or an extracted folder; global, no game needed.
     private static final String[] TILE_LABELS = new String[] {
         "Vibration",
         "Game ID",
@@ -80,6 +83,7 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
         "GOG",
         "Overlay",
         "Root",
+        "Components",
     };
     private static final String[] TILE_DRAWABLES = new String[] {
         "bh_bt_vibration",
@@ -88,12 +92,13 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
         "bh_bt_gog",
         "bh_bt_overlay",
         "bh_bt_root",
+        "bh_bt_components",
     };
 
     // Tile indices that act on the CURRENT GAME (need a gameId in scope).
     // When Banner Tools is opened from the Explore page (no game), these are
-    // greyed + non-interactive; the global tiles (Audio, GOG, Overlay, Root)
-    // stay usable. Keep in sync with dispatch(int) ordering.
+    // greyed + non-interactive; the global tiles (Audio, GOG, Overlay, Root,
+    // Components) stay usable. Keep in sync with dispatch(int) ordering.
     private static boolean isPerGameTile(int i) {
         return i == 0 || i == 1; // Vibration/Game ID
     }
@@ -301,6 +306,11 @@ public final class BhBannerToolsMenuRowClick implements Function1<Object, Object
                     break;
                 case 5:
                     com.xj.winemu.perf.BhPerfMenus.showRootDialog(host);
+                    break;
+                case 6:
+                    // Component Manager Activity (registered by
+                    // componentManagerManifestPatch); global like GOG.
+                    com.xj.winemu.components.BhComponentsMenu.open(host);
                     break;
                 default:
                     Log.w(TAG, "unknown dialog item index " + which);

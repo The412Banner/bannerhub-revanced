@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="56dp"
+    android:height="56dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+
+    <!-- Dark rounded background, rx=112 (matches the other Banner Tools tiles). -->
+    <path
+        android:pathData="M112,0 H400 A112,112 0 0 1 512,112 V400 A112,112 0 0 1 400,512 H112 A112,112 0 0 1 0,400 V112 A112,112 0 0 1 112,0 Z"
+        android:fillColor="#1A1C1E"/>
+
+    <!-- Stacked component layers: three isometric slabs, bottom to top. -->
+    <!-- Bottom slab (dim). -->
+    <path
+        android:pathData="M256,392 L112,320 L256,248 L400,320 Z"
+        android:fillColor="#3D2A6E"/>
+    <path
+        android:pathData="M112,320 V352 L256,424 V392 Z"
+        android:fillColor="#2C1E52"/>
+    <path
+        android:pathData="M400,320 V352 L256,424 V392 Z"
+        android:fillColor="#231842"/>
+
+    <!-- Middle slab. -->
+    <path
+        android:pathData="M256,320 L128,256 L256,192 L384,256 Z"
+        android:fillColor="#5E3FA6"/>
+    <path
+        android:pathData="M128,256 V288 L256,352 V320 Z"
+        android:fillColor="#472F80"/>
+    <path
+        android:pathData="M384,256 V288 L256,352 V320 Z"
+        android:fillColor="#3A2668"/>
+
+    <!-- Top slab (accent, brightest). -->
+    <path
+        android:pathData="M256,248 L144,192 L256,136 L368,192 Z"
+        android:fillColor="#8B5BD0"/>
+    <path
+        android:pathData="M144,192 V224 L256,280 V248 Z"
+        android:fillColor="#6E45B0"/>
+    <path
+        android:pathData="M368,192 V224 L256,280 V248 Z"
+        android:fillColor="#5A3894"/>
+
+    <!-- Plus badge: a component being added. -->
+    <path
+        android:pathData="M392,96 m-44,0 a44,44 0 1 0 88,0 a44,44 0 1 0 -88,0 z"
+        android:fillColor="#FFFFFF"/>
+    <path
+        android:pathData="M392,72 V120 M368,96 H416"
+        android:fillColor="#00000000"
+        android:strokeColor="#1A1C1E"
+        android:strokeWidth="14"
+        android:strokeLineCap="round"/>
+</vector>

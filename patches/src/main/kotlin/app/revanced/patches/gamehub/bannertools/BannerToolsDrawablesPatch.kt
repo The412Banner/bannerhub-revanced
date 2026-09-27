@@ -33,6 +33,7 @@ private val DRAWABLE_NAMES = listOf(
     "bh_bt_overlay",
     "bh_bt_root",
     "bh_bt_steam_chat",
+    "bh_bt_components",   // Component Manager tile (inject / list / remove PC-engine components)
 )
 
 // Sentinel for classloader access — same trick as ChangeAppIconPatch's
@@ -45,7 +46,7 @@ private object BannerToolsDrawableResources
 val bannerToolsDrawablesPatch = resourcePatch(
     name = "Banner Tools drawables",
     description = "Adds the bh_bt_* vector drawables (vibration, gpu_spoof, " +
-        "renderer, game_id, audio, gog, overlay, root) to res/drawable. " +
+        "renderer, game_id, audio, gog, overlay, root, components) to res/drawable. " +
         "Rendered by the Banner Tools dialog's tile grid.",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))

@@ -28,6 +28,7 @@ private val ACTIVITIES = listOf(
     "$PKG.GogLoginActivity" to false, // WebView GOG OAuth
     "$PKG.GogGamesActivity" to false, // owned-library list
     "$PKG.GogGameDetailActivity" to false,
+    "$PKG.GogCatalogDetailActivity" to false, // store-only detail page (unowned catalog titles)
     "$PKG.BhDownloadsActivity" to false, // shared download manager screen
     "$PKG.FolderPickerActivity" to false, // install-location picker
 )

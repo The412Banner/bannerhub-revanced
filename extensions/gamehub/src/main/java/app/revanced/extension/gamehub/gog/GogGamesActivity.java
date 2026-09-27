@@ -582,7 +582,8 @@ public class GogGamesActivity extends Activity {
                         o.optString("description", ""),
                         o.optString("developer", ""),
                         o.optString("category", ""),
-                        o.optInt("generation", 1)));
+                        o.optInt("generation", 1),
+                        o.optString("verticalCover", "")));
             }
             return games;
         } catch (Exception e) { return null; }
@@ -600,6 +601,7 @@ public class GogGamesActivity extends Activity {
                 o.put("developer", g.developer);
                 o.put("category", g.category);
                 o.put("generation", g.generation);
+                if (g.verticalCover != null) o.put("verticalCover", g.verticalCover);
                 arr.put(o);
             }
             prefs.edit().putString(CACHE_KEY, arr.toString()).apply();
@@ -1604,7 +1606,8 @@ public class GogGamesActivity extends Activity {
                 getResources().getDisplayMetrics());
     }
 
-    private static String httpGet(String url, String token) {
+    /** Package-visible: the storefront library repo reuses this exact fetch. */
+    static String httpGet(String url, String token) {
         try {
             HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
             conn.setConnectTimeout(20000);
@@ -1625,7 +1628,8 @@ public class GogGamesActivity extends Activity {
     private static final String SGDB_KEY = "cf89227f12c773bb1117b6b109ae1659";
 
     /** Returns the first SteamGridDB 600x900 cover URL for the given game title, or "" on failure. */
-    private static String sgdbFetchCover(String title) {
+    /** Package-visible: the storefront library repo reuses the same SGDB cover lookup. */
+    static String sgdbFetchCover(String title) {
         try {
             String encoded = java.net.URLEncoder.encode(title, "UTF-8");
             String searchJson = httpGet(

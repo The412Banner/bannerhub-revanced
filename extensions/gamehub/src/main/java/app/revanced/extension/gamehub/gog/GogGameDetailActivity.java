@@ -4,75 +4,81 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.Html;
-import android.util.TypedValue;
-import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
-import android.widget.FrameLayout;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
-import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.BufferedReader;
 import java.io.File;
-import java.io.InputStreamReader;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Full-screen game detail view for a GOG library entry.
+ * Full-screen detail page for an OWNED GOG library entry, on the Steam-style scaffold
+ * ({@link GogDetailScaffold}): hero → name → ONE primary button (Install / Resume / Update /
+ * Add to Library, or the read-only download fill) + ⚙ gear → pill tabs
+ * (Details · DLC · Cloud saves · Media). Every former action is still reachable: the gear
+ * carries cancel / set-exe / copy / check-updates / uninstall. The HANDLERS are the existing
+ * BannerHub flows — {@link BhInstallConfirmDialog} → {@link BhDownloadService} (progress via its
+ * listener), {@link GogLaunchHelper} (add to GameHub's library), {@link GogCloudSaveManager},
+ * {@link GogDownloadManager#copyToDownloads} / {@link GogDownloadManager#collectExeCandidates},
+ * {@link FolderPickerActivity} — only the layout moved.
  *
- * Launched via startActivityForResult() from GogGamesActivity.
- * Extras (all Strings / int):
- *   game_id, title, image_url, description, developer, category, generation(int)
+ * Launched via startActivityForResult() from the hub / games screen / downloads screen.
+ * Extras (all Strings / int): game_id, title, image_url, description, developer, category,
+ * generation(int), vertical_cover (optional).
  *
- * Result codes:
- *   RESULT_CANCELED  — nothing changed
- *   RESULT_REFRESH   — install state changed (uninstall, exe set); caller should refresh card
+ * Result codes: RESULT_CANCELED — nothing changed; RESULT_REFRESH — install state changed.
  */
 public class GogGameDetailActivity extends Activity {
 
     public static final int RESULT_REFRESH = 100;
 
     private static final String TAG = "BH_GOG_DETAIL";
-
-    private final Handler uiHandler = new Handler(Looper.getMainLooper());
-    private SharedPreferences prefs;
-
     private static final int REQUEST_FOLDER_PICKER = 200;
     private static final int REQUEST_COPY_STORAGE = 201;
 
-    private String gameId, title, imageUrl, description, developer, category;
+    private static final int TAB_DETAILS = 0, TAB_DLC = 1, TAB_CLOUD = 2, TAB_MEDIA = 3;
+
+    private final Handler ui = new Handler(Looper.getMainLooper());
+    private SharedPreferences prefs;
+
+    private String gameId, title, imageUrl, description, developer, category, verticalCover;
     private int generation;
+    private String dlKey;
 
-    // Action section views (need refs for live updates)
-    private Button launchBtn, installBtn, setExeBtn, uninstallBtn, copyBtn;
-    private TextView exeNameTV, installPathTV, storageTypeBadgeTV, sizeTV;
-    private View installPathRow;
-    private ProgressBar progressBar;
-    private TextView progressLabel;
-    private Runnable cancelDownload;
+    private GogDetailScaffold scaffold;
+    private int tab = TAB_DETAILS;
 
-    // Updates section views
-    private TextView updateStatusTV;
-    private Button checkUpdatesBtn, updateBtn;
+    // Download state mirrored from BhDownloadService
+    private boolean downloading;
+    private int progressPct;
+    private String progressMsg = "";
 
-    // Cloud saves section views
+    // Details tab live pieces
+    private String sizeText = "Fetching…";
+    private String updateStatusText = "";
+    private boolean checkUpdateEnabled = true;
+
+    // Media
+    private GogStoreCatalog.StoreMedia media;
+    private boolean mediaLoading = true;
+
+    // Cloud saves
     private TextView cloudSaveDirTV, cloudSaveStatusTV;
-    private Button cloudBrowseBtn, cloudUploadBtn, cloudDownloadBtn;
+    private Button cloudUploadBtn, cloudDownloadBtn;
+    private String cloudStatus = "";
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -81,310 +87,350 @@ public class GogGameDetailActivity extends Activity {
 
         Intent i = getIntent();
         gameId      = i.getStringExtra("game_id");
-        title       = i.getStringExtra("title");
-        imageUrl    = i.getStringExtra("image_url");
-        description = i.getStringExtra("description");
-        developer   = i.getStringExtra("developer");
-        category    = i.getStringExtra("category");
+        if (gameId == null || gameId.isEmpty()) { finish(); return; }
+        dlKey       = "gog_" + gameId;
+        title       = nz(i.getStringExtra("title"));
+        imageUrl    = nz(i.getStringExtra("image_url"));
+        description = nz(i.getStringExtra("description"));
+        developer   = nz(i.getStringExtra("developer"));
+        category    = nz(i.getStringExtra("category"));
         generation  = i.getIntExtra("generation", 0);
+        verticalCover = nz(i.getStringExtra("vertical_cover"));
 
-        if (gameId == null) { finish(); return; }
+        // A caller that only had the id (the downloads screen) gets the cached metadata.
+        if (title.isEmpty()) {
+            GogGame g = GogLibraryRepo.find(this, gameId);
+            if (g != null) {
+                title = g.title; imageUrl = g.imageUrl; description = g.description;
+                developer = g.developer; category = g.category; generation = g.generation;
+                if (g.verticalCover != null) verticalCover = g.verticalCover;
+            }
+        }
+        if (verticalCover.isEmpty()) verticalCover = nz(prefs.getString("gog_vcover_" + gameId, ""));
 
-        buildUi();
-    }
+        scaffold = new GogDetailScaffold(this, title.isEmpty() ? gameId : title, this::finish,
+                () -> startActivity(new Intent(this, BhDownloadsActivity.class)));
+        setContentView(scaffold.root);
+        BhStoreUi.hideSystemBars(this);
 
-    @Override
-    public void onBackPressed() {
-        super.onBackPressed();
+        List<String> hero = new ArrayList<>();
+        if (!imageUrl.isEmpty()) hero.add(imageUrl);
+        if (!verticalCover.isEmpty()) hero.add(verticalCover);
+        scaffold.loadHero(hero);
+
+        String storedBuild = prefs.getString("gog_build_" + gameId, null);
+        updateStatusText = storedBuild != null
+                ? "Installed build: " + storedBuild.substring(0, Math.min(12, storedBuild.length())) + "…"
+                : "Build ID not recorded — tap Check to verify";
+
+        refreshState();
+        loadInstallSize();
+        loadMedia();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         if (gameId == null) return;
-        String dlKey = "gog_" + gameId;
         if (BhDownloadService.isActive(dlKey)) {
-            installBtn.setText("Cancel");
-            installBtn.setBackgroundColor(0xFFCC3333);
-            progressBar.setVisibility(View.VISIBLE);
-            progressLabel.setVisibility(View.VISIBLE);
-            launchBtn.setEnabled(false);
-            setExeBtn.setEnabled(false);
-            cancelDownload = () -> BhDownloadService.cancel(this, dlKey);
-            attachDownloadListener(dlKey);
+            downloading = true;
+            progressPct = BhDownloadService.getLastPct(dlKey);
+            progressMsg = BhDownloadService.getLastMsg(dlKey);
+            attachDownloadListener();
+        } else {
+            downloading = false;
         }
+        refreshState();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        if (gameId != null) BhDownloadService.removeListener("gog_" + gameId);
-    }
-
-    // ── UI ────────────────────────────────────────────────────────────────────
-
-    private void buildUi() {
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(0xFF0D0D0D);
-
-        // ── Fixed header bar ──────────────────────────────────────────────────
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setBackgroundColor(0xFF1A1A2E);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-        header.setPadding(dp(8), dp(8), dp(8), dp(8));
-
-        Button backBtn = makeBtn("←", 0xFF333333);
-        backBtn.setOnClickListener(v -> finish());
-        header.addView(backBtn, new LinearLayout.LayoutParams(-2, dp(36)));
-
-        TextView titleTV = new TextView(this);
-        titleTV.setText(title != null ? title : "");
-        titleTV.setTextColor(0xFFFFFFFF);
-        titleTV.setTextSize(15f);
-        titleTV.setTypeface(null, Typeface.BOLD);
-        titleTV.setPadding(dp(12), 0, dp(8), 0);
-        titleTV.setMaxLines(1);
-        titleTV.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        header.addView(titleTV, new LinearLayout.LayoutParams(0, -2, 1f));
-
-        root.addView(header, new LinearLayout.LayoutParams(-1, -2));
-
-        // ── Scrollable body ───────────────────────────────────────────────────
-        ScrollView scroll = new ScrollView(this);
-        LinearLayout body = new LinearLayout(this);
-        body.setOrientation(LinearLayout.VERTICAL);
-        body.setPadding(dp(12), dp(12), dp(12), dp(24));
-
-        // Cover art
-        ImageView coverIV = new ImageView(this);
-        coverIV.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        coverIV.setBackgroundColor(0xFF111122);
-        body.addView(coverIV, new LinearLayout.LayoutParams(-1, dp(200)));
-        loadImage(coverIV);
-
-        // Info section
-        body.addView(makeSectionHeader("GAME INFO"), sectionHeaderLp());
-        body.addView(makeInfoCard(), new LinearLayout.LayoutParams(-1, -2));
-
-        // Actions section
-        body.addView(makeSectionHeader("ACTIONS"), sectionHeaderLp());
-        body.addView(makeActionsCard(), new LinearLayout.LayoutParams(-1, -2));
-
-        // Updates
-        body.addView(makeSectionHeader("UPDATES"), sectionHeaderLp());
-        body.addView(makeUpdatesCard(), new LinearLayout.LayoutParams(-1, -2));
-
-        body.addView(makeSectionHeader("DLC"), sectionHeaderLp());
-        body.addView(makeDlcCard(), new LinearLayout.LayoutParams(-1, -2));
-
-        // Cloud Saves
-        body.addView(makeSectionHeader("CLOUD SAVES"), sectionHeaderLp());
-        body.addView(makeCloudSavesCard(), new LinearLayout.LayoutParams(-1, -2));
-
-        scroll.addView(body);
-        root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
-        setContentView(root);
-        hideSystemBars();
-
-        refreshActionState();
-        loadInstallSize();
+        if (gameId != null) BhDownloadService.removeListener(dlKey);
     }
 
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        if (hasFocus) hideSystemBars();
+        if (hasFocus) BhStoreUi.hideSystemBars(this);
     }
 
-    private void hideSystemBars() {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-            android.view.WindowInsetsController c = getWindow().getInsetsController();
-            if (c != null) {
-                c.hide(android.view.WindowInsets.Type.statusBars() | android.view.WindowInsets.Type.navigationBars());
-                c.setSystemBarsBehavior(android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-            }
+    private static String nz(String s) { return s == null ? "" : s; }
+
+    // ── State → scaffold ──────────────────────────────────────────────────────
+
+    /** Re-derive the primary button, subtitle, gear and the visible tab from prefs + service. */
+    private void refreshState() {
+        if (scaffold == null) return;
+        GogInstallPath.State state = GogInstallPath.checkState(prefs, gameId);
+        boolean installed = state == GogInstallPath.State.INSTALLED;
+        boolean partial = state == GogInstallPath.State.PARTIAL;
+        boolean updateAvail = installed && GogInstallState.isUpdateAvailable(this, gameId);
+
+        // Subtitle: install status line.
+        List<View> sub = new ArrayList<>();
+        if (installed) {
+            String exe = prefs.getString("gog_exe_" + gameId, "");
+            String dir = prefs.getString("gog_dir_" + gameId, "");
+            sub.add(BhStoreUi.oneLine(BhStoreUi.text(this,
+                    "✓ Installed · .exe: " + new File(exe).getName(), 12f, BhStoreUi.GREEN, false), 1));
+            LinearLayout pathRow = BhStoreUi.row(this);
+            pathRow.addView(BhStoreUi.oneLine(BhStoreUi.text(this, dir, 11f, BhStoreUi.DIM, false), 1), BhStoreUi.lpWeight(-2, 1f));
+            SharedPreferences sp = getSharedPreferences(BhStorageHelper.PREFS, 0);
+            String sdPath = sp.getString(BhStorageHelper.KEY_PATH, null);
+            boolean isSD = sdPath != null && !sdPath.isEmpty() && dir.startsWith(sdPath);
+            TextView badge = BhStoreUi.text(this, isSD ? "SD Card" : "Internal", 10f, isSD ? BhStoreUi.FREE_GREEN : BhStoreUi.MUTED, true);
+            badge.setPadding(BhStoreUi.dp(this, 6), BhStoreUi.dp(this, 2), BhStoreUi.dp(this, 6), BhStoreUi.dp(this, 2));
+            badge.setBackground(BhStoreUi.roundBg(this, isSD ? 0xFF1B3A1B : 0xFF2A2A2A, 10));
+            LinearLayout.LayoutParams bl = BhStoreUi.lp(-2, -2); bl.leftMargin = BhStoreUi.dp(this, 6);
+            pathRow.addView(badge, bl);
+            sub.add(pathRow);
+            if (updateAvail) sub.add(BhStoreUi.text(this, "↑ Update available on GOG", 12f, BhStoreUi.AMBER, true));
+        } else if (partial) {
+            sub.add(BhStoreUi.text(this, "Partial install — resume picks up where it left off", 12f, BhStoreUi.AMBER, false));
+        }
+        scaffold.setSubtitle(sub);
+
+        // Primary.
+        if (downloading) {
+            String label = progressMsg == null || progressMsg.isEmpty() ? "Downloading… " + progressPct + "%" : progressMsg + "  " + progressPct + "%";
+            scaffold.primary.setProgress(label, progressPct / 100f);
+        } else if (installed && updateAvail) {
+            scaffold.primary.setAction("Update now", true, v -> startInstall());
+        } else if (installed) {
+            scaffold.primary.setAction("Add to Library", true, v -> addToLibrary());
         } else {
-            getWindow().getDecorView().setSystemUiVisibility(
-                android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                | android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                | android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                | android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                | android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                | android.view.View.SYSTEM_UI_FLAG_FULLSCREEN);
+            scaffold.primary.setAction(partial ? "Resume install" : "Install", true, v -> startInstall());
+        }
+
+        // Gear.
+        List<GogDetailScaffold.GearItem> gear = new ArrayList<>();
+        if (downloading) gear.add(GogDetailScaffold.GearItem.danger("Cancel download", () -> BhDownloadService.cancel(this, dlKey)));
+        if (installed && updateAvail && !downloading) gear.add(GogDetailScaffold.GearItem.of("Add to Library", this::addToLibrary));
+        if (installed && !downloading) {
+            gear.add(GogDetailScaffold.GearItem.of("Set .exe…", this::pickExe));
+            gear.add(GogDetailScaffold.GearItem.of("Copy to Downloads", this::startCopyToDownloads));
+            gear.add(new GogDetailScaffold.GearItem("Check for updates", checkUpdateEnabled, false, this::doCheckUpdate));
+        }
+        if ((installed || partial) && !downloading) gear.add(GogDetailScaffold.GearItem.danger("Uninstall", this::confirmUninstall));
+        scaffold.setGear(gear);
+
+        scaffold.setInfoLine(downloading ? "Keeps running in the background — progress is also in the shade and the Downloads screen." : null);
+
+        renderTabs();
+    }
+
+    private void renderTabs() {
+        boolean mediaVisible = media != null && !media.isEmpty();
+        String[] labels = mediaVisible
+                ? new String[]{"Details", "DLC", "Cloud saves", "Media"}
+                : new String[]{"Details", "DLC", "Cloud saves"};
+        if (tab >= labels.length) tab = TAB_DETAILS;
+        scaffold.setTabs(labels, tab, idx -> { tab = idx; renderBody(); });
+        int dlcCount = dlcArray() == null ? 0 : dlcArray().length();
+        if (dlcCount > 0) scaffold.setTabBadge(TAB_DLC, String.valueOf(dlcCount));
+        if (mediaVisible) scaffold.setTabBadge(TAB_MEDIA, String.valueOf(media.count()));
+        renderBody();
+    }
+
+    private void renderBody() {
+        switch (tab) {
+            case TAB_DLC:   scaffold.setBody(buildDlc()); break;
+            case TAB_CLOUD: scaffold.setBody(buildCloudSaves()); break;
+            case TAB_MEDIA: scaffold.setBody(GogMediaView.build(this, media, mediaLoading)); break;
+            default:        scaffold.setBody(buildDetails()); break;
         }
     }
 
-    private View makeInfoCard() {
-        LinearLayout card = makeCard();
+    // ── Details tab ───────────────────────────────────────────────────────────
 
-        if (generation > 0) {
-            TextView genTV = new TextView(this);
-            genTV.setText("Gen " + generation);
-            genTV.setTextSize(11f);
-            genTV.setTextColor(0xFFFFFFFF);
-            genTV.setPadding(dp(8), dp(3), dp(8), dp(3));
-            GradientDrawable bg = new GradientDrawable();
-            bg.setColor(generation == 2 ? 0xFF0277BD : 0xFFE65100);
-            bg.setCornerRadius(dp(4));
-            genTV.setBackground(bg);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
-            lp.bottomMargin = dp(8);
-            card.addView(genTV, lp);
-        }
+    private View buildDetails() {
+        LinearLayout col = BhStoreUi.column(this);
+        col.setPadding(0, BhStoreUi.dp(this, 6), 0, BhStoreUi.dp(this, 8));
 
-        if (developer != null && !developer.isEmpty()) {
-            card.addView(makeInfoRow("Developer", developer));
-        }
-        if (category != null && !category.isEmpty()) {
-            card.addView(makeInfoRow("Genre", category));
-        }
-        String releaseDate = prefs.getString("gog_release_" + gameId, null);
-        if (releaseDate != null && !releaseDate.isEmpty()) {
-            card.addView(makeInfoRow("Released", formatDate(releaseDate)));
-        }
+        LinearLayout inner = BhStoreUi.column(this);
+        inner.setPadding(BhStoreUi.dp(this, 16), 0, BhStoreUi.dp(this, 16), BhStoreUi.dp(this, 8));
+        LinearLayout chips = BhStoreUi.row(this);
+        chips.addView(BhStoreUi.infoChip(this, sizeText), BhStoreUi.chipLp(this));
+        if (!developer.isEmpty()) chips.addView(BhStoreUi.infoChip(this, developer), BhStoreUi.chipLp(this));
+        if (!category.isEmpty()) chips.addView(BhStoreUi.infoChip(this, category), BhStoreUi.chipLp(this));
+        if (generation > 0) chips.addView(BhStoreUi.infoChip(this, "Gen " + generation), BhStoreUi.chipLp(this));
+        inner.addView(wrapChips(chips), BhStoreUi.lp(-1, -2));
+
+        LinearLayout chips2 = BhStoreUi.row(this);
+        String release = prefs.getString("gog_release_" + gameId, null);
+        if (release != null && !release.isEmpty()) chips2.addView(BhStoreUi.infoChip(this, "Released " + BhStoreUi.formatDate(release)), BhStoreUi.chipLp(this));
         int rating = prefs.getInt("gog_rating_" + gameId, -1);
-        if (rating >= 0) {
-            float stars = rating / 100f;
-            String ratingStr = rating == 0 ? "Not rated"
-                    : String.format("%.1f / 5 ★", stars);
-            card.addView(makeInfoRow("Rating", ratingStr));
+        if (rating > 0) chips2.addView(BhStoreUi.infoChip(this, String.format(java.util.Locale.US, "%.1f / 5 ★", rating / 100f)), BhStoreUi.chipLp(this));
+        if (chips2.getChildCount() > 0) inner.addView(wrapChips(chips2), BhStoreUi.lp(-1, -2));
+
+        if (!description.isEmpty()) {
+            TextView tv = BhStoreUi.text(this, Html.fromHtml(description, Html.FROM_HTML_MODE_COMPACT).toString().trim(), 12f, BhStoreUi.TEXT2, false);
+            LinearLayout.LayoutParams l = BhStoreUi.lp(-1, -2); l.topMargin = BhStoreUi.dp(this, 6);
+            inner.addView(tv, l);
         }
-        // Install size row (value updated async)
-        sizeTV = new TextView(this);
-        sizeTV.setTextColor(0xFFCCCCCC);
-        sizeTV.setTextSize(13f);
-        sizeTV.setText("Fetching…");
-        card.addView(makeInfoRowWithRef("Install size", sizeTV));
+        col.addView(inner, BhStoreUi.lp(-1, -2));
 
-        if (description != null && !description.isEmpty()) {
-            TextView descTV = new TextView(this);
-            descTV.setText(Html.fromHtml(description, Html.FROM_HTML_MODE_COMPACT));
-            descTV.setTextColor(0xFFCCCCCC);
-            descTV.setTextSize(13f);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-            lp.topMargin = dp(8);
-            card.addView(descTV, lp);
-        }
-        return card;
-    }
-
-    private View makeActionsCard() {
-        LinearLayout card = makeCard();
-
-        // .exe name row
-        exeNameTV = new TextView(this);
-        exeNameTV.setTextColor(0xFF888888);
-        exeNameTV.setTextSize(12f);
-        exeNameTV.setPadding(0, 0, 0, dp(4));
-        card.addView(exeNameTV);
-
-        LinearLayout pathRow = new LinearLayout(this);
-        pathRow.setOrientation(LinearLayout.HORIZONTAL);
-        pathRow.setGravity(Gravity.CENTER_VERTICAL);
-        pathRow.setPadding(0, 0, 0, dp(8));
-        pathRow.setVisibility(View.GONE);
-        installPathRow = pathRow;
-
-        installPathTV = new TextView(this);
-        installPathTV.setTextColor(0xFF666666);
-        installPathTV.setTextSize(11f);
-        LinearLayout.LayoutParams pathLp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-        pathLp.setMarginEnd(dp(6));
-        installPathTV.setLayoutParams(pathLp);
-        pathRow.addView(installPathTV);
-
-        storageTypeBadgeTV = new TextView(this);
-        storageTypeBadgeTV.setTextSize(10f);
-        storageTypeBadgeTV.setTypeface(null, Typeface.BOLD);
-        storageTypeBadgeTV.setPadding(dp(6), dp(2), dp(6), dp(2));
-        pathRow.addView(storageTypeBadgeTV);
-
-        card.addView(pathRow);
-
-        // Progress bar + label
-        progressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
-        progressBar.setMax(100);
-        progressBar.setVisibility(View.GONE);
-        LinearLayout.LayoutParams pbLp = new LinearLayout.LayoutParams(-1, dp(4));
-        pbLp.bottomMargin = dp(4);
-        card.addView(progressBar, pbLp);
-
-        progressLabel = new TextView(this);
-        progressLabel.setTextColor(0xFFAAAAAA);
-        progressLabel.setTextSize(11f);
-        progressLabel.setVisibility(View.GONE);
-        LinearLayout.LayoutParams plLp = new LinearLayout.LayoutParams(-1, -2);
-        plLp.bottomMargin = dp(8);
-        card.addView(progressLabel, plLp);
-
-        // Add to Library button — registers the game in GameHub's library.
-        // Launching is the user's job, done manually from the GameHub library
-        // tile like any other PC import.
-        launchBtn = makeBtn("Add to Library", 0xFF2E7D32);
-        launchBtn.setOnClickListener(v -> {
-            String exe = prefs.getString("gog_exe_" + gameId, null);
-            if (exe != null) GogLaunchHelper.addToLibrary(this, exe, gameId, title, imageUrl);
-        });
-        card.addView(launchBtn, btnLp());
-
-        // Install button
-        installBtn = makeBtn("Install", 0xFF5533CC);
-        installBtn.setOnClickListener(v -> {
-            String lbl = installBtn.getText().toString();
-            if ("Cancel".equals(lbl)) {
-                if (cancelDownload != null) { cancelDownload.run(); cancelDownload = null; }
-                return;
+        // Updates card
+        LinearLayout card = BhStoreUi.card(this);
+        card.addView(BhStoreUi.text(this, "Updates", 14f, BhStoreUi.TEXT, true));
+        boolean installed = GogInstallPath.checkState(prefs, gameId) == GogInstallPath.State.INSTALLED;
+        if (!installed) {
+            TextView tv = BhStoreUi.text(this, "Install the game first to check for updates.", 12f, BhStoreUi.DIM, false);
+            LinearLayout.LayoutParams l = BhStoreUi.lp(-1, -2); l.topMargin = BhStoreUi.dp(this, 8);
+            card.addView(tv, l);
+        } else {
+            TextView status = BhStoreUi.text(this, updateStatusText, 12f, BhStoreUi.TEXT2, false);
+            LinearLayout.LayoutParams sl = BhStoreUi.lp(-1, -2); sl.topMargin = BhStoreUi.dp(this, 8); sl.bottomMargin = BhStoreUi.dp(this, 8);
+            card.addView(status, sl);
+            if (GogInstallState.isUpdateAvailable(this, gameId) && !downloading) {
+                Button upd = BhStoreUi.button(this, "Update Now", BhStoreUi.INFO_BLUE);
+                upd.setOnClickListener(v -> startInstall());
+                card.addView(upd, BhStoreUi.buttonLp(this));
             }
-            startInstall();
-        });
-        card.addView(installBtn, btnLp());
-
-        // Set .exe button
-        setExeBtn = makeBtn("Set .exe…", 0xFF444444);
-        setExeBtn.setOnClickListener(v -> {
-            String dir = prefs.getString("gog_dir_" + gameId, null);
-            if (dir == null) return;
-            // gog_dir_ is stored as an absolute path; use it directly.
-            File installPath = new File(dir);
-            new Thread(() -> {
-                List<String> candidates = GogDownloadManager.collectExeCandidates(installPath);
-                if (candidates.isEmpty()) {
-                    uiHandler.post(() -> Toast.makeText(this, "No .exe files found", Toast.LENGTH_SHORT).show());
-                    return;
-                }
-                showExePicker(candidates, selected -> {
-                    if (selected != null && !selected.isEmpty()) {
-                        prefs.edit().putString("gog_exe_" + gameId, selected).apply();
-                        uiHandler.post(() -> {
-                            refreshActionState();
-                            setResult(RESULT_REFRESH);
-                            Toast.makeText(this, "Exe set: " + new File(selected).getName(), Toast.LENGTH_SHORT).show();
-                        });
-                    }
-                });
-            }).start();
-        });
-        card.addView(setExeBtn, btnLp());
-
-        // Uninstall button
-        uninstallBtn = makeBtn("Uninstall", 0xFF8B0000);
-        uninstallBtn.setOnClickListener(v -> confirmUninstall());
-        card.addView(uninstallBtn, btnLp());
-
-        // Copy to Downloads button
-        copyBtn = makeBtn("Copy to Downloads", 0xFF333333);
-        copyBtn.setOnClickListener(v -> startCopyToDownloads());
-        card.addView(copyBtn, btnLp());
-
-        return card;
+            Button check = BhStoreUi.button(this, "Check for Updates", 0xFF333355);
+            check.setEnabled(checkUpdateEnabled && !downloading);
+            check.setOnClickListener(v -> doCheckUpdate());
+            card.addView(check, BhStoreUi.buttonLp(this));
+        }
+        col.addView(card, BhStoreUi.cardLp(this));
+        return col;
     }
 
-    // ── Install flow ──────────────────────────────────────────────────────────
+    /** A chip row that wraps onto a second line when it does not fit (portrait). */
+    private View wrapChips(LinearLayout row) {
+        android.widget.HorizontalScrollView hs = new android.widget.HorizontalScrollView(this);
+        hs.setHorizontalScrollBarEnabled(false);
+        hs.addView(row, new android.widget.FrameLayout.LayoutParams(-2, -2));
+        return hs;
+    }
+
+    // ── DLC tab ───────────────────────────────────────────────────────────────
+
+    private JSONArray dlcArray() {
+        String json = prefs.getString("gog_dlcs_" + gameId, null);
+        if (json == null || json.isEmpty() || "[]".equals(json)) return null;
+        try {
+            JSONArray a = new JSONArray(json);
+            return a.length() == 0 ? null : a;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private View buildDlc() {
+        LinearLayout col = BhStoreUi.column(this);
+        col.setPadding(0, BhStoreUi.dp(this, 6), 0, BhStoreUi.dp(this, 8));
+        LinearLayout card = BhStoreUi.card(this);
+        card.addView(BhStoreUi.text(this, "DLC", 14f, BhStoreUi.TEXT, true));
+        JSONArray arr = dlcArray();
+        if (arr == null) {
+            TextView tv = BhStoreUi.text(this, "No DLCs in your library for this game", 12f, BhStoreUi.DIM, false);
+            LinearLayout.LayoutParams l = BhStoreUi.lp(-1, -2); l.topMargin = BhStoreUi.dp(this, 8);
+            card.addView(tv, l);
+        } else {
+            TextView count = BhStoreUi.text(this, arr.length() + " DLC" + (arr.length() == 1 ? "" : "s") + " owned", 12f, BhStoreUi.MUTED, true);
+            LinearLayout.LayoutParams cl = BhStoreUi.lp(-1, -2); cl.topMargin = BhStoreUi.dp(this, 8);
+            card.addView(count, cl);
+            TextView note = BhStoreUi.text(this, "DLC content is included in gen2 game installs.", 11f, BhStoreUi.DIM, false);
+            LinearLayout.LayoutParams nl = BhStoreUi.lp(-1, -2); nl.topMargin = BhStoreUi.dp(this, 3); nl.bottomMargin = BhStoreUi.dp(this, 6);
+            card.addView(note, nl);
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject dlc = arr.optJSONObject(i);
+                if (dlc == null) continue;
+                LinearLayout row = BhStoreUi.row(this);
+                row.setPadding(BhStoreUi.dp(this, 8), BhStoreUi.dp(this, 6), BhStoreUi.dp(this, 8), BhStoreUi.dp(this, 6));
+                row.setBackground(BhStoreUi.roundBg(this, 0xFF1E1E2E, 6));
+                row.addView(BhStoreUi.oneLine(BhStoreUi.text(this, dlc.optString("title", "Unknown DLC"), 13f, 0xFFDDDDDD, false), 2), BhStoreUi.lpWeight(-2, 1f));
+                row.addView(BhStoreUi.text(this, "Owned", 11f, BhStoreUi.GREEN, true), BhStoreUi.lp(-2, -2));
+                LinearLayout.LayoutParams rl = BhStoreUi.lp(-1, -2); rl.topMargin = BhStoreUi.dp(this, 4);
+                card.addView(row, rl);
+            }
+        }
+        col.addView(card, BhStoreUi.cardLp(this));
+        return col;
+    }
+
+    // ── Cloud saves tab (GOG-1) ───────────────────────────────────────────────
+
+    private View buildCloudSaves() {
+        LinearLayout col = BhStoreUi.column(this);
+        col.setPadding(0, BhStoreUi.dp(this, 6), 0, BhStoreUi.dp(this, 8));
+        LinearLayout card = BhStoreUi.card(this);
+        card.addView(BhStoreUi.text(this, "Cloud Saves", 14f, BhStoreUi.TEXT, true));
+
+        LinearLayout folderRow = BhStoreUi.row(this);
+        String savedDir = prefs.getString("gog_save_dir_" + gameId, null);
+        cloudSaveDirTV = BhStoreUi.oneLine(BhStoreUi.text(this,
+                savedDir != null ? shortenPath(savedDir) : "No save folder set", 12f,
+                savedDir != null ? BhStoreUi.TEXT2 : BhStoreUi.DIM, false), 2);
+        folderRow.addView(cloudSaveDirTV, BhStoreUi.lpWeight(-2, 1f));
+        Button browse = BhStoreUi.button(this, "Browse", 0xFF333355);
+        browse.setOnClickListener(v -> startActivityForResult(new Intent(this, FolderPickerActivity.class), REQUEST_FOLDER_PICKER));
+        LinearLayout.LayoutParams bl = BhStoreUi.lp(-2, BhStoreUi.dp(this, 36)); bl.leftMargin = BhStoreUi.dp(this, 8);
+        folderRow.addView(browse, bl);
+        LinearLayout.LayoutParams fl = BhStoreUi.lp(-1, -2); fl.topMargin = BhStoreUi.dp(this, 8); fl.bottomMargin = BhStoreUi.dp(this, 10);
+        card.addView(folderRow, fl);
+
+        cloudSaveStatusTV = BhStoreUi.text(this, cloudStatus, 12f, 0xFF8888AA, false);
+        cloudSaveStatusTV.setVisibility(cloudStatus.isEmpty() ? View.GONE : View.VISIBLE);
+        LinearLayout.LayoutParams sl = BhStoreUi.lp(-1, -2); sl.bottomMargin = BhStoreUi.dp(this, 8);
+        card.addView(cloudSaveStatusTV, sl);
+
+        cloudUploadBtn = BhStoreUi.button(this, "Upload Saves", BhStoreUi.INFO_BLUE);
+        cloudUploadBtn.setEnabled(savedDir != null);
+        cloudUploadBtn.setOnClickListener(v -> cloudSync(true));
+        card.addView(cloudUploadBtn, BhStoreUi.buttonLp(this));
+
+        cloudDownloadBtn = BhStoreUi.button(this, "Download Saves", 0xFF2E7D32);
+        cloudDownloadBtn.setEnabled(savedDir != null);
+        cloudDownloadBtn.setOnClickListener(v -> cloudSync(false));
+        card.addView(cloudDownloadBtn, BhStoreUi.buttonLp(this));
+
+        col.addView(card, BhStoreUi.cardLp(this));
+        return col;
+    }
+
+    private void cloudSync(boolean up) {
+        String dir = prefs.getString("gog_save_dir_" + gameId, null);
+        if (dir == null) { toast("Set a save folder first"); return; }
+        enableCloudBtns(false);
+        showCloudStatus(up ? "Preparing upload…" : "Preparing download…");
+        GogCloudSaveManager.Callback cb = new GogCloudSaveManager.Callback() {
+            @Override public void onStatus(String msg) { ui.post(() -> showCloudStatus(msg)); }
+            @Override public void onDone(String msg)   { ui.post(() -> { showCloudStatus(msg); enableCloudBtns(true); }); }
+            @Override public void onError(String msg)  { ui.post(() -> { showCloudStatus("Error: " + msg); enableCloudBtns(true); }); }
+        };
+        if (up) GogCloudSaveManager.uploadSaves(this, gameId, new File(dir), cb);
+        else GogCloudSaveManager.downloadSaves(this, gameId, new File(dir), cb);
+    }
+
+    private void showCloudStatus(String msg) {
+        cloudStatus = msg == null ? "" : msg;
+        if (cloudSaveStatusTV == null) return;
+        cloudSaveStatusTV.setText(cloudStatus);
+        cloudSaveStatusTV.setVisibility(cloudStatus.isEmpty() ? View.GONE : View.VISIBLE);
+    }
+
+    private void enableCloudBtns(boolean enabled) {
+        if (cloudUploadBtn != null) cloudUploadBtn.setEnabled(enabled);
+        if (cloudDownloadBtn != null) cloudDownloadBtn.setEnabled(enabled);
+    }
+
+    private static String shortenPath(String path) {
+        String[] parts = path.split("/");
+        if (parts.length <= 3) return path;
+        return "…/" + parts[parts.length - 2] + "/" + parts[parts.length - 1];
+    }
+
+    // ── Install flow (BhInstallConfirmDialog → BhDownloadService) ─────────────
+
+    private GogGame makeGogGame() {
+        return new GogGame(gameId, title, imageUrl, description, developer, category, generation, verticalCover);
+    }
 
     private void startInstall() {
-        GogGame previewGame = makeGogGame();
+        final GogGame previewGame = makeGogGame();
         BhInstallConfirmDialog.Callback cb = new BhInstallConfirmDialog.Callback() {
             @Override public void onConfirm(int threadCount) {
                 launchInstallWithThreads(threadCount, BhInstallConfirmDialog.CDN_PREF_AUTO);
@@ -394,7 +440,7 @@ public class GogGameDetailActivity extends Activity {
             }
         };
         BhInstallConfirmDialog.showAsync(this,
-                title != null ? title : (previewGame.title != null ? previewGame.title : gameId),
+                title.isEmpty() ? gameId : title,
                 "gog_games",
                 cb,
                 /* initialSizeBytes = */ 0L,
@@ -403,7 +449,7 @@ public class GogGameDetailActivity extends Activity {
                     runOnUiThread(() -> sizeCallback.onSize(size));
                 }).start(),
                 cdnListCallback -> new Thread(() -> {
-                    java.util.List<String> urls = GogDownloadManager.fetchCdnUrls(this, gameId);
+                    List<String> urls = GogDownloadManager.fetchCdnUrls(this, gameId);
                     runOnUiThread(() -> cdnListCallback.onCdnList(urls));
                 }).start());
     }
@@ -414,23 +460,18 @@ public class GogGameDetailActivity extends Activity {
                 != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 0);
         }
-        String dlKey = "gog_" + gameId;
-        installBtn.setText("Cancel");
-        installBtn.setBackgroundColor(0xFFCC3333);
-        progressBar.setVisibility(View.VISIBLE);
-        progressLabel.setVisibility(View.VISIBLE);
-        launchBtn.setEnabled(false);
-        setExeBtn.setEnabled(false);
-
-        cancelDownload = () -> BhDownloadService.cancel(this, dlKey);
-        attachDownloadListener(dlKey);
+        downloading = true;
+        progressPct = 0;
+        progressMsg = "Starting…";
+        attachDownloadListener();
+        refreshState();
 
         GogGame game = makeGogGame();
         Intent svc = new Intent(this, BhDownloadService.class);
         svc.setAction(BhDownloadService.ACTION_START);
         svc.putExtra(BhDownloadService.EXTRA_STORE, "GOG");
         svc.putExtra(BhDownloadService.EXTRA_GAME_ID, dlKey);
-        svc.putExtra(BhDownloadService.EXTRA_GAME_NAME, title != null ? title : gameId);
+        svc.putExtra(BhDownloadService.EXTRA_GAME_NAME, title.isEmpty() ? gameId : title);
         svc.putExtra(BhDownloadService.EXTRA_THREADS, threadCount);
         svc.putExtra(BhDownloadService.EXTRA_GOG_CDN_PREF, cdnPref);
         svc.putExtra(BhDownloadService.EXTRA_GOG_GAME_ID, game.gameId);
@@ -442,40 +483,93 @@ public class GogGameDetailActivity extends Activity {
         startForegroundService(svc);
     }
 
-    private void attachDownloadListener(String dlKey) {
+    private void attachDownloadListener() {
         BhDownloadService.addListener(dlKey, new BhDownloadService.DownloadListener() {
             @Override public void onProgress(String msg, int pct) {
-                uiHandler.post(() -> { progressBar.setProgress(pct); progressLabel.setText(msg); });
+                ui.post(() -> {
+                    if (isFinishing()) return;
+                    downloading = true;
+                    progressPct = pct;
+                    progressMsg = msg;
+                    String label = msg == null || msg.isEmpty() ? "Downloading… " + pct + "%" : msg + "  " + pct + "%";
+                    scaffold.primary.setProgress(label, pct / 100f);
+                });
             }
             @Override public void onComplete(String installDir) {
-                cancelDownload = null;
-                uiHandler.post(() -> {
-                    progressBar.setVisibility(View.GONE);
-                    progressLabel.setVisibility(View.GONE);
+                ui.post(() -> {
+                    if (isFinishing()) return;
+                    downloading = false;
+                    // A fresh install rewrote gog_build_; the "update available" marker is stale.
+                    GogInstallState.setUpdateAvailable(GogGameDetailActivity.this, gameId, false);
+                    String b = prefs.getString("gog_build_" + gameId, null);
+                    if (b != null) updateStatusText = "Installed build: " + b.substring(0, Math.min(12, b.length())) + "…";
                     setResult(RESULT_REFRESH);
-                    refreshActionState();
+                    refreshState();
                 });
             }
             @Override public void onError(String msg) {
-                cancelDownload = null;
-                uiHandler.post(() -> {
-                    progressBar.setVisibility(View.GONE);
-                    progressLabel.setVisibility(View.GONE);
-                    installBtn.setBackgroundColor(0xFF5533CC);
-                    refreshActionState();
-                    Toast.makeText(GogGameDetailActivity.this, "Error: " + msg, Toast.LENGTH_LONG).show();
+                ui.post(() -> {
+                    if (isFinishing()) return;
+                    downloading = false;
+                    refreshState();
+                    toast("Error: " + msg);
                 });
             }
             @Override public void onCancelled() {
-                cancelDownload = null;
-                uiHandler.post(() -> {
-                    progressBar.setVisibility(View.GONE);
-                    progressLabel.setVisibility(View.GONE);
-                    installBtn.setBackgroundColor(0xFF5533CC);
-                    refreshActionState();
+                ui.post(() -> {
+                    if (isFinishing()) return;
+                    downloading = false;
+                    refreshState();
                 });
             }
         });
+    }
+
+    // ── Add to library (GameHub DB) ───────────────────────────────────────────
+
+    private void addToLibrary() {
+        String exe = prefs.getString("gog_exe_" + gameId, null);
+        if (exe != null) GogLaunchHelper.addToLibrary(this, exe, gameId, title, imageUrl);
+    }
+
+    // ── Set .exe ──────────────────────────────────────────────────────────────
+
+    private void pickExe() {
+        final String dir = prefs.getString("gog_dir_" + gameId, null);
+        if (dir == null) return;
+        final File installPath = new File(dir);
+        new Thread(() -> {
+            List<String> candidates = GogDownloadManager.collectExeCandidates(installPath);
+            if (candidates.isEmpty()) {
+                ui.post(() -> toast("No .exe files found"));
+                return;
+            }
+            showExePicker(candidates, selected -> {
+                if (selected != null && !selected.isEmpty()) {
+                    prefs.edit().putString("gog_exe_" + gameId, selected).apply();
+                    ui.post(() -> {
+                        setResult(RESULT_REFRESH);
+                        refreshState();
+                        toast("Exe set: " + new File(selected).getName());
+                    });
+                }
+            });
+        }).start();
+    }
+
+    private void showExePicker(final List<String> candidates, final java.util.function.Consumer<String> onSelected) {
+        final String[] labels = new String[candidates.size()];
+        for (int i = 0; i < candidates.size(); i++) {
+            File f = new File(candidates.get(i));
+            File parent = f.getParentFile();
+            labels[i] = (parent != null) ? parent.getName() + "/" + f.getName() : f.getName();
+        }
+        ui.post(() ->
+            new AlertDialog.Builder(this)
+                .setTitle("Select game executable")
+                .setItems(labels, (d, which) -> new Thread(() -> onSelected.accept(candidates.get(which))).start())
+                .setNegativeButton("Cancel", null)
+                .show());
     }
 
     // ── Uninstall ─────────────────────────────────────────────────────────────
@@ -490,12 +584,10 @@ public class GogGameDetailActivity extends Activity {
     }
 
     private AlertDialog showUninstallProgress() {
-        android.widget.LinearLayout ll = new android.widget.LinearLayout(this);
-        ll.setOrientation(android.widget.LinearLayout.HORIZONTAL);
-        ll.setPadding(dp(24), dp(24), dp(24), dp(24));
-        ll.setGravity(Gravity.CENTER_VERTICAL);
-        ll.addView(new android.widget.ProgressBar(this));
-        android.widget.TextView tv = new android.widget.TextView(this);
+        LinearLayout ll = BhStoreUi.row(this);
+        ll.setPadding(BhStoreUi.dp(this, 24), BhStoreUi.dp(this, 24), BhStoreUi.dp(this, 24), BhStoreUi.dp(this, 24));
+        ll.addView(new ProgressBar(this));
+        TextView tv = new TextView(this);
         tv.setText("  Uninstalling…");
         tv.setTextSize(16f);
         ll.addView(tv);
@@ -505,309 +597,26 @@ public class GogGameDetailActivity extends Activity {
     }
 
     private void doUninstall() {
-        // Use the shared helper so PARTIAL state (failed download) cleans up
-        // identically to INSTALLED — same path resolution, same pref clearing,
-        // same UX regardless of whether the user is wiping a working install
-        // or recovering from a failed one.
-        String dirName = GogInstallPath.getInstallOrPartialPath(prefs, gameId);
+        // The shared helper resolves both INSTALLED and PARTIAL, so a failed download cleans up
+        // identically to a working install.
+        final String dirName = GogInstallPath.getInstallOrPartialPath(prefs, gameId);
         if (dirName == null) return;
-        AlertDialog progress = showUninstallProgress();
+        final AlertDialog progress = showUninstallProgress();
         new Thread(() -> {
-            File installPath = new File(dirName);
-            deleteDir(installPath);
-            GogInstallPath.clearAll(prefs, gameId);
-            uiHandler.post(() -> {
+            deleteDir(new File(dirName));
+            GogInstallState.purge(this, gameId);
+            BhDownloadService.removeLibraryEntry(this, dlKey);
+            ui.post(() -> {
                 progress.dismiss();
                 setResult(RESULT_REFRESH);
-                refreshActionState();
-                Toast.makeText(this, title + " uninstalled", Toast.LENGTH_SHORT).show();
+                updateStatusText = "Build ID not recorded — tap Check to verify";
+                refreshState();
+                toast(title + " uninstalled");
             });
         }).start();
     }
 
-    // ── State refresh ─────────────────────────────────────────────────────────
-
-    private void updateStorageBadge(String dir) {
-        if (installPathRow == null) return;
-        installPathTV.setText("Path: " + dir);
-        SharedPreferences sp = getSharedPreferences(BhStorageHelper.PREFS, 0);
-        String sdPath = sp.getString(BhStorageHelper.KEY_PATH, null);
-        boolean isSD = sdPath != null && !sdPath.isEmpty() && dir.startsWith(sdPath);
-        GradientDrawable badge = new GradientDrawable();
-        badge.setCornerRadius(dp(10));
-        if (isSD) {
-            badge.setColor(0xFF1B3A1B);
-            storageTypeBadgeTV.setTextColor(0xFF66BB6A);
-            storageTypeBadgeTV.setText("💾 SD Card");
-        } else {
-            badge.setColor(0xFF2A2A2A);
-            storageTypeBadgeTV.setTextColor(0xFF888888);
-            storageTypeBadgeTV.setText("📁 Internal");
-        }
-        storageTypeBadgeTV.setBackground(badge);
-        installPathRow.setVisibility(View.VISIBLE);
-    }
-
-    private void refreshActionState() {
-        if (exeNameTV == null) return;
-        GogInstallPath.State state = GogInstallPath.checkState(prefs, gameId);
-        boolean installed = (state == GogInstallPath.State.INSTALLED);
-        boolean partial   = (state == GogInstallPath.State.PARTIAL);
-
-        if (installed) {
-            String exe = prefs.getString("gog_exe_" + gameId, null);
-            String dir = prefs.getString("gog_dir_" + gameId, null);
-            exeNameTV.setText(".exe: " + new File(exe).getName());
-            exeNameTV.setVisibility(View.VISIBLE);
-            updateStorageBadge(dir);
-        } else {
-            exeNameTV.setVisibility(View.GONE);
-            if (installPathRow != null) installPathRow.setVisibility(View.GONE);
-        }
-
-        launchBtn.setVisibility(installed ? View.VISIBLE : View.GONE);
-        installBtn.setVisibility(installed ? View.GONE : View.VISIBLE);
-        // PARTIAL state: gen2 resume logic skips files that already exist, so
-        // "Resume install" tells the user the next install picks up where it
-        // left off rather than re-downloading the full game.
-        if (partial)         installBtn.setText("Resume install");
-        else if (!installed) installBtn.setText("Install");
-        setExeBtn.setVisibility(installed ? View.VISIBLE : View.GONE);
-        // Uninstall available for INSTALLED *and* PARTIAL so the user can wipe
-        // a failed-download folder and start over from a clean state.
-        uninstallBtn.setVisibility((installed || partial) ? View.VISIBLE : View.GONE);
-        copyBtn.setVisibility(installed ? View.VISIBLE : View.GONE);
-    }
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private GogGame makeGogGame() {
-        return new GogGame(gameId,
-            title != null ? title : "",
-            imageUrl != null ? imageUrl : "",
-            description != null ? description : "",
-            developer != null ? developer : "",
-            category != null ? category : "",
-            generation);
-    }
-
-    private void loadImage(ImageView iv) {
-        if (imageUrl == null || imageUrl.isEmpty()) return;
-        String url = imageUrl.startsWith("//") ? "https:" + imageUrl : imageUrl;
-        new Thread(() -> {
-            try {
-                java.net.HttpURLConnection conn =
-                    (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
-                conn.setConnectTimeout(10000);
-                conn.setReadTimeout(10000);
-                conn.setRequestProperty("User-Agent", "GOG Galaxy");
-                if (conn.getResponseCode() == 200) {
-                    Bitmap bmp = BitmapFactory.decodeStream(conn.getInputStream());
-                    if (bmp != null) uiHandler.post(() -> iv.setImageBitmap(bmp));
-                }
-                conn.disconnect();
-            } catch (Exception ignored) {}
-        }, "gog-detail-cover").start();
-    }
-
-    private void showExePicker(List<String> candidates,
-                                java.util.function.Consumer<String> onSelected) {
-        String[] labels = new String[candidates.size()];
-        for (int i = 0; i < candidates.size(); i++) {
-            File f = new File(candidates.get(i));
-            File parent = f.getParentFile();
-            labels[i] = (parent != null) ? parent.getName() + "/" + f.getName() : f.getName();
-        }
-        uiHandler.post(() ->
-            new AlertDialog.Builder(this)
-                .setTitle("Select game executable")
-                .setItems(labels, (d, which) ->
-                    new Thread(() -> onSelected.accept(candidates.get(which))).start())
-                .setCancelable(false)
-                .show()
-        );
-    }
-
-    private void loadInstallSize() {
-        long cached = prefs.getLong("gog_size_" + gameId, -1);
-        if (cached > 0) {
-            if (sizeTV != null) sizeTV.setText(formatBytes(cached));
-            return;
-        }
-        new Thread(() -> {
-            String token = prefs.getString("access_token", null);
-            long size = GogDownloadManager.fetchInstallSizeBytes(gameId, token);
-            if (size > 0) prefs.edit().putLong("gog_size_" + gameId, size).apply();
-            uiHandler.post(() -> {
-                if (sizeTV != null) sizeTV.setText(size > 0 ? formatBytes(size) : "Unknown");
-            });
-        }, "gog-size-" + gameId).start();
-    }
-
-    private static String formatBytes(long bytes) {
-        if (bytes >= 1_073_741_824L) return String.format("%.1f GB", bytes / 1_073_741_824.0);
-        return String.format("%.0f MB", bytes / 1_048_576.0);
-    }
-
-    // ── Updates card (GOG-2) ──────────────────────────────────────────────────
-
-    private View makeUpdatesCard() {
-        LinearLayout card = makeCard();
-
-        // Updates card is meaningful only for INSTALLED — PARTIAL has no working
-        // build to compare against. Use the unified state helper so the check
-        // matches the rest of the activity (refreshActionState above).
-        boolean installed =
-                GogInstallPath.checkState(prefs, gameId) == GogInstallPath.State.INSTALLED;
-
-        if (!installed) {
-            TextView tv = new TextView(this);
-            tv.setText("Install the game first to check for updates.");
-            tv.setTextColor(0xFF555577);
-            tv.setTextSize(13f);
-            card.addView(tv);
-            return card;
-        }
-
-        // Status text
-        updateStatusTV = new TextView(this);
-        updateStatusTV.setTextColor(0xFFCCCCCC);
-        updateStatusTV.setTextSize(13f);
-        String storedBuild = prefs.getString("gog_build_" + gameId, null);
-        updateStatusTV.setText(storedBuild != null
-                ? "Installed build: " + storedBuild.substring(0, Math.min(12, storedBuild.length())) + "…"
-                : "Build ID not recorded — tap Check to verify");
-        LinearLayout.LayoutParams stLp = new LinearLayout.LayoutParams(-1, -2);
-        stLp.bottomMargin = dp(8);
-        card.addView(updateStatusTV, stLp);
-
-        // "Update available" button (hidden initially)
-        updateBtn = makeBtn("Update Now", 0xFF0277BD);
-        updateBtn.setVisibility(View.GONE);
-        updateBtn.setOnClickListener(v -> {
-            updateBtn.setVisibility(View.GONE);
-            updateStatusTV.setText("Updating…");
-            startInstall();
-        });
-        card.addView(updateBtn, btnLp());
-
-        // Check button
-        checkUpdatesBtn = makeBtn("Check for Updates", 0xFF333355);
-        checkUpdatesBtn.setOnClickListener(v -> doCheckUpdate());
-        card.addView(checkUpdatesBtn, btnLp());
-
-        return card;
-    }
-
-    private void doCheckUpdate() {
-        if (updateStatusTV == null) return;
-        updateStatusTV.setText("Checking…");
-        if (checkUpdatesBtn != null) checkUpdatesBtn.setEnabled(false);
-
-        new Thread(() -> {
-            try {
-                String token = prefs.getString("access_token", null);
-                String url = "https://content-system.gog.com/products/" + gameId
-                        + "/os/windows/builds?generation=2";
-                java.net.HttpURLConnection conn =
-                        (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
-                conn.setConnectTimeout(15000);
-                conn.setReadTimeout(15000);
-                conn.setRequestProperty("User-Agent", "GOG Galaxy");
-                if (token != null) conn.setRequestProperty("Authorization", "Bearer " + token);
-
-                String body = "";
-                if (conn.getResponseCode() == 200) {
-                    java.io.BufferedReader br = new java.io.BufferedReader(
-                            new java.io.InputStreamReader(conn.getInputStream()));
-                    StringBuilder sb = new StringBuilder();
-                    String line;
-                    while ((line = br.readLine()) != null) sb.append(line);
-                    body = sb.toString();
-                }
-                conn.disconnect();
-
-                String latestBuild = null;
-                if (!body.isEmpty()) {
-                    org.json.JSONObject j = new org.json.JSONObject(body);
-                    org.json.JSONArray items = j.optJSONArray("items");
-                    if (items != null) {
-                        for (int i = 0; i < items.length(); i++) {
-                            org.json.JSONObject item = items.getJSONObject(i);
-                            if ("windows".equals(item.optString("os"))) {
-                                latestBuild = item.optString("build_id");
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                final String latest = latestBuild;
-                uiHandler.post(() -> {
-                    if (checkUpdatesBtn != null) checkUpdatesBtn.setEnabled(true);
-                    if (updateStatusTV == null) return;
-                    if (latest == null) {
-                        updateStatusTV.setText("Could not reach update server.");
-                        return;
-                    }
-                    String stored = prefs.getString("gog_build_" + gameId, null);
-                    if (stored == null) {
-                        // First check — store as baseline
-                        prefs.edit().putString("gog_build_" + gameId, latest).apply();
-                        updateStatusTV.setText("Up to date (build " + latest.substring(0, Math.min(12, latest.length())) + "…)");
-                        if (updateBtn != null) updateBtn.setVisibility(View.GONE);
-                    } else if (stored.equals(latest)) {
-                        updateStatusTV.setText("Up to date ✓");
-                        if (updateBtn != null) updateBtn.setVisibility(View.GONE);
-                    } else {
-                        updateStatusTV.setText("Update available!\nInstalled: "
-                                + stored.substring(0, Math.min(10, stored.length())) + "…"
-                                + "  →  Latest: " + latest.substring(0, Math.min(10, latest.length())) + "…");
-                        if (updateBtn != null) updateBtn.setVisibility(View.VISIBLE);
-                    }
-                });
-            } catch (Exception e) {
-                uiHandler.post(() -> {
-                    if (checkUpdatesBtn != null) checkUpdatesBtn.setEnabled(true);
-                    if (updateStatusTV != null) updateStatusTV.setText("Check failed: " + e.getMessage());
-                });
-            }
-        }, "gog-update-check-" + gameId).start();
-    }
-
-    private static String formatDate(String iso) {
-        if (iso == null || iso.length() < 10) return iso != null ? iso : "";
-        String[] parts = iso.substring(0, 10).split("-");
-        if (parts.length != 3) return iso.substring(0, 10);
-        try {
-            int year  = Integer.parseInt(parts[0]);
-            int month = Integer.parseInt(parts[1]);
-            int day   = Integer.parseInt(parts[2]);
-            String[] months = {"Jan","Feb","Mar","Apr","May","Jun",
-                               "Jul","Aug","Sep","Oct","Nov","Dec"};
-            if (month < 1 || month > 12) return iso.substring(0, 10);
-            return months[month - 1] + " " + day + ", " + year;
-        } catch (Exception e) {
-            return iso.substring(0, 10);
-        }
-    }
-
-    private View makeInfoRowWithRef(String label, TextView valueTV) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.bottomMargin = dp(4);
-
-        TextView labelTV = new TextView(this);
-        labelTV.setText(label + ": ");
-        labelTV.setTextColor(0xFF888888);
-        labelTV.setTextSize(13f);
-        row.addView(labelTV, new LinearLayout.LayoutParams(-2, -2));
-        row.addView(valueTV, new LinearLayout.LayoutParams(0, -2, 1f));
-        return row;
-    }
-
-    private void deleteDir(File dir) {
+    private static void deleteDir(File dir) {
         if (dir == null || !dir.exists()) return;
         File[] files = dir.listFiles();
         if (files != null) for (File f : files) {
@@ -816,261 +625,93 @@ public class GogGameDetailActivity extends Activity {
         dir.delete();
     }
 
-    // ── View factories ────────────────────────────────────────────────────────
+    // ── Updates (GOG-2) ───────────────────────────────────────────────────────
 
-    private LinearLayout makeCard() {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(14), dp(12), dp(14), dp(12));
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xFF161622);
-        bg.setCornerRadius(dp(8));
-        bg.setStroke(dp(1), 0xFF2A2A3A);
-        card.setBackground(bg);
-        return card;
+    private void doCheckUpdate() {
+        updateStatusText = "Checking…";
+        checkUpdateEnabled = false;
+        refreshState();
+        new Thread(() -> {
+            String token = GogLibraryRepo.validToken(this);
+            String stored = prefs.getString("gog_build_" + gameId, null);
+            final String latest = GogInstallState.checkForUpdate(this, gameId, token);
+            ui.post(() -> {
+                if (isFinishing()) return;
+                checkUpdateEnabled = true;
+                if (latest == null) {
+                    updateStatusText = "Could not reach update server.";
+                } else if (stored == null) {
+                    updateStatusText = "Up to date (build " + latest.substring(0, Math.min(12, latest.length())) + "…)";
+                } else if (stored.equals(latest)) {
+                    updateStatusText = "Up to date ✓";
+                } else {
+                    updateStatusText = "Update available!\nInstalled: " + stored.substring(0, Math.min(10, stored.length()))
+                            + "…  →  Latest: " + latest.substring(0, Math.min(10, latest.length())) + "…";
+                }
+                refreshState();
+            });
+        }, "gog-update-check-" + gameId).start();
     }
 
-    private View makeSectionHeader(String text) {
-        TextView tv = new TextView(this);
-        tv.setText(text);
-        tv.setTextColor(0xFF8888AA);
-        tv.setTextSize(11f);
-        tv.setTypeface(null, Typeface.BOLD);
-        tv.setLetterSpacing(0.08f);
-        tv.setPadding(dp(2), dp(16), 0, dp(6));
-        return tv;
+    // ── Install size / media ──────────────────────────────────────────────────
+
+    private void loadInstallSize() {
+        long cached = prefs.getLong("gog_size_" + gameId, -1);
+        if (cached > 0) { sizeText = BhStoreUi.formatBytes(cached); return; }
+        new Thread(() -> {
+            String token = prefs.getString("access_token", null);
+            long size = GogDownloadManager.fetchInstallSizeBytes(gameId, token);
+            if (size > 0) prefs.edit().putLong("gog_size_" + gameId, size).apply();
+            ui.post(() -> {
+                if (isFinishing()) return;
+                sizeText = size > 0 ? BhStoreUi.formatBytes(size) : "Size unknown";
+                if (tab == TAB_DETAILS) renderBody();
+            });
+        }, "gog-size-" + gameId).start();
     }
 
-    private LinearLayout.LayoutParams sectionHeaderLp() {
-        return new LinearLayout.LayoutParams(-1, -2);
+    /** Media tab source: GOG's public product page (one request per open; cached in-process). */
+    private void loadMedia() {
+        new Thread(() -> {
+            GogStoreCatalog.ProductDetail d = null;
+            try { d = GogStoreCatalog.product(gameId); } catch (Throwable ignored) {}
+            final GogStoreCatalog.ProductDetail res = d;
+            ui.post(() -> {
+                if (isFinishing()) return;
+                mediaLoading = false;
+                media = res != null ? res.media : null;
+                // The hero band is wide: prefer GOG's background art over the portrait SGDB cover.
+                if (res != null && res.background != null) {
+                    List<String> chain = new ArrayList<>();
+                    chain.add(res.background);
+                    if (!imageUrl.isEmpty()) chain.add(imageUrl);
+                    scaffold.loadHero(chain);
+                }
+                if (description.isEmpty() && res != null && !res.lead.isEmpty()) description = res.lead;
+                renderTabs();
+            });
+        }, "gog-media-" + gameId).start();
     }
 
-    private View makeInfoRow(String label, String value) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.bottomMargin = dp(4);
-
-        TextView labelTV = new TextView(this);
-        labelTV.setText(label + ": ");
-        labelTV.setTextColor(0xFF888888);
-        labelTV.setTextSize(13f);
-        row.addView(labelTV, new LinearLayout.LayoutParams(-2, -2));
-
-        TextView valueTV = new TextView(this);
-        valueTV.setText(value);
-        valueTV.setTextColor(0xFFCCCCCC);
-        valueTV.setTextSize(13f);
-        row.addView(valueTV, new LinearLayout.LayoutParams(0, -2, 1f));
-
-        return row;
-    }
-
-    // ── DLC card (GOG-3) ──────────────────────────────────────────────────────
-
-    private LinearLayout makeDlcCard() {
-        LinearLayout card = makeCard();
-        String json = prefs.getString("gog_dlcs_" + gameId, null);
-        if (json == null || json.equals("[]") || json.isEmpty()) {
-            TextView tv = new TextView(this);
-            tv.setText("No DLCs in your library for this game");
-            tv.setTextColor(0xFF555577);
-            tv.setTextSize(13f);
-            card.addView(tv);
-            return card;
-        }
-        try {
-            JSONArray arr = new JSONArray(json);
-            if (arr.length() == 0) {
-                TextView tv = new TextView(this);
-                tv.setText("No DLCs in your library for this game");
-                tv.setTextColor(0xFF555577);
-                tv.setTextSize(13f);
-                card.addView(tv);
-                return card;
-            }
-
-            TextView countTV = new TextView(this);
-            countTV.setText(arr.length() + " DLC" + (arr.length() == 1 ? "" : "s") + " owned");
-            countTV.setTextColor(0xFF888888);
-            countTV.setTextSize(12f);
-            countTV.setTypeface(null, Typeface.BOLD);
-            card.addView(countTV, new LinearLayout.LayoutParams(-1, -2));
-
-            TextView noteTV = new TextView(this);
-            noteTV.setText("DLC content is included in gen2 game installs.");
-            noteTV.setTextColor(0xFF555577);
-            noteTV.setTextSize(11f);
-            LinearLayout.LayoutParams noteLp = new LinearLayout.LayoutParams(-1, -2);
-            noteLp.topMargin = dp(3);
-            noteLp.bottomMargin = dp(6);
-            card.addView(noteTV, noteLp);
-
-            for (int i = 0; i < arr.length(); i++) {
-                JSONObject dlc = arr.optJSONObject(i);
-                if (dlc == null) continue;
-                String dlcTitle = dlc.optString("title", "Unknown DLC");
-
-                LinearLayout row = new LinearLayout(this);
-                row.setOrientation(LinearLayout.HORIZONTAL);
-                row.setGravity(Gravity.CENTER_VERTICAL);
-                row.setPadding(0, dp(5), 0, dp(5));
-
-                GradientDrawable rowBg = new GradientDrawable();
-                rowBg.setColor(0xFF1E1E2E);
-                rowBg.setCornerRadius(dp(4));
-                row.setBackground(rowBg);
-
-                TextView dlcTV = new TextView(this);
-                dlcTV.setText(dlcTitle);
-                dlcTV.setTextColor(0xFFDDDDDD);
-                dlcTV.setTextSize(13f);
-                dlcTV.setPadding(dp(8), 0, 0, 0);
-                row.addView(dlcTV, new LinearLayout.LayoutParams(0, -2, 1f));
-
-                TextView ownedTV = new TextView(this);
-                ownedTV.setText("Owned");
-                ownedTV.setTextColor(0xFF4CAF50);
-                ownedTV.setTextSize(11f);
-                ownedTV.setTypeface(null, Typeface.BOLD);
-                ownedTV.setPadding(0, 0, dp(8), 0);
-                row.addView(ownedTV, new LinearLayout.LayoutParams(-2, -2));
-
-                LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(-1, -2);
-                rowLp.topMargin = dp(4);
-                card.addView(row, rowLp);
-            }
-        } catch (Exception e) {
-            TextView tv = new TextView(this);
-            tv.setText("Error reading DLC data");
-            tv.setTextColor(0xFF555577);
-            tv.setTextSize(13f);
-            card.addView(tv);
-        }
-        return card;
-    }
-
-    // ── Cloud Saves card (GOG-1) ──────────────────────────────────────────────
-
-    private View makeCloudSavesCard() {
-        LinearLayout card = makeCard();
-
-        // Save folder row
-        LinearLayout folderRow = new LinearLayout(this);
-        folderRow.setOrientation(LinearLayout.HORIZONTAL);
-        folderRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
-
-        cloudSaveDirTV = new TextView(this);
-        String savedDir = prefs.getString("gog_save_dir_" + gameId, null);
-        cloudSaveDirTV.setText(savedDir != null ? shortenPath(savedDir) : "No save folder set");
-        cloudSaveDirTV.setTextColor(savedDir != null ? 0xFFCCCCCC : 0xFF555577);
-        cloudSaveDirTV.setTextSize(12f);
-        cloudSaveDirTV.setMaxLines(2);
-        folderRow.addView(cloudSaveDirTV, new LinearLayout.LayoutParams(0, -2, 1f));
-
-        cloudBrowseBtn = makeBtn("Browse", 0xFF333355);
-        cloudBrowseBtn.setOnClickListener(v -> {
-            Intent intent = new Intent(this, FolderPickerActivity.class);
-            startActivityForResult(intent, REQUEST_FOLDER_PICKER);
-        });
-        LinearLayout.LayoutParams browseLp = new LinearLayout.LayoutParams(-2, dp(36));
-        browseLp.leftMargin = dp(8);
-        folderRow.addView(cloudBrowseBtn, browseLp);
-
-        LinearLayout.LayoutParams folderRowLp = new LinearLayout.LayoutParams(-1, -2);
-        folderRowLp.bottomMargin = dp(10);
-        card.addView(folderRow, folderRowLp);
-
-        // Status line
-        cloudSaveStatusTV = new TextView(this);
-        cloudSaveStatusTV.setTextColor(0xFF8888AA);
-        cloudSaveStatusTV.setTextSize(12f);
-        cloudSaveStatusTV.setVisibility(android.view.View.GONE);
-        LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(-1, -2);
-        statusLp.bottomMargin = dp(8);
-        card.addView(cloudSaveStatusTV, statusLp);
-
-        // Upload / Download buttons
-        cloudUploadBtn = makeBtn("Upload Saves", 0xFF0277BD);
-        cloudUploadBtn.setEnabled(savedDir != null);
-        cloudUploadBtn.setOnClickListener(v -> {
-            String dir = prefs.getString("gog_save_dir_" + gameId, null);
-            if (dir == null) { Toast.makeText(this, "Set a save folder first", Toast.LENGTH_SHORT).show(); return; }
-            cloudUploadBtn.setEnabled(false);
-            cloudDownloadBtn.setEnabled(false);
-            showCloudStatus("Preparing upload…");
-            GogCloudSaveManager.uploadSaves(this, gameId, new java.io.File(dir),
-                new GogCloudSaveManager.Callback() {
-                    @Override public void onStatus(String msg) { uiHandler.post(() -> showCloudStatus(msg)); }
-                    @Override public void onDone(String msg)   { uiHandler.post(() -> { showCloudStatus(msg); enableCloudBtns(true); }); }
-                    @Override public void onError(String msg)  { uiHandler.post(() -> { showCloudStatus("Error: " + msg); enableCloudBtns(true); }); }
-                });
-        });
-        card.addView(cloudUploadBtn, btnLp());
-
-        cloudDownloadBtn = makeBtn("Download Saves", 0xFF2E7D32);
-        cloudDownloadBtn.setEnabled(savedDir != null);
-        cloudDownloadBtn.setOnClickListener(v -> {
-            String dir = prefs.getString("gog_save_dir_" + gameId, null);
-            if (dir == null) { Toast.makeText(this, "Set a save folder first", Toast.LENGTH_SHORT).show(); return; }
-            cloudUploadBtn.setEnabled(false);
-            cloudDownloadBtn.setEnabled(false);
-            showCloudStatus("Preparing download…");
-            GogCloudSaveManager.downloadSaves(this, gameId, new java.io.File(dir),
-                new GogCloudSaveManager.Callback() {
-                    @Override public void onStatus(String msg) { uiHandler.post(() -> showCloudStatus(msg)); }
-                    @Override public void onDone(String msg)   { uiHandler.post(() -> { showCloudStatus(msg); enableCloudBtns(true); }); }
-                    @Override public void onError(String msg)  { uiHandler.post(() -> { showCloudStatus("Error: " + msg); enableCloudBtns(true); }); }
-                });
-        });
-        card.addView(cloudDownloadBtn, btnLp());
-
-        return card;
-    }
-
-    private void showCloudStatus(String msg) {
-        if (cloudSaveStatusTV == null) return;
-        cloudSaveStatusTV.setText(msg);
-        cloudSaveStatusTV.setVisibility(android.view.View.VISIBLE);
-    }
-
-    private void enableCloudBtns(boolean enabled) {
-        if (cloudUploadBtn != null) cloudUploadBtn.setEnabled(enabled);
-        if (cloudDownloadBtn != null) cloudDownloadBtn.setEnabled(enabled);
-    }
-
-    private static String shortenPath(String path) {
-        String[] parts = path.split("/");
-        if (parts.length <= 3) return path;
-        return "…/" + parts[parts.length - 2] + "/" + parts[parts.length - 1];
-    }
-
-    // ── Copy to Downloads ───────────────────────────────────────────────────
-    //
-    // Android 10+ writes via MediaStore.Downloads and needs no permission.
-    // Android 9 and below write directly to the public Downloads dir, which
-    // requires WRITE_EXTERNAL_STORAGE — request it on tap if not yet granted,
-    // then continue from onRequestPermissionsResult once the user allows it.
+    // ── Copy to Downloads ─────────────────────────────────────────────────────
 
     private void startCopyToDownloads() {
         if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q
                 && checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
                 != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(
-                    new String[]{android.Manifest.permission.WRITE_EXTERNAL_STORAGE},
-                    REQUEST_COPY_STORAGE);
+            requestPermissions(new String[]{android.Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_COPY_STORAGE);
             return;
         }
         performCopyToDownloads();
     }
 
     private void performCopyToDownloads() {
-        Toast.makeText(this, "Copying…", Toast.LENGTH_SHORT).show();
+        toast("Copying…");
         new Thread(() -> {
             String dest = GogDownloadManager.copyToDownloads(this, gameId);
-            uiHandler.post(() -> {
+            ui.post(() -> {
                 if (dest != null) Toast.makeText(this, "Copied to: " + dest, Toast.LENGTH_LONG).show();
-                else Toast.makeText(this, "Copy failed — install files not found", Toast.LENGTH_SHORT).show();
+                else toast("Copy failed — install files not found");
             });
         }).start();
     }
@@ -1079,12 +720,10 @@ public class GogGameDetailActivity extends Activity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQUEST_COPY_STORAGE) {
-            if (grantResults.length > 0
-                    && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            if (grantResults.length > 0 && grantResults[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) {
                 performCopyToDownloads();
             } else {
-                Toast.makeText(this, "Storage permission denied — cannot copy to Downloads",
-                        Toast.LENGTH_SHORT).show();
+                toast("Storage permission denied — cannot copy to Downloads");
             }
         }
     }
@@ -1098,45 +737,15 @@ public class GogGameDetailActivity extends Activity {
                 prefs.edit().putString("gog_save_dir_" + gameId, selectedPath).apply();
                 if (cloudSaveDirTV != null) {
                     cloudSaveDirTV.setText(shortenPath(selectedPath));
-                    cloudSaveDirTV.setTextColor(0xFFCCCCCC);
+                    cloudSaveDirTV.setTextColor(BhStoreUi.TEXT2);
                 }
                 enableCloudBtns(true);
-                Toast.makeText(this, "Save folder set", Toast.LENGTH_SHORT).show();
+                toast("Save folder set");
             }
         }
     }
 
-    private View makeStubCard(String msg) {
-        LinearLayout card = makeCard();
-        TextView tv = new TextView(this);
-        tv.setText(msg);
-        tv.setTextColor(0xFF555577);
-        tv.setTextSize(13f);
-        card.addView(tv);
-        return card;
-    }
-
-    private Button makeBtn(String text, int color) {
-        Button btn = new Button(this);
-        btn.setText(text);
-        btn.setTextColor(0xFFFFFFFF);
-        btn.setTextSize(13f);
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(color);
-        bg.setCornerRadius(dp(6));
-        btn.setBackground(bg);
-        btn.setPadding(dp(12), dp(8), dp(12), dp(8));
-        return btn;
-    }
-
-    private LinearLayout.LayoutParams btnLp() {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(42));
-        lp.bottomMargin = dp(8);
-        return lp;
-    }
-
-    private int dp(int v) {
-        return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v,
-            getResources().getDisplayMetrics());
+    private void toast(String s) {
+        Toast.makeText(this, s, Toast.LENGTH_SHORT).show();
     }
 }

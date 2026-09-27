@@ -7,6 +7,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.LinearLayout;
+import android.widget.Switch;
 import android.widget.TextView;
 
 import java.io.File;
@@ -178,6 +179,33 @@ public final class BhInstallConfirmDialog {
             cdnHint.setTextSize(11f);
             cdnHint.setPadding(0, dp(ctx, 4), 0, 0);
             content.addView(cdnHint);
+
+            // Rust engine row (GOG only). Unlike the per-install thread count this
+            // is a persisted setting (bh_gog_prefs) read by GogDownloadManager at
+            // download start, so it needs no service-intent plumbing. Shown greyed
+            // when the native engine is not available on this install (the Java
+            // loop runs regardless of the switch then).
+            final boolean rustAvailable =
+                    com.winlator.star.store.blsteam.BlGogDownload.isAvailable();
+            final Switch rustSW = new Switch(ctx);
+            rustSW.setText("Rust engine (fast)");
+            rustSW.setTextColor(rustAvailable ? 0xFFAACCFF : 0xFF666666);
+            rustSW.setTextSize(14f);
+            rustSW.setPadding(0, dp(ctx, 12), 0, dp(ctx, 4));
+            rustSW.setChecked(rustAvailable && BhDownloadConfig.isRustEngineEnabled(ctx));
+            rustSW.setEnabled(rustAvailable);
+            rustSW.setOnCheckedChangeListener((btn, checked) ->
+                    BhDownloadConfig.setRustEngineEnabled(ctx, checked));
+            content.addView(rustSW);
+
+            TextView rustHint = new TextView(ctx);
+            rustHint.setText(rustAvailable
+                    ? "Native chunk fetch + verify (MD5-checked). Off = the classic Java downloader."
+                    : "Native engine not available on this build — using the classic Java downloader.");
+            rustHint.setTextColor(0xFF888888);
+            rustHint.setTextSize(11f);
+            rustHint.setPadding(0, dp(ctx, 4), 0, 0);
+            content.addView(rustHint);
         }
 
         AlertDialog dialog = new AlertDialog.Builder(activity)

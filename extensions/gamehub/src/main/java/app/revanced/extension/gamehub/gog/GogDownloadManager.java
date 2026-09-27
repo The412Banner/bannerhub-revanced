@@ -22,9 +22,11 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -53,7 +55,19 @@ import java.util.zip.Inflater;
 public final class GogDownloadManager {
 
     private static final String TAG = "BH_GOG_DL";
+    /** logcat tag for the engine switch + Rust engine driver lines ({@code logcat -s BH_GOG}). */
+    private static final String ENGINE_TAG = "BH_GOG";
     private static final int TIMEOUT = 30_000;
+    /**
+     * Rust engine: floor for inflate/hash/write threads. Stream mode pins each in-flight chunk to
+     * one process worker, so fewer than this leaves the network window under-fed on a Low preset.
+     */
+    private static final int RUST_MIN_PROCESS_WORKERS = 8;
+    private static final int RUST_MAX_PROCESS_WORKERS = 16;
+    /** Secure-link refresh cap for the Rust path — same number as Bannerlator's chunk loop. */
+    private static final int RUST_MAX_CDN_REFRESH = 5;
+    /** Non-critical (goggame-*) files the Rust path may skip after they fail; bounds the re-runs. */
+    private static final int RUST_MAX_NONCRITICAL_SKIPS = 8;
 
     public interface Callback {
         void onProgress(String msg, int pct);
@@ -298,6 +312,10 @@ public final class GogDownloadManager {
             // Collect DepotFiles from each language-compatible depot
             cb.onProgress("Reading depot manifests…", 10);
             List<DepotFile> files = new ArrayList<>();
+            // The inflated depot-manifest strings, in fetch order, for the Rust engine (it runs
+            // its own parser over the same bytes — no second fetch). Only depots that passed the
+            // language filter AND contributed files are kept, so both parsers see one list.
+            final List<String> depotJsons = new ArrayList<>();
             for (int i = 0; i < depots.length(); i++) {
                 JSONObject depot = depots.getJSONObject(i);
                 JSONArray languages = depot.optJSONArray("languages");
@@ -338,6 +356,7 @@ public final class GogDownloadManager {
                 int before = files.size();
                 parseDepotManifest(dmStr, files);
                 dbg.append("depot[").append(i).append("] added ").append(files.size() - before).append(" files\n");
+                if (files.size() > before) depotJsons.add(dmStr);
             }
 
             if (files.isEmpty()) return "no depot files collected after processing all depots";
@@ -420,6 +439,30 @@ public final class GogDownloadManager {
                     new java.util.concurrent.ConcurrentLinkedQueue<>();
             dbg.append("gen2 parallel download: ").append(total).append(" files, ").append(threadCount).append(" threads\n");
 
+            // Engine switch: the Rust engine (libblsteam.so) replaces ONLY this fetch / inflate /
+            // verify / assemble loop. Same install dir, same `.bhtmp` staging + atomic rename,
+            // same "Resuming…" / "Downloading: <name>  <speed>" strings and 15 + done/total*80
+            // percent math, same cancelled / anyFailed / failedPaths semantics — everything
+            // before (token, builds, manifests, secure link, CDN pick) and after (marker, prefs,
+            // exe resolution) is shared. The choice is made HERE, once, at loop start: a mid-
+            // download engine failure is reported like a Java-loop failure, never silently
+            // re-run on the other engine.
+            String rustErr = null;
+            final boolean useRust = useRustEngine(ctx, dbg);
+            if (useRust) {
+                java.util.Map<String, String> hashToPath = new java.util.HashMap<>();
+                for (DepotFile df : files) {
+                    for (DepotFile.ChunkRef c : df.chunks) hashToPath.put(c.hash.toLowerCase(), df.relativePath);
+                }
+                rustErr = runRustChunkEngine(ctx,
+                        com.winlator.star.store.blsteam.BlGogDownload.KIND_GEN2_CHUNKS,
+                        "Resuming…", depotJsons, installPath,
+                        fCdnBases, secureLinkUrl, token, cdnPref,
+                        threadCount, true, "gog base=" + baseProductId,
+                        cancelled, anyFailed, doneCount, total, totalBytes,
+                        lastSpeedMs, lastSpeedB, speedBps, cb, true,
+                        hashToPath, failedPaths, fileLog2);
+            } else {
             ExecutorService pool = Executors.newFixedThreadPool(threadCount);
             List<Future<Void>> futures = new ArrayList<>();
             for (DepotFile df : files) {
@@ -527,8 +570,13 @@ public final class GogDownloadManager {
                 pool.shutdownNow();
                 return "parallel download error: " + e;
             }
+            } // end Java engine
             for (String line : fileLog2) dbg.append(line).append("\n");
             if (cancelled.get()) return "cancelled";
+            // Rust engine failure that could not be pinned to a file (start failure, CA bundle,
+            // an HTTP error with no path in it): surface the engine's own message — the
+            // "files-failed" summary below would otherwise read "0/N".
+            if (rustErr != null && failedPaths.isEmpty()) return rustErr;
             if (anyFailed.get()) {
                 // Build a compact diagnostic message naming the failed files
                 // so the user-facing toast can show them when gen1 fallback
@@ -689,6 +737,21 @@ public final class GogDownloadManager {
                     new java.util.concurrent.ConcurrentLinkedQueue<>();
             dbg.append("gen1 parallel download: ").append(totalG1).append(" files, ").append(threadCount).append(" threads\n");
 
+            // Engine switch — see runGen2. gen1: one Range GET per file streamed to disk, size-
+            // only resume ("Resuming…"), file URLs come from the manifest (cdnBase = ""), no
+            // secure-link refresh, same speed string.
+            String rustErrG1 = null;
+            final boolean useRustG1 = useRustEngine(ctx, dbg);
+            if (useRustG1) {
+                rustErrG1 = runRustChunkEngine(ctx,
+                        com.winlator.star.store.blsteam.BlGogDownload.KIND_GEN1_RANGES,
+                        "Resuming…", java.util.Collections.singletonList(manifestStr), installPath,
+                        java.util.Collections.singletonList(""), null, null, CDN_PREF_AUTO,
+                        threadCount, false, "gog gen1=" + game.gameId,
+                        cancelled, anyFailedG1, doneG1, totalG1, totalBytesG1,
+                        lastSpeedMsG1, lastSpeedBG1, speedBpsG1, cb, true,
+                        null, null, fileLog1);
+            } else {
             ExecutorService poolG1 = Executors.newFixedThreadPool(threadCount);
             List<Future<Void>> futuresG1 = new ArrayList<>();
             for (Gen1File gf : files) {
@@ -746,8 +809,10 @@ public final class GogDownloadManager {
                 poolG1.shutdownNow();
                 return "gen1 parallel error: " + e;
             }
+            } // end Java engine
             for (String line : fileLog1) dbg.append(line).append("\n");
             if (cancelled.get()) return "cancelled";
+            if (rustErrG1 != null) return rustErrG1;
             if (anyFailedG1.get()) return "one or more gen1 files failed to download";
             dbg.append("gen1 download complete: ").append(doneG1.get()).append(" files OK\n");
 
@@ -1228,6 +1293,325 @@ public final class GogDownloadManager {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Rust fetch engine (libblsteam.so) — ported from Bannerlator's
+    // GogDownloadManager.runRustChunkEngine (docs/RUST_GOG_PARITY.md there).
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * True when the {@code use_rust_gog_engine} switch is ON and {@code libblsteam.so} loads with
+     * its GOG JNI exports bound. Decided once per fetch loop, at its start. Logs WHICH engine runs
+     * and WHY to {@code bh_gog_debug.txt} ({@code engine=rust|java (...)}) and logcat
+     * {@code BH_GOG}. Any failure degrades to the Java loop (never throws).
+     */
+    private static boolean useRustEngine(Context ctx, StringBuilder dbg) {
+        boolean use = false;
+        String why;
+        try {
+            if (ctx == null) {
+                why = "no context";
+            } else if (!BhDownloadConfig.isRustEngineEnabled(ctx)) {
+                why = "switch off";
+            } else if (!com.winlator.star.store.blsteam.BlGogDownload.isAvailable()) {
+                why = "switch on, native engine unavailable: "
+                        + com.winlator.star.store.blsteam.BlGogDownload.unavailableReason();
+            } else {
+                why = "switch on, libblsteam.so bound";
+                use = true;
+            }
+        } catch (Throwable t) {
+            why = "switch check threw: " + t;
+        }
+        String line = "engine=" + (use ? "rust" : "java") + " (" + why + ")";
+        if (dbg != null) dbg.append(line).append("\n");
+        Log.i(ENGINE_TAG, line);
+        return use;
+    }
+
+    /**
+     * Drives the Rust engine for ONE fetch loop (gen2 chunk loop or gen1 range loop), producing
+     * exactly what the Java pool loop produces for the UI / notification / BhDownloadService:
+     * <ul>
+     *   <li>per verified (resume-skipped) file: {@code doneCount++}, {@code verifiedMsg} at
+     *       {@code 15 + done/total*80}, no bytes credited;</li>
+     *   <li>per assembled file: {@code doneCount++}, {@code totalBytes += size}, the same 500 ms
+     *       speed window and {@code "Downloading: <name>  <speed>"} string;</li>
+     *   <li>engine log lines go to the same {@code log} queue the Java loop's RETRY/FAIL lines use
+     *       (drained into {@code bh_gog_debug.txt} by the caller);</li>
+     *   <li>a run that dies on HTTP 401/403/404/500 ({@code linkExpiry}) or a network-looking
+     *       error first CYCLES to the next ranked CDN base (BH's per-attempt edge cycling), and
+     *       once every edge of the round failed re-fetches the secure link (cap
+     *       {@link #RUST_MAX_CDN_REFRESH}), then re-runs for the files not yet done (already-done
+     *       paths are passed as {@code skipPaths} → not re-hashed, not re-reported);</li>
+     *   <li>a failure pinned to a non-critical {@code goggame-*} file skips that file and re-runs
+     *       (BH's {@link #isNonCriticalGogFile} rule; bounded by
+     *       {@link #RUST_MAX_NONCRITICAL_SKIPS});</li>
+     *   <li>any other failure → {@code anyFailed = true}, the file (when nameable) added to
+     *       {@code failedPaths} so the caller's "files-failed: N/total (name)" message works, and
+     *       the engine's error returned; cancel → returns null with {@code cancelled} as the
+     *       caller set it.</li>
+     * </ul>
+     * Cancel is propagated by polling the caller's {@code cancelled} flag every 250 ms and
+     * calling {@code BlGogDownload.cancel(handle)}.
+     *
+     * @param cdnBases   gen2: BH's ranked (AUTO) or picked (specific) CDN base list, first =
+     *                   preferred; gen1: a single "" (URLs are in the manifest)
+     * @param hashToPath gen2: chunk md5 → relative path, to name the failed file from an engine
+     *                   error that carries a chunk hash / URL; gen1: null
+     * @return null on success or cancel; otherwise an error string for the caller to return
+     */
+    private static String runRustChunkEngine(
+            Context ctx, int kind, String verifiedMsg,
+            List<String> manifests, File installPath,
+            List<String> cdnBases, String secureLinkUrl, String token, String cdnPref,
+            int threadCount, boolean sortLargestFirst, String label,
+            AtomicBoolean cancelled, AtomicBoolean anyFailed,
+            AtomicInteger doneCount, int total, AtomicLong totalBytes,
+            AtomicLong lastSpeedMs, AtomicLong lastSpeedB, AtomicLong speedBps,
+            Callback cb, boolean showSpeed,
+            java.util.Map<String, String> hashToPath,
+            java.util.concurrent.ConcurrentLinkedQueue<String> failedPaths,
+            java.util.concurrent.ConcurrentLinkedQueue<String> log) {
+        final String caPath;
+        try {
+            caPath = com.winlator.star.store.blsteam.CaBundleExtractor.ensureBundle(ctx);
+        } catch (Throwable t) {
+            log.add("rust engine: CA bundle unavailable: " + t);
+            anyFailed.set(true);
+            return "rust engine: CA bundle unavailable: " + t;
+        }
+        if (caPath.isEmpty()) log.add("rust engine: no CA bundle file — engine uses its built-in roots");
+
+        // BH's per-install "Download speed" preset is the network window ceiling; the inflate /
+        // hash / write pool is bounded to [RUST_MIN, RUST_MAX] (stream mode pins each in-flight
+        // chunk to one process worker, so Low=4 would otherwise starve the window).
+        final int workers = BhDownloadConfig.clamp(threadCount);
+        final int process = Math.min(RUST_MAX_PROCESS_WORKERS, Math.max(RUST_MIN_PROCESS_WORKERS, workers));
+        log.add("rust engine concurrency: workers=" + workers + " process_workers=" + process
+                + " (java loop would use " + threadCount + ")");
+        Log.i(ENGINE_TAG, "rust engine start label=" + label + " kind=" + kind + " files=" + total
+                + " workers=" + workers + " process_workers=" + process + " cdns=" + cdnBases.size());
+
+        final boolean gen2 = kind == com.winlator.star.store.blsteam.BlGogDownload.KIND_GEN2_CHUNKS;
+        final String[] manifestArr = manifests.toArray(new String[0]);
+        // Files completed by earlier runs of THIS download (cycle / refresh / skip re-runs).
+        final java.util.Set<String> donePaths = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        List<String> bases = new ArrayList<>(cdnBases);
+        if (bases.isEmpty()) bases.add("");
+        int cdnIdx = 0, refreshes = 0, skips = 0, run = 0;
+
+        while (!cancelled.get()) {
+            run++;
+            final String base = bases.get(cdnIdx);
+            final CountDownLatch latch = new CountDownLatch(1);
+            final AtomicBoolean okRef = new AtomicBoolean(false);
+            final AtomicBoolean linkExpiryRef = new AtomicBoolean(false);
+            final AtomicReference<String> errRef = new AtomicReference<>("");
+            com.winlator.star.store.blsteam.BlGogDownloadListener listener =
+                    new com.winlator.star.store.blsteam.BlGogDownloadListener() {
+                @Override
+                public void onProgress(long bytesDone, long bytesTotal, int filesDone, int filesTotal,
+                                       String file, long fileBytes, boolean verified) {
+                    donePaths.add(file);
+                    int done = doneCount.incrementAndGet();
+                    int pct  = 15 + (int) ((done / (float) total) * 80);
+                    if (verified) {
+                        if (cb != null) cb.onProgress(verifiedMsg, pct);
+                        return;
+                    }
+                    long tb = totalBytes.addAndGet(fileBytes);
+                    String speedStr = "";
+                    if (showSpeed) {
+                        long nowMs  = System.currentTimeMillis();
+                        long prevMs = lastSpeedMs.get();
+                        if (nowMs - prevMs >= 500 && lastSpeedMs.compareAndSet(prevMs, nowMs)) {
+                            long prevB = lastSpeedB.getAndSet(tb);
+                            long dt = nowMs - prevMs;
+                            if (dt > 0) speedBps.set((tb - prevB) * 1000L / dt);
+                        }
+                        speedStr = formatSpeed(speedBps.get());
+                    }
+                    String name = file.contains("/")
+                            ? file.substring(file.lastIndexOf('/') + 1) : file;
+                    if (cb != null) cb.onProgress("Downloading: " + name
+                            + (speedStr.isEmpty() ? "" : "  " + speedStr), pct);
+                }
+                @Override
+                public void onLog(String line) { log.add(line); }
+                @Override
+                public void onComplete(boolean success, boolean wasCancelled, boolean linkExpiry,
+                                       String error, long bytesWritten, int filesDone) {
+                    okRef.set(success);
+                    linkExpiryRef.set(linkExpiry);
+                    errRef.set(error == null ? "" : error);
+                    latch.countDown();
+                }
+            };
+            log.add("rust engine run=" + run + " cdn=" + (base.isEmpty() ? "(manifest urls)" : hostOf(base))
+                    + " skip_paths=" + donePaths.size());
+            long handle = com.winlator.star.store.blsteam.BlGogDownload.start(
+                    kind, manifestArr, base, installPath.getAbsolutePath(),
+                    donePaths.toArray(new String[0]), caPath,
+                    workers, process, sortLargestFirst, label + " run=" + run, listener);
+            if (handle == 0L) {
+                log.add("rust engine: start failed (see logcat BH_GOG / BL_GOG_DL)");
+                Log.e(ENGINE_TAG, "rust engine start failed label=" + label);
+                anyFailed.set(true);
+                return "rust engine failed to start";
+            }
+            boolean interrupted = false;
+            try {
+                while (true) {
+                    try {
+                        if (latch.await(250, TimeUnit.MILLISECONDS)) break;
+                    } catch (InterruptedException ie) {
+                        interrupted = true;
+                    }
+                    if (cancelled.get() || interrupted) {
+                        com.winlator.star.store.blsteam.BlGogDownload.cancel(handle);
+                    }
+                }
+            } finally {
+                com.winlator.star.store.blsteam.BlGogDownload.release(handle);
+            }
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+                log.add("rust engine: interrupted");
+                anyFailed.set(true);
+                return "rust engine interrupted";
+            }
+            if (cancelled.get()) return null;
+            if (okRef.get()) {
+                log.add("rust engine OK run=" + run + " files_done=" + doneCount.get() + "/" + total);
+                Log.i(ENGINE_TAG, "rust engine OK label=" + label + " runs=" + run);
+                return null;
+            }
+
+            final String err = errRef.get();
+            final boolean linkExpiry = linkExpiryRef.get();
+            final String failedFile = failedFileFromError(err, hashToPath);
+
+            // 1) Non-critical goggame-* metadata: BH's Java loop tolerates its failure. Skip it
+            //    and re-run for the rest (no doneCount tick — the Java loop doesn't tick either).
+            if (failedFile != null && isNonCriticalGogFile(failedFile)
+                    && skips < RUST_MAX_NONCRITICAL_SKIPS) {
+                skips++;
+                donePaths.add(failedFile);
+                log.add("FAIL file=" + failedFile + " (non-critical, skipped) err=" + err);
+                Log.w(ENGINE_TAG, "non-critical file skipped: " + failedFile + " (" + err + ")");
+                continue;
+            }
+
+            // 2) Expired link / blocked or unreachable edge: cycle to the next ranked CDN first
+            //    (BH's per-attempt edge cycling), then refresh the secure link once the round is
+            //    exhausted (Bannerlator's tryRefreshCdn, same cap).
+            if (gen2 && (linkExpiry || looksLikeNetworkError(err))) {
+                if (cdnIdx + 1 < bases.size()) {
+                    cdnIdx++;
+                    log.add("rust engine: " + (linkExpiry ? "link expiry" : "network failure")
+                            + " (" + err + ") — cycling to cdn=" + hostOf(bases.get(cdnIdx)));
+                    continue;
+                }
+                if (secureLinkUrl != null && refreshes < RUST_MAX_CDN_REFRESH) {
+                    List<String> fresh = refreshCdnBases(secureLinkUrl, token, cdnPref, bases, log);
+                    if (fresh != null && !fresh.isEmpty()) {
+                        refreshes++;
+                        bases = fresh;
+                        cdnIdx = 0;
+                        log.add("secure-link refreshed #" + refreshes + " (" + err
+                                + ") — re-running for the remaining files on cdn=" + hostOf(bases.get(0)));
+                        continue;
+                    }
+                    log.add("CDN refresh FAILED (secure_link null/parse)");
+                } else if (secureLinkUrl != null) {
+                    log.add("CDN refresh cap reached (" + RUST_MAX_CDN_REFRESH + ")");
+                }
+            }
+
+            // 3) Hard failure — reported exactly like the Java loop's exhausted retries.
+            log.add("rust engine FAILED run=" + run + ": " + err);
+            Log.e(ENGINE_TAG, "rust engine FAILED label=" + label + " run=" + run + ": " + err);
+            anyFailed.set(true);
+            if (failedFile != null) {
+                log.add("FAIL file=" + failedFile);
+                if (failedPaths != null) failedPaths.add(failedFile);
+            }
+            return "rust engine: " + err;
+        }
+        return null; // cancelled before the first run
+    }
+
+    /**
+     * Re-fetches the secure link and rebuilds the CDN base list for the Rust path. Honours the
+     * user's specific CDN pick ({@link #pickSpecificCdn}); in AUTO keeps the previous
+     * (latency-ranked) host order and appends any new hosts, so no extra HEAD probes mid-download.
+     * Returns null when the secure link could not be fetched / parsed.
+     */
+    private static List<String> refreshCdnBases(String secureLinkUrl, String token, String cdnPref,
+                                                List<String> previous,
+                                                java.util.concurrent.ConcurrentLinkedQueue<String> log) {
+        String json = httpGet(secureLinkUrl, token);
+        List<String> all = parseCdnUrls(json);
+        if (all.isEmpty()) return null;
+        if (cdnPref != null && !CDN_PREF_AUTO.equals(cdnPref)) {
+            List<String> picked = pickSpecificCdn(all, cdnPref);
+            if (!picked.isEmpty()) return picked;
+            log.add("cdn_pref_miss=" + cdnPref + " on refresh — using the full list");
+        }
+        List<String> out = new ArrayList<>();
+        for (String prev : previous) {
+            String h = hostOf(prev);
+            if (h == null) continue;
+            for (String u : all) {
+                if (h.equalsIgnoreCase(hostOf(u)) && !out.contains(u)) out.add(u);
+            }
+        }
+        for (String u : all) if (!out.contains(u)) out.add(u);
+        return out;
+    }
+
+    /** Core-level transport failure (as opposed to disk / hash / plan errors) — worth another edge. */
+    private static boolean looksLikeNetworkError(String err) {
+        if (err == null) return false;
+        String e = err.toLowerCase();
+        return e.contains("http") || e.contains("status") || e.contains("timeout")
+                || e.contains("timed out") || e.contains("connect") || e.contains("reset")
+                || e.contains("dns") || e.contains("tls");
+    }
+
+    /**
+     * Names the file behind an engine error: the sink's {@code file=<path>} /
+     * {@code mismatch: <path>} / {@code rename failed: <path>} markers first, then any 32-hex chunk
+     * hash in the message (a {@code chunk=<md5>} marker or the chunk URL of an HTTP failure)
+     * looked up in {@code hashToPath}. Null when nothing matches.
+     */
+    private static String failedFileFromError(String err, java.util.Map<String, String> hashToPath) {
+        if (err == null || err.isEmpty()) return null;
+        int i = err.indexOf("file=");
+        if (i >= 0) {
+            String rest = err.substring(i + 5);
+            int end = rest.indexOf(" err=");
+            if (end < 0) end = rest.indexOf(" exp=");
+            String p = (end >= 0 ? rest.substring(0, end) : rest).trim();
+            if (!p.isEmpty()) return p;
+        }
+        for (String marker : new String[]{"size mismatch: ", "md5 mismatch: ", "rename failed: "}) {
+            int j = err.indexOf(marker);
+            if (j >= 0) {
+                String p = err.substring(j + marker.length()).trim();
+                if (!p.isEmpty()) return p;
+            }
+        }
+        if (hashToPath != null && !hashToPath.isEmpty()) {
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("[0-9a-fA-F]{32}").matcher(err);
+            while (m.find()) {
+                String p = hashToPath.get(m.group().toLowerCase());
+                if (p != null) return p;
+            }
+        }
+        return null;
     }
 
     private static void writeFile(File f, byte[] data) throws IOException {

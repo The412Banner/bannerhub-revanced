@@ -51,7 +51,7 @@
 ## Table of contents
 
 1. [AI Disclaimer](#ai-disclaimer)
-2. [What's new in v1.0.1-631](#whats-new-in-v100-609)
+2. [What's new in v1.0.2-631](#whats-new-in-v100-609)
 3. [What this is](#what-this-is)
 4. [Source](#source)
 5. [Variants](#variants)
@@ -73,9 +73,13 @@ This project has no source code — XiaoJi GameHub is closed-source and ships on
 
 Before any **stable release** is published, every change is **manually debugged and tested by me across multiple devices — both rooted and unrooted**. Debugging uses `logcat` output (captured with the [`getlog` Magisk helper](https://github.com/The412Banner/logcat-bridge) on rooted devices, plain `adb logcat` on unrooted) plus the in-app debug log files that the `Debug logging` patch produces. No release is cut until the change has been verified end-to-end on hardware.
 
-## What's new in v1.0.1-631
+## What's new in v1.0.2-631
 
 The headline of this release: **BannerHub v6 is now built on XiaoJi GameHub 6.3.1** (versionCode 141), up from the 6.0.9 base (versionCode 121) of the previous stable. That is a big jump upstream: since 6.1.0 the whole Wine runtime, launch screen and component system live in a separately-downloaded **PC Engine plugin**, and 6.3.x added XiaoJi's community/social layer, a newer Steam stack and transactional cloud sync. Every BannerHub patch was **re-derived against 6.3.1 and confirmed on-device**, and the plugin side is now BannerHub's too. Same public keystore as every release since `v1.1.0-604`.
+
+### 🩹 1.0.2: install conflict when upgrading from 609 (or next to stock GameHub)
+
+Fixes "App not installed as package conflicts with an existing package" when installing a 631 build over `v1.0.0-609`, or on any device that also has stock GameHub 6.1+ (or another GameHub 6.x mod signed with a different key). The 6.1+ base declares a new push permission, `com.xiaoji.egggame.push.permission.MESSAGE`, outside the name pattern our per-variant rename covered, so every 631 variant still declared it under XiaoJi's name — and Android refuses to install a package that redeclares a permission owned by a differently-signed app. Every `com.xiaoji.egggame.*` permission is now renamed per variant (declarations, requests, and the two receiver guards). Device-proven: 609 → 1.0.2 in place. Nothing else changed since 1.0.1-631.
 
 ### 🩹 1.0.1: Component Manager removal fixes
 

@@ -338,7 +338,11 @@ jobs:
 
             ## What's new in ${{ needs.build.outputs.version }}
 
-            1.0.1 is a fix release on the 6.3.1 line (details first below). The 631 headline: **BannerHub v6 now runs on XiaoJi GameHub 6.3.1** (versionCode 141), up from the 6.0.9 base (versionCode 121) of `v1.0.0-609`. Since 6.1.0 the whole Wine runtime, launch screen and component system live in a separately-downloaded **PC Engine plugin**, and 6.3.x added XiaoJi's community/social layer, a newer Steam stack and transactional cloud sync. Every BannerHub patch was **re-derived against 6.3.1 and confirmed on-device**, and the plugin side is now BannerHub's too.
+            1.0.2 and 1.0.1 are fix releases on the 6.3.1 line (details first below). The 631 headline: **BannerHub v6 now runs on XiaoJi GameHub 6.3.1** (versionCode 141), up from the 6.0.9 base (versionCode 121) of `v1.0.0-609`. Since 6.1.0 the whole Wine runtime, launch screen and component system live in a separately-downloaded **PC Engine plugin**, and 6.3.x added XiaoJi's community/social layer, a newer Steam stack and transactional cloud sync. Every BannerHub patch was **re-derived against 6.3.1 and confirmed on-device**, and the plugin side is now BannerHub's too.
+
+            ### 🩹 1.0.2-631 — install conflict when upgrading from 609 (or next to stock GameHub)
+
+            Fixes **"App not installed as package conflicts with an existing package"** when installing a 631 build over `v1.0.0-609`, or on any device that also has **stock GameHub 6.1+** (or another GameHub 6.x mod signed with a different key). The 6.1+ base declares a new push permission, `com.xiaoji.egggame.push.permission.MESSAGE`, outside the name pattern our per-variant rename covered, so every 631 variant still declared it under XiaoJi's name — and Android refuses to install a package that redeclares a permission owned by a differently-signed app. Every `com.xiaoji.egggame.*` permission is now renamed per variant (declarations, requests, and the two receiver guards). Device-proven: 609 → 1.0.2 in place. Same plugin (111-7), same firmware, same keystore. Nothing else changed since 1.0.1-631.
 
             ### 🩹 1.0.1-631 — Component Manager removal fixes
 

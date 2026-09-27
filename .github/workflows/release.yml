@@ -7,7 +7,7 @@ name: Release
 # (artifacts-only) mode.
 #
 # Version is derived in the build job's "Derive version" step:
-#   - workflow_dispatch: from inputs.version (e.g. "1.0.0-609-pre1")
+#   - workflow_dispatch: from inputs.version (e.g. "1.0.0-631-pre1")
 #   - push: tags: from GITHUB_REF_NAME stripped of leading "v"
 # All downstream jobs reference needs.build.outputs.version (no leading "v")
 # and needs.build.outputs.tag ("v" + version).
@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version string for APK filenames + release tag (e.g. "1.0.0-609-pre1" or "1.0.0-609"). Strip leading v; the workflow re-adds it for the git tag. Required for workflow_dispatch.'
+        description: 'Version string for APK filenames + release tag (e.g. "1.0.0-631-pre1" or "1.0.0-631"). Strip leading v; the workflow re-adds it for the git tag. Required for workflow_dispatch.'
         required: false
       stable:
         description: "Cut a stable GitHub Release (default: artifact-only prerelease). Stable requires version to be set."
@@ -53,7 +53,7 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             RAW="${{ github.event.inputs.version }}"
             if [ -z "$RAW" ]; then
-              echo "::error::version input is required for workflow_dispatch. Example: 1.0.0-609-pre1"
+              echo "::error::version input is required for workflow_dispatch. Example: 1.0.0-631-pre1"
               exit 1
             fi
           else
@@ -307,29 +307,30 @@ jobs:
 
             </details>
 
-            A patched build of **XiaoJi GameHub 6.0.9** that removes the login requirement (import and play games with no account) and redirects the catalog to the BannerHub Cloudflare Worker. Ships **9 variants that install side-by-side**.
+            A patched build of **XiaoJi GameHub 6.3.1** that removes the login requirement (import and play games with no account), serves **its own PC Engine plugin**, and redirects the catalog + firmware to the BannerHub Cloudflare Worker. Ships **9 variants that install side-by-side**.
 
-            **9 APKs attached.** Steam game launches work end-to-end.
+            **9 APKs attached.** Steam and GOG game launches work end-to-end on the 6.3.1 base.
 
-            > **No separate Lite builds on the 6.0.9 base.** XiaoJi's own −46% size pass plus the privacy/size strips folded into every variant make the full 6.0.9 build (~55 MB) smaller than the old 6.0.4 Lite — so a distinct Lite would strip nothing extra. The Lite concept is absorbed.
+            > **No separate Lite builds.** XiaoJi's own size pass plus the privacy/size strips folded into every variant make a distinct Lite pointless — the Lite concept stays absorbed.
 
-            🔒 **Privacy-hardened** — upstream telemetry/analytics channels stripped at the bytecode level. Full list of killed channels (and the honest leftovers) in [`PRIVACY.md`](https://github.com/${{ github.repository }}/blob/gamehub-610-build/PRIVACY.md).
+            🔒 **Privacy-hardened** — upstream telemetry/analytics channels stripped at the bytecode level. Full list of killed channels (and the honest leftovers) in [`PRIVACY.md`](https://github.com/${{ github.repository }}/blob/gamehub-631-build/PRIVACY.md).
 
             <details>
             <summary><strong>✨ Everything BannerHub v6 offers (click to expand)</strong></summary>
 
-            - **No login required** — launch straight to the home screen and import/play games without a XiaoJi account.
-            - **Custom catalog API** — the catalog is redirected to the BannerHub Cloudflare Worker for **curated component delivery** (hand-picked DXVK, VKD3D-Proton, Box64, FEX, Mesa Turnip driver builds, etc.) instead of the stock upstream set.
+            - **No login required** — launch straight to the home screen and import/play games without a XiaoJi account (on 6.3.1 a synthetic account is seeded so the PC Engine plugin is happy too).
+            - **BannerHub-served PC Engine plugin** — the 6.1+ runtime plugin is re-signed and patched by BannerHub and delivered from the BannerHub API; catalog and firmware go through the Worker, firmware downloads are forced to HTTP/1.1, the launch badge is back.
+            - **Custom catalog API** — **curated component delivery** (hand-picked DXVK, VKD3D-Proton, Box64, FEX, Mesa Turnip driver builds, etc.) instead of the stock upstream set.
+            - **Component Manager** *(new)* — inject your own `.wcp` components or GPU-driver `.zip`s, or download them from the online repos, and use them from the normal pickers; remove in one tap.
+            - **Full GOG store** *(new)* — Store / Library / Downloads / Profile, catalog browse + search, detail pages with media, Bannerlator's Rust download engine.
             - **Privacy-hardened** — upstream telemetry/analytics channels stripped at the bytecode level (see the `PRIVACY.md` link above for the full list).
-            - **PC-accurate controller vibration** — real XInput rumble routed into Android's VibratorManager with independent dual-motor support, configurable **per-game** (mode + intensity) via the **PC Vibration Settings** menu row. Preload-free — no `libevshim` / `LD_PRELOAD`.
-            - **GOG integration** — sign in to GOG, browse your owned library, and download + install GOG games in-app; they're added to your GameHub library and launch like any other PC game. Reached from the Explore tab's GOG card or the Banner Tools → GOG tile.
-            - **BannerHub Explore homepage** — the bottom-nav "Explore" tab opens a BannerHub-owned homepage instead of the stock online discovery feed: wordmark/logo hero, a "What's New" article that auto-syncs from the release notes, the GOG store card, and an in-app **update banner + installed-vs-latest version readout** with a settings cog. Content can refresh live via an external JSON override; still fully offline-capable.
-            - **Recording-compatible audio** — optional toggle (Banner Tools → Audio) that routes PulseAudio through the mixer so screen recorders capture in-game sound.
-            - **In-game performance overlay** *(root)* — a draggable edge pill → slide-out panel for live CPU-governor + Adreno min-clock toggles while gaming; off by default, root-gated, auto-reverts on exit. Toggle from Banner Tools → In-game Overlay.
+            - **PC-accurate controller vibration** — real XInput rumble routed into Android's VibratorManager with independent dual-motor support, configurable **per-game** via the **PC Vibration Settings** menu row. Preload-free.
+            - **In-game Steam · Friends overlay** — friends list, chat and invites from inside the game, now over a main-process relay that suits the plugin architecture.
+            - **BannerHub Explore homepage** — the bottom-nav "Explore" tab opens a BannerHub-owned homepage: "What's New" synced from the release notes, the GOG store card, Banner Tools, and an in-app **update banner + installed-vs-latest version readout**.
+            - **In-game performance HUD + overlay** *(root for the clock controls)* — live DXVK/GPU/CPU/RAM/power/thermal/FPS readout and a slide-out panel for governor + Adreno clock toggles.
             - **9 side-by-side variants** — different package names + launcher labels so multiple builds coexist on one device (`Original` replaces stock GameHub; the rest install alongside it).
             - **Root-free file manager access** — a content provider lets MT Manager and similar apps browse GameHub's data dir without root.
-            - **Portrait PC-settings** — per-game PC settings render in both landscape and portrait (side benefit of the API redirect).
-            - **Installs in place** — stable signing keystore; future BannerHub v6 stables upgrade without uninstalling.
+            - **Installs in place** — public signing keystore; BannerHub v6 stables upgrade without uninstalling (see the 6.0.9 → 6.3.1 note below).
             - **BannerHub v6 branding** — custom app icon, Wine container header, and auth/splash artwork.
             - **Triage-friendly** — debuggable build with logcat markers along the import path.
 
@@ -337,29 +338,42 @@ jobs:
 
             ## What's new in ${{ needs.build.outputs.version }}
 
-            The headline: **the GameHub 6.0.9 rebase.** BannerHub v6 moved from the 6.0.8 base (versionCode 119) to **XiaoJi GameHub 6.0.9** (versionCode 121) — XiaoJi's first feature release of the 6.0.x line. Every BannerHub patch was **re-fingerprinted against 6.0.9's reshuffled bytecode and confirmed on-device**; the full v6 feature set carries over unchanged. Same stable keystore, so it installs in place over any `…-608` build.
+            The headline: **BannerHub v6 now runs on XiaoJi GameHub 6.3.1** (versionCode 141), up from the 6.0.9 base (versionCode 121) of `v1.0.0-609`. Since 6.1.0 the whole Wine runtime, launch screen and component system live in a separately-downloaded **PC Engine plugin**, and 6.3.x added XiaoJi's community/social layer, a newer Steam stack and transactional cloud sync. Every BannerHub patch was **re-derived against 6.3.1 and confirmed on-device**, and the plugin side is now BannerHub's too.
 
-            ### 🔁 Rebased onto GameHub 6.0.9 (versionCode 121)
+            ### 🔁 Rebased onto GameHub 6.3.1 (versionCode 141)
 
-            6.0.9 is a **feature release** upstream (native "Team Room" co-op + Tencent in-room voice) — **not** a runtime change: no Wine / DXVK / Box64 / FEX / Mesa Turnip changes, so component compatibility is unaffected. As always, the upstream R8 obfuscation reshuffle broke the usual set of patch anchors; all were **re-derived and device-verified**:
+            The 6.1.0 and 6.1.1 lines were onboarded but never shipped as stables; 6.3.1 is where everything landed. The usual R8 reshuffle broke most anchors; all were re-derived structurally — the per-game menu keystone first, then the Banner Tools row, Show PC Game Settings, Bypass login, Debug logging, the Explore tab hijack, the catalog + `/v6` redirects, the perf overlay, the vibration resolver and the privacy strips. Two obsolete PC-engine signature patches were retired.
 
-            - **Per-game menu chain** — the keystone per-game id capture, the Banner Tools row + consolidated dialog, the PC Vibration Settings row, Show Game ID, and the GOG row, all re-pinned (including 6.0.9's new **resource-descriptor menu-row icon model**).
-            - **PC-accurate controller vibration** — re-pinned + device-confirmed (independent dual-motor, intensity scaling, and **sustained holds** via the on-disk `winebus.so` patch).
-            - **Offline component picker** — re-pinned **and fixed**: it now correctly lists your already-downloaded components offline (a long-standing result-wrapper bug, present since earlier bases, was caught and cured in this rebase).
-            - **Bypass login, catalog redirect + `/v6` prefix, debug logging, Explore tab hijack, Show PC Game Settings, and the analytics/telemetry strips** — all re-pinned + verified.
+            ### 🔌 BannerHub-served PC Engine plugin
 
-            > **Upstream's own Team Room voice** (Tencent TRTC) ships in 6.0.9 but is gated behind XiaoJi's cloud "Instant Play" recharge service, so it never unlocks on these builds — BannerHub's WebRTC in-game voice overlay stays the working in-game voice.
+            The host downloads a **PC Engine plugin** (schema 7 on 6.3.1) and only accepts what its manifest names. BannerHub v6 serves **its own re-signed, patched 6.3.1 plugin** from the BannerHub API: catalog + firmware via the Worker (`/v6p`), firmware forced to HTTP/1.1 (upstream's downloader corrupted imagefs over multiplexed HTTP/2), the launch badge restored, and loader hooks so host-injected components appear in every picker. Plugin updates arrive automatically on app start. Firmware stays pinned at 1.4.2 and **no previously released BannerHub or v6 build is affected**.
 
-            ### ✅ Everything carries over
+            ### 🛒 Full GOG store with the Rust download engine
 
-            The full v6 feature set is intact and device-verified on 6.0.9: the **in-game Steam chat overlay + voice calls** (1:1 + party mesh, movable/collapsible call box, incoming ring with caller name + 30s auto-dismiss, ringtone settings, 🔗 share-call browser-guest link, emoji/emoticon/sticker picker + send-image via the Worker, typing indicators) — including **voice room codes** (create/join a shared room by a 5-character code, **cross-compatible with BannerHub 3.8.0** in either direction). Plus the **full Firebase Crashlytics shutoff**, GOG integration, the BannerHub Explore homepage (update banner + installed-vs-latest readout), PC-accurate controller vibration, the in-game performance overlay (root), recording-compatible audio, the offline component picker, portrait PC-settings, and the rest of the privacy-hardening stack — all unchanged. There's still **no separate Lite** build, and the **GPU Spoof** and **Legacy renderer (GLES2)** tiles stay retired.
+            GOG login is fixed (no more white screen after sign-in) and the GOG screen is now a **full store** ported from Bannerlator: Store / Library / Downloads / Profile tabs, catalog browse + search, Steam-style detail pages with media, generation badges from GOG's content system, and downloads on Bannerlator's **Rust engine** with staged, verified chunked transfers (57 MB/s measured on device). Games land in your library and launch like any other PC game.
 
-            The Banner Tools grid on 6.0.9 stays **Vibration · Game ID · Audio · GOG · Overlay · Root**.
+            ### 🧩 Component Manager — inject your own components
+
+            New **Components** tile in Banner Tools, at parity with BannerHub 3.8.1's injector: inject any `.wcp` (DXVK, VKD3D, FEX/Box64 translators, libs; tar + zstd / xz) or a GPU-driver `.zip` from storage, or pull them from the same six online repos plus the Turnip Nightlies from a **Download** screen. Injected components register with the plugin, appear in the right picker next to the catalog, and are removable in one tap. Device-proven end-to-end: a game ran on an injected Turnip driver, an injected DXVK and an injected FEX nightly simultaneously; removal leaves no ghost entries.
+
+            ### 💬 Steam · Friends overlay rebuilt for the plugin era
+
+            The game now runs inside the plugin process, so the overlay has a new transport: a relay service in the main app process (attaches in ~130 ms) with an IPC fallback for invites, and it never blocks the UI thread. Steam sign-in, the Friends list and online play are confirmed on 6.3.1; **chat send/receive and voice calls have not been re-verified on this base yet**.
+
+            ### 🔐 Login bypass that survives the plugin
+
+            The plugin reads the signed-in user from the Room database, so Bypass login **seeds a synthetic account** through Room's bundled SQLite driver. Clean install → first launch → game running with no account is confirmed. The heartbeat/token calls that used to log the fake account out are answered by the Worker.
+
+            ### Carryover — what still works, what is paused
+
+            Explore tab, Banner Tools (**Vibration · Game ID · Audio · GOG · Overlay · Root · Components**), the in-game performance HUD + root pill, PC-accurate vibration, the privacy stack, the 9 variants and the public keystore carry over. **Paused on 6.3.1** (host anchors gone): the **offline component picker** (the plugin owns the pickers now) and the **recording-compatible audio** toggle (the Audio tile is present; that switch does nothing on this base). The heartbeat-disable patch is moot since the Worker handles heartbeat.
+
+            > ⚠️ **Upgrading from `v1.0.0-609`:** same signing key, so Android accepts an in-place update, but the 6.0.9 → 6.3.1 database migration is XiaoJi's and **we have not tested it**. A clean install is recommended; sign in to Steam and GOG again afterwards.
 
             <details>
             <summary><strong>📥 Variants &amp; install notes (9 side-by-side APKs)</strong></summary>
 
-            Each variant has its own package name + launcher label, so the variants install **side-by-side** with each other. `Original` replaces an installed GameHub; the rest install alongside it.
+            Each variant has its own package name + launcher label, so the variants install **side-by-side** with each other. `Original` replaces an installed GameHub; the rest install alongside it. If a package name is already on your device under a different signing key (e.g. `com.tencent.ig` used by another emulator build), Android reports a package conflict — pick a different variant.
 
             | Variant | Package | APK |
             | --- | --- | --- |
@@ -373,13 +387,14 @@ jobs:
             | Genshin | `com.miHoYo.GenshinImpact` | `…-Genshin.apk` |
             | Original | `com.xiaoji.egggame` | `…-Original.apk` |
 
-            Filenames follow `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-{variant}.apk`. The version string is `BannerHub v6` (product) + our semver + `-609` (the GameHub base, `6.0.9`) — e.g. `${{ needs.build.outputs.version }}`.
+            Filenames follow `BannerHub-V6-${{ needs.build.outputs.version }}-Patched-{variant}.apk`. The version string is `BannerHub v6` (product) + our semver + `-631` (the GameHub base, `6.3.1`) — e.g. `${{ needs.build.outputs.version }}`.
 
             ### Install notes
 
-            - **Signing**: stable BannerHub test keystore. A one-time uninstall is only needed if upgrading from `v1.0.0-604` or older (cert changed then); every release since installs in place, including over any `…-608` build. Fingerprints in [`keystore/README.md`](https://github.com/${{ github.repository }}/blob/gamehub-610-build/keystore/README.md).
-            - Base APK is unmodified XiaoJi GameHub 6.0.9 (versionCode 121) — only the bytecode/resources the patches need are touched.
-            - The `.rvp` / `.rve` bundles are attached for use with `revanced-cli` directly. Built with ReVanced CLI 6.0.0; APKs from `gamehub-610-build`.
+            - **Signing**: public BannerHub test keystore, unchanged since `v1.1.0-604`. Fingerprints in [`keystore/README.md`](https://github.com/${{ github.repository }}/blob/gamehub-631-build/keystore/README.md).
+            - **First launch needs network**: the app downloads the BannerHub PC Engine plugin (~27 MB) and, on first game launch, the firmware.
+            - Base APK is unmodified XiaoJi GameHub 6.3.1 (versionCode 141) — only the bytecode/resources the patches need are touched.
+            - The `.rvp` / `.rve` bundles are attached for use with `revanced-cli` directly. Built with ReVanced CLI 6.0.0; APKs from `gamehub-631-build`.
 
             </details>
 
@@ -388,24 +403,27 @@ jobs:
 
             | Patch | What it does |
             | --- | --- |
-            | **Bypass login** | Launch straight to the home screen; import and play games with no account. |
+            | **Bypass login** | Launch straight to the home screen; import and play games with no account. On 6.3.1 also seeds the synthetic account into Room so the PC Engine plugin accepts downloads. |
+            | **Redirect PC engine plugin manifest** | Points the plugin manifest lookup at the BannerHub API, which serves the BannerHub-patched plugin per schema version. |
+            | **PC engine plugin — validation strategy** | Lets the host accept the BannerHub-signed plugin. |
+            | **Redirect catalog API** + **Prefix API path with /v6** | Points the catalog at the BannerHub Worker without affecting 5.x clients; also fixes PC-settings rendering in portrait. |
+            | **Component Manager** | Banner Tools → Components: inject `.wcp` / driver `.zip`, online-repo Download screen, list + remove; registers with the plugin. |
+            | **GOG store + Rust engine** | Full GOG store UI, fixed login WebView, bundled `libblsteam.so` download engine. |
+            | **Steam · Friends relay service** + **Steam chat overlay** | Main-process relay + invite IPC so the in-game overlay works with the plugin-hosted game. |
             | **Disable Firebase Crashlytics** | Prevents a launch-time `VerifyError` crash. |
             | **Debug logging** | Debuggable APK + logcat markers along the import path for triage. |
-            | **File manager access** | Content provider so external file managers (MT Manager etc.) can browse the data dir without root. |
+            | **File manager access** | Content provider so external file managers can browse the data dir without root. |
             | **Rewrite custom permissions per variant** | Stops two installed variants colliding on Android 7+. |
-            | **Redirect catalog API** | Points the catalog at the BannerHub Worker; also fixes PC-settings rendering in portrait. |
-            | **Prefix API path with /v6** | Lets the Worker serve 6.0-only responses without affecting 5.x clients. |
-            | **Offline component picker — local list** | Offline, every per-game picker (GPU driver, DXVK, VKD3D, FEXCore/Box64, **and the Wine/Proton container**) lists the components you've already downloaded, catalog-ordered. Online behaviour byte-identical; fully fail-safe (any error falls back to stock). |
-            | **PC-accurate vibration** | Routes XInput rumble into Android's VibratorManager (independent dual-motor). Preload-free: an on-disk `winebus.so` patch defeats SDL2's ~1 s auto-stop with no `libevshim.so` / `LD_PRELOAD` (fixes the x86_64/box64 launch-death). Default on at 100%. |
-            | **PC Vibration Settings (activity + menu row)** | Per-game mode (off / device / controller / both) and intensity (0–100%), plus a **PC Vibration Settings** row in both per-game popups. |
-            | **Strict per-game settings store** | PC Vibration saves strictly per-game in BannerHub's own store with explicit Save/Cancel — no host clobber, no app-wide leak. |
-            | **Show PC Game Settings row** | Keeps the per-game **PC game settings** row visible in Explorer view (XiaoJi's UX hid it for Steam-linked games). |
-            | **Privacy hardening** | Upstream telemetry/analytics channels stripped at the bytecode level (Firebase Analytics/Crashlytics, GMS Measurement, Mob Push, heartbeat, OTA, Ad-ID, cert-pinning override, etc.). Full list + honest leftovers in `PRIVACY.md`. |
-            | **Change app icon** | BannerHub v6 branding — adaptive icon, Wine container header, auth/splash assets. |
-            | **Change package & app name** *(per variant)* | Per-variant package + launcher label so all 9 variants install side-by-side (`Original` keeps `com.xiaoji.egggame`). |
-            | **Privacy/size strips** | Removes the Aliyun carrier-login (NumberAuth) SDK and the Haima cloud-gaming stack from **every** variant. (On 6.0.9 the old Lite-only font + AVIF/HEIC codec strips are moot — XiaoJi already dropped them in its own −46 % size pass.) |
+            | **PC-accurate vibration** + **PC Vibration Settings** | XInput rumble into Android's VibratorManager (independent dual-motor), per-game mode + intensity, strict per-game store. |
+            | **Show PC Game Settings row** | Keeps the per-game **PC game settings** row visible in Explorer view. |
+            | **Explore tab hijack** | The BannerHub Explore homepage. |
+            | **Performance HUD / overlay** | In-game readout + root clock controls. |
+            | **Privacy hardening** | Upstream telemetry/analytics channels stripped at the bytecode level. Full list + honest leftovers in `PRIVACY.md`. |
+            | **Change app icon** / **Change package & app name** *(per variant)* | BannerHub v6 branding; per-variant package + launcher label. |
+            | **Privacy/size strips** | Removes the Aliyun carrier-login (NumberAuth) SDK and the Haima cloud-gaming stack from every variant. |
+            | *Paused on 6.3.1* | **Offline component picker**, **Recording-compatible audio**, **Disable heartbeat** — host anchors gone; kept in the tree, gated off. |
 
-            *Per-patch mechanics, smali anchors, and version-by-version letter maps are in the [README's Patches applied section](https://github.com/${{ github.repository }}/blob/gamehub-610-build/README.md#patches-applied) and the [patch sources](https://github.com/${{ github.repository }}/tree/gamehub-610-build/patches/src/main/kotlin/app/revanced/patches/gamehub).*
+            *Per-patch mechanics, smali anchors, and version-by-version letter maps are in the [README's Patches applied section](https://github.com/${{ github.repository }}/blob/gamehub-631-build/README.md#patches-applied) and the [patch sources](https://github.com/${{ github.repository }}/tree/gamehub-631-build/patches/src/main/kotlin/app/revanced/patches/gamehub).*
 
             </details>
 
@@ -413,7 +431,7 @@ jobs:
 
             **Voice-chat testing:** huge thanks to **Glitch** and **Stevolit** for the many cross-network test calls that helped get in-game 1:1 + party voice working and confirmed across different ISPs/NATs. 🙏
 
-            PC-accurate controller vibration (including the preload-free rework) is built on **[TideGear](https://github.com/TideGear)**'s [GameHub-Vibration-Fix](https://github.com/TideGear/GameHub-Vibration-Fix) (PR #80 + PR #91), adapted with explicit permission, deriving from [GameNative](https://github.com/utkarshdalal/GameNative) (PR #1214). Full project credits (DXVK, VKD3D-Proton, Box64, FEX, Mesa Turnip, ReVanced, etc.) are in the [README Credits section](https://github.com/${{ github.repository }}/blob/gamehub-610-build/README.md#credits).
+            PC-accurate controller vibration (including the preload-free rework) is built on **[TideGear](https://github.com/TideGear)**'s [GameHub-Vibration-Fix](https://github.com/TideGear/GameHub-Vibration-Fix) (PR #80 + PR #91), adapted with explicit permission, deriving from [GameNative](https://github.com/utkarshdalal/GameNative) (PR #1214). Full project credits (DXVK, VKD3D-Proton, Box64, FEX, Mesa Turnip, ReVanced, etc.) are in the [README Credits section](https://github.com/${{ github.repository }}/blob/gamehub-631-build/README.md#credits).
           files: |
             apks/BannerHub-V6-*.apk
             shared/*.rvp

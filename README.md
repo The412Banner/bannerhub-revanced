@@ -51,7 +51,7 @@
 ## Table of contents
 
 1. [AI Disclaimer](#ai-disclaimer)
-2. [What's new in v1.0.0-631](#whats-new-in-v100-609)
+2. [What's new in v1.0.1-631](#whats-new-in-v100-609)
 3. [What this is](#what-this-is)
 4. [Source](#source)
 5. [Variants](#variants)
@@ -73,9 +73,13 @@ This project has no source code — XiaoJi GameHub is closed-source and ships on
 
 Before any **stable release** is published, every change is **manually debugged and tested by me across multiple devices — both rooted and unrooted**. Debugging uses `logcat` output (captured with the [`getlog` Magisk helper](https://github.com/The412Banner/logcat-bridge) on rooted devices, plain `adb logcat` on unrooted) plus the in-app debug log files that the `Debug logging` patch produces. No release is cut until the change has been verified end-to-end on hardware.
 
-## What's new in v1.0.0-631
+## What's new in v1.0.1-631
 
 The headline of this release: **BannerHub v6 is now built on XiaoJi GameHub 6.3.1** (versionCode 141), up from the 6.0.9 base (versionCode 121) of the previous stable. That is a big jump upstream: since 6.1.0 the whole Wine runtime, launch screen and component system live in a separately-downloaded **PC Engine plugin**, and 6.3.x added XiaoJi's community/social layer, a newer Steam stack and transactional cloud sync. Every BannerHub patch was **re-derived against 6.3.1 and confirmed on-device**, and the plugin side is now BannerHub's too. Same public keystore as every release since `v1.1.0-604`.
+
+### 🩹 1.0.1: Component Manager removal fixes
+
+Two bugs found right after 1.0.0-631 shipped, both in the remove → re-inject path. **Removing a component no longer breaks the games that used it**: the PC Engine wires a selected translator / DXVK into each game prefix as symlinks and never re-points an existing one, so after a Remove those links dangled and the game died on launch ("could not load `libarm64ec_import.dll`", Wine exit 53). Remove — and opening Component Manager — now clears dead links; the engine plants fresh ones on the next launch. And **re-injecting a component you removed no longer claims it "already exists"**: the name check read a stale in-process copy of the plugin registry; it now reads the registry file fresh, tells catalog rows from injected ones, and silently heals an orphaned row instead of prompting. Device-proven: inject → use → remove → re-inject (no prompt) → launch.
 
 ### 🔁 Rebased onto GameHub 6.3.1 (versionCode 141)
 

@@ -338,7 +338,16 @@ jobs:
 
             ## What's new in ${{ needs.build.outputs.version }}
 
-            The headline: **BannerHub v6 now runs on XiaoJi GameHub 6.3.1** (versionCode 141), up from the 6.0.9 base (versionCode 121) of `v1.0.0-609`. Since 6.1.0 the whole Wine runtime, launch screen and component system live in a separately-downloaded **PC Engine plugin**, and 6.3.x added XiaoJi's community/social layer, a newer Steam stack and transactional cloud sync. Every BannerHub patch was **re-derived against 6.3.1 and confirmed on-device**, and the plugin side is now BannerHub's too.
+            1.0.1 is a fix release on the 6.3.1 line (details first below). The 631 headline: **BannerHub v6 now runs on XiaoJi GameHub 6.3.1** (versionCode 141), up from the 6.0.9 base (versionCode 121) of `v1.0.0-609`. Since 6.1.0 the whole Wine runtime, launch screen and component system live in a separately-downloaded **PC Engine plugin**, and 6.3.x added XiaoJi's community/social layer, a newer Steam stack and transactional cloud sync. Every BannerHub patch was **re-derived against 6.3.1 and confirmed on-device**, and the plugin side is now BannerHub's too.
+
+            ### 🩹 1.0.1-631 — Component Manager removal fixes
+
+            Two bugs found right after 1.0.0-631, both in the remove → re-inject path:
+
+            - **Removing a component no longer breaks the games that used it.** The PC Engine wires the selected translator / DXVK into each game prefix as symlinks and never re-points an existing one, so after a Remove those links dangled and the game died on launch (`could not load libarm64ec_import.dll`, Wine exit 53). Remove — and opening Component Manager — now clears dead links; the engine plants fresh ones on the next launch.
+            - **Re-injecting a component you removed no longer claims it "already exists".** The name check read a stale in-process copy of the plugin registry; it now reads the registry file fresh, tells catalog rows from injected ones, and silently heals an orphaned row instead of prompting.
+
+            Device-proven: inject → use → remove → re-inject (no prompt) → launch. Nothing else changed since 1.0.0-631; same plugin (111-7), same firmware, same keystore — installs in place.
 
             ### 🔁 Rebased onto GameHub 6.3.1 (versionCode 141)
 

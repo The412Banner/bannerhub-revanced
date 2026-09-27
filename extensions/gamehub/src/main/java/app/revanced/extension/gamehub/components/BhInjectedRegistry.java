@@ -285,8 +285,66 @@ public final class BhInjectedRegistry {
         purgeUnifiedRow(ctx, name);
         deleteTree(componentDir(ctx, name));
         deleteTree(downloadDir(ctx, name));
-        Log.i(TAG, "removed " + name + " prefsOk=" + ok);
+        // The plugin wires a selected component into each prefix with absolute
+        // symlinks (drive_c/windows/{,system32,syswow64}/*.dll -> components/<name>/...;
+        // translators as libarm64ec_import.dll / libwow64_import.dll). It does not
+        // re-link when the entry already exists, so a link left pointing into a
+        // deleted folder makes every later launch of that game die with
+        // "could not load libarm64ec_import.dll, status c0000135" (Wine exit 53).
+        int unlinked = sweepDanglingComponentLinks(ctx);
+        Log.i(TAG, "removed " + name + " prefsOk=" + ok + " danglingLinksRemoved=" + unlinked);
         return ok;
+    }
+
+    // ── Prefix symlink hygiene ────────────────────────────────────────────
+
+    private static final String[] PREFIX_ROOTS = { "usr/home/containers", "usr/home/virtual_containers" };
+    private static final String[] WINDOWS_SUBDIRS = { "", "system32", "syswow64" };
+
+    /**
+     * Deletes every symlink under {@code <prefix>/drive_c/windows/{,system32,syswow64}}
+     * of every container whose target lives under {@code usr/home/components/} and
+     * no longer exists. Bounded walk (no recursion beyond those three dirs).
+     * The plugin recreates the links for the currently selected components on
+     * the next launch. Returns how many were removed.
+     */
+    public static int sweepDanglingComponentLinks(Context ctx) {
+        int removed = 0;
+        try {
+            File filesDir = ctx.getFilesDir();
+            String componentsRoot = new File(filesDir, COMPONENTS_SUBDIR).getCanonicalPath() + "/";
+            String componentsRootUser = componentsRoot.replaceFirst("^/data/data/", "/data/user/0/");
+            for (String root : PREFIX_ROOTS) {
+                File[] prefixes = new File(filesDir, root).listFiles();
+                if (prefixes == null) continue;
+                for (File prefix : prefixes) {
+                    File windows = new File(prefix, "drive_c/windows");
+                    if (!windows.isDirectory()) continue;
+                    for (String sub : WINDOWS_SUBDIRS) {
+                        File dir = sub.isEmpty() ? windows : new File(windows, sub);
+                        File[] entries = dir.listFiles();
+                        if (entries == null) continue;
+                        for (File e : entries) {
+                            java.nio.file.Path path = e.toPath();
+                            if (!java.nio.file.Files.isSymbolicLink(path)) continue;
+                            String target;
+                            try {
+                                target = java.nio.file.Files.readSymbolicLink(path).toString();
+                            } catch (Throwable t) { continue; }
+                            if (!(target.startsWith(componentsRoot) || target.startsWith(componentsRootUser))) continue;
+                            if (new File(target).exists()) continue;
+                            if (e.delete()) {
+                                removed++;
+                                Log.i(TAG, "unlinked dangling " + path + " -> " + target);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "sweepDanglingComponentLinks failed", t);
+        }
+        return removed;
     }
 
     // ── Plugin registry file (sp_winemu_unified_resources) ────────────────

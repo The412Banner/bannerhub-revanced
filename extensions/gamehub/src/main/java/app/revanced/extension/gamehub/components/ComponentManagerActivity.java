@@ -63,10 +63,12 @@ public class ComponentManagerActivity extends Activity {
         // pickers and this list agree; the plugin restarts only if something changed.
         new Thread(() -> {
             final int purged = BhInjectedRegistry.purgeStaleUnifiedRows(this);
-            if (purged > 0) runOnUiThread(() -> {
+            final int unlinked = BhInjectedRegistry.sweepDanglingComponentLinks(this);
+            if (purged > 0 || unlinked > 0) runOnUiThread(() -> {
                 if (isFinishing() || isDestroyed()) return;
-                BhInjectedRegistry.reloadPcEngine(this);
-                Toast.makeText(this, "Cleaned " + purged + " stale registry row(s)", Toast.LENGTH_SHORT).show();
+                if (purged > 0) BhInjectedRegistry.reloadPcEngine(this);
+                Toast.makeText(this, "Cleaned " + purged + " stale registry row(s), "
+                        + unlinked + " dangling prefix link(s)", Toast.LENGTH_SHORT).show();
             });
         }, "bh-component-purge").start();
         rebuild();

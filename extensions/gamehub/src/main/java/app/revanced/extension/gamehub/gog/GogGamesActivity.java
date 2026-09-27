@@ -295,24 +295,59 @@ public class GogGamesActivity extends Activity {
             }
 
             if (showProgress) setSync("Fetching game list…");
-
-            String gamesJson = httpGet("https://embed.gog.com/user/data/games", token);
-            if (gamesJson == null) { setSync("Failed to fetch library"); enableRefresh(); return; }
-
+            // Library enumeration. `getFilteredProducts` is the account library
+            // GOG's own clients render: one row per PLAYABLE product, paged, with
+            // isGame/isHidden/isGalaxyCompatible flags. `user/data/games` (used
+            // before) is the raw owned-id set: it includes DLC ids and RETIRED
+            // products GOG has since replaced — device-seen 2026-09-26: it listed
+            // "DOOM (1993)" 1440164514 (no builds, no installers, nothing any
+            // client can download) and NOT the real library entry "DOOM + DOOM II"
+            // 1413291984 (14 Galaxy builds) that getFilteredProducts returns.
             List<String> ids = new ArrayList<>();
+            boolean filteredOk = false;
             try {
-                JSONObject obj = new JSONObject(gamesJson);
-                JSONArray ownedArr = obj.optJSONArray("owned");
-                if (ownedArr != null) {
-                    for (int i = 0; i < ownedArr.length(); i++) {
-                        String id = String.valueOf(ownedArr.getLong(i));
-                        if (!"1801418160".equals(id)) ids.add(id);
+                for (int page = 1, totalPages = 1; page <= totalPages && page <= 50; page++) {
+                    String pageJson = httpGet(
+                            "https://embed.gog.com/account/getFilteredProducts?mediaType=1&page=" + page,
+                            token);
+                    if (pageJson == null) break;
+                    JSONObject pageObj = new JSONObject(pageJson);
+                    totalPages = Math.max(1, pageObj.optInt("totalPages", 1));
+                    JSONArray products = pageObj.optJSONArray("products");
+                    if (products == null) break;
+                    for (int i = 0; i < products.length(); i++) {
+                        JSONObject prod = products.optJSONObject(i);
+                        if (prod == null) continue;
+                        if (prod.optBoolean("isMovie", false)) continue;
+                        if (!prod.optBoolean("isGame", true)) continue;
+                        if (prod.optBoolean("isHidden", false)) continue;
+                        String id = String.valueOf(prod.optLong("id", 0));
+                        if (!"0".equals(id) && !"1801418160".equals(id) && !ids.contains(id)) ids.add(id);
                     }
+                    filteredOk = true;
                 }
             } catch (Exception e) {
-                setSync("Error parsing library"); enableRefresh(); return;
+                Log.w(TAG, "getFilteredProducts failed, falling back to user/data/games", e);
+                ids.clear();
+                filteredOk = false;
             }
-
+            if (!filteredOk || ids.isEmpty()) {
+                // Fallback: the raw owned-id set (previous behaviour).
+                String gamesJson = httpGet("https://embed.gog.com/user/data/games", token);
+                if (gamesJson == null) { setSync("Failed to fetch library"); enableRefresh(); return; }
+                try {
+                    JSONObject obj = new JSONObject(gamesJson);
+                    JSONArray ownedArr = obj.optJSONArray("owned");
+                    if (ownedArr != null) {
+                        for (int i = 0; i < ownedArr.length(); i++) {
+                            String id = String.valueOf(ownedArr.getLong(i));
+                            if (!"1801418160".equals(id) && !ids.contains(id)) ids.add(id);
+                        }
+                    }
+                } catch (Exception e) {
+                    setSync("Error parsing library"); enableRefresh(); return;
+                }
+            }
             if (ids.isEmpty()) { setSync("No games found in library"); enableRefresh(); return; }
 
             if (showProgress) setSync("Syncing " + ids.size() + " games…");

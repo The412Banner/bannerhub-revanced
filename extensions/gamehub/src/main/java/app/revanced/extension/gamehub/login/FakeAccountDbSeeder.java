@@ -1,11 +1,10 @@
 package app.revanced.extension.gamehub.login;
 
 import android.content.Context;
-import android.database.Cursor;
-import android.database.sqlite.SQLiteDatabase;
 import android.util.Log;
 
 import java.io.File;
+import java.lang.reflect.Method;
 
 /**
  * Seeds the fake BannerHub account into the app's Room database.
@@ -22,11 +21,21 @@ import java.io.File;
  * terminal state" while the actual download kept running underneath.
  *
  * So write the two rows ourselves, with the same synthetic user id the
- * in-memory fakes use ({@link FakeAuthToken#FAKE_USER_ID}). Raw SQLite on the
- * Room file: Room's own tables, `INSERT OR IGNORE`, no schema changes. Room
- * does not see external writes through its invalidation tracker, which is fine
- * here — the plugin process opens the DB fresh when a game is launched, well
- * after we have seeded.
+ * in-memory fakes use ({@link FakeAuthToken#FAKE_USER_ID}). Room's own tables,
+ * `INSERT OR IGNORE`, no schema changes.
+ *
+ * ⚠️ MUST go through the SAME SQLite library Room uses. The first cut opened
+ * the file with android.database.sqlite (the platform library) while Room was
+ * on androidx.sqlite's BUNDLED library in the same process. Two SQLite builds
+ * in one process each keep their own in-process inode/lock table, so their
+ * POSIX fcntl locks silently cancel each other → "database disk image is
+ * malformed" (SQLITE_CORRUPT) in Room on the first launch of a fresh install
+ * (device-seen 2026-09-26 22:10). Using androidx.sqlite.driver.bundled's
+ * BundledSQLiteDriver — the exact driver the app ships and R8 keeps by name —
+ * is what Room itself does for extra connections. The androidx.sqlite
+ * interfaces (SQLiteConnection.prepare, SQLiteStatement.bindText/bindLong/
+ * step/close) are library API and survive R8 un-renamed (verified in the
+ * 6.3.1 host smali), so plain reflection on them is stable.
  *
  * Re-checked (throttled) on every {@link FakeAuthToken#get()} because the
  * plugin's TokenRefreshPlugin answers ANY 401 that has no refresh token with
@@ -48,8 +57,13 @@ public final class FakeAccountDbSeeder {
     // Cheap re-verification cadence once both rows have been seen present.
     private static final long RECHECK_MS = 60_000L;
     // Back-off while the DB/tables do not exist yet (fresh install, before Room
-    // has created them) or while a write keeps failing.
+    // has created them), while Room holds the write lock (SQLITE_BUSY), or
+    // while a write keeps failing.
     private static final long RETRY_MS = 5_000L;
+
+    private static final String DRIVER_CLASS = "androidx.sqlite.driver.bundled.BundledSQLiteDriver";
+    private static final String CONNECTION_IFACE = "androidx.sqlite.SQLiteConnection";
+    private static final String STATEMENT_IFACE = "androidx.sqlite.SQLiteStatement";
 
     private static volatile long nextCheckAt;
     private static volatile boolean seeding;
@@ -83,39 +97,44 @@ public final class FakeAccountDbSeeder {
      * @return true when both rows are present after this call (nothing to do
      *         until the next re-check), false when the DB is not ready yet.
      */
-    static boolean seedNow() {
+    static boolean seedNow() throws Exception {
         Context ctx = appContext();
         if (ctx == null) return false;
         File dbFile = ctx.getDatabasePath(DB_NAME);
         if (!dbFile.exists()) return false;
 
-        SQLiteDatabase db = SQLiteDatabase.openDatabase(
-            dbFile.getPath(), null, SQLiteDatabase.OPEN_READWRITE);
+        Class<?> connCls = Class.forName(CONNECTION_IFACE);
+        Class<?> stmtCls = Class.forName(STATEMENT_IFACE);
+        Object driver = Class.forName(DRIVER_CLASS).getDeclaredConstructor().newInstance();
+        Object conn = driver.getClass().getMethod("open", String.class).invoke(driver, dbFile.getPath());
+        Db db = new Db(conn, connCls, stmtCls);
         try {
-            if (!tableExists(db, "user_account") || !tableExists(db, "auth_token")) return false;
+            if (!db.exists("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'user_account'")
+                || !db.exists("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'auth_token'")) {
+                return false;
+            }
 
             long now = System.currentTimeMillis();
             boolean wrote = false;
 
-            if (!rowExists(db, "SELECT 1 FROM user_account WHERE user_id = ?", USER_ID)) {
+            if (!db.exists("SELECT 1 FROM user_account WHERE user_id = '" + USER_ID + "'")) {
                 // Every NOT NULL column set; the rest default to NULL like a
                 // freshly-registered account. is_guest = 0 to match the
                 // in-memory fake profile (isGuest false → non-guest paths).
-                db.execSQL(
-                    "INSERT OR IGNORE INTO user_account (user_id, uuid, remote_numeric_id, username, "
-                        + "nickname, is_guest, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
-                    new Object[] { USER_ID, "bannerhub-" + USER_ID, Long.parseLong(USER_ID),
-                        "bannerhub", "BannerHub", now, now });
+                db.exec("INSERT OR IGNORE INTO user_account (user_id, uuid, remote_numeric_id, username, "
+                    + "nickname, is_guest, created_at, updated_at) VALUES ('" + USER_ID + "', 'bannerhub-"
+                    + USER_ID + "', " + Long.parseLong(USER_ID) + ", 'bannerhub', 'BannerHub', 0, "
+                    + now + ", " + now + ")");
                 wrote = true;
             }
 
-            if (!rowExists(db, "SELECT 1 FROM auth_token WHERE user_id = ? AND is_current = 1", USER_ID)) {
-                db.execSQL(
-                    "INSERT INTO auth_token (user_id, access_token, refresh_token, token_type, "
-                        + "access_token_expires_at, refresh_token_expires_at, issued_at, is_current, "
-                        + "created_at, updated_at) VALUES (?, ?, ?, 'Bearer', ?, ?, ?, 1, ?, ?)",
-                    new Object[] { USER_ID, ACCESS_TOKEN, REFRESH_TOKEN,
-                        now + EXPIRES_IN_MS, now + EXPIRES_IN_MS, now, now, now });
+            if (!db.exists("SELECT 1 FROM auth_token WHERE user_id = '" + USER_ID + "' AND is_current = 1")) {
+                long exp = now + EXPIRES_IN_MS;
+                db.exec("INSERT INTO auth_token (user_id, access_token, refresh_token, token_type, "
+                    + "access_token_expires_at, refresh_token_expires_at, issued_at, is_current, "
+                    + "created_at, updated_at) VALUES ('" + USER_ID + "', '" + ACCESS_TOKEN + "', '"
+                    + REFRESH_TOKEN + "', 'Bearer', " + exp + ", " + exp + ", " + now + ", 1, "
+                    + now + ", " + now + ")");
                 wrote = true;
             }
 
@@ -126,16 +145,43 @@ public final class FakeAccountDbSeeder {
         }
     }
 
-    private static boolean tableExists(SQLiteDatabase db, String table) {
-        return rowExists(db, "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", table);
-    }
+    /** Thin reflective wrapper over androidx.sqlite.SQLiteConnection/Statement. */
+    private static final class Db {
+        private final Object conn;
+        private final Method prepare;
+        private final Method connClose;
+        private final Method step;
+        private final Method stmtClose;
 
-    private static boolean rowExists(SQLiteDatabase db, String sql, String arg) {
-        Cursor c = db.rawQuery(sql, new String[] { arg });
-        try {
-            return c.moveToFirst();
-        } finally {
-            c.close();
+        Db(Object conn, Class<?> connCls, Class<?> stmtCls) throws Exception {
+            this.conn = conn;
+            this.prepare = connCls.getMethod("prepare", String.class);
+            this.connClose = connCls.getMethod("close");
+            this.step = stmtCls.getMethod("step");
+            this.stmtClose = stmtCls.getMethod("close");
+        }
+
+        // All literals are ours (digits / fixed ASCII), so inline SQL is safe.
+        boolean exists(String sql) throws Exception {
+            Object st = prepare.invoke(conn, sql);
+            try {
+                return (Boolean) step.invoke(st);
+            } finally {
+                stmtClose.invoke(st);
+            }
+        }
+
+        void exec(String sql) throws Exception {
+            Object st = prepare.invoke(conn, sql);
+            try {
+                step.invoke(st);
+            } finally {
+                stmtClose.invoke(st);
+            }
+        }
+
+        void close() throws Exception {
+            connClose.invoke(conn);
         }
     }
 

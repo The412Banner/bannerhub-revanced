@@ -87,7 +87,7 @@ public final class BhInjectedRegistry {
 
     /** Prefs the plugin merges at start (one loader call in the plugin patch). */
     public static final String PLUGIN_PREFS = "sp_bh_injected_components";
-    /** The plugin's own unified registry — read-only for us (name collision check). */
+    /** The plugin's own unified registry — read for collision checks; rows are only ever removed via file edit + :pcengine restart. */
     public static final String UNIFIED_PREFS = "sp_winemu_unified_resources";
     /** Our list-screen index (name → {type, source, size, date, ...}). */
     public static final String INDEX_PREFS = "bh_component_manager";
@@ -280,10 +280,112 @@ public final class BhInjectedRegistry {
         if (name == null || name.isEmpty()) return false;
         boolean ok = pluginPrefs(ctx).edit().remove(name).commit();
         ok &= indexPrefs(ctx).edit().remove(name).commit();
+        // The plugin loader has already merged (and persisted) this row into its
+        // own registry; without this the picker keeps showing a ghost entry.
+        purgeUnifiedRow(ctx, name);
         deleteTree(componentDir(ctx, name));
         deleteTree(downloadDir(ctx, name));
         Log.i(TAG, "removed " + name + " prefsOk=" + ok);
         return ok;
+    }
+
+    // ── Plugin registry file (sp_winemu_unified_resources) ────────────────
+    //
+    // Owned by the :pcengine process. We must NOT go through SharedPreferences
+    // for writes: this process's cached copy would be stale and a commit()
+    // would clobber every row the plugin wrote since. Instead the XML is
+    // edited in place (one <string> element per row, JSON values never
+    // contain raw newlines) and the caller restarts :pcengine so its
+    // in-memory copy cannot write the row back.
+
+    private static File unifiedFile(Context ctx) {
+        return new File(new File(ctx.getApplicationInfo().dataDir, "shared_prefs"),
+                UNIFIED_PREFS + ".xml");
+    }
+
+    private static final java.util.regex.Pattern UNIFIED_ROW = java.util.regex.Pattern.compile(
+            "[ \\t]*<string name=\"COMPONENT:([^\"]*)\">(.*?)</string>[ \\t]*\\r?\\n?",
+            java.util.regex.Pattern.DOTALL);
+
+    /** Drops {@code COMPONENT:<name>} from the plugin registry file. */
+    public static boolean purgeUnifiedRow(Context ctx, String name) {
+        return purgeUnifiedRows(ctx, java.util.Collections.singleton(name)) >= 0;
+    }
+
+    /**
+     * Removes every injected row (negative id — ours) whose name is no longer
+     * in {@link #PLUGIN_PREFS}. Returns how many were dropped, or -1 on failure.
+     * Callers restart :pcengine when the result is &gt; 0.
+     */
+    public static int purgeStaleUnifiedRows(Context ctx) {
+        try {
+            Map<String, ?> live = pluginPrefs(ctx).getAll();
+            File f = unifiedFile(ctx);
+            if (!f.isFile()) return 0;
+            String xml = readFully(f);
+            java.util.regex.Matcher m = UNIFIED_ROW.matcher(xml);
+            java.util.Set<String> stale = new java.util.HashSet<>();
+            while (m.find()) {
+                String n = m.group(1);
+                String v = m.group(2);
+                if (live.containsKey(n)) continue;
+                // injected rows carry a negative id; catalog rows never do
+                if (v.contains("&quot;id&quot;:-") || v.contains("\"id\":-")) stale.add(n);
+            }
+            if (stale.isEmpty()) return 0;
+            int r = purgeUnifiedRows(ctx, stale);
+            return r;
+        } catch (Throwable t) {
+            Log.w(TAG, "purgeStaleUnifiedRows failed", t);
+            return -1;
+        }
+    }
+
+    /** @return number of rows removed, -1 on failure. */
+    static synchronized int purgeUnifiedRows(Context ctx, java.util.Collection<String> names) {
+        try {
+            File f = unifiedFile(ctx);
+            if (!f.isFile()) return 0;
+            String xml = readFully(f);
+            java.util.regex.Matcher m = UNIFIED_ROW.matcher(xml);
+            StringBuffer sb = new StringBuffer(xml.length());
+            int removed = 0;
+            while (m.find()) {
+                if (names.contains(m.group(1))) {
+                    m.appendReplacement(sb, "");
+                    removed++;
+                } else {
+                    m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(m.group()));
+                }
+            }
+            m.appendTail(sb);
+            if (removed == 0) return 0;
+            File tmp = new File(f.getParentFile(), f.getName() + ".bhtmp");
+            try (java.io.FileOutputStream out = new java.io.FileOutputStream(tmp)) {
+                out.write(sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                out.getFD().sync();
+            }
+            if (!tmp.renameTo(f)) {
+                tmp.delete();
+                Log.w(TAG, "purgeUnifiedRows: rename failed");
+                return -1;
+            }
+            Log.i(TAG, "purged " + removed + " row(s) from " + UNIFIED_PREFS + ": " + names);
+            return removed;
+        } catch (Throwable t) {
+            Log.w(TAG, "purgeUnifiedRows failed", t);
+            return -1;
+        }
+    }
+
+    private static String readFully(File f) throws java.io.IOException {
+        try (java.io.FileInputStream in = new java.io.FileInputStream(f)) {
+            java.io.ByteArrayOutputStream bo = new java.io.ByteArrayOutputStream((int) Math.max(1024, f.length()));
+            byte[] buf = new byte[65536];
+            int n;
+            while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
+            return new String(bo.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+        }
     }
 
     // ── Index (list screen) ───────────────────────────────────────────────

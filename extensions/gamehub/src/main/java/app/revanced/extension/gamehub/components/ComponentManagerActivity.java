@@ -59,6 +59,16 @@ public class ComponentManagerActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        // Sweep ghost rows (removed here, still persisted by the plugin) so the
+        // pickers and this list agree; the plugin restarts only if something changed.
+        new Thread(() -> {
+            final int purged = BhInjectedRegistry.purgeStaleUnifiedRows(this);
+            if (purged > 0) runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                BhInjectedRegistry.reloadPcEngine(this);
+                Toast.makeText(this, "Cleaned " + purged + " stale registry row(s)", Toast.LENGTH_SHORT).show();
+            });
+        }, "bh-component-purge").start();
         rebuild();
     }
 

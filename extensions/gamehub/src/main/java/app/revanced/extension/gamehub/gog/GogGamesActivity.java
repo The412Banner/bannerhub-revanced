@@ -437,7 +437,7 @@ public class GogGamesActivity extends Activity {
             int generation = 1;
             try {
                 String buildsJson = httpGet(
-                        "https://api.gog.com/products/" + id + "/os/windows/builds?generation=2", token);
+                        "https://content-system.gog.com/products/" + id + "/os/windows/builds?generation=2", token);
                 if (buildsJson != null) {
                     JSONObject bObj = new JSONObject(buildsJson);
                     JSONArray bitems = bObj.optJSONArray("items");

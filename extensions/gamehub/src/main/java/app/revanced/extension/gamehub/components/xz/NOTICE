@@ -1,0 +1,37 @@
+XZ for Java — decoder subset, vendored for the Component Manager
+=================================================================
+
+Origin:   https://github.com/tukaani-project/xz-java  (tag v1.12, commit 9c58916)
+Licence:  0BSD (see below) — every file keeps its SPDX header.
+Package:  org.tukaani.xz → app.revanced.extension.gamehub.components.xz
+          (renamed so it can never collide with a copy the host may ship later).
+
+What is here: exactly the transitive closure of XZInputStream — the .xz
+container reader, LZMA2 decoder, BCJ/delta filter decoders and the CRC/SHA
+checks. No encoder, no seekable reader, no LZMAInputStream (.lzma). Nothing
+else was changed besides the package name.
+
+Why: Winlator-community .wcp components are tar archives compressed with
+zstd OR xz. The host ships zstd-jni but no xz decoder (org.tukaani and
+commons-compress are both absent from the 6.3.1 dex), so xz .wcp files
+could not be injected without this.
+
+Re-vendoring: fetch the tag's tarball, then
+  javac -sourcepath src -d out src/org/tukaani/xz/XZInputStream.java
+lists the closure as emitted .class files; copy those sources with the
+package rewrite (sed 's/org\.tukaani\.xz/app.revanced.extension.gamehub.components.xz/g').
+
+-----------------------------------------------------------------------------
+Copyright (C) The XZ for Java authors and contributors
+
+Permission to use, copy, modify, and/or distribute this
+software for any purpose with or without fee is hereby granted.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL
+THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR
+CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT,
+NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
+CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.

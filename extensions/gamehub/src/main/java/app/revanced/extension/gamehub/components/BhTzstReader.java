@@ -21,7 +21,11 @@ import java.util.Set;
  * names (for {@link BhComponentType#detectFromEntries}) plus the small
  * descriptors ({@code meta.json} / {@code profile.json}) for version and
  * display-name hints. Works on a {@code .tzst} (tar + zstd, the GameHub
- * component format) and on an already-extracted folder.
+ * component format), on any other tar container a {@code .wcp} comes in
+ * (container detection and the zip side live in {@link BhArchiveReader}),
+ * and on an already-extracted folder. The same tar walker also EXTRACTS
+ * (see {@link Sink}) so the listing and the extraction can never disagree
+ * on what an entry is.
  *
  * <p>The host ships zstd-jni ({@code com.github.luben.zstd}) but no
  * commons-compress, so the tar side is a minimal ustar/GNU/pax walker here,
@@ -51,12 +55,17 @@ final class BhTzstReader {
     /** zstd frame magic, little-endian 0xFD2FB528. */
     private static final byte[] ZSTD_MAGIC = { (byte) 0x28, (byte) 0xB5, (byte) 0x2F, (byte) 0xFD };
 
-    private static final int MAX_ENTRIES = 20000;
+    static final int MAX_ENTRIES = 20000;
     private static final int MAX_DESCRIPTOR_BYTES = 256 * 1024;
 
     private BhTzstReader() {}
 
-    /** What a sniff found. {@code entries} is empty when the archive could not be read. */
+    /**
+     * What a sniff found. {@code entries} is empty when the archive could not
+     * be read. Entry names are normalised ('/'-separated, no leading "./",
+     * directories end in '/'); anything that failed {@link BhArchiveReader#safePath}
+     * or is a link is NOT in {@code entries} — it is in {@code problems}.
+     */
     static final class Sniff {
         final List<String> entries = new ArrayList<>();
         String metaJson;
@@ -65,10 +74,24 @@ final class BhTzstReader {
         long totalBytes;
         /** Non-null when every entry sits under one top-level directory (nested layout warning). */
         String singleTopDir;
-        /** Set when the archive is not a zstd frame at all. */
+        /** Container the bytes were recognised as; UNKNOWN when no magic matched. */
+        BhArchiveReader.Container container = BhArchiveReader.Container.UNKNOWN;
+        /** Set when the archive is not a zstd frame at all (the .tzst park route needs one). */
         boolean notZstd;
-        /** Set when the zstd stream could not be built (reflection failed) or the tar was unreadable. */
+        /** Set when the decompressor could not be built (reflection failed) or the archive was unreadable. */
         boolean unreadable;
+        /** Blocking findings: traversal / absolute paths / links / oversize. Empty = safe to extract. */
+        final List<String> problems = new ArrayList<>();
+    }
+
+    /** Receives each regular file during an extraction walk; {@code body} is bounded to {@code size}. */
+    interface Sink {
+        void file(String path, long size, InputStream body) throws IOException;
+    }
+
+    /** Thrown by the walkers when an entry must not be extracted (path escape, link, oversize). */
+    static final class UnsafeEntryException extends IOException {
+        UnsafeEntryException(String msg) { super(msg); }
     }
 
     // ── Archive ───────────────────────────────────────────────────────────
@@ -85,28 +108,13 @@ final class BhTzstReader {
         }
     }
 
+    /**
+     * Sniff by container magic (zstd / xz / gzip / plain tar / zip), not by
+     * extension. {@code notZstd} still says whether the .tzst park route can
+     * take the file verbatim.
+     */
     static Sniff sniffArchive(File archive) {
-        Sniff s = new Sniff();
-        if (!hasZstdMagic(archive)) {
-            s.notZstd = true;
-            return s;
-        }
-        InputStream zin = null;
-        try {
-            zin = openZstd(new BufferedInputStream(new FileInputStream(archive), 1 << 16));
-            if (zin == null) {
-                s.unreadable = true;
-                return s;
-            }
-            walkTar(zin, s);
-        } catch (Throwable t) {
-            Log.w(TAG, "sniff failed for " + archive, t);
-            s.unreadable = s.entries.isEmpty();
-        } finally {
-            if (zin != null) try { zin.close(); } catch (Throwable ignored) { }
-        }
-        s.singleTopDir = singleTopDir(s.entries);
-        return s;
+        return BhArchiveReader.sniff(archive);
     }
 
     /**
@@ -160,13 +168,26 @@ final class BhTzstReader {
 
     // ── tar walker (ustar + GNU longname + pax path) ──────────────────────
 
-    private static void walkTar(InputStream in, Sniff s) throws IOException {
+    /**
+     * One pass over a tar stream. With {@code sink == null} it only lists
+     * (and reads the two descriptors); with a sink every regular file is
+     * handed over, body bounded to its header size. Unsafe entries (path
+     * escape, symlink / hardlink, oversize) are recorded in
+     * {@code s.problems} when listing and thrown as
+     * {@link UnsafeEntryException} when extracting — the extraction never
+     * trusts the earlier listing.
+     */
+    static void walkTar(InputStream in, Sniff s, Sink sink) throws IOException {
         byte[] hdr = new byte[512];
         String pendingLongName = null;
         int count = 0;
-        while (count < MAX_ENTRIES) {
+        while (true) {
             if (!readFully(in, hdr, 512)) break;
             if (isZeroBlock(hdr)) break;
+            if (++count > MAX_ENTRIES) {
+                unsafe(s, sink, "more than " + MAX_ENTRIES + " entries");
+                break;
+            }
 
             String name = cstr(hdr, 0, 100);
             long size = parseSize(hdr, 124, 12);
@@ -197,34 +218,96 @@ final class BhTzstReader {
                 name = pendingLongName;
                 pendingLongName = null;
             }
-            if (name.startsWith("./")) name = name.substring(2);
-            if (name.isEmpty() || name.equals(".")) {
+            if (type == '1' || type == '2') {        // hard / symbolic link: never materialised
+                unsafe(s, sink, "link entry: " + name);
                 skip(in, padded);
                 continue;
             }
             boolean dir = type == '5' || name.endsWith("/");
-            if (!dir) {
-                s.entries.add(name);
-                s.totalBytes += size;
-                String base = name.substring(name.lastIndexOf('/') + 1);
-                if (size <= MAX_DESCRIPTOR_BYTES
-                        && (("meta.json".equals(base) && s.metaJson == null)
-                            || ("profile.json".equals(base) && s.profileJson == null))) {
-                    byte[] body = readBody(in, size, MAX_DESCRIPTOR_BYTES);
-                    if (body != null) {
-                        String text = new String(body, StandardCharsets.UTF_8);
-                        if ("meta.json".equals(base)) s.metaJson = text; else s.profileJson = text;
-                    }
-                    skip(in, padded - Math.min(size, body == null ? 0 : body.length));
-                } else {
-                    skip(in, padded);
+            if (!dir && type != 0 && type != '0' && type != '7') {   // char/block/fifo/GNU extras
+                skip(in, padded);
+                continue;
+            }
+            String safe = BhArchiveReader.safePath(name);
+            if (safe == null) {
+                if (!name.isEmpty() && !name.equals(".") && !name.equals("./")) {
+                    unsafe(s, sink, "unsafe path: " + name);
                 }
+                skip(in, padded);
+                continue;
+            }
+            if (dir) {
+                s.entries.add(safe + "/");
+                skip(in, padded);
+                continue;
+            }
+            if (size < 0 || size > BhArchiveReader.MAX_TOTAL_BYTES) {
+                unsafe(s, sink, "entry too large: " + name);
+                skip(in, padded);
+                continue;
+            }
+            s.entries.add(safe);
+            s.totalBytes += size;
+            if (s.totalBytes > BhArchiveReader.MAX_TOTAL_BYTES) {
+                unsafe(s, sink, "archive larger than " + BhComponentUi.humanSize(BhArchiveReader.MAX_TOTAL_BYTES));
+                break;
+            }
+            String base = safe.substring(safe.lastIndexOf('/') + 1);
+            boolean descriptor = size <= MAX_DESCRIPTOR_BYTES
+                    && (("meta.json".equals(base) && s.metaJson == null)
+                        || ("profile.json".equals(base) && s.profileJson == null));
+            if (sink != null) {
+                BoundedIn body = new BoundedIn(in, size);
+                sink.file(safe, size, body);
+                skip(in, padded - (size - body.remaining()));
+            } else if (descriptor) {
+                byte[] body = readBody(in, size, MAX_DESCRIPTOR_BYTES);
+                if (body != null) {
+                    String text = new String(body, StandardCharsets.UTF_8);
+                    if ("meta.json".equals(base)) s.metaJson = text; else s.profileJson = text;
+                }
+                skip(in, padded - Math.min(size, body == null ? 0 : body.length));
             } else {
-                s.entries.add(name.endsWith("/") ? name : name + "/");
                 skip(in, padded);
             }
-            count++;
         }
+    }
+
+    private static void unsafe(Sniff s, Sink sink, String why) throws IOException {
+        if (sink != null) throw new UnsafeEntryException(why);
+        if (s.problems.size() < 20) s.problems.add(why);
+    }
+
+    /** Reads at most {@code left} bytes of the wrapped stream; never closes it. */
+    static final class BoundedIn extends InputStream {
+        private final InputStream in;
+        private long left;
+
+        BoundedIn(InputStream in, long size) { this.in = in; this.left = size; }
+
+        long remaining() { return left; }
+
+        @Override public int read() throws IOException {
+            if (left <= 0) return -1;
+            int b = in.read();
+            if (b >= 0) left--;
+            return b;
+        }
+
+        @Override public int read(byte[] b, int off, int len) throws IOException {
+            if (left <= 0) return -1;
+            int n = in.read(b, off, (int) Math.min(len, left));
+            if (n > 0) left -= n;
+            return n;
+        }
+
+        @Override public long skip(long n) throws IOException {
+            long k = in.skip(Math.min(n, left));
+            if (k > 0) left -= k;
+            return k;
+        }
+
+        @Override public void close() { /* owned by the walker */ }
     }
 
     private static boolean readFully(InputStream in, byte[] buf, int len) throws IOException {

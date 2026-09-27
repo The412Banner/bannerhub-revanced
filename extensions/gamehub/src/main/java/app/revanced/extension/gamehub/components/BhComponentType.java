@@ -12,7 +12,8 @@ import java.util.Locale;
  * the 3.8.1 detection heuristics, ported from
  * {@code ComponentDownloadActivity.detectType()} / {@code ComponentInjectorHelper}
  * and extended with content sniffing so an archive named "component (3).tzst"
- * still lands in the right picker.
+ * still lands in the right picker. Precedence: profile.json {@code type} →
+ * entry names → file name.
  */
 public final class BhComponentType {
 
@@ -192,12 +193,53 @@ public final class BhComponentType {
         return null;
     }
 
-    /** "foo.tzst" → "foo"; folders come back unchanged. */
+    /**
+     * Category from a Winlator {@code profile.json} {@code type} ("DXVK",
+     * "VKD3D", "FEXCore", "Box64"); 0 when absent or not a component we
+     * inject ("Wine", "Proton", ...). Beats the entry heuristics: a Wine
+     * package also ships d3d11.dll.
+     */
+    public static int typeFromProfile(String profileJson) {
+        String t = profileTypeName(profileJson);
+        if (t == null) return 0;
+        switch (t.toLowerCase(Locale.ROOT)) {
+            case "dxvk":    return TYPE_DXVK;
+            case "vkd3d":   return TYPE_VKD3D;
+            case "fexcore":
+            case "fex":
+            case "box64":   return TYPE_TRANSLATOR;
+            default:        return 0;
+        }
+    }
+
+    /** The raw {@code type} string of a profile.json, or null. */
+    public static String profileTypeName(String profileJson) {
+        try {
+            if (profileJson != null && !profileJson.isEmpty()) {
+                String v = new JSONObject(profileJson).optString("type", "");
+                if (!v.isEmpty()) return v;
+            }
+        } catch (Throwable ignored) { }
+        return null;
+    }
+
+    /** Archive extensions the picker lists, lower-case. */
+    public static final String[] ARCHIVE_EXTS = { ".tzst", ".wcp", ".zip", ".tar.zst", ".tar.xz", ".tar.gz", ".tar" };
+
+    public static boolean isArchiveName(String fileName) {
+        if (fileName == null) return false;
+        String lower = fileName.toLowerCase(Locale.ROOT);
+        for (String ext : ARCHIVE_EXTS) if (lower.endsWith(ext)) return true;
+        return false;
+    }
+
+    /** "foo.tzst" / "foo.wcp" / "foo.zip" / "foo.tar.xz" → "foo"; folders come back unchanged. */
     public static String stripExt(String fileName) {
         if (fileName == null) return "";
         String lower = fileName.toLowerCase(Locale.ROOT);
-        if (lower.endsWith(".tzst")) return fileName.substring(0, fileName.length() - 5);
-        if (lower.endsWith(".tar.zst")) return fileName.substring(0, fileName.length() - 8);
+        for (String ext : ARCHIVE_EXTS) {
+            if (lower.endsWith(ext)) return fileName.substring(0, fileName.length() - ext.length());
+        }
         return fileName;
     }
 }

@@ -22,11 +22,13 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * In-app browser over device storage for the Component Manager: shows
- * folders and {@code .tzst} files only. Tap a {@code .tzst} to pick it; use
+ * folders and component archives only — {@code .wcp} (every component but
+ * GPU drivers comes this way: a tar compressed with zstd or xz),
+ * {@code .zip} (adrenotools GPU driver packages, GitHub release archives)
+ * and {@code .tzst} (GameHub's own format). Tap an archive to pick it; use
  * "Use this folder" to pick an already-extracted component folder. No SAF —
  * the host holds {@code MANAGE_EXTERNAL_STORAGE}; when all-files access is
  * not granted we show a notice that opens the system toggle.
@@ -42,8 +44,6 @@ public class ComponentPickerActivity extends Activity {
     private static final String TAG = "BhComponentPicker";
     public static final String EXTRA_PATH = "path";
     public static final String EXTRA_IS_DIR = "isDir";
-
-    private static final String EXT = ".tzst";
 
     private File currentDir;
     private String[] rootLabels;
@@ -140,7 +140,7 @@ public class ComponentPickerActivity extends Activity {
         LinearLayout header = BhComponentUi.column(this);
         header.setBackgroundColor(BhComponentUi.HEADER);
         header.setPadding(dp(12), dp(10), dp(12), dp(10));
-        header.addView(BhComponentUi.text(this, "Pick a component (.tzst or folder)", 16f,
+        header.addView(BhComponentUi.text(this, "Pick a component (.wcp / .zip / .tzst or folder)", 16f,
                 BhComponentUi.TEXT, true));
 
         TextView locationLabel = BhComponentUi.text(this, "Location:", 11f, 0xFF8888AA, false);
@@ -228,7 +228,7 @@ public class ComponentPickerActivity extends Activity {
             if (f.isDirectory()) {
                 if (f.getName().startsWith(".")) continue;
                 dirs.add(f);
-            } else if (f.getName().toLowerCase(Locale.ROOT).endsWith(EXT)) {
+            } else if (BhComponentType.isArchiveName(f.getName())) {
                 archives.add(f);
             }
         }
@@ -236,7 +236,7 @@ public class ComponentPickerActivity extends Activity {
         Collections.sort(archives, (a, b) -> a.getName().compareToIgnoreCase(b.getName()));
 
         if (dirs.isEmpty() && archives.isEmpty()) {
-            addEmptyLabel("(no folders or .tzst files here)");
+            addEmptyLabel("(no folders or .wcp / .zip / .tzst files here)");
             return;
         }
         for (File d : dirs) listContainer.addView(makeRow("📁  " + d.getName(), d, false, false));

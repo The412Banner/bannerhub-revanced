@@ -25,7 +25,8 @@ import java.util.Map;
  * Remove. Reached from the Banner Tools dialog's "Components" tile.
  *
  * <p>Inject → {@link ComponentPickerActivity} (result) →
- * {@link BhComponentInjector#start}. Remove → confirm →
+ * {@link BhComponentInjector#start}. Download → {@link ComponentDownloadActivity}
+ * (online repos; injects on its own, we re-list on resume). Remove → confirm →
  * {@link BhInjectedRegistry#remove}. Both end by bouncing {@code :pcengine}
  * so the plugin re-reads {@code sp_bh_injected_components} — the pickers in
  * PC Engine settings show the change once they are reopened.
@@ -73,9 +74,14 @@ public class ComponentManagerActivity extends Activity {
         countTV = BhComponentUi.text(this, "", 11f, 0xFF8888AA, false);
         titles.addView(countTV);
         header.addView(titles, new LinearLayout.LayoutParams(0, -2, 1f));
+        Button download = BhComponentUi.button(this, "Download", BhComponentUi.NEUTRAL_BTN);
+        download.setOnClickListener(v -> openDownloads());
+        LinearLayout.LayoutParams dlp = BhComponentUi.lp(dp(100), dp(40));
+        dlp.rightMargin = dp(8);
+        header.addView(download, dlp);
         Button inject = BhComponentUi.button(this, "+ Inject", BhComponentUi.ACCENT);
         inject.setOnClickListener(v -> openPicker());
-        header.addView(inject, BhComponentUi.lp(dp(110), dp(40)));
+        header.addView(inject, BhComponentUi.lp(dp(100), dp(40)));
         root.addView(header, BhComponentUi.lp(-1, -2));
 
         ScrollView scroll = new ScrollView(this);
@@ -93,6 +99,16 @@ public class ComponentManagerActivity extends Activity {
         } catch (Throwable t) {
             Log.w(TAG, "picker launch failed", t);
             Toast.makeText(this, "Picker unavailable", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /** "Download components" — online repos; it injects on its own and we re-list on resume. */
+    private void openDownloads() {
+        try {
+            startActivity(new Intent(this, ComponentDownloadActivity.class));
+        } catch (Throwable t) {
+            Log.w(TAG, "download screen launch failed", t);
+            Toast.makeText(this, "Download screen unavailable", Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -116,7 +132,8 @@ public class ComponentManagerActivity extends Activity {
 
         if (all.isEmpty()) {
             listContainer.addView(BhComponentUi.notice(this, "No injected components",
-                    "Inject a .tzst archive (tar + zstd, the GameHub component format) or an "
+                    "Inject a .wcp (DXVK / VKD3D / FEX / Box64 from the Winlator community), a "
+                            + ".zip GPU driver package (adrenotools), a .tzst (GameHub's format) or an "
                             + "already-extracted folder. It then appears in the matching PC Engine "
                             + "settings picker (GPU driver / DXVK / VKD3D / translator).",
                     "+ Inject", this::openPicker), BhComponentUi.cardLp(this));
@@ -156,6 +173,10 @@ public class ComponentManagerActivity extends Activity {
         top.addView(names, new LinearLayout.LayoutParams(0, -2, 1f));
         top.addView(BhComponentUi.chip(this, BhComponentType.badge(e.type),
                 BhComponentUi.SURFACE_VAR, BhComponentUi.TEXT2), BhComponentUi.chipLp(this));
+        if (e.format != null && !e.format.isEmpty()) {   // source format: WCP / ZIP / TZST / FOLDER
+            top.addView(BhComponentUi.chip(this, e.format.toUpperCase(java.util.Locale.ROOT),
+                    BhComponentUi.SURFACE_VAR, BhComponentUi.TEXT2), BhComponentUi.chipLp(this));
+        }
         boolean extracted = BhInjectedRegistry.STATE_EXTRACTED.equals(e.state);
         top.addView(BhComponentUi.chip(this, extracted ? "EXTRACTED" : "ARCHIVE",
                 extracted ? 0xFF1B4D2A : 0xFF2A2A5A, extracted ? 0xFF9BE7A8 : 0xFFB8B8FF),

@@ -246,6 +246,7 @@ public final class BhInjectedRegistry {
             idx.put("size", e.fileSize);
             idx.put("date", System.currentTimeMillis());
             idx.put("md5", e.fileMd5 == null ? "" : e.fileMd5);
+            idx.put("format", e.format == null ? "" : e.format);
             ok = indexPrefs(ctx).edit().putString(e.name, idx.toString()).commit();
             if (!ok) {
                 pluginPrefs(ctx).edit().remove(e.name).commit();
@@ -308,6 +309,10 @@ public final class BhInjectedRegistry {
                 e.fileSize = o.optLong("size", 0L);
                 e.date = o.optLong("date", 0L);
                 e.fileMd5 = o.optString("md5", "");
+                e.format = o.optString("format", "");
+                if (e.format.isEmpty()) {   // records from the first cut: .tzst had an md5, folders did not
+                    e.format = e.fileMd5.isEmpty() ? "folder" : "tzst";
+                }
                 out.add(e);
             } catch (JSONException ex) {
                 Log.w(TAG, "bad index entry " + n, ex);
@@ -389,5 +394,7 @@ public final class BhInjectedRegistry {
         /** Archive bytes, or the folder's total bytes for Extracted (index/display only; the record gets 0). */
         public long fileSize;
         public long date;
+        /** Source format tag for the list badge: tzst, wcp, zip, tar, folder (index only). */
+        public String format = "";
     }
 }

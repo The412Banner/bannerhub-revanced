@@ -1,5 +1,19 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-09-27 — 📦 Component Manager: .wcp + .zip injection (3.8.1 parity) — COMPILE-READ + JVM-PROVEN, NOT device-tested
+
+**Format facts (verified on real files):** a `.wcp` is a TAR compressed with zstd (`28 b5 2f fd`) or xz (`fd 37 7a 58 5a 00`), occasionally gzip/plain — NOT a zip. Only adrenotools GPU-driver packages and GitHub release archives are zips. Container is decided by magic, never by extension. The host has zstd-jni but no xz decoder (org.tukaani + commons-compress absent) → the tukaani XZ for Java v1.12 decoder closure (55 files, 0BSD) is vendored under `components/xz/` (package-renamed; `xz/NOTICE`).
+
+**Layout mapping (`BhComponentLayout`, targets = the plugin's own installs on device):** driver → `libvulkan_freedreno.so` + `meta.json` (+ helper .so copied through; the `libraryName` library is written AS `libvulkan_freedreno.so` and `meta.json.libraryName` rewritten to match); DXVK/VKD3D → `profile.json` + `system32/` + `syswow64/` (a release zip's `x64/`→`system32`, `x32|x86/`→`syswow64`, `profile.json` synthesised in the Winlator ContentProfile shape when missing); translator → flat at the root (`system32/libarm64ecfex.dll` → `libarm64ecfex.dll`, `box64`); library → copied through. A single wrapper dir is stripped (≤4 levels, never a payload dir), `__MACOSX`/`._*`/`.DS_Store` dropped.
+
+**Safety:** `..`, absolute paths, drive letters, NUL → rejected; tar hard/symlinks + zip S_IFLNK (central-directory unix mode read by hand) → rejected; ≤20 000 entries, ≤3 GiB (header-declared when listing, bytes-written when extracting); free-space check; extract to `<filesDir>/bh_component_tmp/<name>-<ts>` → validate per type → `renameTo` `usr/home/components/<name>/`; temp swept on failure and stale (>1 h) at next inject.
+
+**Reusable API for the online-repo screen:** `BhComponentInjector.inspect(File) → Inspection` and `injectFile(Context, File, ComponentSpec, ProgressListener) → Result`; the picker's confirm dialog is one caller. `.tzst` (zstd) park route unchanged; a non-zstd `.tzst` is extracted instead of failing. Registry index gained `format` (tzst/wcp/zip/tar/folder), shown as a chip in the list.
+
+**JVM harness (fake filesDir + in-memory prefs, real files from `/sdcard/Download/inject-test/`):** adrenotools zip → driver dir ✅; FEX xz .wcp → flat dlls ✅; DXVK .wcp re-containered as xz/gzip/tar ✅ (zstd needs the host, N/A on the JVM); dxvk release zip (x64/x32 + wrapper) → system32/syswow64 + generated profile ✅; vkd3d-proton zip (x64/x86) ✅; Box64 xz .wcp ✅; wrapped FEX tar.gz ✅; traversal tar + symlink zip → blocked ✅; `.tzst` park (md5 name) ✅; folder ✅; no temp leftovers. Whole `components` package compile-reads clean against stubs (96 classes).
+
+**⏭️ Device checklist:** inject `Qualcomm_840_adpkg.zip` → GPU driver picker shows "Qualcomm Adreno 840"; `DXVK-v3.1.1-arm64ec.wcp` (zstd — exercises the host's reflective zstd stream on a wcp) → DXVK picker; a DXVK GitHub release zip → DXVK picker; `FEXCore-2609-official-ppa.wcp` (xz — exercises the vendored decoder) → translator picker; launch one game per component; Remove each and confirm the folder + record vanish.
+
 ## 2026-09-27 — 🔁 Steam · Friends overlay transport rewritten for 6.3.1 (relay + invite-IPC fallback) — BUILT, NOT device-tested
 
 **Symptom:** overlay showed `Bridge: FAILED @ Class.forName SteamBridgeClient: ClassNotFoundException`. Root causes (smali-verified): the bridge is R8-renamed (`Ltwv;`, `c` = executeRaw `(String,String,x3w,kotlin.time.Duration,ContinuationImpl)`, `d` = listenJson → `eq3 implements kotlinx.coroutines.flow.Flow`), `Koin.getInstanceRegistry()` is gone (`Koin.d:Lm35;`, an R8-merged class whose `(Koin)` ctor fills two `ConcurrentHashMap`s), and — decisively — the bridge is a MAIN-process-only Koin singleton while the overlay runs in `:pcengine`. All command strings/topics the overlay sends still exist verbatim.

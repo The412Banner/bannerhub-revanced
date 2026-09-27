@@ -7,11 +7,13 @@ import app.revanced.util.getNode
 import org.w3c.dom.Element
 
 // =========================================================================
-// Component Manager (3.8.1 parity on v6) — registers the two Java activities
+// Component Manager (3.8.1 parity on v6) — registers the three Java activities
 // behind the Banner Tools "Components" tile:
-//   ComponentManagerActivity — list / remove injected components, Inject entry
-//   ComponentPickerActivity  — in-app browser over device storage (.tzst + folders)
-// Both are internal (exported=false): reached only from the Banner Tools
+//   ComponentManagerActivity  — list / remove injected components, Inject entry
+//   ComponentPickerActivity   — in-app browser over device storage (.tzst + folders)
+//   ComponentDownloadActivity — online repos (WCPHub, driver mirrors, Nightlies)
+//                               → download → inject through the same injector
+// All are internal (exported=false): reached only from the Banner Tools
 // dialog (BhBannerToolsMenuRowClick → BhComponentsMenu.open) and from each
 // other (startActivityForResult). Same theme / configChanges / `behind`
 // orientation as the GOG activities — see GogManifestPatch for the §34
@@ -19,8 +21,9 @@ import org.w3c.dom.Element
 // handheld/explore mode).
 //
 // The runtime side writes only prefs (sp_bh_injected_components +
-// bh_component_manager) and files under filesDir; no permission is needed
-// beyond the host's existing MANAGE_EXTERNAL_STORAGE for the picker.
+// bh_component_manager + bh_component_downloads) and files under filesDir /
+// externalFilesDir; no permission is needed beyond the host's existing
+// INTERNET and MANAGE_EXTERNAL_STORAGE (the latter for the picker only).
 // =========================================================================
 
 private const val PKG = "app.revanced.extension.gamehub.components"
@@ -28,14 +31,15 @@ private const val PKG = "app.revanced.extension.gamehub.components"
 private val ACTIVITIES = listOf(
     "$PKG.ComponentManagerActivity",
     "$PKG.ComponentPickerActivity",
+    "$PKG.ComponentDownloadActivity",
 )
 
 @Suppress("unused")
 val componentManagerManifestPatch = resourcePatch(
     name = "Component Manager activities",
     description = "Registers the Component Manager (inject / list / remove GPU driver, " +
-        "DXVK, VKD3D, translator and library components for the PC engine) and its " +
-        "storage picker activity. Opened from the Banner Tools dialog.",
+        "DXVK, VKD3D, translator and library components for the PC engine), its " +
+        "storage picker and the online-repo download screen. Opened from the Banner Tools dialog.",
 ) {
     compatibleWith(GAMEHUB_PACKAGE(GAMEHUB_VERSION))
 

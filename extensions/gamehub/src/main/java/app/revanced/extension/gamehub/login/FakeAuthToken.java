@@ -26,7 +26,7 @@ import app.revanced.extension.gamehub.debug.DebugTrace;
  */
 public final class FakeAuthToken {
     private static final String TAG = "GH600-DEBUG";
-    private static final String FAKE_USER_ID = "99999";
+    static final String FAKE_USER_ID = "99999";
 
     /** R8-mangled class name of the auth-token wrapper. Update on base APK bump. */
     // 6.1.0: Lqbm; -> Lpfr; (= "UserToken"; AUTH_INTERFACE.i() return type; 10 fields
@@ -40,6 +40,10 @@ public final class FakeAuthToken {
 
     public static Object get() {
         DebugTrace.write("FakeAuthToken.get() called");
+        // 6.3.1: the pcengine plugin reads the signed-in user from the app DB,
+        // not from these in-memory fakes — keep the DB rows in step (throttled,
+        // off-thread; see FakeAccountDbSeeder).
+        FakeAccountDbSeeder.ensure();
         Object t = cached;
         if (t != null) return t;
         synchronized (FakeAuthToken.class) {

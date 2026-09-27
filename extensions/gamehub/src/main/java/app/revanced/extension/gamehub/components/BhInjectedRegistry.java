@@ -152,8 +152,16 @@ public final class BhInjectedRegistry {
         String row = unifiedRow(ctx, name);
         if (row != null) {
             boolean injected = row.contains("&quot;id&quot;:-") || row.contains("\"id\":-");
-            return (injected ? "An injected component is still registered as \"" : "A catalog component is already called \"")
-                    + name + "\"";
+            if (injected && !pluginPrefs(ctx).contains(name)) {
+                // Orphan: we removed it but the plugin persisted the row again
+                // before it restarted. Heal silently instead of asking the user.
+                int n = purgeUnifiedRows(ctx, java.util.Collections.singleton(name));
+                if (n > 0) reloadPcEngine(ctx);
+                Log.i(TAG, "healed orphan registry row for " + name + " purged=" + n);
+            } else {
+                return (injected ? "An injected component is already called \"" : "A catalog component is already called \"")
+                        + name + "\"";
+            }
         }
         if (pluginPrefs(ctx).contains(name)) {
             return "An injected component is already called \"" + name + "\"";

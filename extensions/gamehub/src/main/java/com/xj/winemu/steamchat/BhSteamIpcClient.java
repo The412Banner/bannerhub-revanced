@@ -112,10 +112,10 @@ public final class BhSteamIpcClient {
                 binding = false;
                 if (bindLatch != null) bindLatch.countDown();
             }
-            Log.i(TAG, "ipc: bound to invite IPC");
+            BhSteamLog.i("ipc: bound to invite IPC");
         }
         @Override public void onServiceDisconnected(ComponentName name) {
-            Log.w(TAG, "ipc: invite IPC disconnected");
+            BhSteamLog.w("ipc: invite IPC disconnected");
             synchronized (lock) {
                 service = null;
                 failAllLocked("service disconnected");
@@ -130,7 +130,7 @@ public final class BhSteamIpcClient {
             try { appContext().unbindService(this); } catch (Throwable ignored) {}
         }
         @Override public void onNullBinding(ComponentName name) {
-            Log.w(TAG, "ipc: null binding (action not accepted?)");
+            BhSteamLog.w("ipc: null binding (action not accepted?)");
             synchronized (lock) {
                 binding = false;
                 lastError = "invite IPC returned a null binding";
@@ -163,7 +163,7 @@ public final class BhSteamIpcClient {
                 catch (Throwable t) { ok = false; lastError = "bindService threw " + t; }
                 if (!ok) {
                     if (lastError.isEmpty()) lastError = "bindService returned false (service missing?)";
-                    Log.w(TAG, "ipc: " + lastError);
+                    BhSteamLog.w("ipc: " + lastError);
                     try { ctx.unbindService(conn); } catch (Throwable ignored) {}
                     return false;
                 }
@@ -250,7 +250,7 @@ public final class BhSteamIpcClient {
         } catch (RemoteException e) {
             synchronized (lock) { pending.remove(id); service = null; }
             lastError = "send failed: " + e;
-            Log.w(TAG, "ipc: " + lastError);
+            BhSteamLog.w("ipc: " + lastError);
             return null;
         }
         boolean finished = false;
@@ -307,7 +307,7 @@ public final class BhSteamIpcClient {
                 JSONArray arr = new JSONArray(js);
                 for (int k = 0; k < arr.length(); k++) all.put(arr.opt(k));
             } catch (Throwable t) {
-                Log.w(TAG, "ipc: bad friends_json page " + i + ": " + t);
+                BhSteamLog.w("ipc: bad friends_json page " + i + ": " + t);
             }
         }
         String out;

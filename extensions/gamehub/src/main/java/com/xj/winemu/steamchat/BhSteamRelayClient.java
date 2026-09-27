@@ -80,15 +80,15 @@ public final class BhSteamRelayClient {
                 if (bindLatch != null) bindLatch.countDown();
                 topics = new ArrayList<>(listeners.keySet());
             }
-            Log.i(TAG, "relay-client: bound (" + topics.size() + " topics to (re)subscribe)");
+            BhSteamLog.i("relay-client: bound (" + topics.size() + " topics to (re)subscribe)");
             for (String t : topics) sendSubscribe(t);
         }
         @Override public void onServiceDisconnected(ComponentName name) {
-            Log.w(TAG, "relay-client: disconnected");
+            BhSteamLog.w("relay-client: disconnected");
             synchronized (lock) { service = null; failAllLocked("relay disconnected"); }
         }
         @Override public void onBindingDied(ComponentName name) {
-            Log.w(TAG, "relay-client: binding died");
+            BhSteamLog.w("relay-client: binding died");
             synchronized (lock) { service = null; binding = false; failAllLocked("relay binding died"); }
             try { Context c = appContext(); if (c != null) c.unbindService(this); } catch (Throwable ignored) {}
         }
@@ -124,7 +124,7 @@ public final class BhSteamRelayClient {
                 catch (Throwable t) { ok = false; lastError = "bindService threw " + t; }
                 if (!ok) {
                     if (lastError.isEmpty()) lastError = "bindService returned false — relay service not in the manifest?";
-                    Log.w(TAG, "relay-client: " + lastError);
+                    BhSteamLog.w("relay-client: " + lastError);
                     try { ctx.unbindService(conn); } catch (Throwable ignored) {}
                     return false;
                 }
@@ -308,7 +308,7 @@ public final class BhSteamRelayClient {
         b.putString("topic", topic);
         Pending p = send(BhSteamRelayService.MSG_SUBSCRIBE, b, 6000);
         if (p == null) {
-            Log.w(TAG, "relay-client: subscribe " + topic + " failed: " + lastError);
+            BhSteamLog.w("relay-client: subscribe " + topic + " failed: " + lastError);
             return lastError.isEmpty() ? "subscribe failed" : lastError;
         }
         return null;

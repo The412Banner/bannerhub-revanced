@@ -1,7 +1,11 @@
 package com.xj.winemu.steamchat;
 
 import android.content.Context;
+import android.os.Looper;
 import android.util.Log;
+
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Transport facade for the in-game Steam · Friends overlay
@@ -57,6 +61,36 @@ public final class BhSteamBridge {
     /** Callback for {@link #listen}: receives each event's payload JSON for the topic. */
     public interface EventListener { void onEvent(String payloadJson); }
 
+    /**
+     * Background lane for anything that binds/waits. The overlay calls
+     * {@link #isAvailable()}, {@link #getStatus()} and {@link #listen} from the
+     * UI thread (its subscription setup runs inside a {@code container.post}),
+     * and a synchronous resolve there = relay bind 8 s + status 4 s + IPC 6 s
+     * = "Input dispatching timed out" on PcEnginePluginHostActivity
+     * (device-seen 2026-09-27 02:58, right after the overlay attached). So: on
+     * the main thread nothing here ever waits — resolution and subscriptions are
+     * kicked onto this executor and the current state is returned at once.
+     */
+    private static final ExecutorService BG = Executors.newSingleThreadExecutor(new java.util.concurrent.ThreadFactory() {
+        public Thread newThread(Runnable r) { Thread t = new Thread(r, "bh-steam-bridge"); t.setDaemon(true); return t; }
+    });
+    private static volatile boolean sResolving = false;
+
+    private static boolean isMainThread() {
+        try { return Looper.myLooper() == Looper.getMainLooper(); } catch (Throwable t) { return false; }
+    }
+
+    private static void resolveAsync() {
+        if (sResolving) return;
+        sResolving = true;
+        BG.execute(new Runnable() {
+            public void run() {
+                try { resolve(); } catch (Throwable t) { BhSteamLog.w("bridge: async resolve failed", t); }
+                finally { sResolving = false; }
+            }
+        });
+    }
+
     private static volatile Mode sMode = Mode.NONE;
     private static volatile boolean sResolvedOnce = false;
     private static volatile long sLastProbe = 0;
@@ -92,6 +126,7 @@ public final class BhSteamBridge {
         if (sMode == Mode.RELAY) return;
         long now = System.currentTimeMillis();
         if (sResolvedOnce && now - sLastProbe < REPROBE_MS) return;
+        if (isMainThread()) { resolveAsync(); return; }   // never block the UI thread
         resolve();
     }
 
@@ -110,14 +145,14 @@ public final class BhSteamBridge {
                 sMode = Mode.RELAY;
                 sStatus = "ok (relay → main pid " + st.pid + ": " + st.status + ")";
                 sRelayWhy = "";
-                Log.i(TAG, "bridge: mode RELAY — " + sStatus);
+                BhSteamLog.i("bridge: mode RELAY — " + sStatus);
                 return;
             }
             sRelayWhy = st != null ? st.status : relay.getLastError();
         } else {
             sRelayWhy = relay.getLastError();
         }
-        Log.w(TAG, "bridge: relay unavailable — " + sRelayWhy);
+        BhSteamLog.w("bridge: relay unavailable — " + sRelayWhy);
 
         // 2. invite IPC (friends + presence + own id)
         BhSteamIpcClient ipc = BhSteamIpcClient.get();
@@ -126,20 +161,20 @@ public final class BhSteamBridge {
             sMode = Mode.IPC;
             sStatus = "friends only — chat relay unavailable: " + sRelayWhy
                     + " · IPC readiness=" + is.readiness;
-            Log.i(TAG, "bridge: mode IPC — " + sStatus);
+            BhSteamLog.i("bridge: mode IPC — " + sStatus);
             return;
         }
 
         // 3. nothing
         sMode = Mode.NONE;
         sStatus = "FAILED @ relay: " + sRelayWhy + " · invite IPC: " + ipc.getLastError();
-        Log.w(TAG, "bridge: " + sStatus);
+        BhSteamLog.w("bridge: " + sStatus);
     }
 
     /** Called when the relay reports it lost the bridge; forces a re-probe on the next call. */
     private static void demoteRelay(String why) {
         if (sMode != Mode.RELAY) return;
-        Log.w(TAG, "bridge: relay demoted — " + why);
+        BhSteamLog.w("bridge: relay demoted — " + why);
         sMode = Mode.NONE;
         sResolvedOnce = false;
         sRelayWhy = why;
@@ -153,6 +188,15 @@ public final class BhSteamBridge {
      */
     public static String request(String topic, String payloadJson, long timeoutMs) {
         sLastError = "";
+        if (isMainThread()) {
+            // A Binder round-trip with a latch on the UI thread is an ANR waiting
+            // to happen; the overlay's own callers run on its IO executor, so
+            // anything landing here is a bug — refuse instead of freezing.
+            sLastError = "request(" + topic + ") called on the main thread — refused";
+            BhSteamLog.w("bridge: " + sLastError);
+            resolveAsync();
+            return null;
+        }
         if (!isAvailable()) { sLastError = "bridge unavailable: " + sStatus; return null; }
         switch (sMode) {
             case RELAY: {
@@ -160,7 +204,7 @@ public final class BhSteamBridge {
                 String r = relay.exec(topic, payloadJson, timeoutMs);
                 if (r != null) return r;
                 sLastError = relay.getLastError();
-                Log.w(TAG, "request " + topic + " failed: " + sLastError);
+                BhSteamLog.w("request " + topic + " failed: " + sLastError);
                 if (sLastError.startsWith("NotAttached") || sLastError.contains("relay disconnected")
                         || sLastError.contains("relay binding died") || sLastError.contains("relay not bound")) {
                     demoteRelay(sLastError);
@@ -191,7 +235,9 @@ public final class BhSteamBridge {
     // ── events ─────────────────────────────────────────────────────────────
 
     private static final class Sub {
-        final String topic; final BhSteamRelayClient.EventListener l;
+        final String topic;
+        volatile BhSteamRelayClient.EventListener l;   // null while a main-thread subscribe is still pending
+        volatile boolean cancelled;
         Sub(String t, BhSteamRelayClient.EventListener l) { this.topic = t; this.l = l; }
     }
 
@@ -203,6 +249,41 @@ public final class BhSteamBridge {
      */
     public static Object listen(final String topic, final EventListener listener) {
         if (listener == null) return null;
+        if (isMainThread()) {
+            // Subscribe off-thread; hand back the handle now. If the relay is not
+            // (yet) attached the subscription is simply not made — the overlay
+            // re-calls ensureChatSubscription on every refresh, so it catches up
+            // once the relay resolves (resolveAsync below).
+            final Sub pending = new Sub(topic, null);
+            BG.execute(new Runnable() {
+                public void run() {
+                    try {
+                        if (pending.cancelled) return;
+                        if (!isChatAvailable()) {
+                            sLastError = "listen: chat relay unavailable (" + sRelayWhy + ")";
+                            BhSteamLog.i("listen " + topic + " deferred — " + sLastError);
+                            return;
+                        }
+                        BhSteamRelayClient.EventListener l = new BhSteamRelayClient.EventListener() {
+                            public void onEvent(String payloadJson) { if (!pending.cancelled) listener.onEvent(payloadJson); }
+                        };
+                        String err = BhSteamRelayClient.get().subscribe(topic, l);
+                        if (err != null) {
+                            BhSteamRelayClient.get().unsubscribe(topic, l);
+                            sLastError = "listen: " + err;
+                            BhSteamLog.w("listen " + topic + " failed: " + err);
+                            return;
+                        }
+                        if (pending.cancelled) { BhSteamRelayClient.get().unsubscribe(topic, l); return; }
+                        pending.l = l;
+                        BhSteamLog.i("listening on " + topic + " via relay (async)");
+                    } catch (Throwable t) {
+                        BhSteamLog.w("listen " + topic + " crashed", t);
+                    }
+                }
+            });
+            return pending;
+        }
         if (!isChatAvailable()) { sLastError = "listen: chat relay unavailable (" + sRelayWhy + ")"; return null; }
         BhSteamRelayClient.EventListener l = new BhSteamRelayClient.EventListener() {
             public void onEvent(String payloadJson) { listener.onEvent(payloadJson); }
@@ -211,18 +292,25 @@ public final class BhSteamBridge {
         if (err != null) {
             BhSteamRelayClient.get().unsubscribe(topic, l);
             sLastError = "listen: " + err;
-            Log.w(TAG, "listen " + topic + " failed: " + err);
+            BhSteamLog.w("listen " + topic + " failed: " + err);
             return null;
         }
-        Log.i(TAG, "listening on " + topic + " via relay");
+        BhSteamLog.i("listening on " + topic + " via relay");
         return new Sub(topic, l);
     }
 
     /** Stop a {@link #listen} subscription. */
     public static void unlisten(Object handle) {
         if (handle instanceof Sub) {
-            Sub s = (Sub) handle;
-            BhSteamRelayClient.get().unsubscribe(s.topic, s.l);
+            final Sub s = (Sub) handle;
+            s.cancelled = true;
+            final BhSteamRelayClient.EventListener l = s.l;
+            if (l == null) return;                       // never subscribed (or still pending) — nothing to undo
+            if (isMainThread()) {
+                BG.execute(new Runnable() { public void run() { BhSteamRelayClient.get().unsubscribe(s.topic, l); } });
+            } else {
+                BhSteamRelayClient.get().unsubscribe(s.topic, l);
+            }
         }
     }
 

@@ -138,7 +138,7 @@ public final class BhSteamRelayService extends Service {
         thread.setDaemon(true);
         thread.start();
         messenger = new Messenger(new RelayHandler(thread));
-        Log.i(TAG, "relay: service created in pid " + android.os.Process.myPid());
+        BhSteamLog.i("relay: service created in pid " + android.os.Process.myPid());
     }
 
     @Override public IBinder onBind(Intent intent) {
@@ -244,7 +244,7 @@ public final class BhSteamRelayService extends Service {
         m.setData(data);
         try { to.send(m); return true; }
         catch (RemoteException e) {
-            Log.w(TAG, "relay: client gone (" + e + ")");
+            BhSteamLog.w("relay: client gone (" + e + ")");
             dropClient(to);
             return false;
         }
@@ -406,7 +406,7 @@ public final class BhSteamRelayService extends Service {
                     suspended = Class.forName("kotlin.coroutines.intrinsics.IntrinsicsKt", false, cl)
                             .getMethod("getCOROUTINE_SUSPENDED").invoke(null);
                 } catch (Throwable t) {
-                    Log.w(TAG, "relay: COROUTINE_SUSPENDED not resolvable (" + t + ") — falling back to enum check");
+                    BhSteamLog.w("relay: COROUTINE_SUSPENDED not resolvable (" + t + ") — falling back to enum check");
                     suspended = null;
                 }
 
@@ -460,13 +460,13 @@ public final class BhSteamRelayService extends Service {
                 attached = true;
                 status = "ok (" + client.getClass().getName() + "." + executeRaw.getName() + "/"
                         + listenJson.getName() + ", kind=" + kindDefault + ")";
-                Log.i(TAG, "relay: attached " + status);
+                BhSteamLog.i("relay: attached " + status);
             } catch (Throwable t) {
                 attached = false;
                 Throwable c = t.getCause() != null ? t.getCause() : t;
                 status = "FAILED @ " + step + ": " + c.getClass().getSimpleName()
                         + (c.getMessage() != null ? " " + c.getMessage() : "");
-                Log.w(TAG, "relay: attach " + status, t);
+                BhSteamLog.w("relay: attach " + status, t);
             }
         }
 
@@ -631,18 +631,18 @@ public final class BhSteamRelayService extends Service {
                 final Continuation<Object> completion = new Continuation<Object>() {
                     public CoroutineContext getContext() { return (CoroutineContext) emptyContext; }
                     public void resumeWith(Object result) {
-                        Log.i(TAG, "relay: flow " + topic + " completed: " + result);
+                        BhSteamLog.i("relay: flow " + topic + " completed: " + result);
                     }
                 };
                 Thread t = new Thread(new Runnable() {
                     public void run() {
                         try { collect.invoke(flow, collector, completion); }
-                        catch (Throwable err) { Log.i(TAG, "relay: collect " + topic + " ended: " + err); }
+                        catch (Throwable err) { BhSteamLog.i("relay: collect " + topic + " ended: " + err); }
                     }
                 }, "bh-steam-relay-flow");
                 t.setDaemon(true);
                 t.start();
-                Log.i(TAG, "relay: listening on " + topic);
+                BhSteamLog.i("relay: listening on " + topic);
                 return null;
             } catch (Throwable t) {
                 Throwable c = t.getCause() != null ? t.getCause() : t;

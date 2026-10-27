@@ -1,5 +1,13 @@
 # BannerHub ReVanced — GameHub 6.0 Port Progress Log
 
+## 2026-10-27 — 📄 Upstream GameHub 6.3.2 (vc143) diffed against 6.3.1 — REPORT ONLY, no rebase started
+
+**What:** `gamehub_reports/GAMEHUB_632_vs_631_DIFF.md`. apktool 3.0.3 + jadx 1.5.6 on both base APKs; diffs of zip listing, manifest, dex strings, Compose strings, Room SQL and `libsteamkit_core.so`.
+
+**Findings for the next rebase:** bump `GAMEHUB_VERSION` to `6.3.2`; 183/184 patch string anchors still present; ~333 hardcoded obfuscated descriptors need re-derivation (R8 map changed, keystone first); `AppDatabase` 17 → 20 (`user_account` unchanged) → test install-over-631 with the seeded user; plugin host now shares `okio.` with plugins → test plugin 111-7 under the vc143 host; new upstream endpoints (task-center events with play time + deviceId, feature-release snapshot, task-mall, publisher, help-center, resource upload) fall through the Worker to upstream unless stubbed.
+
+**Not done:** nothing built or device-tested; upstream plugin version for vc143 not checked.
+
 ## 2026-09-27 — 📦 Component Manager: .wcp + .zip injection (3.8.1 parity) — COMPILE-READ + JVM-PROVEN, NOT device-tested
 
 **Format facts (verified on real files):** a `.wcp` is a TAR compressed with zstd (`28 b5 2f fd`) or xz (`fd 37 7a 58 5a 00`), occasionally gzip/plain — NOT a zip. Only adrenotools GPU-driver packages and GitHub release archives are zips. Container is decided by magic, never by extension. The host has zstd-jni but no xz decoder (org.tukaani + commons-compress absent) → the tukaani XZ for Java v1.12 decoder closure (55 files, 0BSD) is vendored under `components/xz/` (package-renamed; `xz/NOTICE`).
